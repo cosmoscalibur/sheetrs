@@ -10,9 +10,9 @@ fn main() {
         println!("File path required");
         return;
     }
-    let mut workbook = XlsxWorkbook::open(&xls_path).unwrap();
-    for (sheet_id, sheet_name) in workbook.sheets.clone() {
-        dbg!(&sheet_id);
+    let workbook = XlsxWorkbook::open(&xls_path).unwrap();
+    for (sheet_name, sheet_path) in workbook.sheets.clone() {
+        dbg!(&sheet_path);
         dbg!(&sheet_name);
     }
     return;

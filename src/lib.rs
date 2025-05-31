@@ -1,4 +1,4 @@
-//! Rust Excel File manipulation library
+//! Rust Excel utils library
 
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -12,23 +12,60 @@ pub struct XlsxWorkbook {
     pub archive: ZipArchive<BufReader<File>>,
     pub sheets: HashMap<String, String>,
     pub defined_names: HashMap<String, String>,
-    //pub relationships: HashMap<String, String>,
-    pub lang: String,
+    pub shared_strings: String,
 }
 
 impl XlsxWorkbook {
     pub fn open(xls_path: &str) -> Result<XlsxWorkbook, std::io::Error> {
         let f = File::open(xls_path)?;
-        let reader: BufReader<File> = BufReader::new(f);
-        let mut archive = ZipArchive::new(reader)?;
+        let mut archive = ZipArchive::new(BufReader::new(f))?;
         let mut buf_workbook = String::new();
-        (archive.by_name("xl/workbook.xml")?).read_to_string(&mut buf_workbook)?;
-        let mut reader = Reader::from_str(&buf_workbook);
-        let mut sheets: HashMap<String, String> = HashMap::new();
-        // name: Used for sheet_name in sheet and name in definedName
-        let mut name = String::new();
-        // object_ref: Used for sheet_id in sheet and value text reference in definedName
+
+        // Used as internal or external reference to track in XML data
         let mut object_ref = String::new();
+        // Used as storage of name or paths of objects in XML data
+        let mut object_path = String::new();
+
+        // Mapping relationships. Link rId with paths
+        let mut rels: HashMap<String, String> = HashMap::new();
+        (archive.by_name("xl/_rels/workbook.xml.rels")?).read_to_string(&mut buf_workbook)?;
+        let mut reader = Reader::from_str(&buf_workbook);
+        loop {
+            match reader.read_event() {
+                Err(e) => panic!("Error at position {}: {:?}", reader.error_position(), e),
+                Ok(Event::Eof) => break,
+                Ok(Event::Empty(e)) => {
+                    if e.name().as_ref() == b"Relationship" {
+                        for attr in e.attributes() {
+                            match attr {
+                                Ok(attr) => match attr.key.as_ref() {
+                                    // Realmente importa r:id y con rId buscar en
+                                    // xl/_rels/workbook.xml.rels para vincular la ruta
+                                    // guardar en relationships
+                                    b"Id" => {
+                                        object_ref = attr.unescape_value().unwrap().into();
+                                    }
+                                    b"Target" => {
+                                        object_path = attr.unescape_value().unwrap().into();
+                                    }
+                                    _ => (),
+                                },
+                                Err(e) => {
+                                    panic!("Error at position {}: {:?}", reader.error_position(), e)
+                                }
+                            }
+                        }
+                        rels.insert(object_ref.clone(), object_path.clone());
+                    }
+                }
+                _ => (),
+            }
+        }
+        buf_workbook.clear();
+
+        (archive.by_name("xl/workbook.xml")?).read_to_string(&mut buf_workbook)?;
+        reader = Reader::from_str(&buf_workbook);
+        let mut sheets: HashMap<String, String> = HashMap::new();
         let mut defined_names: HashMap<String, String> = HashMap::new();
         loop {
             match reader.read_event() {
@@ -39,14 +76,16 @@ impl XlsxWorkbook {
                         for attr in e.attributes() {
                             match attr {
                                 Ok(attr) => match attr.key.as_ref() {
-                                    // Realmente importa r:id y con rId buscar en
-                                    // xl/_rels/workbook.xml.rels para vincular la ruta
-                                    // guardar en relationships
-                                    b"sheetId" => {
-                                        object_ref = attr.unescape_value().unwrap().into();
+                                    b"r:id" => {
+                                        // Link XML path through r:id using rels
+                                        object_path = rels
+                                            .get(attr.unescape_value().unwrap().as_ref())
+                                            .unwrap()
+                                            .into();
                                     }
                                     b"name" => {
-                                        name = attr.unescape_value().unwrap().into();
+                                        // This is the sheet name
+                                        object_ref = attr.unescape_value().unwrap().into();
                                     }
                                     _ => (),
                                 },
@@ -55,7 +94,7 @@ impl XlsxWorkbook {
                                 }
                             }
                         }
-                        sheets.insert(object_ref.clone(), name.clone());
+                        sheets.insert(object_ref.clone(), object_path.clone());
                     }
                 }
                 Ok(Event::Start(e)) => {
@@ -64,7 +103,7 @@ impl XlsxWorkbook {
                             match attr {
                                 Ok(attr) => match attr.key.as_ref() {
                                     b"name" => {
-                                        name = attr.unescape_value().unwrap().into();
+                                        object_path = attr.unescape_value().unwrap().into();
                                     }
                                     _ => (),
                                 },
@@ -82,7 +121,7 @@ impl XlsxWorkbook {
                             }
                             _ => (),
                         }
-                        defined_names.insert(name.clone(), object_ref.clone());
+                        defined_names.insert(object_path.clone(), object_ref.clone());
                     }
                 }
                 _ => (),
@@ -92,8 +131,7 @@ impl XlsxWorkbook {
             archive,
             sheets,
             defined_names,
-            //relationships,
-            lang: "".to_string(), // Not implemented yet
+            shared_strings: "".to_string(), // Not implemented yet
         })
     }
 }
