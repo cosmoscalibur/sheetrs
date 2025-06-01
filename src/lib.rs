@@ -39,13 +39,12 @@ impl XlsxWorkbook {
                         for attr in e.attributes() {
                             match attr {
                                 Ok(attr) => match attr.key.as_ref() {
-                                    // Realmente importa r:id y con rId buscar en
-                                    // xl/_rels/workbook.xml.rels para vincular la ruta
-                                    // guardar en relationships
+                                    // r:Id
                                     b"Id" => {
                                         object_ref = attr.unescape_value().unwrap().into();
                                     }
                                     b"Target" => {
+                                        // Relative path to `xl/`
                                         object_path = attr.unescape_value().unwrap().into();
                                     }
                                     _ => (),
@@ -185,4 +184,18 @@ pub fn invalid_formulas_by_sheet_path(
 
     buf_workbook.clear();
     cell_errors
+}
+
+pub fn invalid_formulas_all(workbook: &mut XlsxWorkbook) -> HashMap<String, Vec<String>> {
+    let mut cells_with_errors_insheet: Vec<String>;
+    let mut cells_with_errors: HashMap<String, Vec<String>> = HashMap::new();
+    for (sheet_name, sheet_path) in workbook.sheets.clone() {
+        cells_with_errors_insheet = invalid_formulas_by_sheet_path(workbook, &sheet_path);
+
+        if cells_with_errors_insheet.len() > 0 {
+            cells_with_errors.insert(sheet_name.clone(), cells_with_errors_insheet.clone());
+            cells_with_errors_insheet.clear();
+        }
+    }
+    return cells_with_errors;
 }
