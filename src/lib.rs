@@ -135,3 +135,54 @@ impl XlsxWorkbook {
         })
     }
 }
+
+pub fn invalid_formulas_by_sheet_path(
+    workbook: &mut XlsxWorkbook,
+    sheet_path: &str,
+) -> Vec<String> {
+    let mut buf_workbook = String::new();
+    let mut cell = String::new();
+    let mut is_error = false;
+    let mut cell_errors: Vec<String> = Vec::new();
+    (workbook
+        .archive
+        .by_name(&format!("xl/{sheet_path}"))
+        .unwrap())
+    .read_to_string(&mut buf_workbook)
+    .unwrap();
+    let mut reader = Reader::from_str(&buf_workbook);
+    loop {
+        match reader.read_event() {
+            Err(e) => panic!("Error at position {}: {:?}", reader.error_position(), e),
+            Ok(Event::Eof) => break,
+            Ok(Event::Start(e)) => {
+                if e.name().as_ref() == b"c" {
+                    for attr in e.attributes() {
+                        match attr {
+                            Ok(attr) => match attr.key.as_ref() {
+                                b"r" => {
+                                    cell = attr.unescape_value().unwrap().into();
+                                }
+                                b"t" => {
+                                    is_error = attr.unescape_value().unwrap() == "e";
+                                }
+                                _ => (),
+                            },
+                            Err(e) => {
+                                panic!("Error at position {}: {:?}", reader.error_position(), e)
+                            }
+                        }
+                    }
+                    if is_error {
+                        cell_errors.push(cell.clone());
+                        is_error = false;
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+
+    buf_workbook.clear();
+    cell_errors
+}
