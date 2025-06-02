@@ -11,9 +11,10 @@ fn main() {
         return;
     }
     let mut workbook = XlsxWorkbook::open(&xls_path).unwrap();
-    dbg!(&workbook.sheets);
-    dbg!(&workbook.defined_names);
-    let cells_with_errors = invalid_formulas_all(&mut workbook);
-    println!("Cells with detected errors: {:#?}", cells_with_errors);
+    println!(
+        "Cells with detected errors: {:#?}",
+        invalid_formulas_all(&mut workbook)
+    );
+    println!("Defined name errors: {:#?}", workbook.defined_name_errors());
     return;
 }

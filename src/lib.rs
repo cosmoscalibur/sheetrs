@@ -133,6 +133,16 @@ impl XlsxWorkbook {
             shared_strings: "".to_string(), // Not implemented yet
         })
     }
+
+    pub fn defined_name_errors(&self) -> HashMap<String, String> {
+        let mut def_name_errs: HashMap<String, String> = HashMap::new();
+        for (name, range) in &self.defined_names {
+            if range.ends_with("#REF!") {
+                def_name_errs.insert(name.clone(), range.clone());
+            }
+        }
+        return def_name_errs;
+    }
 }
 
 pub fn invalid_formulas_by_sheet_path(
