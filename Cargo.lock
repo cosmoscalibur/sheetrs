@@ -756,7 +756,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "xlsutils"
+name = "xlschecks"
 version = "0.1.0"
 dependencies = [
  "clap",

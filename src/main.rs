@@ -1,8 +1,8 @@
 use std::env;
-use xlsutils::{XlsxWorkbook, invalid_formulas_all};
+use xlschecks::{XlsxWorkbook, invalid_formulas_all};
 
 fn main() {
-    println!("XLSUtils Project");
+    println!("XLSChecks Project");
     let xls_path: String;
     if let Some(arg1) = env::args().nth(1) {
         xls_path = arg1;

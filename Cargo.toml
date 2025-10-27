@@ -1,13 +1,13 @@
 [package]
-name = "xlsutils"
+name = "xlschecks"
 version = "0.1.0"
 edition = "2024"
 description = "Excel command line tool"
 readme = "README.md"
 rust-version = "1.87.0"
-documentation = "https://github.com/cosmoscalibur/xlsutils"
-homepage = "https://github.com/cosmoscalibur/xlsutils"
-repository = "https://github.com/cosmoscalibur/xlsutils"
+documentation = "https://github.com/cosmoscalibur/xlschecks"
+homepage = "https://github.com/cosmoscalibur/xlschecks"
+repository = "https://github.com/cosmoscalibur/xlschecks"
 license = "MIT"
 keywords = ["excel", "command line"]
 categories = ["command-line-utilities", "parser-implementations"]
