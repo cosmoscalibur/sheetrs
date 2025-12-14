@@ -43,7 +43,7 @@ impl LinterRule for ExcessiveSheetCountsRule {
     }
 
     fn default_active(&self) -> bool {
-        false
+        true
     }
 
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
@@ -83,7 +83,8 @@ mod tests {
                 used_range: None,
                 hidden_columns: Vec::new(),
                 hidden_rows: Vec::new(),
-                merged_cells: Vec::new(), formula_parsing_error: None,
+                merged_cells: Vec::new(),
+                formula_parsing_error: None,
             });
         }
 

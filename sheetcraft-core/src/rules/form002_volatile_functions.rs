@@ -1,4 +1,4 @@
-//! PERF004: Avoid volatile functions
+//! FORM002: Avoid volatile functions
 
 use super::{LinterRule, RuleCategory};
 use crate::config::LinterConfig;
@@ -65,7 +65,7 @@ impl LinterRule for VolatileFunctionsRule {
     }
 
     fn default_active(&self) -> bool {
-        false
+        true
     }
 
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {

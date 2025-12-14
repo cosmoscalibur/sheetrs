@@ -92,6 +92,7 @@ fn create_all_rules(config: &LinterConfig) -> Vec<Box<dyn LinterRule>> {
 /// Get all rule IDs that are active by default
 pub fn default_active_rule_ids() -> Vec<&'static str> {
     vec![
-        "ERR001", "ERR002", "SEC001", "SEC004", "UX001", "PERF001", "PERF002", "PERF003", "PERF004",
+        "ERR001", "ERR002", "ERR003", "SEC001", "UX001", "PERF001", "PERF002", "PERF003", "SM001",
+        "SM002", "SM005", "FORM002", "FORM003", "FORM004", "FORM005", "FORM008", "FORM009",
     ]
 }

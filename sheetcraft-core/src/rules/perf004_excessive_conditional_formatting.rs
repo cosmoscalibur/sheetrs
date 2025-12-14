@@ -41,7 +41,7 @@ impl LinterRule for ExcessiveConditionalFormattingRule {
     }
 
     fn default_active(&self) -> bool {
-        true
+        false
     }
 
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {

@@ -50,7 +50,7 @@ impl LinterRule for WholeColumnRowRefsRule {
     }
 
     fn default_active(&self) -> bool {
-        false
+        true
     }
 
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {

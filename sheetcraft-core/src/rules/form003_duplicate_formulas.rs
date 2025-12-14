@@ -22,7 +22,7 @@ impl LinterRule for DuplicateFormulasRule {
     }
 
     fn default_active(&self) -> bool {
-        false
+        true
     }
 
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {

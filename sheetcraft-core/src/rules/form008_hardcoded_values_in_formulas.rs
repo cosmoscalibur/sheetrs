@@ -10,7 +10,7 @@ use regex::Regex;
 /// Hardcoded values make maintenance difficult and hide business logic.
 ///
 /// Configuration:
-/// - `ignore_hardcoded_num_values`: List of specific numbers to ignore (e.g. [1.5])
+/// - `ignore_hardcoded_num_values`: List of specific numbers (as strings) to ignore (e.g. ["1.5"])
 /// - `ignore_hardcoded_int_values`: If true, ignore all integer hardcoded values.
 /// - `ignore_hardcoded_power_of_ten`: If true, ignore all power of ten hardcoded values (10, 100, 0.1, etc).
 pub struct HardcodedValuesInFormulasRule {
@@ -21,17 +21,24 @@ pub struct HardcodedValuesInFormulasRule {
 
 impl HardcodedValuesInFormulasRule {
     pub fn new(config: &LinterConfig) -> Self {
-        let ignored_values = config
-            .get_param_float_array("ignore_hardcoded_num_values", None)
+        let ignored_strings = config
+            .get_param_array("ignore_hardcoded_num_values", None)
             .unwrap_or_default();
+
+        let mut ignored_values = Vec::new();
+        for s in ignored_strings {
+            if let Ok(val) = s.parse::<f64>() {
+                ignored_values.push(val);
+            }
+        }
 
         let ignore_ints = config
             .get_param_bool("ignore_hardcoded_int_values", None)
-            .unwrap_or(false);
+            .unwrap_or(true);
 
         let ignore_pow10 = config
             .get_param_bool("ignore_hardcoded_power_of_ten", None)
-            .unwrap_or(false);
+            .unwrap_or(true);
 
         Self {
             ignored_values,
