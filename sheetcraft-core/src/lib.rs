@@ -1,4 +1,4 @@
-//! xlslint-core: Core library for Excel/ODS linting
+//! sheetcraft-core: Core library for Excel/ODS linting
 //!
 //! This library provides a fast, extensible linting framework for spreadsheet files
 //! with hierarchical violation reporting.

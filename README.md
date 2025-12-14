@@ -1,125 +1,113 @@
-# xlslint
+# SheetCraft Suite
 
-Fast Excel/ODS linter with hierarchical violation reporting, written in Rust.
+The **SheetCraft Suite** is a high-performance toolkit for processing, linting, and manipulating spreadsheets (XLSX and ODS). Written in Rust, it is designed for speed, safety, and ease of integration into CI/CD pipelines.
 
-## Features
+The suite consists of three specialized CLI tools:
 
-- **Fast**: Optimized for performance, ideal for CI/CD pipelines
-- **Extensible**: Easy to add new linter rules
-- **Hierarchical Reporting**: Violations organized by book → sheet → cell
-- **Configurable**: TOML-based configuration with global and sheet-specific settings
-- **Multiple Formats**: XLSX (Excel) and ODS (LibreOffice) support
+- **sheetlint**: Advanced spreadsheet linter with hierarchical rule enforcement.
+- **sheetstats**: Detailed statistics and dependency analysis for workbooks.
+- **sheetcli**: General-purpose spreadsheet operations (convert, modify, repair).
 
 ## Installation
 
-```bash
-cargo install --path xlslint-cli
-```
+### From Source
 
-## Usage
-
-### Basic Usage
+Requires [Rust](https://www.rust-lang.org/tools/install) (latest stable).
 
 ```bash
-# Lint a file with default rules
-xlslint myfile.xlsx
+# Clone the repository
+git clone https://github.com/cosmoscalibur/sheetcraft.git
+cd sheetcraft
 
-# Lint with custom configuration
-xlslint myfile.xlsx --config xlslint.toml
-
-# JSON output for CI/CD
-xlslint myfile.xlsx --format json
-
-# Show only errors
-xlslint myfile.xlsx --errors-only
+# Install all tools
+cargo install --path sheetlint
+cargo install --path sheetstats
+cargo install --path sheetcli
 ```
 
-### Configuration
+## Tools Overview
 
-Create a `xlslint.toml` file to customize linter behavior:
+### 1. sheetlint
 
-```toml
-[global]
-# Disable specific rules
-disabled_rules = ["UX001"]
+A comprehensive linter for detecting errors, security issues, performance bottlenecks, and style violations.
 
-[rules.PERF003]
-threshold_rows = 30
-threshold_columns = 30
+**Features:**
 
-[sheets."Summary"]
-# Disable rules for specific sheets
-disabled_rules = ["PERF002"]
-```
+- **Hierarchical Reporting**: Violations grouped by file → sheet → cell.
+- **Configurable**: TOML-based configuration with global and per-sheet overrides.
+- **Formats**: Support for JSON and text output.
 
-## Default Active Rules
-
-The following rules are active by default:
-
-### Unresolved Errors
-- **ERR001**: Error cell values (#DIV/0!, #REF!, etc.)
-- **ERR002**: Broken named ranges
-
-### Security and Privacy
-- **SEC001**: External links in formulas or URLs
-- **SEC004**: Macros and VBA code detection
-
-### Formatting and Usability
-- **UX001**: Inconsistent number formatting
-
-### Performance
-- **PERF001**: Unused named ranges
-- **PERF002**: Unused sheets
-- **PERF003**: Large used range (>20 rows/cols beyond data)
-- **PERF006**: Excessive conditional formatting
-
-## Available Rules
-
-All rules can be enabled/disabled via configuration. The following additional rules are available:
-
-### Security and Privacy
-- **SEC002**: Hidden sheets
-- **SEC003**: Hidden columns or rows
-
-### Formatting and Usability
-- **UX004**: Blank rows/columns in used ranges
-
-### Performance
-- **PERF004**: Volatile functions (NOW, RAND, INDIRECT, etc.)
-- **PERF005**: Duplicate formulas
-
-### Structural and Maintainability
-- **SM001**: Excessive sheet counts (default: >50)
-- **SM002**: Duplicate sheet names
-- **SM003**: Long formulas (default: >255 chars)
-- **SM004**: Long text cells (default: >255 chars)
-- **SM005**: Merged cells
-- **SM006**: Non-descriptive sheet names
-
-### Formula Best Practices
-- **FORM001**: Whole column/row references (A:A, 1:1)
-- **FORM002**: Empty string tests (suggest ISBLANK)
-- **FORM003**: Deep formula nesting (default: >5 levels)
-- **FORM004**: Deeply nested IF statements (default: >5 levels)
-- **FORM005**: Circular references
-
-## Development
-
-### Building
+**Usage:**
 
 ```bash
-cargo build --release
+# Lint a file
+sheetlint workbook.xlsx
+
+# Lint with custom config
+sheetlint workbook.xlsx --config sheetlint.toml
+
+# CI/CD mode (JSON output) (:warning: experimental/unstable)
+sheetlint workbook.xlsx --format json > report.json
 ```
 
-### Testing
+**Key Rules:**
+
+- `ERR001`: Error cells (#DIV/0!, etc.)
+- `SEC001`: External links
+- `PERF006`: Excessive conditional formatting
+- `UX002`: Inconsistent date formats
+- `SM001`: Excessive sheet counts
+
+### 2. sheetstats
+
+Provides deep insights into workbook structure, complexity, and dependencies.
+
+**Features:**
+
+- **General Stats**: Counts of sheets, cells, formulas, values.
+- **Dependencies**: Builds a graph of inter-sheet dependencies (upcoming).
+
+**Usage:**
 
 ```bash
-cargo test
+# Get general stats
+sheetstats workbook.xlsx
 ```
 
-### Adding New Rules
+### 3. sheetcli
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for details on adding new linter rules.
+A swiss-army knife for spreadsheet manipulation.
+
+**Features:**
+
+- **Modification**: Remove sheets, delete named ranges.
+
+**Usage:**
+
+```bash
+# Remove sensitive sheets and save to new file
+sheetcli input.xlsx --remove-sheets "Secrets" "Admin" --output cleaned.xlsx
+
+# Remove named ranges
+sheetcli input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
+```
+
+## Roadmap
+
+- **ODS Support**: Partial support implemented. Full parity with XLSX is in progress.
+- **Python Bindings**: PyO3 bindings for direct integration with Python data workflows.
+- **Windows & WASM**: Windows support is likely functional but untested. WASM target for browser-based linting is planned.
+- **Performance Review**: Continuous optimization for large workbooks (>1M cells).
+- **Limitation Review**: Issues with Calamine failing to load formulas in some corrupted files (tracked in SEC005).
+
+## Known Issues
+
+- **SEC005**: Some corrupted files may cause formula parsing errors in the underlying `calamine` library. `sheetlint` reports these as distinct violations.
+- **ERR001**: Currently reports all affected cells. Future versions may trace only the root cause error.
+
+## Architecture
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed technical breakdown of the `sheetcraft-core` library and the CLI tool implementations.
 
 ## License
 
