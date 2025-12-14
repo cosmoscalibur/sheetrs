@@ -1,0 +1,20 @@
+[package]
+name = "sheetstats"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Statistics generator for SheetChecks"
+
+[[bin]]
+name = "sheetstats"
+path = "src/main.rs"
+
+[dependencies]
+sheetcraft-core = { path = "../sheetcraft-core" }
+clap.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json = "1.0"
+zip.workspace = true

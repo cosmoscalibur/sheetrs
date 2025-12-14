@@ -1,0 +1,19 @@
+[package]
+name = "sheetcli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI tools for SheetChecks"
+
+[[bin]]
+name = "sheetcli"
+path = "src/main.rs"
+
+[dependencies]
+sheetcraft-core = { path = "../sheetcraft-core" }
+clap.workspace = true
+anyhow.workspace = true
+zip.workspace = true
+quick-xml.workspace = true
