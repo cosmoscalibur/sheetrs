@@ -1,12 +1,15 @@
 # SheetCraft Suite
 
-The **SheetCraft Suite** is a high-performance toolkit for processing, linting, and manipulating spreadsheets (XLSX and ODS). Written in Rust, it is designed for speed, safety, and ease of integration into CI/CD pipelines.
+The **SheetCraft Suite** is a high-performance toolkit for processing, linting,
+and manipulating spreadsheets (XLSX and ODS). Written in Rust, it is designed
+for speed, safety, and ease of integration into CI/CD pipelines.
 
 The suite consists of three specialized CLI tools:
 
 - **sheetlint**: Advanced spreadsheet linter with hierarchical rule enforcement.
 - **sheetstats**: Detailed statistics and dependency analysis for workbooks.
-- **sheetcli**: General-purpose spreadsheet operations (convert, modify, repair).
+- **sheetcli**: General-purpose spreadsheet operations (convert, modify,
+  repair).
 
 ## Installation
 
@@ -29,12 +32,14 @@ cargo install --path sheetcli
 
 ### 1. sheetlint
 
-A comprehensive linter for detecting errors, security issues, performance bottlenecks, and style violations.
+A comprehensive linter for detecting errors, security issues, performance
+bottlenecks, and style violations.
 
 **Features:**
 
 - **Hierarchical Reporting**: Violations grouped by file → sheet → cell.
-- **Configurable**: TOML-based configuration with global and per-sheet overrides.
+- **Configurable**: TOML-based configuration with global and per-sheet
+  overrides.
 - **Formats**: Support for JSON and text output.
 
 **Usage:**
@@ -94,21 +99,30 @@ sheetcli input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
 
 ## Roadmap
 
-- **ODS Support**: Partial support implemented. Full parity with XLSX is in progress.
-- **Python Bindings**: PyO3 bindings for direct integration with Python data workflows.
-- **Windows & WASM**: Windows support is likely functional but untested. WASM target for browser-based linting is planned.
-- **Performance Review**: Continuous optimization for large workbooks (>1M cells).
-- **Limitation Review**: Issues with Calamine failing to load formulas in some corrupted files (tracked in SEC005).
+- **ODS Support**: Partial support implemented. Full parity with XLSX is in
+  progress.
+- **Python Bindings**: PyO3 bindings for direct integration with Python data
+  workflows.
+- **Windows & WASM**: Windows support is likely functional but untested. WASM
+  target for browser-based linting is planned.
+- **Performance Review**: Continuous optimization for large workbooks (>1M
+  cells).
+- **Limitation Review**: Issues with Calamine failing to load formulas in some
+  corrupted files (tracked in SEC005).
 
 ## Known Issues
 
-- **SEC005**: Some corrupted files may cause formula parsing errors in the underlying `calamine` library. `sheetlint` reports these as distinct violations.
-- **ERR001**: Currently reports all affected cells. Future versions may trace only the root cause error.
+- **SEC005**: Some corrupted files may cause formula parsing errors in the
+  underlying `calamine` library. `sheetlint` reports these as distinct
+  violations.
+- **ERR001**: Currently reports all affected cells. Future versions may trace
+  only the root cause error.
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed technical breakdown of the `sheetcraft-core` library and the CLI tool implementations.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed technical breakdown of the
+`sheetcraft-core` library and the CLI tool implementations.
 
 ## License
 
-MIT OR Apache-2.0
+MIT
