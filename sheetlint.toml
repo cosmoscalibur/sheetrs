@@ -3,7 +3,7 @@
 # Global configuration
 [global]
 # List of enabled rules (empty means all default-active rules are enabled)
-enabled_rules = ["SEC005", "FORM002"]
+enabled_rules = ["ERR001"]
 
 # List of disabled rules
 disabled_rules = []
@@ -21,6 +21,7 @@ max_formula_length = 1000
 max_text_length = 2000
 avoid_sheet_names = ["sheet", "copy"]
 date_format = "mm-dd-yy"
+expand_ranges_in_dependencies = false
 # Volatile functions to detect (FORM002)
 volatile_functions = ["NOW", "TODAY", "RAND", "RANDBETWEEN", "OFFSET", "INDIRECT"]
 # Formula nesting limits
@@ -39,7 +40,7 @@ ignore_hardcoded_power_of_ten = true
 # Override global parameters or disable rules for specific sheets
 
 [sheets."Auxiliar"]
-disabled_rules = ["ERR001", "SM003"]
+disabled_rules = ["SM003"]
 
 [sheets."INPUTS"]
 disabled_rules = ["SM003", "FORM003"]

@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Core library for Excel/ODS linting with hierarchical violation reporting"
 
 [dependencies]
-calamine.workspace = true
+
 serde.workspace = true
 toml.workspace = true
 anyhow.workspace = true

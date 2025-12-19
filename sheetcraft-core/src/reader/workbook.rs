@@ -41,9 +41,24 @@ pub struct Sheet {
     pub merged_cells: Vec<(u32, u32, u32, u32)>,
     /// Error message if there was an error parsing formulas for this sheet
     pub formula_parsing_error: Option<String>,
+    /// Internal path to the sheet XML file in the ZIP archive
+    pub sheet_path: Option<String>,
 }
 
 impl Sheet {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            cells: HashMap::new(),
+            used_range: None,
+            hidden_columns: Vec::new(),
+            hidden_rows: Vec::new(),
+            merged_cells: Vec::new(),
+            formula_parsing_error: None,
+            sheet_path: None,
+        }
+    }
+
     /// Get a cell at the given position
     pub fn get_cell(&self, row: u32, col: u32) -> Option<&Cell> {
         self.cells.get(&(row, col))
@@ -100,14 +115,14 @@ pub enum CellValue {
     Number(f64),
     Text(String),
     Boolean(bool),
-    Error(String),
+    Error(String, Option<String>),
     Formula(String),
 }
 
 impl CellValue {
     /// Check if the cell contains an error
     pub fn is_error(&self) -> bool {
-        matches!(self, CellValue::Error(_))
+        matches!(self, CellValue::Error(_, _))
     }
 
     /// Check if the cell is empty
@@ -117,13 +132,17 @@ impl CellValue {
 
     /// Check if the cell contains a formula
     pub fn is_formula(&self) -> bool {
-        matches!(self, CellValue::Formula(_))
+        match self {
+            CellValue::Formula(_) => true,
+            CellValue::Error(_, Some(_)) => true,
+            _ => false,
+        }
     }
 
     /// Get the error value if this is an error cell
     pub fn as_error(&self) -> Option<&str> {
         match self {
-            CellValue::Error(e) => Some(e),
+            CellValue::Error(e, _) => Some(e),
             _ => None,
         }
     }
@@ -132,6 +151,7 @@ impl CellValue {
     pub fn as_formula(&self) -> Option<&str> {
         match self {
             CellValue::Formula(f) => Some(f),
+            CellValue::Error(_, Some(f)) => Some(f),
             _ => None,
         }
     }

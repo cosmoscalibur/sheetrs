@@ -72,6 +72,7 @@ mod tests {
                     (2, 0, 4, 0), // A3:A5
                 ],
                 formula_parsing_error: None,
+                sheet_path: None,
             }],
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),
@@ -99,6 +100,7 @@ mod tests {
                 hidden_rows: Vec::new(),
                 merged_cells: Vec::new(),
                 formula_parsing_error: None,
+                sheet_path: None,
             }],
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),

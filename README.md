@@ -107,14 +107,9 @@ sheetcli input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
   target for browser-based linting is planned.
 - **Performance Review**: Continuous optimization for large workbooks (>1M
   cells).
-- **Limitation Review**: Issues with Calamine failing to load formulas in some
-  corrupted files (tracked in SEC005).
 
 ## Known Issues
 
-- **SEC005**: Some corrupted files may cause formula parsing errors in the
-  underlying `calamine` library. `sheetlint` reports these as distinct
-  violations.
 - **ERR001**: Currently reports all affected cells. Future versions may trace
   only the root cause error.
 

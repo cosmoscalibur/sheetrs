@@ -32,10 +32,17 @@ pub fn create_enabled_rules(config: &LinterConfig) -> Vec<Box<dyn LinterRule>> {
     all_rules
         .into_iter()
         .filter(|rule| {
-            // Use default active status if not explicitly configured
-            let default_enabled = rule.default_active();
-            config.is_rule_enabled(rule.id())
-                && (default_enabled || config.global.enabled_rules.contains(rule.id()))
+            // Check if rule is enabled in config (handles filtering by enabled_rules and disabled_rules)
+            let is_enabled_in_config = config.is_rule_enabled(rule.id());
+
+            if config.global.enabled_rules.is_empty() {
+                // If no specific allowlist, use default_active AND ensure not disabled
+                rule.default_active() && is_enabled_in_config
+            } else {
+                // If allowlist exists, is_rule_enabled_in_config determines the truth
+                // (it already checks if it matches the allowlist OR is explicitly disabled)
+                is_enabled_in_config
+            }
         })
         .collect()
 }
@@ -49,9 +56,6 @@ fn create_all_rules(config: &LinterConfig) -> Vec<Box<dyn LinterRule>> {
         Box::new(sec002_hidden_sheets::HiddenSheetsRule),
         Box::new(sec003_hidden_columns_rows::HiddenColumnsRowsRule),
         Box::new(sec004_macros_vba::MacrosVbaRule),
-        Box::new(sec005_possible_corruption::PossibleCorruptionRule::new(
-            config,
-        )),
         Box::new(ux001_inconsistent_number_format::InconsistentNumberFormatRule),
         Box::new(ux003_blank_rows_columns::BlankRowsColumnsRule::new(config)),
         Box::new(perf001_unused_named_ranges::UnusedNamedRangesRule),
@@ -85,7 +89,9 @@ fn create_all_rules(config: &LinterConfig) -> Vec<Box<dyn LinterRule>> {
             config,
         )),
         Box::new(ux002_inconsistent_date_format::InconsistentDateFormatRule::new(config)),
-        Box::new(err003_circular_references::CircularReferenceRule::new()),
+        Box::new(err003_circular_references::CircularReferenceRule::new(
+            config,
+        )),
     ]
 }
 
@@ -95,4 +101,30 @@ pub fn default_active_rule_ids() -> Vec<&'static str> {
         "ERR001", "ERR002", "ERR003", "SEC001", "UX001", "PERF001", "PERF002", "PERF003", "SM001",
         "SM002", "SM005", "FORM002", "FORM003", "FORM004", "FORM005", "FORM008", "FORM009",
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prefix_activation() {
+        let mut config = LinterConfig::default();
+        // ERR003 is default inactive.
+        // Enable "ERR" prefix.
+        config.global.enabled_rules.insert("ERR".to_string());
+
+        // This should enable ERR003
+        let enabled = create_enabled_rules(&config);
+        assert!(enabled.iter().any(|r| r.id() == "ERR003"));
+    }
+
+    #[test]
+    fn test_default_activation() {
+        let config = LinterConfig::default();
+        // ERR003 is now default active
+        let enabled = create_enabled_rules(&config);
+        assert!(enabled.iter().any(|r| r.id() == "ERR003"));
+        assert!(enabled.iter().any(|r| r.id() == "ERR001"));
+    }
 }

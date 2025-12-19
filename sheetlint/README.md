@@ -41,7 +41,7 @@ disabled_rules = ["UX", "SM"]
 |----|-------------|----------------|--------|
 | **ERR001** | Error cell values (#DIV/0!, #REF!, etc.) | Yes | None |
 | **ERR002** | Broken named ranges | Yes | None |
-| **ERR003** | Circular references | Yes | None |
+| **ERR003** | Circular references | Yes | `expand_ranges_in_dependencies` (bool, default: false) |
 
 ### Security Rules (SEC)
 
@@ -51,7 +51,6 @@ disabled_rules = ["UX", "SM"]
 | **SEC002** | Hidden sheets | No | None |
 | **SEC003** | Hidden columns or rows | No | None |
 | **SEC004** | Macros and VBA code detection (:warning: Not tested) | No | None |
-| **SEC005** | Possible file corruption (parsing errors) | No | None |
 
 ### Performance Rules (PERF)
 

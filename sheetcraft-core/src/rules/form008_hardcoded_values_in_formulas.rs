@@ -206,7 +206,7 @@ mod tests {
             hidden_columns: vec![],
             hidden_rows: vec![],
             merged_cells: vec![],
-            formula_parsing_error: None,
+            formula_parsing_error: None, sheet_path: None,
         };
 
         let workbook = Workbook {
@@ -222,6 +222,11 @@ mod tests {
         config.global.params.insert(
             "ignore_hardcoded_int_values".to_string(),
             Value::Boolean(true),
+        );
+        // Explicitly disable pow10 ignore to test specific values
+        config.global.params.insert(
+            "ignore_hardcoded_power_of_ten".to_string(),
+            Value::Boolean(false),
         );
 
         // This should ignore: 123, 0, 10, 100
@@ -244,6 +249,10 @@ mod tests {
             "ignore_hardcoded_power_of_ten".to_string(),
             Value::Boolean(true),
         );
+        config2.global.params.insert(
+            "ignore_hardcoded_int_values".to_string(),
+            Value::Boolean(false),
+        );
 
         // Should ignore: 10, 100, 0.1, 0.01
         // Should flag: 123, 0 (not strict pow10?), 1.5
@@ -264,9 +273,18 @@ mod tests {
 
         // Case 3: Specific list
         let mut config3 = LinterConfig::default();
+        // Disable defaults
+        config3.global.params.insert(
+            "ignore_hardcoded_int_values".to_string(),
+            Value::Boolean(false),
+        );
+        config3.global.params.insert(
+            "ignore_hardcoded_power_of_ten".to_string(),
+            Value::Boolean(false),
+        );
         config3.global.params.insert(
             "ignore_hardcoded_num_values".to_string(),
-            Value::Array(vec![Value::Float(1.5)]),
+            Value::Array(vec![Value::String("1.5".to_string())]),
         );
 
         // Should ignore: 1.5
@@ -278,5 +296,41 @@ mod tests {
 
         assert!(!msgs3.contains(&"Hardcoded value found in formula: 1.5".to_string()));
         assert!(msgs3.contains(&"Hardcoded value found in formula: 123".to_string()));
+
+        // Case 4: String list (reproduction)
+        let mut config4 = LinterConfig::default();
+        // Disable defaults to ensure exclusion is due to list
+        config4.global.params.insert(
+            "ignore_hardcoded_int_values".to_string(),
+            Value::Boolean(false),
+        );
+        config4.global.params.insert(
+            "ignore_hardcoded_power_of_ten".to_string(),
+            Value::Boolean(false),
+        );
+        config4.global.params.insert(
+            "ignore_hardcoded_num_values".to_string(),
+            Value::Array(vec![
+                Value::String("0.1".to_string()),
+                Value::String("1.5".to_string()), // Should match numeric 1.5
+                Value::String("10".to_string()),  // Should match numeric 10
+            ]),
+        );
+
+        let rule4 = HardcodedValuesInFormulasRule::new(&config4);
+        let violations4 = rule4.check(&workbook).unwrap();
+        let msgs4: Vec<String> = violations4.iter().map(|v| v.message.clone()).collect();
+
+        // 1.5 should be ignored
+        assert!(!msgs4.contains(&"Hardcoded value found in formula: 1.5".to_string()));
+        // 0.1 should be ignored
+        assert!(!msgs4.contains(&"Hardcoded value found in formula: 0.1".to_string()));
+        // 10 should be ignored (it was present in IF(A1>10, ...) )
+        // Cell (0,2): =IF(A1>10, "Value: 5", 100)
+        // 10 is found.
+        assert!(!msgs4.contains(&"Hardcoded value found in formula: 10".to_string()));
+
+        // 100 is NOT ignored
+        assert!(msgs4.contains(&"Hardcoded value found in formula: 100".to_string()));
     }
 }

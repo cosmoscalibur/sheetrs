@@ -339,7 +339,15 @@ fn extract_external_workbook_names(formula: &str) -> Vec<String> {
                 current_name.push(']');
                 // Only add if it's not empty brackets (unlikely but safe)
                 if current_name.len() > 2 {
-                    names.push(current_name.clone());
+                    // Ignore ODS internal references which look like [.A1]
+                    // Ignore ODS error references like [#REF!]
+                    // Ignore ODS internal sheet references like [$Sheet1.A1]
+                    if !current_name.starts_with("[.")
+                        && !current_name.contains("#REF!")
+                        && !current_name.starts_with("[$")
+                    {
+                        names.push(current_name.clone());
+                    }
                 }
                 collecting_bracket = false;
             }
@@ -429,7 +437,7 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
+            merged_cells: Vec::new(), sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -469,7 +477,7 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
+            merged_cells: Vec::new(), sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -525,7 +533,7 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
+            merged_cells: Vec::new(), sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -542,5 +550,79 @@ mod tests {
 
         assert_eq!(violations.len(), 1);
         assert!(violations[0].message.contains("[Book1.xlsx]"));
+    }
+    #[test]
+    fn test_ignore_ods_internal_references() {
+        let mut cells = HashMap::new();
+        // ODS style internal reference: of:=[.A1] + [.B2]
+        // This should be ignored.
+        cells.insert(
+            (0, 0),
+            Cell {
+                num_fmt: None,
+                row: 0,
+                col: 0,
+                value: CellValue::Formula("=of:=[.A1]+[.B2]".to_string()),
+            },
+        );
+        // Mixed: valid external link + ODS internal + REF error + Internal Sheet Ref
+        cells.insert(
+            (0, 1),
+            Cell {
+                num_fmt: None,
+                row: 0,
+                col: 1,
+                value: CellValue::Formula(
+                    "=[Book1.xlsx]Sheet1!A1 + [.C3] + [#REF!] + [$Sheet1.A1]".to_string(),
+                ),
+            },
+        );
+
+        let sheet = Sheet {
+            name: "Sheet1".to_string(),
+            cells,
+            used_range: Some((1, 1)),
+            hidden_columns: Vec::new(),
+            hidden_rows: Vec::new(),
+            merged_cells: Vec::new(), sheet_path: None,
+            formula_parsing_error: None,
+        };
+
+        let workbook = Workbook {
+            path: PathBuf::from("test.ods"),
+            sheets: vec![sheet],
+            defined_names: HashMap::new(),
+            hidden_sheets: Vec::new(),
+            has_macros: false,
+        };
+
+        let rule = ExternalLinksRule::default();
+        let violations = rule.check(&workbook).unwrap();
+
+        // Should only find Book1.xlsx, NOT .A1 or .B2 or .C3
+        // Currently, without fix, it will likely find 4 violations or 1 violation with multiple ranges if grouped incorrectly?
+        // Actually, it groups by workbook name.
+        // So we expect violations for: Book1.xlsx, .A1, .B2, .C3
+
+        // We want ONLY Book1.xlsx
+
+        let messages: Vec<String> = violations.iter().map(|v| v.message.clone()).collect();
+        println!("Violations found: {:?}", messages);
+
+        // To verify reproduction, we ASSERT that we DO NOT have false positives.
+        // This test will FAIL before the fix.
+
+        let has_book1 = messages.iter().any(|m| m.contains("[Book1.xlsx]"));
+        let has_a1 = messages.iter().any(|m| m.contains("[.A1]"));
+        let has_ref = messages.iter().any(|m| m.contains("[#REF!]"));
+        let has_sheet_ref = messages.iter().any(|m| m.contains("[$Sheet1.A1]"));
+
+        assert!(has_book1, "Should detect actual external link");
+        assert!(!has_a1, "Should NOT detect ODS internal reference [.A1]");
+        assert!(!has_ref, "Should NOT detect REF error [#REF!]");
+        assert!(
+            !has_sheet_ref,
+            "Should NOT detect ODS internal sheet reference [$Sheet1.A1]"
+        );
     }
 }

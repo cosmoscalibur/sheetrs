@@ -58,7 +58,7 @@ mod tests {
                     used_range: None,
                     hidden_columns: Vec::new(),
                     hidden_rows: Vec::new(),
-                    merged_cells: Vec::new(), formula_parsing_error: None,
+                    merged_cells: Vec::new(), sheet_path: None, formula_parsing_error: None,
                 },
             ],
             defined_names: HashMap::new(),

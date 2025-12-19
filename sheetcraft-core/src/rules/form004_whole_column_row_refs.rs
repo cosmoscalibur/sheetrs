@@ -205,7 +205,7 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
+            merged_cells: Vec::new(), sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -244,7 +244,7 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
+            merged_cells: Vec::new(), sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -283,7 +283,7 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
+            merged_cells: Vec::new(), sheet_path: None,
             formula_parsing_error: None,
         };
 

@@ -107,7 +107,7 @@ mod tests {
             hidden_columns: vec![],
             hidden_rows: vec![],
             merged_cells: vec![],
-            formula_parsing_error: None,
+            formula_parsing_error: None, sheet_path: None,
         };
 
         let workbook = Workbook {

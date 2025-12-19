@@ -43,22 +43,11 @@ impl LinterRule for BrokenNamedRangesRule {
     }
 }
 
-/// Check if a reference is broken (points to non-existent sheet or invalid range)
-fn is_broken_reference(workbook: &Workbook, reference: &str) -> bool {
-    // Simple check: if reference contains a sheet name, verify it exists
-    if let Some(sheet_name) = extract_sheet_name(reference) {
-        return workbook.get_sheet(sheet_name).is_none();
-    }
-    
-    // If we can't parse it, assume it might be broken
-    // This is a simplified implementation - a full implementation would
-    // need more sophisticated reference parsing
-    false
-}
-
-/// Extract sheet name from a reference like "Sheet1!A1:B2"
-fn extract_sheet_name(reference: &str) -> Option<&str> {
-    reference.split('!').next()
+/// Check if a reference is broken (contains #REF! error)
+fn is_broken_reference(_workbook: &Workbook, reference: &str) -> bool {
+    // Per user request: validate REF error in range definition, do NOT use sheet existence.
+    // Example: "INGRESOS!#REF!"
+    reference.contains("#REF!")
 }
 
 #[cfg(test)]
@@ -74,14 +63,16 @@ mod tests {
             name: "Sheet1".to_string(),
             cells: HashMap::new(),
             used_range: None,
-                hidden_columns: Vec::new(),
-                hidden_rows: Vec::new(),
-                merged_cells: Vec::new(), formula_parsing_error: None,
+            hidden_columns: Vec::new(),
+            hidden_rows: Vec::new(),
+            merged_cells: Vec::new(), sheet_path: None,
+            formula_parsing_error: None,
         };
 
         let mut defined_names = HashMap::new();
         defined_names.insert("ValidRange".to_string(), "Sheet1!A1:B2".to_string());
-        defined_names.insert("BrokenRange".to_string(), "NonExistentSheet!A1:B2".to_string());
+        // This SHOULD be reported
+        defined_names.insert("BrokenRange".to_string(), "Sheet1!#REF!".to_string());
 
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
