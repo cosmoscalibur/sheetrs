@@ -1985,4 +1985,64 @@ mod tests {
         // Note: We don't test t="e" without formula because it's impossible in real files
         // Every error cell in Excel/ODS has a formula that evaluated to the error
     }
+
+    #[test]
+    fn test_translate_shared_formula() {
+        // Test 1: Simple cell reference with row shift
+        assert_eq!(translate_shared_formula("A1+B1", 2, 0), "A3+B3");
+
+        // Test 2: Column shift
+        assert_eq!(translate_shared_formula("A1+B1", 0, 2), "C1+D1");
+
+        // Test 3: Both row and column shift
+        assert_eq!(translate_shared_formula("A1", 1, 1), "B2");
+
+        // Test 4: Absolute column reference (should not shift column)
+        assert_eq!(translate_shared_formula("$A1+B1", 2, 1), "$A3+C3");
+
+        // Test 5: Absolute row reference (should not shift row)
+        assert_eq!(translate_shared_formula("A$1+B1", 2, 1), "B$1+C3");
+
+        // Test 6: Fully absolute reference (should not shift at all)
+        assert_eq!(translate_shared_formula("$A$1", 5, 5), "$A$1");
+
+        // Test 7: Mixed absolute/relative in same formula
+        assert_eq!(translate_shared_formula("$A1+B$1+C1", 2, 1), "$A3+C$1+D3");
+
+        // Test 8: Sheet-qualified references
+        assert_eq!(
+            translate_shared_formula("Sheet1!A1+A1", 1, 0),
+            "Sheet1!A2+A2"
+        );
+
+        // Test 9: Sheet with absolute references
+        assert_eq!(
+            translate_shared_formula("Sheet1!$A$1+A1", 1, 1),
+            "Sheet1!$A$1+B2"
+        );
+
+        // Test 10: Quoted sheet name
+        assert_eq!(
+            translate_shared_formula("'My Sheet'!A1", 1, 0),
+            "'My Sheet'!A2"
+        );
+
+        // Test 11: Negative shifts (moving up/left)
+        assert_eq!(translate_shared_formula("C3", -1, -1), "B2");
+
+        // Test 12: Negative shift with boundary (should not go below A1)
+        assert_eq!(translate_shared_formula("A1", -5, -5), "A1");
+
+        // Test 13: Complex formula with multiple references
+        assert_eq!(
+            translate_shared_formula("SUM(A1:A10)+B1*C1", 2, 0),
+            "SUM(A3:A12)+B3*C3"
+        );
+
+        // Test 14: Range reference
+        assert_eq!(translate_shared_formula("A1:B2", 1, 1), "B2:C3");
+
+        // Test 15: Absolute range
+        assert_eq!(translate_shared_formula("$A$1:$B$2", 5, 5), "$A$1:$B$2");
+    }
 }
