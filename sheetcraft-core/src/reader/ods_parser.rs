@@ -786,11 +786,13 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     }
                     current_sheet = Some(Sheet::new(name));
                     current_row = 0;
+                    current_col = 0; // Reset column tracking for new sheet
                 }
                 Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table-column" => {
                     if let Some(ref mut sheet) = current_sheet {
                         let mut hidden = false;
                         let mut repeated = 1u32;
+                        let mut col_index = current_col; // Track column index separately
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"table:visibility" => {
@@ -810,15 +812,15 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         }
                         if hidden {
                             for _ in 0..repeated {
-                                sheet.hidden_columns.push(current_col);
-                                current_col += 1;
+                                sheet.hidden_columns.push(col_index);
+                                col_index += 1;
                             }
-                        } else {
-                            current_col += repeated;
                         }
+                        // Don't increment current_col here - column definitions are metadata
+                        // current_col will be reset to 0 at the start of each row
                     }
                 }
-                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table-row" => {
+                Event::Start(e) if e.name().as_ref() == b"table:table-row" => {
                     row_repeated = 1;
                     current_col = 0;
                     if let Some(ref mut sheet) = current_sheet {
@@ -846,6 +848,36 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             }
                         }
                     }
+                }
+                Event::Empty(e) if e.name().as_ref() == b"table:table-row" => {
+                    // Empty row (self-closing tag) - no cells, just increment row counter
+                    row_repeated = 1;
+                    if let Some(ref mut sheet) = current_sheet {
+                        let mut hidden = false;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"table:number-rows-repeated" => {
+                                    row_repeated = String::from_utf8_lossy(&attr.value)
+                                        .parse::<u32>()
+                                        .unwrap_or(1);
+                                }
+                                b"table:visibility" => {
+                                    if attr.value.as_ref() == b"collapse"
+                                        || attr.value.as_ref() == b"filter"
+                                    {
+                                        hidden = true;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        if hidden {
+                            for r in 0..row_repeated {
+                                sheet.hidden_rows.push(current_row + r);
+                            }
+                        }
+                    }
+                    current_row += row_repeated;
                 }
                 Event::Start(e) | Event::Empty(e)
                     if e.name().as_ref() == b"table:table-cell"
