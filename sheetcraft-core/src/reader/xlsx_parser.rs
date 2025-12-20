@@ -498,6 +498,35 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                     _ => {}
                 },
                 Event::Empty(e) => match e.name().as_ref() {
+                    b"col" => {
+                        let mut min = 0u32;
+                        let mut max = 0u32;
+                        let mut hidden = false;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"min" => {
+                                    min = String::from_utf8_lossy(&attr.value)
+                                        .parse::<u32>()?
+                                        .saturating_sub(1);
+                                }
+                                b"max" => {
+                                    max = String::from_utf8_lossy(&attr.value)
+                                        .parse::<u32>()?
+                                        .saturating_sub(1);
+                                }
+                                b"hidden" => {
+                                    hidden = attr.value.as_ref() == b"1"
+                                        || attr.value.as_ref() == b"true";
+                                }
+                                _ => {}
+                            }
+                        }
+                        if hidden {
+                            for col in min..=max {
+                                hidden_columns.push(col);
+                            }
+                        }
+                    }
                     b"c" => {
                         let mut r_attr = String::new();
                         let mut s_attr = None;
