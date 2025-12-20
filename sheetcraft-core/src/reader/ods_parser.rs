@@ -922,44 +922,50 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             ));
                         }
 
-                        // For error cells, read the error text from <text:p>
-                        if is_error_cell {
-                            let mut error_text = String::new();
-                            let mut text_buf = Vec::new();
-                            loop {
-                                match reader.read_event_into(&mut text_buf)? {
-                                    Event::Start(ref te) if te.name().as_ref() == b"text:p" => {
-                                        let mut p_buf = Vec::new();
-                                        loop {
-                                            match reader.read_event_into(&mut p_buf)? {
-                                                Event::Text(ref t) => {
-                                                    error_text.push_str(&t.unescape()?.to_string());
-                                                }
-                                                Event::End(ref pe)
-                                                    if pe.name().as_ref() == b"text:p" =>
-                                                {
-                                                    break;
-                                                }
-                                                Event::Eof => break,
-                                                _ => {}
+                        // Read text content from <text:p> elements
+                        // This handles both error cells and regular text cells
+                        let mut text_content = String::new();
+                        let mut text_buf = Vec::new();
+                        loop {
+                            match reader.read_event_into(&mut text_buf)? {
+                                Event::Start(ref te) if te.name().as_ref() == b"text:p" => {
+                                    let mut p_buf = Vec::new();
+                                    loop {
+                                        match reader.read_event_into(&mut p_buf)? {
+                                            Event::Text(ref t) => {
+                                                text_content.push_str(&t.unescape()?.to_string());
                                             }
-                                            p_buf.clear();
+                                            Event::End(ref pe)
+                                                if pe.name().as_ref() == b"text:p" =>
+                                            {
+                                                break;
+                                            }
+                                            Event::Eof => break,
+                                            _ => {}
                                         }
+                                        p_buf.clear();
                                     }
-                                    Event::End(ref te)
-                                        if te.name().as_ref() == b"table:table-cell"
-                                            || te.name().as_ref()
-                                                == b"table:covered-table-cell" =>
-                                    {
-                                        break;
-                                    }
-                                    Event::Eof => break,
-                                    _ => {}
                                 }
-                                text_buf.clear();
+                                Event::End(ref te)
+                                    if te.name().as_ref() == b"table:table-cell"
+                                        || te.name().as_ref() == b"table:covered-table-cell" =>
+                                {
+                                    break;
+                                }
+                                Event::Eof => break,
+                                _ => {}
                             }
-                            if !error_text.is_empty() {
-                                value = CellValue::formula_with_error("", error_text);
+                            text_buf.clear();
+                        }
+
+                        // Use text content if we have it and no other value
+                        if !text_content.is_empty() {
+                            if is_error_cell {
+                                value = CellValue::formula_with_error("", text_content);
+                                has_value = true;
+                            } else if !has_value {
+                                // Only use text:p content if we don't have a value from attributes
+                                value = CellValue::Text(text_content);
                                 has_value = true;
                             }
                         }
