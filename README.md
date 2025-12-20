@@ -97,21 +97,30 @@ sheetcli input.xlsx --remove-sheets "Secrets" "Admin" --output cleaned.xlsx
 sheetcli input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
 ```
 
+## Debug Tools
+
+The suite includes several debug utilities in `sheetcraft-core/examples/`:
+
+- **debug_formulas**: Inspect specific cell values and formulas
+- **dump_formulas**: Export all formulas from a workbook
+- **dump_named_ranges**: List all defined names
+- **inspect_dependencies**: Trace cell dependency chains
+- **inspect_errors**: Examine error cells and their formulas
+
+Build with: `cargo build --release --examples`
+
 ## Roadmap
 
-- **ODS Support**: Partial support implemented. Full parity with XLSX is in
-  progress.
+- **ODS Support**: Full support implemented with custom XML parser. Feature
+  parity with XLSX achieved.
+- **Error Propagation Tracing**: Future versions may trace only the root cause
+  error cell rather than reporting all affected cells.
 - **Python Bindings**: PyO3 bindings for direct integration with Python data
   workflows.
 - **Windows & WASM**: Windows support is likely functional but untested. WASM
   target for browser-based linting is planned.
 - **Performance Review**: Continuous optimization for large workbooks (>1M
   cells).
-
-## Known Issues
-
-- **ERR001**: Currently reports all affected cells. Future versions may trace
-  only the root cause error.
 
 ## Architecture
 
