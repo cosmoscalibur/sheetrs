@@ -61,8 +61,10 @@ impl LinterRule for ExcessiveConditionalFormattingRule {
         let mut archive = zip::ZipArchive::new(reader)?;
 
         for (_index, sheet) in workbook.sheets.iter().enumerate() {
-            let cf_count =
-                crate::reader::xml_parser::count_conditional_formatting(&mut archive, &sheet.name)?;
+            let cf_count = crate::reader::xlsx_parser::count_conditional_formatting(
+                &mut archive,
+                &sheet.name,
+            )?;
 
             if cf_count > self.threshold as usize {
                 violations.push(Violation::new(

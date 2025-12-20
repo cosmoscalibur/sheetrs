@@ -8,10 +8,12 @@ use std::path::Path;
 use zip::ZipArchive;
 
 pub mod ods_parser;
+pub mod parser_utils;
 pub mod workbook;
-pub mod xml_parser;
+pub mod xlsx_parser;
 
-use self::xml_parser::{OdsReader, XlsxReader};
+use self::ods_parser::OdsReader;
+use self::xlsx_parser::XlsxReader;
 pub use workbook::{Cell, CellValue, Sheet, Workbook};
 
 /// Trait for spreadsheet format readers
