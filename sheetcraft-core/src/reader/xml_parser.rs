@@ -868,6 +868,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
     let mut formula = None;
     let mut shared_si = None;
     let mut shared_ref = None;
+    let mut potential_error = None; // Store potential error value from t="e"
     let mut buf = Vec::new();
 
     loop {
@@ -886,7 +887,12 @@ fn parse_cell_contents<R: std::io::BufRead>(
                             CellValue::Text(shared_strings.get(idx).cloned().unwrap_or_default())
                         }
                         "b" => CellValue::Boolean(v_text == "1"),
-                        "e" => CellValue::formula_with_error("", v_text),
+                        "e" => {
+                            // Store the error value but don't create error cell yet
+                            // We need to check if there's a formula first
+                            potential_error = Some(v_text);
+                            CellValue::Empty // Temporary, will be set later if needed
+                        }
                         _ => {
                             if let Ok(n) = v_text.parse::<f64>() {
                                 CellValue::Number(n)
@@ -954,6 +960,29 @@ fn parse_cell_contents<R: std::io::BufRead>(
         }
         buf.clear();
     }
+
+    // Post-processing: handle potential_error
+    // Excel uses t="e" for TWO different purposes:
+    // 1. Real error cells (formula evaluated to error) - e.g., =car() -> #NAME?
+    // 2. Array formulas (returns array, not error) - e.g., =Sheet!A1:B10 or =A1:A10
+    //
+    // The key distinction: array formulas contain range references (with ':')
+    // Real errors are formulas without ranges that failed evaluation
+    //
+    // Note: In valid spreadsheet files, t="e" ALWAYS has a formula. Errors without
+    // formulas don't exist in Excel/ODS files.
+    if let Some(err) = potential_error {
+        if let Some(ref f) = formula {
+            // Only process if we have a formula (which we always should for t="e")
+            if !f.contains(':') {
+                // Real error - formula without range that evaluated to error
+                value = CellValue::formula_with_error("", err);
+            }
+            // If formula contains ':', it's an array formula - ignore error marker
+        }
+        // No else needed - t="e" without formula is invalid/impossible in real files
+    }
+
     Ok((value, formula, shared_si, shared_ref))
 }
 
@@ -1884,5 +1913,76 @@ mod tests {
             normalize_ods_formula("=[$Rentas_de_Trabajo.$F$1452:.$F$1453]"),
             "=Rentas_de_Trabajo!$F$1452:$F$1453"
         );
+    }
+
+    #[test]
+    fn test_parse_cell_contents_array_formulas_vs_errors() {
+        use quick_xml::Reader;
+        use std::io::Cursor;
+
+        // Test 1: Array formula with range reference - should NOT create error
+        let xml = r#"<c r="A1" t="e"><f>OUTPUT!B459:D505</f><v>#VALUE!</v></c>"#;
+        let mut reader = Reader::from_reader(Cursor::new(xml));
+        reader.config_mut().trim_text(true);
+        let mut buf = Vec::new();
+        let _ = reader.read_event_into(&mut buf); // Skip to start
+
+        let (value, formula, _, _) = parse_cell_contents(&mut reader, "e", &[], &[]).unwrap();
+
+        // Should have formula but NOT error value (array formula)
+        assert!(formula.is_some());
+        assert_eq!(formula.unwrap(), "=OUTPUT!B459:D505");
+        // Value should be Empty, not an error
+        match value {
+            CellValue::Empty => {} // Expected
+            CellValue::Formula { cached_error, .. } => {
+                panic!(
+                    "Array formula should not have cached_error: {:?}",
+                    cached_error
+                );
+            }
+            _ => panic!("Expected Empty for array formula, got: {:?}", value),
+        }
+
+        // Test 2: Real error formula - should create error
+        let xml2 = r#"<c r="A2" t="e"><f>car()</f><v>#NAME?</v></c>"#;
+        let mut reader2 = Reader::from_reader(Cursor::new(xml2));
+        reader2.config_mut().trim_text(true);
+        let mut buf2 = Vec::new();
+        let _ = reader2.read_event_into(&mut buf2);
+
+        let (value2, formula2, _, _) = parse_cell_contents(&mut reader2, "e", &[], &[]).unwrap();
+
+        // Should have formula AND error value
+        assert!(formula2.is_some());
+        assert_eq!(formula2.unwrap(), "=car()");
+        match value2 {
+            CellValue::Formula {
+                formula,
+                cached_error,
+            } => {
+                assert_eq!(formula, "");
+                assert_eq!(cached_error, Some("#NAME?".to_string()));
+            }
+            _ => panic!("Expected Formula with error, got: {:?}", value2),
+        }
+
+        // Test 3: Another array formula pattern
+        let xml3 = r#"<c r="A3" t="e"><f>Recomendaciones!C6:BE93</f><v>#VALUE!</v></c>"#;
+        let mut reader3 = Reader::from_reader(Cursor::new(xml3));
+        reader3.config_mut().trim_text(true);
+        let mut buf3 = Vec::new();
+        let _ = reader3.read_event_into(&mut buf3);
+
+        let (value3, formula3, _, _) = parse_cell_contents(&mut reader3, "e", &[], &[]).unwrap();
+
+        assert!(formula3.is_some());
+        match value3 {
+            CellValue::Empty => {} // Expected for array formula
+            _ => panic!("Expected Empty for array formula, got: {:?}", value3),
+        }
+
+        // Note: We don't test t="e" without formula because it's impossible in real files
+        // Every error cell in Excel/ODS has a formula that evaluated to the error
     }
 }
