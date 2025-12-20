@@ -310,6 +310,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         let mut formula = None;
                         let mut value = CellValue::Empty;
                         let mut has_value = false;
+                        let mut is_error_cell = false;
 
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
@@ -332,6 +333,11 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                     formula = Some(normalize_ods_formula(
                                         &String::from_utf8_lossy(&attr.value),
                                     ));
+                                }
+                                b"calcext:value-type" => {
+                                    if attr.value.as_ref() == b"error" {
+                                        is_error_cell = true;
+                                    }
                                 }
                                 b"office:value"
                                 | b"office:string-value"
@@ -368,12 +374,57 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             ));
                         }
 
+                        // For error cells, read the error text from <text:p>
+                        if is_error_cell {
+                            let mut error_text = String::new();
+                            let mut text_buf = Vec::new();
+                            loop {
+                                match reader.read_event_into(&mut text_buf)? {
+                                    Event::Start(ref te) if te.name().as_ref() == b"text:p" => {
+                                        let mut p_buf = Vec::new();
+                                        loop {
+                                            match reader.read_event_into(&mut p_buf)? {
+                                                Event::Text(ref t) => {
+                                                    error_text.push_str(&t.unescape()?.to_string());
+                                                }
+                                                Event::End(ref pe)
+                                                    if pe.name().as_ref() == b"text:p" =>
+                                                {
+                                                    break;
+                                                }
+                                                Event::Eof => break,
+                                                _ => {}
+                                            }
+                                            p_buf.clear();
+                                        }
+                                    }
+                                    Event::End(ref te)
+                                        if te.name().as_ref() == b"table:table-cell"
+                                            || te.name().as_ref()
+                                                == b"table:covered-table-cell" =>
+                                    {
+                                        break;
+                                    }
+                                    Event::Eof => break,
+                                    _ => {}
+                                }
+                                text_buf.clear();
+                            }
+                            if !error_text.is_empty() {
+                                value = CellValue::formula_with_error("", error_text);
+                                has_value = true;
+                            }
+                        }
+
                         if has_value || formula.is_some() {
                             let mut cell_value = value;
                             if let Some(f) = formula {
                                 cell_value = match cell_value {
-                                    CellValue::Error(msg, _) => CellValue::Error(msg, Some(f)),
-                                    _ => CellValue::Formula(f),
+                                    CellValue::Formula {
+                                        cached_error: Some(msg),
+                                        ..
+                                    } => CellValue::formula_with_error(f, msg),
+                                    _ => CellValue::formula(f),
                                 };
                             }
 
@@ -722,7 +773,13 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             num_fmt,
                         };
                         if let Some(f) = formula {
-                            cell.value = CellValue::Formula(f);
+                            cell.value = match cell.value {
+                                CellValue::Formula {
+                                    cached_error: Some(err),
+                                    ..
+                                } => CellValue::formula_with_error(f, err),
+                                _ => CellValue::formula(f),
+                            };
                         }
                         cells.insert((row, col), cell);
                     }
@@ -829,7 +886,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
                             CellValue::Text(shared_strings.get(idx).cloned().unwrap_or_default())
                         }
                         "b" => CellValue::Boolean(v_text == "1"),
-                        "e" => CellValue::Error(v_text, None),
+                        "e" => CellValue::formula_with_error("", v_text),
                         _ => {
                             if let Ok(n) = v_text.parse::<f64>() {
                                 CellValue::Number(n)

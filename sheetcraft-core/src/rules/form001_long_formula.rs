@@ -169,7 +169,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula(long_formula),
+                value: CellValue::formula(long_formula),
             },
         );
 

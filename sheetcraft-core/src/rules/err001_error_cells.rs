@@ -83,7 +83,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Error("#DIV/0!".to_string(), None),
+                value: CellValue::formula_with_error("", "#DIV/0!".to_string()),
             },
         );
         cells.insert(
@@ -131,7 +131,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=SUM(A1, [#REF!])".to_string()),
+                value: CellValue::formula("=SUM(A1, [#REF!])".to_string()),
             },
         );
         // Standard ODS-like relative ref error or text error
@@ -141,7 +141,7 @@ mod tests {
                 num_fmt: None,
                 row: 1,
                 col: 0,
-                value: CellValue::Formula("=#N/A".to_string()),
+                value: CellValue::formula("=#N/A".to_string()),
             },
         );
 

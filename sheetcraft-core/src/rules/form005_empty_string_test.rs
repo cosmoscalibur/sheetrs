@@ -175,7 +175,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula(r#"=IF(A1="","Empty","Not Empty")"#.to_string()),
+                value: CellValue::formula(r#"=IF(A1="","Empty","Not Empty")"#.to_string()),
             },
         );
 
@@ -214,7 +214,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula(r#"=IF(A1<>"","Not Empty","Empty")"#.to_string()),
+                value: CellValue::formula(r#"=IF(A1<>"","Not Empty","Empty")"#.to_string()),
             },
         );
 
@@ -252,7 +252,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=IF(LEN(A1)=0,\"Empty\",\"Not Empty\")".to_string()),
+                value: CellValue::formula("=IF(LEN(A1)=0,\"Empty\",\"Not Empty\")".to_string()),
             },
         );
 
@@ -290,7 +290,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=IF(ISBLANK(A1),\"Empty\",\"Not Empty\")".to_string()),
+                value: CellValue::formula("=IF(ISBLANK(A1),\"Empty\",\"Not Empty\")".to_string()),
             },
         );
 

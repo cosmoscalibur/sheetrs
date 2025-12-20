@@ -157,7 +157,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=A1+B1".to_string()),
+                value: CellValue::formula("=A1+B1".to_string()),
             },
         );
         cells.insert(
@@ -166,7 +166,7 @@ mod tests {
                 num_fmt: None,
                 row: 1,
                 col: 0,
-                value: CellValue::Formula("=A1+B1".to_string()),
+                value: CellValue::formula("=A1+B1".to_string()),
             },
         );
         cells.insert(
@@ -175,7 +175,7 @@ mod tests {
                 num_fmt: None,
                 row: 2,
                 col: 0,
-                value: CellValue::Formula("=A1+B1".to_string()),
+                value: CellValue::formula("=A1+B1".to_string()),
             },
         );
 
@@ -214,7 +214,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=A1+B1".to_string()),
+                value: CellValue::formula("=A1+B1".to_string()),
             },
         );
         cells.insert(
@@ -223,7 +223,7 @@ mod tests {
                 num_fmt: None,
                 row: 1,
                 col: 0,
-                value: CellValue::Formula("=A2+B2".to_string()),
+                value: CellValue::formula("=A2+B2".to_string()),
             },
         );
 

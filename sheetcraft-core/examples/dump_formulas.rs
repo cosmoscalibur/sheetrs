@@ -18,11 +18,20 @@ fn main() {
         }
         for ((row, col), cell) in sheet.cells {
             match &cell.value {
-                CellValue::Formula(f) => println!("  ({}, {}) [FORMULA]: {}", row, col, f),
-                CellValue::Text(t) => println!("  ({}, {}) [TEXT]: {}", row, col, t),
-                CellValue::Error(e, f) => {
-                    println!("  ({}, {}) [ERROR]: {} Formula: {:?}", row, col, e, f)
+                CellValue::Formula {
+                    formula,
+                    cached_error,
+                } => {
+                    if let Some(err) = cached_error {
+                        println!(
+                            "  ({}, {}) [ERROR]: {} (Formula: {})",
+                            row, col, err, formula
+                        );
+                    } else {
+                        println!("  ({}, {}) [FORMULA]: {}", row, col, formula);
+                    }
                 }
+                CellValue::Text(t) => println!("  ({}, {}) [TEXT]: {}", row, col, t),
                 CellValue::Number(n) => println!("  ({}, {}) [NUMBER]: {}", row, col, n),
                 CellValue::Boolean(b) => println!("  ({}, {}) [BOOL]: {}", row, col, b),
                 CellValue::Empty => println!("  ({}, {}) [EMPTY]", row, col),

@@ -76,7 +76,7 @@ mod tests {
             Cell { num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=UsedRange".to_string()),
+                value: CellValue::formula("=UsedRange".to_string()),
             },
         );
 

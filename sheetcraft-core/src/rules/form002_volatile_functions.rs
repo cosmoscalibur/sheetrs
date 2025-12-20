@@ -196,7 +196,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=NOW()".to_string()),
+                value: CellValue::formula("=NOW()".to_string()),
             },
         );
 
@@ -235,7 +235,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=RAND()".to_string()),
+                value: CellValue::formula("=RAND()".to_string()),
             },
         );
         cells.insert(
@@ -244,7 +244,7 @@ mod tests {
                 num_fmt: None,
                 row: 1,
                 col: 0,
-                value: CellValue::Formula("=TODAY()".to_string()),
+                value: CellValue::formula("=TODAY()".to_string()),
             },
         );
 
@@ -281,7 +281,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=now()".to_string()),
+                value: CellValue::formula("=now()".to_string()),
             },
         );
 

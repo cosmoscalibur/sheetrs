@@ -195,7 +195,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=SUM(A:A)".to_string()),
+                value: CellValue::formula("=SUM(A:A)".to_string()),
             },
         );
 
@@ -234,7 +234,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=SUM(1:1)".to_string()),
+                value: CellValue::formula("=SUM(1:1)".to_string()),
             },
         );
 
@@ -273,7 +273,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=SUM(A1:A10)".to_string()),
+                value: CellValue::formula("=SUM(A1:A10)".to_string()),
             },
         );
 

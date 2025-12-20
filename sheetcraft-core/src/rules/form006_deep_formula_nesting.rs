@@ -185,7 +185,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula(
+                value: CellValue::formula(
                     "=IF(A1,IF(B1,IF(C1,IF(D1,IF(E1,IF(F1,1,0),0),0),0),0),0)".to_string(),
                 ),
             },
@@ -227,7 +227,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=IF(A1,IF(B1,IF(C1,1,0),0),0)".to_string()),
+                value: CellValue::formula("=IF(A1,IF(B1,IF(C1,1,0),0),0)".to_string()),
             },
         );
 

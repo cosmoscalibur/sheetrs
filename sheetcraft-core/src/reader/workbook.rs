@@ -115,14 +115,22 @@ pub enum CellValue {
     Number(f64),
     Text(String),
     Boolean(bool),
-    Error(String, Option<String>),
-    Formula(String),
+    Formula {
+        formula: String,
+        cached_error: Option<String>,
+    },
 }
 
 impl CellValue {
     /// Check if the cell contains an error
     pub fn is_error(&self) -> bool {
-        matches!(self, CellValue::Error(_, _))
+        matches!(
+            self,
+            CellValue::Formula {
+                cached_error: Some(_),
+                ..
+            }
+        )
     }
 
     /// Check if the cell is empty
@@ -132,17 +140,16 @@ impl CellValue {
 
     /// Check if the cell contains a formula
     pub fn is_formula(&self) -> bool {
-        match self {
-            CellValue::Formula(_) => true,
-            CellValue::Error(_, Some(_)) => true,
-            _ => false,
-        }
+        matches!(self, CellValue::Formula { .. })
     }
 
     /// Get the error value if this is an error cell
     pub fn as_error(&self) -> Option<&str> {
         match self {
-            CellValue::Error(e, _) => Some(e),
+            CellValue::Formula {
+                cached_error: Some(e),
+                ..
+            } => Some(e),
             _ => None,
         }
     }
@@ -150,9 +157,24 @@ impl CellValue {
     /// Get the formula if this is a formula cell
     pub fn as_formula(&self) -> Option<&str> {
         match self {
-            CellValue::Formula(f) => Some(f),
-            CellValue::Error(_, Some(f)) => Some(f),
+            CellValue::Formula { formula, .. } => Some(formula),
             _ => None,
+        }
+    }
+
+    /// Create a formula cell without error
+    pub fn formula(f: impl Into<String>) -> Self {
+        CellValue::Formula {
+            formula: f.into(),
+            cached_error: None,
+        }
+    }
+
+    /// Create a formula cell with cached error
+    pub fn formula_with_error(f: impl Into<String>, error: impl Into<String>) -> Self {
+        CellValue::Formula {
+            formula: f.into(),
+            cached_error: Some(error.into()),
         }
     }
 }

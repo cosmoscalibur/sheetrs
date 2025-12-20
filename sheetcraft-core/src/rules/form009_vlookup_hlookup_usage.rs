@@ -37,7 +37,7 @@ impl LinterRule for VLookupHLookupUsageRule {
 
         for sheet in &workbook.sheets {
             for ((row, col), cell) in &sheet.cells {
-                if let CellValue::Formula(formula) = &cell.value {
+                if let CellValue::Formula { formula, .. } = &cell.value {
                     let upper_formula = formula.to_uppercase();
                     if upper_formula.contains("VLOOKUP(") || upper_formula.contains("HLOOKUP(") {
                         violations.push(Violation::new(
@@ -78,7 +78,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=VLOOKUP(A1, B:C, 2, FALSE)".to_string()),
+                value: CellValue::formula("=VLOOKUP(A1, B:C, 2, FALSE)".to_string()),
             },
         );
         cells.insert(
@@ -87,7 +87,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 1,
-                value: CellValue::Formula("=HLOOKUP(A1, B:C, 2, FALSE)".to_string()),
+                value: CellValue::formula("=HLOOKUP(A1, B:C, 2, FALSE)".to_string()),
             },
         );
         cells.insert(
@@ -96,7 +96,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 2,
-                value: CellValue::Formula("=SUM(A1:A10)".to_string()),
+                value: CellValue::formula("=SUM(A1:A10)".to_string()),
             },
         );
 
@@ -107,7 +107,8 @@ mod tests {
             hidden_columns: vec![],
             hidden_rows: vec![],
             merged_cells: vec![],
-            formula_parsing_error: None, sheet_path: None,
+            formula_parsing_error: None,
+            sheet_path: None,
         };
 
         let workbook = Workbook {

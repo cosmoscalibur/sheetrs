@@ -108,7 +108,7 @@ mod tests {
             Cell { num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=Sheet2!A1".to_string()),
+                value: CellValue::formula("=Sheet2!A1".to_string()),
             },
         );
 

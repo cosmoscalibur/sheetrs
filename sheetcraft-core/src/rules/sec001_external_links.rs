@@ -427,7 +427,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=[Book1.xlsx]Sheet1!A1".to_string()),
+                value: CellValue::formula("=[Book1.xlsx]Sheet1!A1".to_string()),
             },
         );
 
@@ -511,7 +511,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula(
+                value: CellValue::formula(
                     "=\"Amount: \" & TEXT(A1, \"[$$-en-US]0.00\")".to_string(),
                 ),
             },
@@ -523,7 +523,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 1,
-                value: CellValue::Formula("=[Book1.xlsx]Sheet1!A1".to_string()),
+                value: CellValue::formula("=[Book1.xlsx]Sheet1!A1".to_string()),
             },
         );
 
@@ -562,7 +562,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=of:=[.A1]+[.B2]".to_string()),
+                value: CellValue::formula("=of:=[.A1]+[.B2]".to_string()),
             },
         );
         // Mixed: valid external link + ODS internal + REF error + Internal Sheet Ref
@@ -572,7 +572,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 1,
-                value: CellValue::Formula(
+                value: CellValue::formula(
                     "=[Book1.xlsx]Sheet1!A1 + [.C3] + [#REF!] + [$Sheet1.A1]".to_string(),
                 ),
             },

@@ -117,7 +117,7 @@ impl LinterRule for HardcodedValuesInFormulasRule {
             // or store `LinterConfig` and look up here.
 
             for ((row, col), cell) in &sheet.cells {
-                if let CellValue::Formula(formula) = &cell.value {
+                if let CellValue::Formula { formula, .. } = &cell.value {
                     // Remove strings first
                     let formula_no_strings = string_regex.replace_all(formula, "");
 
@@ -167,7 +167,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=123+A1".to_string()),
+                value: CellValue::formula("=123+A1".to_string()),
             },
         ); // 123 (int)
         cells.insert(
@@ -176,7 +176,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 1,
-                value: CellValue::Formula("=0+1.5".to_string()),
+                value: CellValue::formula("=0+1.5".to_string()),
             },
         ); // 0 (int), 1.5 (float)
         cells.insert(
@@ -185,7 +185,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 2,
-                value: CellValue::Formula(r#"=IF(A1>10, "Value: 5", 100)"#.to_string()),
+                value: CellValue::formula(r#"=IF(A1>10, "Value: 5", 100)"#.to_string()),
             },
         ); // 10 (int, pow10), 5 (string), 100 (int, pow10)
 
@@ -195,7 +195,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 3,
-                value: CellValue::Formula("=0.1+0.01".to_string()),
+                value: CellValue::formula("=0.1+0.01".to_string()),
             },
         ); // 0.1 (pow10), 0.01 (pow10)
 
@@ -206,7 +206,8 @@ mod tests {
             hidden_columns: vec![],
             hidden_rows: vec![],
             merged_cells: vec![],
-            formula_parsing_error: None, sheet_path: None,
+            formula_parsing_error: None,
+            sheet_path: None,
         };
 
         let workbook = Workbook {

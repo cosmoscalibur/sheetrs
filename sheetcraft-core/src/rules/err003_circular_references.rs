@@ -334,7 +334,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=A1+1".to_string()),
+                value: CellValue::formula("=A1+1".to_string()),
             },
         );
 
@@ -356,7 +356,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=B1".to_string()),
+                value: CellValue::formula("=B1".to_string()),
             },
         );
         cells.insert(
@@ -365,7 +365,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 1,
-                value: CellValue::Formula("=A1".to_string()),
+                value: CellValue::formula("=A1".to_string()),
             },
         );
 
@@ -388,7 +388,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=SUM(B1:B3)".to_string()),
+                value: CellValue::formula("=SUM(B1:B3)".to_string()),
             },
         );
         cells.insert(
@@ -397,7 +397,7 @@ mod tests {
                 num_fmt: None,
                 row: 1,
                 col: 1,
-                value: CellValue::Formula("=A1".to_string()),
+                value: CellValue::formula("=A1".to_string()),
             },
         );
 
@@ -431,7 +431,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=SUM(B1:B3)".to_string()),
+                value: CellValue::formula("=SUM(B1:B3)".to_string()),
             },
         );
         cells.insert(
@@ -440,7 +440,7 @@ mod tests {
                 num_fmt: None,
                 row: 1,
                 col: 1,
-                value: CellValue::Formula("=A1".to_string()),
+                value: CellValue::formula("=A1".to_string()),
             },
         );
 
@@ -464,7 +464,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=SUM(B1:B3)".to_string()),
+                value: CellValue::formula("=SUM(B1:B3)".to_string()),
             },
         );
         cells.insert(
@@ -473,7 +473,7 @@ mod tests {
                 num_fmt: None,
                 row: 1,
                 col: 1,
-                value: CellValue::Formula("=A1".to_string()),
+                value: CellValue::formula("=A1".to_string()),
             },
         );
 
@@ -510,7 +510,7 @@ mod tests {
                 num_fmt: None,
                 row: 0,
                 col: 0,
-                value: CellValue::Formula("=SUM(A2:A3)".to_string()),
+                value: CellValue::formula("=SUM(A2:A3)".to_string()),
             },
         );
         cells.insert(
@@ -519,7 +519,7 @@ mod tests {
                 num_fmt: None,
                 row: 2,
                 col: 0,
-                value: CellValue::Formula("=A1".to_string()),
+                value: CellValue::formula("=A1".to_string()),
             },
         );
 
