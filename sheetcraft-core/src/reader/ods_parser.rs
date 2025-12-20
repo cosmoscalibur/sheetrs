@@ -9,17 +9,32 @@ use zip::ZipArchive;
 
 use super::{Cell, CellValue, Sheet, WorkbookReader};
 
-/// Extract hidden sheets from ODS file
-/// ODS format: <table:table table:name="SheetName" table:display="false">
 pub fn extract_hidden_sheets_from_ods(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<String>> {
-    let mut hidden_sheets = Vec::new();
+    // Step 1: Get all sheets from content.xml
+    let all_sheets = extract_all_sheet_names_from_ods(archive)?;
 
-    // Try to read content.xml
+    // Step 2: Get visible sheets from settings.xml
+    let visible_sheets = extract_visible_sheets_from_settings(archive)?;
+
+    // Step 3: Find hidden sheets (in all_sheets but not in visible_sheets)
+    let hidden_sheets: Vec<String> = all_sheets
+        .into_iter()
+        .filter(|sheet| !visible_sheets.contains(sheet))
+        .collect();
+
+    Ok(hidden_sheets)
+}
+
+fn extract_all_sheet_names_from_ods(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<Vec<String>> {
+    let mut sheet_names = Vec::new();
+
     let content_xml = match archive.by_name("content.xml") {
         Ok(file) => file,
-        Err(_) => return Ok(hidden_sheets), // No content.xml, return empty
+        Err(_) => return Ok(sheet_names),
     };
 
     let buf_reader = BufReader::new(content_xml);
@@ -32,26 +47,13 @@ pub fn extract_hidden_sheets_from_ods(
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 if e.name().as_ref() == b"table:table" {
-                    let mut name = String::new();
-                    let mut display = String::from("true"); // Default is visible
-
-                    for attr in e.attributes() {
-                        if let Ok(attr) = attr {
-                            match attr.key.as_ref() {
-                                b"table:name" => {
-                                    name = String::from_utf8_lossy(&attr.value).to_string();
-                                }
-                                b"table:display" => {
-                                    display = String::from_utf8_lossy(&attr.value).to_string();
-                                }
-                                _ => {}
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"table:name" {
+                            let name = String::from_utf8_lossy(&attr.value).to_string();
+                            if !name.is_empty() {
+                                sheet_names.push(name);
                             }
                         }
-                    }
-
-                    // If display is "false", the sheet is hidden
-                    if !name.is_empty() && display == "false" {
-                        hidden_sheets.push(name);
                     }
                 }
             }
@@ -62,7 +64,69 @@ pub fn extract_hidden_sheets_from_ods(
         buf.clear();
     }
 
-    Ok(hidden_sheets)
+    // eprintln!("DEBUG: ODS Sheets in content.xml: {:?}", sheet_names);
+    Ok(sheet_names)
+}
+
+/// Extract visible sheet names from settings.xml Tables section
+fn extract_visible_sheets_from_settings(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<std::collections::HashSet<String>> {
+    let mut visible_sheets = std::collections::HashSet::new();
+
+    let settings_xml = match archive.by_name("settings.xml") {
+        Ok(file) => file,
+        Err(_) => {
+            // No settings.xml - assume all sheets are visible (fail-safe)
+            return Ok(visible_sheets);
+        }
+    };
+
+    let buf_reader = BufReader::new(settings_xml);
+    let mut reader = Reader::from_reader(buf_reader);
+    reader.config_mut().trim_text(true);
+
+    let mut buf = Vec::new();
+    let mut in_tables_section = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                // Check if we're entering the Tables section
+                if e.name().as_ref() == b"config:config-item-map-named" {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"config:name" && attr.value.as_ref() == b"Tables" {
+                            in_tables_section = true;
+                        }
+                    }
+                }
+
+                // If we're in Tables section, extract sheet names from map entries
+                if in_tables_section && e.name().as_ref() == b"config:config-item-map-entry" {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"config:name" {
+                            let name = String::from_utf8_lossy(&attr.value).to_string();
+                            if !name.is_empty() {
+                                visible_sheets.insert(name);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(e)) => {
+                // Exit Tables section
+                if e.name().as_ref() == b"config:config-item-map-named" {
+                    in_tables_section = false;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {}", e)),
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(visible_sheets)
 }
 
 /// Extract hidden columns and rows from an ODS worksheet
@@ -700,8 +764,8 @@ pub fn normalize_ods_formula(formula: &str) -> String {
 
     // 0. Replace rectangular ranges [.A1:.B2] -> A1:B2
     // Matches [.A1:.B2]
-    let rect_ref =
-        ODS_RECT_REF.get_or_init(|| Regex::new(r"\[\.([A-Z]+[0-9]+):\.([A-Z]+[0-9]+)\]").unwrap());
+    let rect_ref = ODS_RECT_REF
+        .get_or_init(|| Regex::new(r"\[\.(\$?[A-Z]+\$?[0-9]+):\.(\$?[A-Z]+\$?[0-9]+)\]").unwrap());
     normalized = rect_ref.replace_all(&normalized, "$1:$2").to_string();
 
     // 0b. Replace sheet-qualified ranges [$Sheet.A1:.A2] -> Sheet!A1:A2
@@ -732,7 +796,7 @@ pub fn normalize_ods_formula(formula: &str) -> String {
 
     // 3. Replace relative references [.A1] -> A1
     // Matches [.A1], [.AA123]
-    let rel_ref = ODS_REL_REF.get_or_init(|| Regex::new(r"\[\.([A-Z]+[0-9]+)\]").unwrap());
+    let rel_ref = ODS_REL_REF.get_or_init(|| Regex::new(r"\[\.(\$?[A-Z]+\$?[0-9]+)\]").unwrap());
     normalized = rel_ref.replace_all(&normalized, "$1").to_string();
 
     // 4. Replace whole column references [.A:.A] -> A:A
@@ -788,11 +852,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     current_row = 0;
                     current_col = 0; // Reset column tracking for new sheet
                 }
-                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table-column" => {
+                Event::Start(e) if e.name().as_ref() == b"table:table-column" => {
                     if let Some(ref mut sheet) = current_sheet {
                         let mut hidden = false;
                         let mut repeated = 1u32;
-                        let mut col_index = current_col; // Track column index separately
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"table:visibility" => {
@@ -812,12 +875,58 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         }
                         if hidden {
                             for _ in 0..repeated {
-                                sheet.hidden_columns.push(col_index);
-                                col_index += 1;
+                                sheet.hidden_columns.push(current_col);
+                                current_col += 1;
+                            }
+                        } else {
+                            current_col += repeated;
+                        }
+
+                        // If it's a start tag, we need to skip to its end tag to avoid nested column issues
+                        let mut col_buf = Vec::new();
+                        loop {
+                            match reader.read_event_into(&mut col_buf)? {
+                                Event::End(ref te)
+                                    if te.name().as_ref() == b"table:table-column" =>
+                                {
+                                    break;
+                                }
+                                Event::Eof => break,
+                                _ => {}
+                            }
+                            col_buf.clear();
+                        }
+                    }
+                }
+                Event::Empty(e) if e.name().as_ref() == b"table:table-column" => {
+                    if let Some(ref mut sheet) = current_sheet {
+                        let mut hidden = false;
+                        let mut repeated = 1u32;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"table:visibility" => {
+                                    if attr.value.as_ref() == b"collapse"
+                                        || attr.value.as_ref() == b"filter"
+                                    {
+                                        hidden = true;
+                                    }
+                                }
+                                b"table:number-columns-repeated" => {
+                                    repeated = String::from_utf8_lossy(&attr.value)
+                                        .parse::<u32>()
+                                        .unwrap_or(1);
+                                }
+                                _ => {}
                             }
                         }
-                        // Don't increment current_col here - column definitions are metadata
-                        // current_col will be reset to 0 at the start of each row
+                        if hidden {
+                            for _ in 0..repeated {
+                                sheet.hidden_columns.push(current_col);
+                                current_col += 1;
+                            }
+                        } else {
+                            current_col += repeated;
+                        }
                     }
                 }
                 Event::Start(e) if e.name().as_ref() == b"table:table-row" => {
@@ -879,7 +988,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     }
                     current_row += row_repeated;
                 }
-                Event::Start(e) | Event::Empty(e)
+                Event::Start(e)
                     if e.name().as_ref() == b"table:table-cell"
                         || e.name().as_ref() == b"table:covered-table-cell" =>
                 {
@@ -1029,6 +1138,22 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         current_col += col_repeated;
                     }
                 }
+                Event::Empty(e)
+                    if e.name().as_ref() == b"table:table-cell"
+                        || e.name().as_ref() == b"table:covered-table-cell" =>
+                {
+                    if current_sheet.is_some() {
+                        let mut col_repeated = 1u32;
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"table:number-columns-repeated" {
+                                col_repeated = String::from_utf8_lossy(&attr.value)
+                                    .parse::<u32>()
+                                    .unwrap_or(1);
+                            }
+                        }
+                        current_col += col_repeated;
+                    }
+                }
                 Event::End(e) if e.name().as_ref() == b"table:table-row" => {
                     current_row += row_repeated;
                 }
@@ -1106,10 +1231,44 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
     }
 
     fn read_hidden_sheets(&mut self) -> Result<Vec<String>> {
-        super::ods_parser::extract_hidden_sheets_from_ods(self.archive)
+        extract_hidden_sheets_from_ods(self.archive)
     }
 
     fn has_macros(&mut self) -> Result<bool> {
         super::ods_parser::has_macros_ods(self.archive)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_ods_formula_basic() {
+        assert_eq!(normalize_ods_formula("of:=SUM([.A1:.B2])"), "SUM(A1:B2)");
+        assert_eq!(normalize_ods_formula("of:=[.A1]+[.B1]"), "A1+B1");
+        assert_eq!(normalize_ods_formula("of:=SUM([.A:.A])"), "SUM(A:A)");
+        assert_eq!(normalize_ods_formula("of:=SUM([.1:.1])"), "SUM(1:1)");
+    }
+
+    #[test]
+    fn test_normalize_ods_formula_sheet() {
+        assert_eq!(normalize_ods_formula("of:=[$Sheet1.A1]*2"), "Sheet1!A1*2");
+        assert_eq!(
+            normalize_ods_formula("of:=SUM([$Sheet1.A1:.B2])"),
+            "SUM(Sheet1!A1:B2)"
+        );
+        assert_eq!(
+            normalize_ods_formula("of:=$Sheet1.$A$1+$Sheet1.B1"),
+            "Sheet1!$A$1+Sheet1!B1"
+        );
+    }
+
+    #[test]
+    fn test_normalize_ods_formula_mixed() {
+        assert_eq!(
+            normalize_ods_formula("of:=[.A$1]+$Sheet1.B$2"),
+            "A$1+Sheet1!B$2"
+        );
     }
 }
