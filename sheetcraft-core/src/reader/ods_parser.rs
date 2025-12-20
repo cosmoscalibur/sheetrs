@@ -12,17 +12,92 @@ use super::{Cell, CellValue, Sheet, WorkbookReader};
 pub fn extract_hidden_sheets_from_ods(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<String>> {
-    // Step 1: Get all sheets from content.xml
-    let all_sheets = extract_all_sheet_names_from_ods(archive)?;
+    let mut hidden_sheets = Vec::new();
+    let mut sheet_styles = Vec::new(); // (sheet_name, style_name)
+    let mut hidden_styles = std::collections::HashSet::new();
 
-    // Step 2: Get visible sheets from settings.xml
-    let visible_sheets = extract_visible_sheets_from_settings(archive)?;
+    {
+        let content_xml = match archive.by_name("content.xml") {
+            Ok(file) => file,
+            Err(_) => return Ok(hidden_sheets),
+        };
 
-    // Step 3: Find hidden sheets (in all_sheets but not in visible_sheets)
-    let hidden_sheets: Vec<String> = all_sheets
-        .into_iter()
-        .filter(|sheet| !visible_sheets.contains(sheet))
-        .collect();
+        let buf_reader = BufReader::new(content_xml);
+        let mut reader = Reader::from_reader(buf_reader);
+        reader.config_mut().trim_text(true);
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"style:style" => {
+                    let mut style_name = String::new();
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"style:name" {
+                            style_name = String::from_utf8_lossy(&attr.value).to_string();
+                        }
+                    }
+
+                    if !style_name.is_empty() {
+                        // If it was a Start event, now look for style:table-properties
+                        let mut inner_buf = Vec::new();
+                        loop {
+                            match reader.read_event_into(&mut inner_buf)? {
+                                Event::Start(ee) | Event::Empty(ee)
+                                    if ee.name().as_ref() == b"style:table-properties" =>
+                                {
+                                    for attr in ee.attributes().flatten() {
+                                        if attr.key.as_ref() == b"table:display"
+                                            && attr.value.as_ref() == b"false"
+                                        {
+                                            hidden_styles.insert(style_name.clone());
+                                        }
+                                    }
+                                }
+                                Event::End(ee) if ee.name().as_ref() == b"style:style" => break,
+                                Event::Eof => break,
+                                _ => {}
+                            }
+                            inner_buf.clear();
+                        }
+                    }
+                }
+                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table" => {
+                    let mut sheet_name = String::new();
+                    let mut style_name = String::new();
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"table:name" {
+                            sheet_name = String::from_utf8_lossy(&attr.value).to_string();
+                        } else if attr.key.as_ref() == b"table:style-name" {
+                            style_name = String::from_utf8_lossy(&attr.value).to_string();
+                        }
+                    }
+                    if !sheet_name.is_empty() && !style_name.is_empty() {
+                        sheet_styles.push((sheet_name, style_name));
+                    }
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+            buf.clear();
+        }
+    }
+
+    for (name, style) in sheet_styles {
+        if hidden_styles.contains(&style) {
+            hidden_sheets.push(name);
+        }
+    }
+
+    // Fallback: use settings.xml if no hidden sheets found or to supplement
+    if hidden_sheets.is_empty() {
+        let all_sheets = extract_all_sheet_names_from_ods(archive)?;
+        let visible_sheets = extract_visible_sheets_from_settings(archive)?;
+        for sheet in all_sheets {
+            if !visible_sheets.contains(&sheet) && !hidden_sheets.contains(&sheet) {
+                hidden_sheets.push(sheet);
+            }
+        }
+    }
 
     Ok(hidden_sheets)
 }
@@ -64,7 +139,6 @@ fn extract_all_sheet_names_from_ods(
         buf.clear();
     }
 
-    // eprintln!("DEBUG: ODS Sheets in content.xml: {:?}", sheet_names);
     Ok(sheet_names)
 }
 
@@ -987,6 +1061,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         }
                     }
                     current_row += row_repeated;
+                    current_col = 0;
                 }
                 Event::Start(e)
                     if e.name().as_ref() == b"table:table-cell"
@@ -1156,6 +1231,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                 }
                 Event::End(e) if e.name().as_ref() == b"table:table-row" => {
                     current_row += row_repeated;
+                    current_col = 0;
                 }
                 Event::End(e) if e.name().as_ref() == b"table:table" => {
                     if let Some(mut sheet) = current_sheet.take() {
