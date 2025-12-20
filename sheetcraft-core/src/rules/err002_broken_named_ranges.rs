@@ -80,6 +80,7 @@ mod tests {
             defined_names,
             hidden_sheets: Vec::new(),
             has_macros: false,
+            external_links: Vec::new(),
         };
 
         let rule = BrokenNamedRangesRule;

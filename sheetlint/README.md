@@ -47,10 +47,10 @@ disabled_rules = ["UX", "SM"]
 
 | ID | Description | Default Active | Params |
 |----|-------------|----------------|--------|
-| **SEC001** | External links in formulas or URLs | Yes | `external_links_type` (string: "URL"\|"WORKBOOK"\|"ALL", default: "WORKBOOK"), `external_links_status` (string: "INVALID"\|"ALL", default: "ALL"), `url_timeout_seconds` (int, default: 5) |
+| **SEC001** | External links in formulas, URLs, or metadata | Yes | `external_links_type` (string: "URL"\|"WORKBOOK"\|"ALL", default: "WORKBOOK"), `external_links_status` (string: "INVALID"\|"ALL", default: "ALL"), `url_timeout_seconds` (int, default: 5) |
 | **SEC002** | Hidden sheets | No | None |
 | **SEC003** | Hidden columns or rows | No | None |
-| **SEC004** | Macros and VBA code detection (:warning: Not tested) | No | None |
+| **SEC004** | Macros and scripts detection (VBA, ODS Basic/Scripts) | No | None |
 
 ### Performance Rules (PERF)
 

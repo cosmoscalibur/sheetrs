@@ -176,6 +176,7 @@ mod tests {
             defined_names: HashMap::new(),
             hidden_sheets: vec![],
             has_macros: false,
+            external_links: Vec::new(),
         };
 
         let config = LinterConfig::default();

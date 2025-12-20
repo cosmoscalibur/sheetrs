@@ -22,7 +22,7 @@ pub mod perf004_excessive_conditional_formatting;
 pub mod sec001_external_links;
 pub mod sec002_hidden_sheets;
 pub mod sec003_hidden_columns_rows;
-pub mod sec004_macros_vba;
+pub mod sec004_has_macros;
 
 pub mod sm001_excessive_sheet_counts;
 pub mod sm002_duplicate_sheet_names;

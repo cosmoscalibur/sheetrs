@@ -215,6 +215,21 @@ impl LinterRule for ExternalLinksRule {
             }
         }
 
+        // Check for external links found in metadata (book-level)
+        for link in &workbook.external_links {
+            if seen_workbooks.contains(link) || seen_urls.contains(link) {
+                continue;
+            }
+
+            let message = format!("External link '{}' found in workbook metadata.", link);
+            violations.push(Violation::new(
+                self.id(),
+                ViolationScope::Book,
+                message,
+                Severity::Warning,
+            ));
+        }
+
         Ok(violations)
     }
 }
@@ -437,7 +452,8 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -447,6 +463,7 @@ mod tests {
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),
             has_macros: false,
+            external_links: Vec::new(),
         };
 
         let rule = ExternalLinksRule::default();
@@ -477,7 +494,8 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -487,6 +505,7 @@ mod tests {
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),
             has_macros: false,
+            external_links: Vec::new(),
         };
 
         // Use ALL mode to detect URLs (default is WORKBOOK only)
@@ -533,7 +552,8 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -543,6 +563,7 @@ mod tests {
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),
             has_macros: false,
+            external_links: Vec::new(),
         };
 
         let rule = ExternalLinksRule::default();
@@ -584,7 +605,8 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -594,6 +616,7 @@ mod tests {
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),
             has_macros: false,
+            external_links: Vec::new(),
         };
 
         let rule = ExternalLinksRule::default();
@@ -624,5 +647,36 @@ mod tests {
             !has_sheet_ref,
             "Should NOT detect ODS internal sheet reference [$Sheet1.A1]"
         );
+    }
+    #[test]
+    fn test_external_link_in_metadata() {
+        let sheet = Sheet {
+            name: "Sheet1".to_string(),
+            cells: HashMap::new(),
+            used_range: Some((0, 0)),
+            hidden_columns: Vec::new(),
+            hidden_rows: Vec::new(),
+            merged_cells: Vec::new(),
+            sheet_path: None,
+            formula_parsing_error: None,
+        };
+
+        let workbook = Workbook {
+            path: PathBuf::from("test.xlsx"),
+            sheets: vec![sheet],
+            defined_names: HashMap::new(),
+            hidden_sheets: Vec::new(),
+            has_macros: false,
+            external_links: vec!["external_workbook.xlsx".to_string()],
+        };
+
+        let config = LinterConfig::default();
+        let rule = ExternalLinksRule::new(&config);
+        let violations = rule.check(&workbook).unwrap();
+
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].scope, ViolationScope::Book);
+        assert!(violations[0].message.contains("external_workbook.xlsx"));
+        assert!(violations[0].message.contains("metadata"));
     }
 }

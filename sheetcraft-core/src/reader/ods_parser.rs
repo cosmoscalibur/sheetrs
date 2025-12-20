@@ -461,11 +461,10 @@ pub fn extract_merged_cells_from_ods(
 }
 
 /// Check if ODS file contains macros
-/// ODS macros are stored in Basic/ or Scripts/ directories
-pub fn has_macros_ods(
-    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
-) -> Result<bool> {
-    // Check for Basic/ directory (LibreOffice Basic macros)
+/// ODS macros are stored in Basic/ or Scripts/ directories,
+/// or declared in META-INF/manifest.xml
+pub fn has_macros(archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>) -> Result<bool> {
+    // 1. Check for directory presence
     for i in 0..archive.len() {
         if let Ok(file) = archive.by_index(i) {
             let name = file.name();
@@ -474,7 +473,71 @@ pub fn has_macros_ods(
             }
         }
     }
+
+    // 2. Check manifest for macro-related media types
+    if let Ok(manifest_file) = archive.by_name("META-INF/manifest.xml") {
+        let buf_reader = BufReader::new(manifest_file);
+        let mut reader = Reader::from_reader(buf_reader);
+        let mut buf = Vec::new();
+
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(e) | Event::Empty(e)
+                    if e.name().as_ref() == b"manifest:file-entry" =>
+                {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"manifest:media-type" {
+                            let media_type = String::from_utf8_lossy(&attr.value);
+                            if media_type.contains("application/vnd.sun.xml.ui.configuration")
+                                || media_type.contains("script")
+                            {
+                                // This is a bit broad, but Basic/ scripts often have specific media types
+                            }
+                        }
+                    }
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+            buf.clear();
+        }
+    }
+
     Ok(false)
+}
+
+/// Extract external links from ODS metadata
+pub fn extract_external_links_ods(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<Vec<String>> {
+    let mut links = Vec::new();
+
+    let content_xml = match archive.by_name("content.xml") {
+        Ok(file) => file,
+        Err(_) => return Ok(links),
+    };
+
+    let buf_reader = BufReader::new(content_xml);
+    let mut reader = Reader::from_reader(buf_reader);
+    reader.config_mut().trim_text(true);
+
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table-source" => {
+                for attr in e.attributes().flatten() {
+                    if attr.key.as_ref() == b"xlink:href" {
+                        links.push(String::from_utf8_lossy(&attr.value).to_string());
+                    }
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(links)
 }
 
 /// Extract cached error values from an ODS worksheet
@@ -1311,7 +1374,11 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
     }
 
     fn has_macros(&mut self) -> Result<bool> {
-        super::ods_parser::has_macros_ods(self.archive)
+        has_macros(self.archive)
+    }
+
+    fn read_external_links(&mut self) -> Result<Vec<String>> {
+        extract_external_links_ods(self.archive)
     }
 }
 

@@ -13,6 +13,8 @@ pub struct Workbook {
     pub hidden_sheets: Vec<String>,
     /// Whether the workbook contains macros or VBA code
     pub has_macros: bool,
+    /// List of external links (URLs or workbook paths) found in metadata
+    pub external_links: Vec<String>,
 }
 
 impl Workbook {

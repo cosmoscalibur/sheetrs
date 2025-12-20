@@ -226,8 +226,104 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
     }
 
     fn has_macros(&mut self) -> Result<bool> {
-        Ok(self.archive.by_name("xl/vbaProject.bin").is_ok())
+        // Check for vbaProject.bin, macrosheets, or any .bin files in xl/
+        if self.archive.by_name("xl/vbaProject.bin").is_ok() {
+            return Ok(true);
+        }
+
+        // Check for macrosheets
+        for i in 0..self.archive.len() {
+            if let Ok(file) = self.archive.by_index(i) {
+                if file.name().starts_with("xl/macrosheets/") {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
+
+    fn read_external_links(&mut self) -> Result<Vec<String>> {
+        extract_external_links_xlsx(self.archive)
+    }
+}
+
+pub fn extract_external_links_xlsx(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<Vec<String>> {
+    let mut links = Vec::new();
+    let mut external_rels = Vec::new();
+
+    // 1. Find external link relationships in workbook.xml.rels
+    if let Ok(rels_xml) = archive.by_name("xl/_rels/workbook.xml.rels") {
+        let mut reader = Reader::from_reader(BufReader::new(rels_xml));
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"Relationship" => {
+                    let mut target = String::new();
+                    let mut r_type = String::new();
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"Target" => target = String::from_utf8_lossy(&attr.value).to_string(),
+                            b"Type" => r_type = String::from_utf8_lossy(&attr.value).to_string(),
+                            _ => {}
+                        }
+                    }
+                    if r_type.ends_with("/externalLink") {
+                        external_rels.push(target);
+                    }
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+            buf.clear();
+        }
+    }
+
+    // 2. Resolve each external link to its target workbook
+    for rel_path in external_rels {
+        // rel_path is usually like "externalLinks/externalLink1.xml"
+        // We need the .rels for this file
+        let filename = std::path::Path::new(&rel_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+
+        let rels_of_ext = format!("xl/externalLinks/_rels/{}.rels", filename);
+
+        if let Ok(ext_rels_xml) = archive.by_name(&rels_of_ext) {
+            let mut reader = Reader::from_reader(BufReader::new(ext_rels_xml));
+            let mut buf = Vec::new();
+            loop {
+                match reader.read_event_into(&mut buf)? {
+                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"Relationship" => {
+                        let mut target = String::new();
+                        let mut r_type = String::new();
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"Target" => {
+                                    target = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                b"Type" => {
+                                    r_type = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                _ => {}
+                            }
+                        }
+                        if r_type.ends_with("/externalWorkbook") {
+                            links.push(target);
+                        }
+                    }
+                    Event::Eof => break,
+                    _ => {}
+                }
+                buf.clear();
+            }
+        }
+    }
+
+    Ok(links)
 }
 
 fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> String {

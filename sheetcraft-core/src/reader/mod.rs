@@ -22,6 +22,7 @@ pub trait WorkbookReader {
     fn read_defined_names(&mut self) -> Result<HashMap<String, String>>;
     fn read_hidden_sheets(&mut self) -> Result<Vec<String>>;
     fn has_macros(&mut self) -> Result<bool>;
+    fn read_external_links(&mut self) -> Result<Vec<String>>;
 }
 
 /// Read a workbook from a file path
@@ -43,13 +44,14 @@ pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
         .map(|s| s.eq_ignore_ascii_case("ods"))
         .unwrap_or(false);
 
-    let (sheets, defined_names, hidden_sheets, has_macros) = if is_xlsx {
+    let (sheets, defined_names, hidden_sheets, has_macros, external_links) = if is_xlsx {
         let mut reader = XlsxReader::new(&mut archive)?;
         (
             reader.read_sheets()?,
             reader.read_defined_names()?,
             reader.read_hidden_sheets()?,
             reader.has_macros()?,
+            reader.read_external_links()?,
         )
     } else if is_ods {
         let mut reader = OdsReader::new(&mut archive)?;
@@ -58,6 +60,7 @@ pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
             reader.read_defined_names()?,
             reader.read_hidden_sheets()?,
             reader.has_macros()?,
+            reader.read_external_links()?,
         )
     } else {
         return Err(anyhow::anyhow!("Unsupported file format"));
@@ -69,5 +72,6 @@ pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
         defined_names,
         hidden_sheets,
         has_macros,
+        external_links,
     })
 }
