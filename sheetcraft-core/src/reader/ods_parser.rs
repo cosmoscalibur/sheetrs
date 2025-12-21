@@ -1184,9 +1184,11 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 _ => {}
                             }
                         }
+
                         if hidden {
-                            for r in 0..row_repeated {
-                                sheet.hidden_rows.push(current_row + r);
+                            for _ in 0..row_repeated {
+                                sheet.hidden_rows.push(current_row);
+                                current_row += 1;
                             }
                         }
                     }
@@ -1376,15 +1378,42 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     if e.name().as_ref() == b"table:table-cell"
                         || e.name().as_ref() == b"table:covered-table-cell" =>
                 {
-                    if current_sheet.is_some() {
+                    if let Some(ref mut sheet) = current_sheet {
                         let mut col_repeated = 1u32;
+                        let mut cols_spanned = 1u32;
+                        let mut rows_spanned = 1u32;
+
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"table:number-columns-repeated" {
-                                col_repeated = String::from_utf8_lossy(&attr.value)
-                                    .parse::<u32>()
-                                    .unwrap_or(1);
+                            match attr.key.as_ref() {
+                                b"table:number-columns-repeated" => {
+                                    col_repeated = String::from_utf8_lossy(&attr.value)
+                                        .parse::<u32>()
+                                        .unwrap_or(1);
+                                }
+                                b"table:number-columns-spanned" => {
+                                    cols_spanned = String::from_utf8_lossy(&attr.value)
+                                        .parse::<u32>()
+                                        .unwrap_or(1);
+                                }
+                                b"table:number-rows-spanned" => {
+                                    rows_spanned = String::from_utf8_lossy(&attr.value)
+                                        .parse::<u32>()
+                                        .unwrap_or(1);
+                                }
+                                _ => {}
                             }
                         }
+
+                        // Check if this empty cell is actually a merged cell
+                        if cols_spanned > 1 || rows_spanned > 1 {
+                            sheet.merged_cells.push((
+                                current_row,
+                                current_col,
+                                current_row + rows_spanned - 1,
+                                current_col + cols_spanned - 1,
+                            ));
+                        }
+
                         current_col += col_repeated;
                     }
                 }
