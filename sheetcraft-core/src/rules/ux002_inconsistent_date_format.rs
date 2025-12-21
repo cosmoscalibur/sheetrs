@@ -164,6 +164,8 @@ mod tests {
             hidden_rows: vec![],
             merged_cells: vec![],
             formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             sheet_path: None,
         };
 

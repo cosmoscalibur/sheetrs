@@ -451,6 +451,8 @@ mod tests {
             merged_cells: Vec::new(),
             sheet_path: None,
             formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
         };
 
         let workbook = Workbook {
@@ -493,6 +495,8 @@ mod tests {
             merged_cells: Vec::new(),
             sheet_path: None,
             formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
         };
 
         let workbook = Workbook {
@@ -551,6 +555,8 @@ mod tests {
             merged_cells: Vec::new(),
             sheet_path: None,
             formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
         };
 
         let workbook = Workbook {
@@ -604,6 +610,8 @@ mod tests {
             merged_cells: Vec::new(),
             sheet_path: None,
             formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
         };
 
         let workbook = Workbook {
@@ -650,11 +658,7 @@ mod tests {
             name: "Sheet1".to_string(),
             cells: HashMap::new(),
             used_range: Some((0, 0)),
-            hidden_columns: Vec::new(),
-            hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
-            sheet_path: None,
-            formula_parsing_error: None,
+            ..Default::default()
         };
 
         let workbook = Workbook {

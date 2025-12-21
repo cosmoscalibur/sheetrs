@@ -199,12 +199,15 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
             sheet.sheet_path = Some(path.clone());
 
             // Parse sheet data
-            let (cells, hidden_cols, hidden_rows, merged_cells) = self.parse_sheet_xml(&path)?;
+            let (cells, hidden_cols, hidden_rows, merged_cells, cf_count, cf_ranges) =
+                self.parse_sheet_xml(&path)?;
 
             sheet.cells = cells;
             sheet.hidden_columns = hidden_cols;
             sheet.hidden_rows = hidden_rows;
             sheet.merged_cells = merged_cells;
+            sheet.conditional_formatting_count = cf_count;
+            sheet.conditional_formatting_ranges = cf_ranges;
 
             // Calculate used range
             if let Some((max_row, max_col)) = sheet.last_data_cell() {
@@ -414,11 +417,15 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
         Vec<u32>,
         Vec<u32>,
         Vec<(u32, u32, u32, u32)>,
+        usize,
+        Vec<String>,
     )> {
         let mut cells = HashMap::new();
         let mut hidden_columns = Vec::new();
         let mut hidden_rows = Vec::new();
         let mut merged_cells = Vec::new();
+        let mut cf_count = 0;
+        let mut cf_ranges = Vec::new();
         let mut shared_formulas: HashMap<
             u32,
             Vec<(String, u32, u32, Option<(u32, u32, u32, u32)>)>,
@@ -578,6 +585,17 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             }
                         }
                     }
+                    b"cfRule" => {
+                        cf_count += 1;
+                    }
+                    b"conditionalFormatting" => {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"sqref" {
+                                let sqref = attr.unescape_value()?;
+                                cf_ranges.push(sqref.to_string());
+                            }
+                        }
+                    }
                     _ => {}
                 },
                 Event::Empty(e) => match e.name().as_ref() {
@@ -657,6 +675,17 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             }
                         }
                     }
+                    b"cfRule" => {
+                        cf_count += 1;
+                    }
+                    b"conditionalFormatting" => {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"sqref" {
+                                let sqref = attr.unescape_value()?;
+                                cf_ranges.push(sqref.to_string());
+                            }
+                        }
+                    }
                     _ => {}
                 },
                 Event::End(e) => match e.name().as_ref() {
@@ -669,7 +698,14 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
             buf.clear();
         }
 
-        Ok((cells, hidden_columns, hidden_rows, merged_cells))
+        Ok((
+            cells,
+            hidden_columns,
+            hidden_rows,
+            merged_cells,
+            cf_count,
+            cf_ranges,
+        ))
     }
 }
 

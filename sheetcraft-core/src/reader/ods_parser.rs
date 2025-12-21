@@ -944,7 +944,9 @@ pub fn extract_formulas_from_ods(
 
     Ok(formulas)
 }
-pub fn normalize_ods_formula(formula: &str) -> String {
+/// Normalize ODS references (formulas, ranges, etc.) to a format consistent with XLSX.
+/// Strips "of:=" prefix, handles sheet-qualified references, and cleans up local sheet names.
+pub fn normalize_ods_reference(reference: &str) -> String {
     use regex::Regex;
     use std::sync::OnceLock;
 
@@ -955,7 +957,10 @@ pub fn normalize_ods_formula(formula: &str) -> String {
     static ODS_SHEET_REF_NO_BRACKET: OnceLock<Regex> = OnceLock::new();
     static ODS_RECT_REF: OnceLock<Regex> = OnceLock::new();
 
-    let mut normalized = formula.strip_prefix("of:=").unwrap_or(formula).to_string();
+    let mut normalized = reference
+        .strip_prefix("of:=")
+        .unwrap_or(reference)
+        .to_string();
 
     // 0. Replace rectangular ranges [.A1:.B2] -> A1:B2
     // Matches [.A1:.B2]
@@ -972,6 +977,29 @@ pub fn normalize_ods_formula(formula: &str) -> String {
     normalized = sheet_range_ref
         .replace_all(&normalized, "$1!$2:$3")
         .to_string();
+
+    // 0c. Replace plain sheet-level ranges Sheet1.A1:Sheet1.B2 -> A1:B2
+    // Matches Sheet1.A1:Sheet1.B2, Sheet1.A1, etc.
+    // This is common in ODS conditional formatting targets.
+    // We strip the sheet name if it's the same for both parts of the range.
+    static ODS_LOCAL_RANGE_REF: OnceLock<Regex> = OnceLock::new();
+    let local_range_ref = ODS_LOCAL_RANGE_REF
+        .get_or_init(|| Regex::new(r"([^.]+)\.([A-Z0-9$]+):([^.]+)\.([A-Z0-9$]+)").unwrap());
+    normalized = local_range_ref
+        .replace_all(&normalized, |caps: &regex::Captures| {
+            if &caps[1] == &caps[3] {
+                format!("{}:{}", &caps[2], &caps[4])
+            } else {
+                format!("{}!{}:{}!{}", &caps[1], &caps[2], &caps[3], &caps[4])
+            }
+        })
+        .to_string();
+
+    // 0d. Replace single local reference Sheet1.A1 -> A1
+    static ODS_LOCAL_SINGLE_REF: OnceLock<Regex> = OnceLock::new();
+    let local_single_ref =
+        ODS_LOCAL_SINGLE_REF.get_or_init(|| Regex::new(r"^([^.]+)\.([A-Z0-9$]+)$").unwrap());
+    normalized = local_single_ref.replace_all(&normalized, "$2").to_string();
 
     // 1. Replace sheet references [$Sheet1.A1] -> Sheet1!A1 (BEFORE non-bracketed version)
     // Matches [$Sheet.$A$1], [$Sheet.A1], etc.
@@ -1033,6 +1061,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
         let mut current_row = 0u32;
         let mut row_repeated = 1u32;
         let mut current_col = 0u32;
+        let mut current_cf_range: Option<String> = None;
 
         loop {
             match reader.read_event_into(&mut buf)? {
@@ -1208,7 +1237,8 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                         attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 b"table:formula" => {
-                                    formula = Some(normalize_ods_formula(&attr.unescape_value()?));
+                                    formula =
+                                        Some(normalize_ods_reference(&attr.unescape_value()?));
                                 }
                                 b"calcext:value-type" => {
                                     if attr.value.as_ref() == b"error" {
@@ -1365,6 +1395,36 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         current_col += col_repeated;
                     }
                 }
+                Event::Start(e) if e.name().as_ref() == b"calcext:conditional-format" => {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"calcext:target-range-address" {
+                            current_cf_range = Some(attr.unescape_value()?.to_string());
+                        }
+                    }
+                }
+                Event::End(e) if e.name().as_ref() == b"calcext:conditional-format" => {
+                    current_cf_range = None;
+                }
+                Event::Start(e) if e.name().as_ref() == b"calcext:condition" => {
+                    if let Some(ref mut sheet) = current_sheet {
+                        sheet.conditional_formatting_count += 1;
+                        if let Some(ref range) = current_cf_range {
+                            sheet
+                                .conditional_formatting_ranges
+                                .push(normalize_ods_reference(range));
+                        }
+                    }
+                }
+                Event::Empty(e) if e.name().as_ref() == b"calcext:condition" => {
+                    if let Some(ref mut sheet) = current_sheet {
+                        sheet.conditional_formatting_count += 1;
+                        if let Some(ref range) = current_cf_range {
+                            sheet
+                                .conditional_formatting_ranges
+                                .push(normalize_ods_reference(range));
+                        }
+                    }
+                }
                 Event::End(e) if e.name().as_ref() == b"table:table-row" => {
                     current_row += row_repeated;
                     current_col = 0;
@@ -1425,7 +1485,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
 
                     if !name.is_empty() && !cell_range_address.is_empty() {
                         // Normalize ODS range address to Excel-style (Sheet!A1:B2)
-                        let normalized = normalize_ods_formula(&cell_range_address);
+                        let normalized = normalize_ods_reference(&cell_range_address);
                         defined_names.insert(name, normalized);
                     }
                 }
@@ -1459,31 +1519,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normalize_ods_formula_basic() {
-        assert_eq!(normalize_ods_formula("of:=SUM([.A1:.B2])"), "SUM(A1:B2)");
-        assert_eq!(normalize_ods_formula("of:=[.A1]+[.B1]"), "A1+B1");
-        assert_eq!(normalize_ods_formula("of:=SUM([.A:.A])"), "SUM(A:A)");
-        assert_eq!(normalize_ods_formula("of:=SUM([.1:.1])"), "SUM(1:1)");
+    fn test_normalize_ods_reference_basic() {
+        assert_eq!(normalize_ods_reference("of:=SUM([.A1:.B2])"), "SUM(A1:B2)");
+        assert_eq!(normalize_ods_reference("of:=[.A1]+[.B1]"), "A1+B1");
+        assert_eq!(normalize_ods_reference("of:=SUM([.A:.A])"), "SUM(A:A)");
+        assert_eq!(normalize_ods_reference("of:=SUM([.1:.1])"), "SUM(1:1)");
     }
 
     #[test]
-    fn test_normalize_ods_formula_sheet() {
-        assert_eq!(normalize_ods_formula("of:=[$Sheet1.A1]*2"), "Sheet1!A1*2");
+    fn test_normalize_ods_reference_sheet() {
+        assert_eq!(normalize_ods_reference("of:=[$Sheet1.A1]*2"), "Sheet1!A1*2");
         assert_eq!(
-            normalize_ods_formula("of:=SUM([$Sheet1.A1:.B2])"),
+            normalize_ods_reference("of:=SUM([$Sheet1.A1:.B2])"),
             "SUM(Sheet1!A1:B2)"
         );
         assert_eq!(
-            normalize_ods_formula("of:=$Sheet1.$A$1+$Sheet1.B1"),
+            normalize_ods_reference("of:=$Sheet1.$A$1+$Sheet1.B1"),
             "Sheet1!$A$1+Sheet1!B1"
         );
     }
 
     #[test]
-    fn test_normalize_ods_formula_mixed() {
+    fn test_normalize_ods_reference_mixed() {
+        assert_eq!(normalize_ods_reference("of:=[.A1:.$B$2]"), "A1:$B$2");
         assert_eq!(
-            normalize_ods_formula("of:=[.A$1]+$Sheet1.B$2"),
+            normalize_ods_reference("of:=[.A$1]+$Sheet1.B$2"),
             "A$1+Sheet1!B$2"
         );
+    }
+
+    #[test]
+    fn test_normalize_ods_range() {
+        // Local range with redundant sheet names
+        assert_eq!(normalize_ods_reference("Sheet1.B2:Sheet1.B4"), "B2:B4");
+        // Single cell ref
+        assert_eq!(normalize_ods_reference("Sheet1.A1"), "A1");
+        // Multi-sheet range
+        assert_eq!(
+            normalize_ods_reference("Sheet1.A1:Sheet2.B2"),
+            "Sheet1!A1:Sheet2!B2"
+        );
+        // Absolute local ref
+        assert_eq!(normalize_ods_reference("Sheet1.$A$1"), "$A$1");
     }
 }

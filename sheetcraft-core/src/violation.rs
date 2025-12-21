@@ -94,7 +94,9 @@ impl PartialOrd for CellReference {
 
 impl Ord for CellReference {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.row.cmp(&other.row).then_with(|| self.col.cmp(&other.col))
+        self.row
+            .cmp(&other.row)
+            .then_with(|| self.col.cmp(&other.col))
     }
 }
 
@@ -118,7 +120,12 @@ pub struct Violation {
 }
 
 impl Violation {
-    pub fn new(rule_id: impl Into<String>, scope: ViolationScope, message: impl Into<String>, severity: Severity) -> Self {
+    pub fn new(
+        rule_id: impl Into<String>,
+        scope: ViolationScope,
+        message: impl Into<String>,
+        severity: Severity,
+    ) -> Self {
         Self {
             rule_id: rule_id.into(),
             scope,
@@ -136,7 +143,8 @@ impl PartialOrd for Violation {
 
 impl Ord for Violation {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.scope.cmp(&other.scope)
+        self.scope
+            .cmp(&other.scope)
             .then_with(|| self.rule_id.cmp(&other.rule_id))
     }
 }

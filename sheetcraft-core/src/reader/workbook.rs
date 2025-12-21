@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Represents a complete workbook
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Workbook {
     pub path: PathBuf,
     pub sheets: Vec<Sheet>,
@@ -30,7 +30,7 @@ impl Workbook {
 }
 
 /// Represents a worksheet
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Sheet {
     pub name: String,
     pub cells: HashMap<(u32, u32), Cell>,
@@ -45,6 +45,10 @@ pub struct Sheet {
     pub formula_parsing_error: Option<String>,
     /// Internal path to the sheet XML file in the ZIP archive
     pub sheet_path: Option<String>,
+    /// Number of conditional formatting rules in this sheet
+    pub conditional_formatting_count: usize,
+    /// Ranges where conditional formatting rules are applied
+    pub conditional_formatting_ranges: Vec<String>,
 }
 
 impl Sheet {
@@ -58,6 +62,8 @@ impl Sheet {
             merged_cells: Vec::new(),
             formula_parsing_error: None,
             sheet_path: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
         }
     }
 
@@ -102,7 +108,7 @@ impl Sheet {
 }
 
 /// Represents a single cell
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Cell {
     pub row: u32,
     pub col: u32,
@@ -111,8 +117,9 @@ pub struct Cell {
 }
 
 /// Cell value types
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum CellValue {
+    #[default]
     Empty,
     Number(f64),
     Text(String),

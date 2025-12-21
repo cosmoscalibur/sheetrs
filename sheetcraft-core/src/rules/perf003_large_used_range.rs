@@ -116,13 +116,8 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             cells,
-            // But used range extends much further
             used_range: Some((50, 30)),
-            hidden_columns: Vec::new(),
-            hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
-            sheet_path: None,
-            formula_parsing_error: None,
+            ..Default::default()
         };
 
         let workbook = Workbook {

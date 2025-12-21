@@ -77,6 +77,8 @@ mod tests {
                 merged_cells: Vec::new(),
                 sheet_path: None,
                 formula_parsing_error: None,
+                conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             },
             Sheet {
                 name: "data".to_string(),
@@ -87,6 +89,8 @@ mod tests {
                 merged_cells: Vec::new(),
                 sheet_path: None,
                 formula_parsing_error: None,
+                conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             },
             Sheet {
                 name: "Summary".to_string(),
@@ -97,6 +101,8 @@ mod tests {
                 merged_cells: Vec::new(),
                 sheet_path: None,
                 formula_parsing_error: None,
+                conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             },
         ];
 
@@ -130,6 +136,8 @@ mod tests {
                 merged_cells: Vec::new(),
                 sheet_path: None,
                 formula_parsing_error: None,
+                conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             },
             Sheet {
                 name: "sheet 1".to_string(),
@@ -140,6 +148,8 @@ mod tests {
                 merged_cells: Vec::new(),
                 sheet_path: None,
                 formula_parsing_error: None,
+                conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             },
             Sheet {
                 name: "Sheet-1".to_string(),
@@ -150,6 +160,8 @@ mod tests {
                 merged_cells: Vec::new(),
                 sheet_path: None,
                 formula_parsing_error: None,
+                conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             },
             Sheet {
                 name: "Data_2024".to_string(),
@@ -160,6 +172,8 @@ mod tests {
                 merged_cells: Vec::new(),
                 sheet_path: None,
                 formula_parsing_error: None,
+                conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             },
             Sheet {
                 name: "data2024".to_string(),
@@ -170,6 +184,8 @@ mod tests {
                 merged_cells: Vec::new(),
                 sheet_path: None,
                 formula_parsing_error: None,
+                conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             },
         ];
 

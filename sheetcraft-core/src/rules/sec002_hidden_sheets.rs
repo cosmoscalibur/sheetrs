@@ -56,6 +56,8 @@ mod tests {
                 merged_cells: Vec::new(),
                 sheet_path: None,
                 formula_parsing_error: None,
+                conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
             }],
             defined_names: HashMap::new(),
             hidden_sheets: vec!["HiddenSheet1".to_string(), "HiddenSheet2".to_string()],

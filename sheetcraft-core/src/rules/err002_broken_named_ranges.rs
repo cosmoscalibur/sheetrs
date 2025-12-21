@@ -64,6 +64,8 @@ mod tests {
             merged_cells: Vec::new(),
             sheet_path: None,
             formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
         };
 
         let mut defined_names = HashMap::new();
