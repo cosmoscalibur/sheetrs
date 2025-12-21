@@ -74,7 +74,7 @@ disabled_rules = ["UX", "SM"]
 | ID | Description | Default Active | Params |
 |----|-------------|----------------|--------|
 | **SM001** | Excessive sheet counts | Yes | `max_sheets` (int, default 50) |
-| **SM002** | Duplicate sheet names (case-insensitive) | Yes | None |
+| **SM002** | Confusingly similar sheet names (normalized: lowercase, alphanumeric only) | Yes | None |
 | **SM003** | Long text cells | No | `max_text_length` (int, default 255) |
 | **SM004** | Merged cells | No | None |
 | **SM005** | Non-descriptive sheet names | Yes | `avoid_sheet_names` (`list<string>`, default: ["sheet", "copy"]) |
