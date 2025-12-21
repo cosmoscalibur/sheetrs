@@ -39,10 +39,6 @@ impl LinterRule for NonDescriptiveSheetNameRule {
         RuleCategory::StructuralAndMaintainability
     }
 
-    fn default_active(&self) -> bool {
-        true
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
@@ -89,7 +85,8 @@ mod tests {
                 used_range: None,
                 hidden_columns: Vec::new(),
                 hidden_rows: Vec::new(),
-                merged_cells: Vec::new(), sheet_path: None,
+                merged_cells: Vec::new(),
+                sheet_path: None,
                 formula_parsing_error: None,
             },
             Sheet {
@@ -98,7 +95,8 @@ mod tests {
                 used_range: None,
                 hidden_columns: Vec::new(),
                 hidden_rows: Vec::new(),
-                merged_cells: Vec::new(), sheet_path: None,
+                merged_cells: Vec::new(),
+                sheet_path: None,
                 formula_parsing_error: None,
             },
             Sheet {
@@ -107,7 +105,8 @@ mod tests {
                 used_range: None,
                 hidden_columns: Vec::new(),
                 hidden_rows: Vec::new(),
-                merged_cells: Vec::new(), sheet_path: None,
+                merged_cells: Vec::new(),
+                sheet_path: None,
                 formula_parsing_error: None,
             },
         ];

@@ -3,7 +3,7 @@
 # Global configuration
 [global]
 # List of enabled rules (empty means all default-active rules are enabled)
-enabled_rules = ["SM"]
+enabled_rules = ["PERF", "ERR"]
 
 # List of disabled rules
 disabled_rules = []
@@ -12,7 +12,7 @@ disabled_rules = []
 # All parameters are set here and can be overridden per sheet
 max_extra_row = 2
 max_extra_column = 2
-max_conditional_formatting = 20
+max_conditional_formatting = 0
 external_links_type = "URL"
 external_links_status = "ALL"
 url_timeout_seconds = 2

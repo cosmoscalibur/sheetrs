@@ -20,10 +20,6 @@ impl LinterRule for HiddenColumnsRowsRule {
         RuleCategory::SecurityAndPrivacy
     }
 
-    fn default_active(&self) -> bool {
-        false
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
@@ -149,7 +145,9 @@ mod tests {
                 used_range: None,
                 hidden_columns: vec![0, 1, 2, 5], // A, B, C, F
                 hidden_rows: Vec::new(),
-                merged_cells: Vec::new(), sheet_path: None, formula_parsing_error: None,
+                merged_cells: Vec::new(),
+                sheet_path: None,
+                formula_parsing_error: None,
             }],
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),
@@ -176,7 +174,9 @@ mod tests {
                 used_range: None,
                 hidden_columns: Vec::new(),
                 hidden_rows: vec![0, 1, 2, 10, 11], // 1, 2, 3, 11, 12
-                merged_cells: Vec::new(), sheet_path: None, formula_parsing_error: None,
+                merged_cells: Vec::new(),
+                sheet_path: None,
+                formula_parsing_error: None,
             }],
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),

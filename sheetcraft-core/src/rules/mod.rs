@@ -48,8 +48,6 @@ pub trait LinterRule: Send + Sync {
     /// Rule category
     fn category(&self) -> RuleCategory;
 
-    /// Whether this rule is active by default
-    fn default_active(&self) -> bool;
     /// Check the workbook for violations
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>>;
 }

@@ -12,10 +12,7 @@ pub struct ExcessiveSheetCountsRule {
 
 impl ExcessiveSheetCountsRule {
     pub fn new(config: &LinterConfig) -> Self {
-        let threshold = config
-            .get_rule_config("SM001")
-            .and_then(|c| c.get_int("max_sheets"))
-            .unwrap_or(50);
+        let threshold = config.get_param_int("max_sheets", None).unwrap_or(50);
 
         Self {
             threshold: threshold as u32,
@@ -40,10 +37,6 @@ impl LinterRule for ExcessiveSheetCountsRule {
 
     fn category(&self) -> RuleCategory {
         RuleCategory::StructuralAndMaintainability
-    }
-
-    fn default_active(&self) -> bool {
-        true
     }
 
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
@@ -83,7 +76,8 @@ mod tests {
                 used_range: None,
                 hidden_columns: Vec::new(),
                 hidden_rows: Vec::new(),
-                merged_cells: Vec::new(), sheet_path: None,
+                merged_cells: Vec::new(),
+                sheet_path: None,
                 formula_parsing_error: None,
             });
         }

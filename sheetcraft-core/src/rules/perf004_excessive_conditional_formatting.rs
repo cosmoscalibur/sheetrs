@@ -7,23 +7,22 @@ use crate::violation::{Severity, Violation, ViolationScope};
 use anyhow::Result;
 
 pub struct ExcessiveConditionalFormattingRule {
-    threshold: u32,
+    config: LinterConfig,
 }
 
 impl ExcessiveConditionalFormattingRule {
     pub fn new(config: &LinterConfig) -> Self {
-        let threshold = config
-            .get_rule_config("PERF004")
-            .and_then(|c| c.get_int("max_conditional_formatting"))
-            .unwrap_or(5) as u32;
-
-        Self { threshold }
+        Self {
+            config: config.clone(),
+        }
     }
 }
 
 impl Default for ExcessiveConditionalFormattingRule {
     fn default() -> Self {
-        Self { threshold: 5 }
+        Self {
+            config: LinterConfig::default(),
+        }
     }
 }
 
@@ -38,10 +37,6 @@ impl LinterRule for ExcessiveConditionalFormattingRule {
 
     fn category(&self) -> RuleCategory {
         RuleCategory::Performance
-    }
-
-    fn default_active(&self) -> bool {
-        false
     }
 
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
@@ -61,18 +56,23 @@ impl LinterRule for ExcessiveConditionalFormattingRule {
         let mut archive = zip::ZipArchive::new(reader)?;
 
         for (_index, sheet) in workbook.sheets.iter().enumerate() {
+            let threshold = self
+                .config
+                .get_param_int("max_conditional_formatting", Some(&sheet.name))
+                .unwrap_or(5) as u32;
+
             let cf_count = crate::reader::xlsx_parser::count_conditional_formatting(
                 &mut archive,
                 &sheet.name,
             )?;
 
-            if cf_count > self.threshold as usize {
+            if cf_count > threshold as usize {
                 violations.push(Violation::new(
                     self.id(),
                     ViolationScope::Sheet(sheet.name.clone()),
                     format!(
                         "Sheet has {} conditional formatting rules (threshold: {})",
-                        cf_count, self.threshold
+                        cf_count, threshold
                     ),
                     Severity::Warning,
                 ));

@@ -72,10 +72,6 @@ impl LinterRule for InconsistentDateFormatRule {
         crate::rules::RuleCategory::FormattingAndUsability
     }
 
-    fn default_active(&self) -> bool {
-        true
-    }
-
     fn check(&self, workbook: &Workbook) -> anyhow::Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
@@ -167,7 +163,8 @@ mod tests {
             hidden_columns: vec![],
             hidden_rows: vec![],
             merged_cells: vec![],
-            formula_parsing_error: None, sheet_path: None,
+            formula_parsing_error: None,
+            sheet_path: None,
         };
 
         let workbook = Workbook {

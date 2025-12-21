@@ -20,10 +20,6 @@ impl LinterRule for MergedCellsRule {
         RuleCategory::StructuralAndMaintainability
     }
 
-    fn default_active(&self) -> bool {
-        false
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 

@@ -4,6 +4,12 @@ use super::*;
 use crate::config::LinterConfig;
 use std::collections::HashSet;
 
+/// List of rule IDs that are active by default
+pub const DEFAULT_ACTIVE_RULES: &[&str] = &[
+    "ERR001", "ERR002", "ERR003", "SEC001", "UX001", "PERF001", "PERF002", "PERF003", "SM001",
+    "SM002", "SM005", "FORM002", "FORM003", "FORM004", "FORM005", "FORM008", "FORM009",
+];
+
 /// Get all valid configuration tokens (Rule IDs, Category Prefixes, "ALL")
 pub fn get_all_valid_tokens() -> HashSet<String> {
     let mut tokens = HashSet::new();
@@ -36,11 +42,10 @@ pub fn create_enabled_rules(config: &LinterConfig) -> Vec<Box<dyn LinterRule>> {
             let is_enabled_in_config = config.is_rule_enabled(rule.id());
 
             if config.global.enabled_rules.is_empty() {
-                // If no specific allowlist, use default_active AND ensure not disabled
-                rule.default_active() && is_enabled_in_config
+                // If no specific allowlist, use DEFAULT_ACTIVE_RULES AND ensure not disabled
+                DEFAULT_ACTIVE_RULES.contains(&rule.id()) && is_enabled_in_config
             } else {
                 // If allowlist exists, is_rule_enabled_in_config determines the truth
-                // (it already checks if it matches the allowlist OR is explicitly disabled)
                 is_enabled_in_config
             }
         })
@@ -92,14 +97,6 @@ fn create_all_rules(config: &LinterConfig) -> Vec<Box<dyn LinterRule>> {
         Box::new(err003_circular_references::CircularReferenceRule::new(
             config,
         )),
-    ]
-}
-
-/// Get all rule IDs that are active by default
-pub fn default_active_rule_ids() -> Vec<&'static str> {
-    vec![
-        "ERR001", "ERR002", "ERR003", "SEC001", "UX001", "PERF001", "PERF002", "PERF003", "SM001",
-        "SM002", "SM005", "FORM002", "FORM003", "FORM004", "FORM005", "FORM008", "FORM009",
     ]
 }
 

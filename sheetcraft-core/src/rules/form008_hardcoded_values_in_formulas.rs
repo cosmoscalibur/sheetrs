@@ -92,10 +92,6 @@ impl LinterRule for HardcodedValuesInFormulasRule {
         RuleCategory::Formula
     }
 
-    fn default_active(&self) -> bool {
-        true
-    }
-
     fn check(&self, workbook: &Workbook) -> anyhow::Result<Vec<Violation>> {
         let mut violations = Vec::new();
 

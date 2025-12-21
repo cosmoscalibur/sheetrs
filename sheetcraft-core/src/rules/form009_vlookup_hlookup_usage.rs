@@ -28,10 +28,6 @@ impl LinterRule for VLookupHLookupUsageRule {
         crate::rules::RuleCategory::Formula
     }
 
-    fn default_active(&self) -> bool {
-        true
-    }
-
     fn check(&self, workbook: &Workbook) -> anyhow::Result<Vec<Violation>> {
         let mut violations = Vec::new();
 

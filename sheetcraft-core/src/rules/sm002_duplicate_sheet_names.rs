@@ -29,10 +29,6 @@ impl LinterRule for DuplicateSheetNamesRule {
         RuleCategory::StructuralAndMaintainability
     }
 
-    fn default_active(&self) -> bool {
-        true
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
         let mut name_map: HashMap<String, Vec<String>> = HashMap::new();

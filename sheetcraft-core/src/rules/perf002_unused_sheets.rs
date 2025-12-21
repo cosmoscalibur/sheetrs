@@ -21,10 +21,6 @@ impl LinterRule for UnusedSheetsRule {
         RuleCategory::Performance
     }
 
-    fn default_active(&self) -> bool {
-        true
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
@@ -105,7 +101,8 @@ mod tests {
         let mut cells1 = HashMap::new();
         cells1.insert(
             (0, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 0,
                 value: CellValue::formula("=Sheet2!A1".to_string()),
@@ -118,14 +115,16 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
         let mut cells2 = HashMap::new();
         cells2.insert(
             (0, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 0,
                 value: CellValue::Number(42.0),
@@ -138,14 +137,16 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
         let mut cells3 = HashMap::new();
         cells3.insert(
             (0, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 0,
                 value: CellValue::Number(100.0),
@@ -158,7 +159,8 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 

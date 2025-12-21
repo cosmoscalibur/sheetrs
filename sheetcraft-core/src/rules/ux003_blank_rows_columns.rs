@@ -39,10 +39,6 @@ impl LinterRule for BlankRowsColumnsRule {
         RuleCategory::FormattingAndUsability
     }
 
-    fn default_active(&self) -> bool {
-        false
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
@@ -278,7 +274,8 @@ mod tests {
         // Row 0: A1, B1
         cells.insert(
             (0, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 0,
                 value: CellValue::Text("A1".to_string()),
@@ -286,7 +283,8 @@ mod tests {
         );
         cells.insert(
             (0, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 0,
                 value: CellValue::Text("A1".to_string()),
@@ -294,7 +292,8 @@ mod tests {
         );
         cells.insert(
             (0, 1),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 1,
                 value: CellValue::Text("B1".to_string()),
@@ -304,7 +303,8 @@ mod tests {
         // Row 2: A3, B3
         cells.insert(
             (2, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 2,
                 col: 0,
                 value: CellValue::Text("A3".to_string()),
@@ -312,7 +312,8 @@ mod tests {
         );
         cells.insert(
             (2, 1),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 2,
                 col: 1,
                 value: CellValue::Text("B3".to_string()),
@@ -325,7 +326,8 @@ mod tests {
             used_range: Some((3, 2)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -365,7 +367,8 @@ mod tests {
         // Column A: A1, A2
         cells.insert(
             (0, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 0,
                 value: CellValue::Text("A1".to_string()),
@@ -373,7 +376,8 @@ mod tests {
         );
         cells.insert(
             (1, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 1,
                 col: 0,
                 value: CellValue::Text("A2".to_string()),
@@ -383,7 +387,8 @@ mod tests {
         // Column C: C1, C2
         cells.insert(
             (0, 2),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 2,
                 value: CellValue::Text("C1".to_string()),
@@ -391,7 +396,8 @@ mod tests {
         );
         cells.insert(
             (1, 2),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 1,
                 col: 2,
                 value: CellValue::Text("C2".to_string()),
@@ -404,7 +410,8 @@ mod tests {
             used_range: Some((2, 3)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -443,7 +450,8 @@ mod tests {
         let mut cells = HashMap::new();
         cells.insert(
             (0, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 0,
                 value: CellValue::Text("A1".to_string()),
@@ -451,7 +459,8 @@ mod tests {
         );
         cells.insert(
             (0, 1),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 1,
                 value: CellValue::Text("B1".to_string()),
@@ -459,7 +468,8 @@ mod tests {
         );
         cells.insert(
             (1, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 1,
                 col: 0,
                 value: CellValue::Text("A2".to_string()),
@@ -467,7 +477,8 @@ mod tests {
         );
         cells.insert(
             (1, 1),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 1,
                 col: 1,
                 value: CellValue::Text("B2".to_string()),
@@ -480,7 +491,8 @@ mod tests {
             used_range: Some((2, 2)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 

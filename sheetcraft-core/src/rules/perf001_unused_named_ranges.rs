@@ -21,15 +21,12 @@ impl LinterRule for UnusedNamedRangesRule {
         RuleCategory::Performance
     }
 
-    fn default_active(&self) -> bool {
-        true
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
         // Collect all named ranges
-        let named_ranges: HashSet<&str> = workbook.defined_names.keys().map(|s| s.as_str()).collect();
+        let named_ranges: HashSet<&str> =
+            workbook.defined_names.keys().map(|s| s.as_str()).collect();
 
         // Collect all named ranges used in formulas
         let mut used_names = HashSet::new();
@@ -73,7 +70,8 @@ mod tests {
         let mut cells = HashMap::new();
         cells.insert(
             (0, 0),
-            Cell { num_fmt: None,
+            Cell {
+                num_fmt: None,
                 row: 0,
                 col: 0,
                 value: CellValue::formula("=UsedRange".to_string()),
@@ -84,9 +82,11 @@ mod tests {
             name: "Sheet1".to_string(),
             cells,
             used_range: Some((1, 1)),
-                hidden_columns: Vec::new(),
-                hidden_rows: Vec::new(),
-                merged_cells: Vec::new(), sheet_path: None, formula_parsing_error: None,
+            hidden_columns: Vec::new(),
+            hidden_rows: Vec::new(),
+            merged_cells: Vec::new(),
+            sheet_path: None,
+            formula_parsing_error: None,
         };
 
         let mut defined_names = HashMap::new();

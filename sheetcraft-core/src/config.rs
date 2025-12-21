@@ -12,8 +12,6 @@ pub struct LinterConfig {
     #[serde(default)]
     pub global: GlobalConfig,
     #[serde(default)]
-    pub rules: HashMap<String, RuleConfig>,
-    #[serde(default)]
     pub sheets: HashMap<String, SheetConfig>,
 }
 
@@ -112,11 +110,6 @@ impl LinterConfig {
         Ok(())
     }
 
-    /// Get configuration for a specific rule
-    pub fn get_rule_config(&self, rule_id: &str) -> Option<&RuleConfig> {
-        self.rules.get(rule_id)
-    }
-
     /// Get a parameter value with fallback chain: sheet -> global
     pub fn get_param_int(&self, key: &str, sheet_name: Option<&str>) -> Option<i64> {
         // Try sheet-specific first
@@ -211,7 +204,6 @@ impl Default for LinterConfig {
     fn default() -> Self {
         Self {
             global: GlobalConfig::default(),
-            rules: HashMap::new(),
             sheets: HashMap::new(),
         }
     }
@@ -302,41 +294,6 @@ mod tests {
         sheet_config.disabled_rules.insert("ABC".to_string());
         bad_config.sheets.insert("Sheet1".to_string(), sheet_config);
         assert!(bad_config.validate_rules(&tokens).is_err());
-    }
-}
-
-/// Configuration for a specific rule
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RuleConfig {
-    #[serde(flatten)]
-    pub params: HashMap<String, toml::Value>,
-}
-
-impl RuleConfig {
-    /// Get a parameter as an integer
-    pub fn get_int(&self, key: &str) -> Option<i64> {
-        self.params.get(key).and_then(|v| v.as_integer())
-    }
-
-    /// Get a parameter as a string
-    pub fn get_str(&self, key: &str) -> Option<&str> {
-        self.params.get(key).and_then(|v| v.as_str())
-    }
-
-    /// Get a parameter as a boolean
-    pub fn get_bool(&self, key: &str) -> Option<bool> {
-        self.params.get(key).and_then(|v| v.as_bool())
-    }
-
-    /// Get a parameter as an array of strings
-    pub fn get_array(&self, key: &str) -> Option<Vec<String>> {
-        self.params.get(key).and_then(|v| {
-            v.as_array().map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-        })
     }
 }
 

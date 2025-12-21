@@ -93,10 +93,6 @@ impl LinterRule for ExternalLinksRule {
         RuleCategory::SecurityAndPrivacy
     }
 
-    fn default_active(&self) -> bool {
-        true
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
         let mut seen_workbooks = std::collections::HashSet::new();

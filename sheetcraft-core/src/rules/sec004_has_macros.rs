@@ -20,10 +20,6 @@ impl LinterRule for HasMacrosRule {
         RuleCategory::SecurityAndPrivacy
     }
 
-    fn default_active(&self) -> bool {
-        false
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
@@ -56,7 +52,6 @@ mod tests {
             hidden_sheets: Vec::new(),
             has_macros: true,
             external_links: Vec::new(),
-
         };
 
         let rule = HasMacrosRule;
@@ -76,7 +71,6 @@ mod tests {
             hidden_sheets: Vec::new(),
             has_macros: false,
             external_links: Vec::new(),
-
         };
 
         let rule = HasMacrosRule;

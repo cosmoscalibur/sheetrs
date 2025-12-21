@@ -48,11 +48,7 @@ impl LinterRule for CircularReferenceRule {
     }
 
     fn category(&self) -> RuleCategory {
-        RuleCategory::Formula
-    }
-
-    fn default_active(&self) -> bool {
-        true
+        RuleCategory::UnresolvedErrors
     }
 
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
@@ -317,12 +313,6 @@ mod tests {
             has_macros: false,
             external_links: Vec::new(),
         }
-    }
-
-    #[test]
-    fn test_default_active() {
-        let rule = CircularReferenceRule::new(&crate::config::LinterConfig::default());
-        assert!(rule.default_active());
     }
 
     #[test]

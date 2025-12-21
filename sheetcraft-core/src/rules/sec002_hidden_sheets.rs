@@ -20,10 +20,6 @@ impl LinterRule for HiddenSheetsRule {
         RuleCategory::SecurityAndPrivacy
     }
 
-    fn default_active(&self) -> bool {
-        false
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
@@ -51,16 +47,16 @@ mod tests {
     fn test_hidden_sheets() {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
-            sheets: vec![
-                Sheet {
-                    name: "Visible".to_string(),
-                    cells: HashMap::new(),
-                    used_range: None,
-                    hidden_columns: Vec::new(),
-                    hidden_rows: Vec::new(),
-                    merged_cells: Vec::new(), sheet_path: None, formula_parsing_error: None,
-                },
-            ],
+            sheets: vec![Sheet {
+                name: "Visible".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                hidden_columns: Vec::new(),
+                hidden_rows: Vec::new(),
+                merged_cells: Vec::new(),
+                sheet_path: None,
+                formula_parsing_error: None,
+            }],
             defined_names: HashMap::new(),
             hidden_sheets: vec!["HiddenSheet1".to_string(), "HiddenSheet2".to_string()],
             has_macros: false,

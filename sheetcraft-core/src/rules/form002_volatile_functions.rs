@@ -64,10 +64,6 @@ impl LinterRule for VolatileFunctionsRule {
         RuleCategory::Formula
     }
 
-    fn default_active(&self) -> bool {
-        true
-    }
-
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
@@ -206,7 +202,8 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -255,7 +252,8 @@ mod tests {
             used_range: Some((2, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
@@ -293,7 +291,8 @@ mod tests {
             used_range: Some((1, 1)),
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
-            merged_cells: Vec::new(), sheet_path: None,
+            merged_cells: Vec::new(),
+            sheet_path: None,
             formula_parsing_error: None,
         };
 
