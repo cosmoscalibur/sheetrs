@@ -32,8 +32,8 @@ pub fn get_xlsx_sheet_path(
                         let mut r_id = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"name" => name = String::from_utf8_lossy(&attr.value).to_string(),
-                                b"r:id" => r_id = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"name" => name = attr.unescape_value()?.to_string(),
+                                b"r:id" => r_id = attr.unescape_value()?.to_string(),
                                 _ => {}
                             }
                         }
@@ -75,8 +75,8 @@ pub fn get_xlsx_sheet_path(
                         let mut t = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"Id" => id = String::from_utf8_lossy(&attr.value).to_string(),
-                                b"Target" => t = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"Id" => id = attr.unescape_value()?.to_string(),
+                                b"Target" => t = attr.unescape_value()?.to_string(),
                                 _ => {}
                             }
                         }
@@ -140,7 +140,7 @@ pub fn extract_defined_names_from_xlsx(
                         for attr in e.attributes() {
                             if let Ok(attr) = attr {
                                 if attr.key.as_ref() == b"name" {
-                                    current_name = String::from_utf8_lossy(&attr.value).to_string();
+                                    current_name = attr.unescape_value()?.to_string();
                                 }
                             }
                         }
@@ -265,8 +265,8 @@ pub fn extract_external_links_xlsx(
                     let mut r_type = String::new();
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"Target" => target = String::from_utf8_lossy(&attr.value).to_string(),
-                            b"Type" => r_type = String::from_utf8_lossy(&attr.value).to_string(),
+                            b"Target" => target = attr.unescape_value()?.to_string(),
+                            b"Type" => r_type = attr.unescape_value()?.to_string(),
                             _ => {}
                         }
                     }
@@ -302,12 +302,8 @@ pub fn extract_external_links_xlsx(
                         let mut r_type = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"Target" => {
-                                    target = String::from_utf8_lossy(&attr.value).to_string()
-                                }
-                                b"Type" => {
-                                    r_type = String::from_utf8_lossy(&attr.value).to_string()
-                                }
+                                b"Target" => target = attr.unescape_value()?.to_string(),
+                                b"Type" => r_type = attr.unescape_value()?.to_string(),
                                 _ => {}
                             }
                         }
@@ -397,7 +393,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                     if e.name().as_ref() == b"sheet" {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"name" {
-                                names.push(String::from_utf8_lossy(&attr.value).to_string());
+                                names.push(attr.unescape_value()?.to_string());
                             }
                         }
                     }
@@ -446,14 +442,10 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"min" => {
-                                    min = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()?
-                                        .saturating_sub(1);
+                                    min = attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
                                 }
                                 b"max" => {
-                                    max = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()?
-                                        .saturating_sub(1);
+                                    max = attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
                                 }
                                 b"hidden" => {
                                     hidden = attr.value.as_ref() == b"1"
@@ -471,9 +463,8 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                     b"row" => {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"r" {
-                                current_row = String::from_utf8_lossy(&attr.value)
-                                    .parse::<u32>()?
-                                    .saturating_sub(1);
+                                current_row =
+                                    attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
                             }
                             if attr.key.as_ref() == b"hidden"
                                 && (attr.value.as_ref() == b"1" || attr.value.as_ref() == b"true")
@@ -489,13 +480,9 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         let mut t_attr = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"r" => r_attr = String::from_utf8_lossy(&attr.value).to_string(),
-                                b"s" => {
-                                    s_attr = Some(
-                                        String::from_utf8_lossy(&attr.value).parse::<usize>()?,
-                                    )
-                                }
-                                b"t" => t_attr = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"r" => r_attr = attr.unescape_value()?.to_string(),
+                                b"s" => s_attr = Some(attr.unescape_value()?.parse::<usize>()?),
+                                b"t" => t_attr = attr.unescape_value()?.to_string(),
                                 _ => {}
                             }
                         }
@@ -584,7 +571,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                     b"mergeCell" => {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"ref" {
-                                let ref_str = String::from_utf8_lossy(&attr.value);
+                                let ref_str = attr.unescape_value()?;
                                 if let Some(range) = parse_cell_range(&ref_str) {
                                     merged_cells.push(range);
                                 }
@@ -601,14 +588,10 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"min" => {
-                                    min = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()?
-                                        .saturating_sub(1);
+                                    min = attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
                                 }
                                 b"max" => {
-                                    max = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()?
-                                        .saturating_sub(1);
+                                    max = attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
                                 }
                                 b"hidden" => {
                                     hidden = attr.value.as_ref() == b"1"
@@ -628,12 +611,8 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         let mut s_attr = None;
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"r" => r_attr = String::from_utf8_lossy(&attr.value).to_string(),
-                                b"s" => {
-                                    s_attr = Some(
-                                        String::from_utf8_lossy(&attr.value).parse::<usize>()?,
-                                    )
-                                }
+                                b"r" => r_attr = attr.unescape_value()?.to_string(),
+                                b"s" => s_attr = Some(attr.unescape_value()?.parse::<usize>()?),
                                 _ => {}
                             }
                         }
@@ -662,9 +641,8 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         // Empty row tag
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"r" {
-                                current_row = String::from_utf8_lossy(&attr.value)
-                                    .parse::<u32>()?
-                                    .saturating_sub(1);
+                                current_row =
+                                    attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
                             }
                         }
                         current_col = 0;
@@ -672,7 +650,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                     b"mergeCell" => {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"ref" {
-                                let ref_str = String::from_utf8_lossy(&attr.value);
+                                let ref_str = attr.unescape_value()?;
                                 if let Some(range) = parse_cell_range(&ref_str) {
                                     merged_cells.push(range);
                                 }
@@ -745,7 +723,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
                             b"si" => {
-                                si = String::from_utf8_lossy(&attr.value).parse::<u32>().ok();
+                                si = attr.unescape_value()?.parse::<u32>().ok();
                             }
                             b"t" => {
                                 if attr.value.as_ref() == b"shared" {
@@ -753,7 +731,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
                                 }
                             }
                             b"ref" => {
-                                shared_ref = Some(String::from_utf8_lossy(&attr.value).to_string());
+                                shared_ref = Some(attr.unescape_value()?.to_string());
                             }
                             _ => {}
                         }
@@ -949,10 +927,10 @@ pub fn extract_hidden_sheets_from_xlsx(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"name" => {
-                                        name = String::from_utf8_lossy(&attr.value).to_string();
+                                        name = attr.unescape_value()?.to_string();
                                     }
                                     b"state" => {
-                                        state = String::from_utf8_lossy(&attr.value).to_string();
+                                        state = attr.unescape_value()?.to_string();
                                     }
                                     _ => {}
                                 }
@@ -1020,23 +998,18 @@ pub fn extract_hidden_columns_rows_from_xlsx(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"min" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             min_col = val.saturating_sub(1); // Convert to 0-based
                                         }
                                     }
                                     b"max" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             max_col = val.saturating_sub(1); // Convert to 0-based
                                         }
                                     }
                                     b"hidden" => {
-                                        hidden = String::from_utf8_lossy(&attr.value) == "1"
-                                            || String::from_utf8_lossy(&attr.value).to_lowercase()
-                                                == "true";
+                                        hidden = attr.unescape_value()? == "1"
+                                            || attr.unescape_value()?.to_lowercase() == "true";
                                     }
                                     _ => {}
                                 }
@@ -1058,16 +1031,13 @@ pub fn extract_hidden_columns_rows_from_xlsx(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"r" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             row_num = val.saturating_sub(1); // Convert to 0-based
                                         }
                                     }
                                     b"hidden" => {
-                                        hidden = String::from_utf8_lossy(&attr.value) == "1"
-                                            || String::from_utf8_lossy(&attr.value).to_lowercase()
-                                                == "true";
+                                        hidden = attr.unescape_value()? == "1"
+                                            || attr.unescape_value()?.to_lowercase() == "true";
                                     }
                                     _ => {}
                                 }
@@ -1121,7 +1091,7 @@ pub fn extract_merged_cells_from_xlsx(
                     for attr in e.attributes() {
                         if let Ok(attr) = attr {
                             if attr.key.as_ref() == b"ref" {
-                                let ref_str = String::from_utf8_lossy(&attr.value);
+                                let ref_str = attr.unescape_value()?;
                                 if let Some((start_row, start_col, end_row, end_col)) =
                                     parse_cell_range(&ref_str)
                                 {
@@ -1240,9 +1210,7 @@ pub fn extract_formats_from_xlsx(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"numFmtId" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             id = val;
                                         }
                                     }
@@ -1344,9 +1312,7 @@ pub fn parse_styles(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"numFmtId" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             id = val;
                                         }
                                     }
@@ -1370,9 +1336,7 @@ pub fn parse_styles(
                         for attr in e.attributes() {
                             if let Ok(attr) = attr {
                                 if attr.key.as_ref() == b"numFmtId" {
-                                    if let Ok(val) =
-                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                    {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                         num_fmt_id = val;
                                     }
                                 }
@@ -1398,9 +1362,7 @@ pub fn parse_styles(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"numFmtId" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             id = val;
                                         }
                                     }
@@ -1420,9 +1382,7 @@ pub fn parse_styles(
                         for attr in e.attributes() {
                             if let Ok(attr) = attr {
                                 if attr.key.as_ref() == b"numFmtId" {
-                                    if let Ok(val) =
-                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                    {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                         num_fmt_id = val;
                                     }
                                 }
@@ -1487,16 +1447,14 @@ pub fn extract_cell_style_indices_from_xlsx(
                         if let Ok(attr) = attr {
                             match attr.key.as_ref() {
                                 b"r" => {
-                                    let r_str = String::from_utf8_lossy(&attr.value);
+                                    let r_str = attr.unescape_value()?;
                                     if let Some((r, c)) = parse_cell_ref(&r_str) {
                                         row = r;
                                         col = c;
                                     }
                                 }
                                 b"s" => {
-                                    if let Ok(val) =
-                                        String::from_utf8_lossy(&attr.value).parse::<usize>()
-                                    {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<usize>() {
                                         style_index = val;
                                         has_style = true;
                                     }
@@ -1547,7 +1505,7 @@ pub fn extract_formulas_from_xlsx(
                 b"c" => {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"r" {
-                            current_cell_ref = String::from_utf8_lossy(&attr.value).to_string();
+                            current_cell_ref = attr.unescape_value()?.to_string();
                         }
                     }
                 }
@@ -1559,10 +1517,10 @@ pub fn extract_formulas_from_xlsx(
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
                             b"si" => {
-                                si = String::from_utf8_lossy(&attr.value).parse::<u32>().ok();
+                                si = attr.unescape_value()?.parse::<u32>().ok();
                             }
                             b"t" => {
-                                t = Some(String::from_utf8_lossy(&attr.value).to_string());
+                                t = Some(attr.unescape_value()?.to_string());
                             }
                             _ => {}
                         }

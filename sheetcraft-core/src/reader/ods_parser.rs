@@ -33,7 +33,7 @@ pub fn extract_hidden_sheets_from_ods(
                     let mut style_name = String::new();
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"style:name" {
-                            style_name = String::from_utf8_lossy(&attr.value).to_string();
+                            style_name = attr.unescape_value()?.to_string();
                         }
                     }
 
@@ -66,9 +66,9 @@ pub fn extract_hidden_sheets_from_ods(
                     let mut style_name = String::new();
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"table:name" {
-                            sheet_name = String::from_utf8_lossy(&attr.value).to_string();
+                            sheet_name = attr.unescape_value()?.to_string();
                         } else if attr.key.as_ref() == b"table:style-name" {
-                            style_name = String::from_utf8_lossy(&attr.value).to_string();
+                            style_name = attr.unescape_value()?.to_string();
                         }
                     }
                     if !sheet_name.is_empty() && !style_name.is_empty() {
@@ -124,7 +124,7 @@ fn extract_all_sheet_names_from_ods(
                 if e.name().as_ref() == b"table:table" {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"table:name" {
-                            let name = String::from_utf8_lossy(&attr.value).to_string();
+                            let name = attr.unescape_value()?.to_string();
                             if !name.is_empty() {
                                 sheet_names.push(name);
                             }
@@ -179,7 +179,7 @@ fn extract_visible_sheets_from_settings(
                 if in_tables_section && e.name().as_ref() == b"config:config-item-map-entry" {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"config:name" {
-                            let name = String::from_utf8_lossy(&attr.value).to_string();
+                            let name = attr.unescape_value()?.to_string();
                             if !name.is_empty() {
                                 visible_sheets.insert(name);
                             }
@@ -237,7 +237,7 @@ pub fn extract_hidden_columns_rows_from_ods(
                         let mut name = String::new();
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"table:name" {
-                                name = String::from_utf8_lossy(&attr.value).to_string();
+                                name = attr.unescape_value()?.to_string();
                             }
                         }
 
@@ -259,13 +259,10 @@ pub fn extract_hidden_columns_rows_from_ods(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"table:visibility" => {
-                                        visibility =
-                                            String::from_utf8_lossy(&attr.value).to_string();
+                                        visibility = attr.unescape_value()?.to_string();
                                     }
                                     b"table:number-columns-repeated" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             repeated = val;
                                         }
                                     }
@@ -292,13 +289,10 @@ pub fn extract_hidden_columns_rows_from_ods(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"table:visibility" => {
-                                        visibility =
-                                            String::from_utf8_lossy(&attr.value).to_string();
+                                        visibility = attr.unescape_value()?.to_string();
                                     }
                                     b"table:number-rows-repeated" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             repeated = val;
                                         }
                                     }
@@ -367,7 +361,7 @@ pub fn extract_merged_cells_from_ods(
                         let mut name = String::new();
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"table:name" {
-                                name = String::from_utf8_lossy(&attr.value).to_string();
+                                name = attr.unescape_value()?.to_string();
                             }
                         }
 
@@ -385,8 +379,7 @@ pub fn extract_merged_cells_from_ods(
                         current_row_repeated = 1;
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                     current_row_repeated = val;
                                 }
                             }
@@ -401,23 +394,17 @@ pub fn extract_merged_cells_from_ods(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"table:number-columns-spanned" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             cols_spanned = val;
                                         }
                                     }
                                     b"table:number-rows-spanned" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             rows_spanned = val;
                                         }
                                     }
                                     b"table:number-columns-repeated" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             repeated = val;
                                         }
                                     }
@@ -444,9 +431,7 @@ pub fn extract_merged_cells_from_ods(
                         for attr in e.attributes() {
                             if let Ok(attr) = attr {
                                 if attr.key.as_ref() == b"table:number-columns-repeated" {
-                                    if let Ok(val) =
-                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                    {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                         repeated = val;
                                     }
                                 }
@@ -464,8 +449,7 @@ pub fn extract_merged_cells_from_ods(
                         let mut repeated = 1u32;
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                     repeated = val;
                                 }
                             }
@@ -481,23 +465,17 @@ pub fn extract_merged_cells_from_ods(
                             if let Ok(attr) = attr {
                                 match attr.key.as_ref() {
                                     b"table:number-columns-spanned" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             cols_spanned = val;
                                         }
                                     }
                                     b"table:number-rows-spanned" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             rows_spanned = val;
                                         }
                                     }
                                     b"table:number-columns-repeated" => {
-                                        if let Ok(val) =
-                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                        {
+                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                             repeated = val;
                                         }
                                     }
@@ -524,9 +502,7 @@ pub fn extract_merged_cells_from_ods(
                         for attr in e.attributes() {
                             if let Ok(attr) = attr {
                                 if attr.key.as_ref() == b"table:number-columns-repeated" {
-                                    if let Ok(val) =
-                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                    {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                         repeated = val;
                                     }
                                 }
@@ -583,7 +559,7 @@ pub fn has_macros(archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>) 
                 {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"manifest:media-type" {
-                            let media_type = String::from_utf8_lossy(&attr.value);
+                            let media_type = attr.unescape_value()?;
                             if media_type.contains("application/vnd.sun.xml.ui.configuration")
                                 || media_type.contains("script")
                             {
@@ -623,7 +599,7 @@ pub fn extract_external_links_ods(
             Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table-source" => {
                 for attr in e.attributes().flatten() {
                     if attr.key.as_ref() == b"xlink:href" {
-                        links.push(String::from_utf8_lossy(&attr.value).to_string());
+                        links.push(attr.unescape_value()?.to_string());
                     }
                 }
             }
@@ -668,7 +644,7 @@ pub fn extract_cached_errors_from_ods(
                     let mut name = String::new();
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"table:name" {
-                            name = String::from_utf8_lossy(&attr.value).to_string();
+                            name = attr.unescape_value()?.to_string();
                         }
                     }
 
@@ -686,8 +662,7 @@ pub fn extract_cached_errors_from_ods(
                     for attr in e.attributes() {
                         if let Ok(attr) = attr {
                             if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                     current_row_repeated = val;
                                 }
                             }
@@ -709,14 +684,11 @@ pub fn extract_cached_errors_from_ods(
                                 }
                                 b"calcext:value" | b"office:string-value" => {
                                     if error_msg.is_empty() {
-                                        error_msg =
-                                            String::from_utf8_lossy(&attr.value).to_string();
+                                        error_msg = attr.unescape_value()?.to_string();
                                     }
                                 }
                                 b"table:number-columns-repeated" => {
-                                    if let Ok(val) =
-                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                    {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                         repeated = val;
                                     }
                                 }
@@ -747,8 +719,7 @@ pub fn extract_cached_errors_from_ods(
                     for attr in e.attributes() {
                         if let Ok(attr) = attr {
                             if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                     repeated = val;
                                 }
                             }
@@ -771,14 +742,11 @@ pub fn extract_cached_errors_from_ods(
                                 }
                                 b"calcext:value" | b"office:string-value" => {
                                     if error_msg.is_empty() {
-                                        error_msg =
-                                            String::from_utf8_lossy(&attr.value).to_string();
+                                        error_msg = attr.unescape_value()?.to_string();
                                     }
                                 }
                                 b"table:number-columns-repeated" => {
-                                    if let Ok(val) =
-                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                    {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                         repeated = val;
                                     }
                                 }
@@ -856,7 +824,7 @@ pub fn extract_formulas_from_ods(
                     let mut name = String::new();
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"table:name" {
-                            name = String::from_utf8_lossy(&attr.value).to_string();
+                            name = attr.unescape_value()?.to_string();
                         }
                     }
 
@@ -874,8 +842,7 @@ pub fn extract_formulas_from_ods(
                     for attr in e.attributes() {
                         if let Ok(attr) = attr {
                             if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                     current_row_repeated = val;
                                 }
                             }
@@ -890,12 +857,10 @@ pub fn extract_formulas_from_ods(
                         if let Ok(attr) = attr {
                             match attr.key.as_ref() {
                                 b"table:formula" => {
-                                    formula = String::from_utf8_lossy(&attr.value).to_string();
+                                    formula = attr.unescape_value()?.to_string();
                                 }
                                 b"table:number-columns-repeated" => {
-                                    if let Ok(val) =
-                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                    {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                         repeated = val;
                                     }
                                 }
@@ -923,8 +888,7 @@ pub fn extract_formulas_from_ods(
                     for attr in e.attributes() {
                         if let Ok(attr) = attr {
                             if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                     repeated = val;
                                 }
                             }
@@ -940,12 +904,10 @@ pub fn extract_formulas_from_ods(
                         if let Ok(attr) = attr {
                             match attr.key.as_ref() {
                                 b"table:formula" => {
-                                    formula = String::from_utf8_lossy(&attr.value).to_string();
+                                    formula = attr.unescape_value()?.to_string();
                                 }
                                 b"table:number-columns-repeated" => {
-                                    if let Ok(val) =
-                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
-                                    {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
                                         repeated = val;
                                     }
                                 }
@@ -1078,7 +1040,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     let mut name = String::new();
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"table:name" {
-                            name = String::from_utf8_lossy(&attr.value).to_string();
+                            name = attr.unescape_value()?.to_string();
                         }
                     }
                     current_sheet = Some(Sheet::new(name));
@@ -1099,9 +1061,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                     }
                                 }
                                 b"table:number-columns-repeated" => {
-                                    repeated = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    repeated = attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 _ => {}
                             }
@@ -1145,9 +1105,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                     }
                                 }
                                 b"table:number-columns-repeated" => {
-                                    repeated = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    repeated = attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 _ => {}
                             }
@@ -1170,9 +1128,8 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"table:number-rows-repeated" => {
-                                    row_repeated = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    row_repeated =
+                                        attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 b"table:visibility" => {
                                     if attr.value.as_ref() == b"collapse"
@@ -1201,9 +1158,8 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"table:number-rows-repeated" => {
-                                    row_repeated = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    row_repeated =
+                                        attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 b"table:visibility" => {
                                     if attr.value.as_ref() == b"collapse"
@@ -1240,24 +1196,19 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"table:number-columns-repeated" => {
-                                    col_repeated = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    col_repeated =
+                                        attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 b"table:number-columns-spanned" => {
-                                    cols_spanned = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    cols_spanned =
+                                        attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 b"table:number-rows-spanned" => {
-                                    rows_spanned = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    rows_spanned =
+                                        attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 b"table:formula" => {
-                                    formula = Some(normalize_ods_formula(
-                                        &String::from_utf8_lossy(&attr.value),
-                                    ));
+                                    formula = Some(normalize_ods_formula(&attr.unescape_value()?));
                                 }
                                 b"calcext:value-type" => {
                                     if attr.value.as_ref() == b"error" {
@@ -1268,7 +1219,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 | b"office:string-value"
                                 | b"office:boolean-value"
                                 | b"office:date-value" => {
-                                    let val_str = String::from_utf8_lossy(&attr.value).to_string();
+                                    let val_str = attr.unescape_value()?.to_string();
                                     if !has_value {
                                         value = match attr.key.as_ref() {
                                             b"office:value" => {
@@ -1386,19 +1337,16 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"table:number-columns-repeated" => {
-                                    col_repeated = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    col_repeated =
+                                        attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 b"table:number-columns-spanned" => {
-                                    cols_spanned = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    cols_spanned =
+                                        attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 b"table:number-rows-spanned" => {
-                                    rows_spanned = String::from_utf8_lossy(&attr.value)
-                                        .parse::<u32>()
-                                        .unwrap_or(1);
+                                    rows_spanned =
+                                        attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 _ => {}
                             }
@@ -1466,11 +1414,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
                             b"table:name" => {
-                                name = String::from_utf8_lossy(&attr.value).to_string();
+                                name = attr.unescape_value()?.to_string();
                             }
                             b"table:cell-range-address" => {
-                                cell_range_address =
-                                    String::from_utf8_lossy(&attr.value).to_string();
+                                cell_range_address = attr.unescape_value()?.to_string();
                             }
                             _ => {}
                         }
