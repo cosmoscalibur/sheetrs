@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use serde::Serialize;
-use sheetcraft_core::reader;
+use sheetrs::reader;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -105,7 +105,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn calculate_formula_stats(workbook: &sheetcraft_core::reader::Workbook) -> Vec<FormulaStats> {
+fn calculate_formula_stats(workbook: &sheetrs::reader::Workbook) -> Vec<FormulaStats> {
     let mut total_formulas = 0usize;
     let mut sheet_formulas: Vec<(String, usize)> = Vec::new();
 
@@ -134,7 +134,7 @@ fn calculate_formula_stats(workbook: &sheetcraft_core::reader::Workbook) -> Vec<
         .collect()
 }
 
-fn calculate_cell_stats(workbook: &sheetcraft_core::reader::Workbook) -> Vec<CellStats> {
+fn calculate_cell_stats(workbook: &sheetrs::reader::Workbook) -> Vec<CellStats> {
     let mut total_non_empty = 0usize;
     let mut sheet_cells: Vec<(String, usize)> = Vec::new();
 
@@ -163,7 +163,7 @@ fn calculate_cell_stats(workbook: &sheetcraft_core::reader::Workbook) -> Vec<Cel
 fn calculate_sheet_sizes(
     file_path: &PathBuf,
     total_size: u64,
-    workbook: &sheetcraft_core::reader::Workbook,
+    workbook: &sheetrs::reader::Workbook,
 ) -> Result<Vec<SheetSize>> {
     use std::fs::File;
     use std::io::BufReader;

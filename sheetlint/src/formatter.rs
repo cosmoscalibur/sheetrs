@@ -3,7 +3,7 @@
 use anyhow::Result;
 use colored::*;
 use serde_json;
-use sheetcraft_core::{Severity, Violation, ViolationScope};
+use sheetrs::{Severity, Violation, ViolationScope};
 use std::collections::BTreeMap;
 use std::path::Path;
 

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use sheetcraft_core::{Linter, LinterConfig, Severity};
+use sheetrs::{Linter, LinterConfig, Severity};
 use std::path::PathBuf;
 
 mod formatter;
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
     };
 
     // Validate configuration
-    let valid_tokens = sheetcraft_core::rules::registry::get_all_valid_tokens();
+    let valid_tokens = sheetrs::rules::registry::get_all_valid_tokens();
     config
         .validate_rules(&valid_tokens)
         .context("Invalid configuration")?;

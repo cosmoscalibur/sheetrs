@@ -1,6 +1,6 @@
-# SheetCraft Suite
+# SheetRS Suite
 
-The **SheetCraft Suite** is a high-performance toolkit for processing, linting,
+The **SheetRS Suite** is a high-performance toolkit for processing, linting,
 and manipulating spreadsheets (XLSX and ODS). Written in Rust, it is designed
 for speed, safety, and ease of integration into CI/CD pipelines.
 
@@ -19,8 +19,8 @@ Requires [Rust](https://www.rust-lang.org/tools/install) (latest stable).
 
 ```bash
 # Clone the repository
-git clone https://github.com/cosmoscalibur/sheetcraft.git
-cd sheetcraft
+git clone https://github.com/cosmoscalibur/sheetrs.git
+cd sheetrs
 
 # Install all tools
 cargo install --path sheetlint
@@ -99,7 +99,7 @@ sheetcli input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
 
 ## Debug Tools
 
-The suite includes several debug utilities in `sheetcraft-core/examples/`:
+The suite includes several debug utilities in `sheetrs/examples/`:
 
 - **debug_formulas**: Inspect specific cell values and formulas
 - **dump_formulas**: Export all formulas from a workbook
@@ -125,7 +125,7 @@ Build with: `cargo build --release --examples`
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed technical breakdown of the
-`sheetcraft-core` library and the CLI tool implementations.
+`sheetrs` library and the CLI tool implementations.
 
 ## License
 

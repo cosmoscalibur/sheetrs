@@ -1,5 +1,5 @@
 use anyhow::Result;
-use sheetcraft_core::reader::{CellValue, read_workbook};
+use sheetrs::reader::{CellValue, read_workbook};
 use std::env;
 
 fn main() -> Result<()> {

@@ -1,19 +1,19 @@
 # Architecture Documentation
 
-The **SheetCraft Suite** is organized as a Cargo workspace containing a shared core library and three specialized binary crates. This architecture promotes code reuse, consistency, and testability.
+The **SheetRS Suite** is organized as a Cargo workspace containing a shared core library and three specialized binary crates. This architecture promotes code reuse, consistency, and testability.
 
 ## Workspace Structure
 
 ```
-sheetcraft/
-├── sheetcraft-core/    # Shared library (logic, rules, readers)
+sheetrs/
+├── sheetrs/    # Shared library (logic, rules, readers)
 ├── sheetlint/          # Linter CLI
 ├── sheetstats/         # Statistics CLI
 ├── sheetcli/           # Manipulation CLI
 └── Cargo.toml          # Workspace configuration
 ```
 
-## 1. sheetcraft-core
+## 1. sheetrs
 
 The heart of the suite. It encapsulates all domain logic, file parsing, rule enforcement, and configuration management.
 
@@ -39,11 +39,11 @@ The heart of the suite. It encapsulates all domain logic, file parsing, rule enf
 
 ## 2. CLI Tools
 
-The binary crates are thin wrappers around `sheetcraft-core`.
+The binary crates are thin wrappers around `sheetrs`.
 
 - **`sheetlint`**:
   - Responsible for loading configuration (`sheetlint.toml`).
-  - Iterates over the workbook using `sheetcraft-core` readers.
+  - Iterates over the workbook using `sheetrs` readers.
   - parallelizes rule checks using `rayon` (where applicable).
   - Formats output (Text/JSON).
 
@@ -53,7 +53,7 @@ The binary crates are thin wrappers around `sheetcraft-core`.
 
 - **`sheetcli`**:
   - Handles command-line arguments for operations.
-  - Delegates complex logic (like ZIP manipulation) to `sheetcraft-core::writer`.
+  - Delegates complex logic (like ZIP manipulation) to `sheetrs::writer`.
 
 ## Design Principles
 

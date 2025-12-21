@@ -1,5 +1,5 @@
 use regex::Regex;
-use sheetcraft_core::reader::read_workbook;
+use sheetrs::reader::read_workbook;
 use std::env;
 
 fn extract_cell_references(

@@ -1,13 +1,13 @@
 [workspace]
-members = ["sheetcraft-core", "sheetlint", "sheetstats", "sheetcli"]
+members = ["sheetrs", "sheetlint", "sheetstats", "sheetcli"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 authors = ["Edward Villegas <cosmoscalibur@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/cosmoscalibur/xlsutils"
+repository = "https://github.com/cosmoscalibur/sheetrs"
 
 
 [workspace.dependencies]

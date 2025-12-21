@@ -1,4 +1,4 @@
-use sheetcraft_core::writer::{WorkbookModifications, modify_workbook};
+use sheetrs::writer::{WorkbookModifications, modify_workbook};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;

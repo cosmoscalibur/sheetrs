@@ -12,7 +12,7 @@ name = "sheetcli"
 path = "src/main.rs"
 
 [dependencies]
-sheetcraft-core = { path = "../sheetcraft-core" }
+sheetrs = { path = "../sheetrs" }
 clap.workspace = true
 anyhow.workspace = true
 zip.workspace = true

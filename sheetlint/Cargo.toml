@@ -12,7 +12,7 @@ name = "sheetlint"
 path = "src/main.rs"
 
 [dependencies]
-sheetcraft-core = { path = "../sheetcraft-core" }
+sheetrs = { path = "../sheetrs" }
 clap.workspace = true
 anyhow.workspace = true
 serde.workspace = true

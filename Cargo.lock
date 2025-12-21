@@ -1281,18 +1281,30 @@ dependencies = [
 
 [[package]]
 name = "sheetcli"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
  "quick-xml",
- "sheetcraft-core",
+ "sheetrs",
  "zip",
 ]
 
 [[package]]
-name = "sheetcraft-core"
-version = "0.3.1"
+name = "sheetlint"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "colored",
+ "serde",
+ "serde_json",
+ "sheetrs",
+]
+
+[[package]]
+name = "sheetrs"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "quick-xml",
@@ -1307,26 +1319,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "sheetlint"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "clap",
- "colored",
- "serde",
- "serde_json",
- "sheetcraft-core",
-]
-
-[[package]]
 name = "sheetstats"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
  "serde",
  "serde_json",
- "sheetcraft-core",
+ "sheetrs",
  "zip",
 ]
 

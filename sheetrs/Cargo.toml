@@ -1,5 +1,5 @@
 [package]
-name = "sheetcraft-core"
+name = "sheetrs"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

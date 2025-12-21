@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use sheetcraft_core::writer;
+use sheetrs::writer;
 use std::path::PathBuf;
 
 #[derive(Parser)]
