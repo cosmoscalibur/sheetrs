@@ -669,10 +669,20 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         }
                         current_col = 0;
                     }
+                    b"mergeCell" => {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"ref" {
+                                let ref_str = String::from_utf8_lossy(&attr.value);
+                                if let Some(range) = parse_cell_range(&ref_str) {
+                                    merged_cells.push(range);
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 },
                 Event::End(e) => match e.name().as_ref() {
-                    b"sheetData" => break,
+                    b"worksheet" => break,
                     _ => {}
                 },
                 Event::Eof => break,

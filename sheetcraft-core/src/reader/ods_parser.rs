@@ -361,7 +361,7 @@ pub fn extract_merged_cells_from_ods(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+            Ok(Event::Start(e)) => {
                 match e.name().as_ref() {
                     b"table:table" => {
                         let mut name = String::new();
@@ -392,7 +392,7 @@ pub fn extract_merged_cells_from_ods(
                             }
                         }
                     }
-                    b"table:table-cell" | b"table:covered-table-cell" if in_target_sheet => {
+                    b"table:table-cell" if in_target_sheet => {
                         let mut cols_spanned = 1u32;
                         let mut rows_spanned = 1u32;
                         let mut repeated = 1u32;
@@ -436,6 +436,102 @@ pub fn extract_merged_cells_from_ods(
                             ));
                         }
 
+                        current_col += repeated;
+                    }
+                    b"table:covered-table-cell" if in_target_sheet => {
+                        // Covered cells are part of a merged range and should increment the column counter
+                        let mut repeated = 1u32;
+                        for attr in e.attributes() {
+                            if let Ok(attr) = attr {
+                                if attr.key.as_ref() == b"table:number-columns-repeated" {
+                                    if let Ok(val) =
+                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
+                                    {
+                                        repeated = val;
+                                    }
+                                }
+                            }
+                        }
+                        current_col += repeated;
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                match e.name().as_ref() {
+                    b"table:table-row" if in_target_sheet => {
+                        // Empty row - increment row counter
+                        let mut repeated = 1u32;
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"table:number-rows-repeated" {
+                                if let Ok(val) = String::from_utf8_lossy(&attr.value).parse::<u32>()
+                                {
+                                    repeated = val;
+                                }
+                            }
+                        }
+                        current_row += repeated;
+                    }
+                    b"table:table-cell" if in_target_sheet => {
+                        let mut cols_spanned = 1u32;
+                        let mut rows_spanned = 1u32;
+                        let mut repeated = 1u32;
+
+                        for attr in e.attributes() {
+                            if let Ok(attr) = attr {
+                                match attr.key.as_ref() {
+                                    b"table:number-columns-spanned" => {
+                                        if let Ok(val) =
+                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
+                                        {
+                                            cols_spanned = val;
+                                        }
+                                    }
+                                    b"table:number-rows-spanned" => {
+                                        if let Ok(val) =
+                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
+                                        {
+                                            rows_spanned = val;
+                                        }
+                                    }
+                                    b"table:number-columns-repeated" => {
+                                        if let Ok(val) =
+                                            String::from_utf8_lossy(&attr.value).parse::<u32>()
+                                        {
+                                            repeated = val;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+
+                        // If either span is > 1, this is a merged cell
+                        if cols_spanned > 1 || rows_spanned > 1 {
+                            merged_cells.push((
+                                current_row,
+                                current_col,
+                                current_row + rows_spanned - 1,
+                                current_col + cols_spanned - 1,
+                            ));
+                        }
+
+                        current_col += repeated;
+                    }
+                    b"table:covered-table-cell" if in_target_sheet => {
+                        // Covered cells are part of a merged range and should increment the column counter
+                        let mut repeated = 1u32;
+                        for attr in e.attributes() {
+                            if let Ok(attr) = attr {
+                                if attr.key.as_ref() == b"table:number-columns-repeated" {
+                                    if let Ok(val) =
+                                        String::from_utf8_lossy(&attr.value).parse::<u32>()
+                                    {
+                                        repeated = val;
+                                    }
+                                }
+                            }
+                        }
                         current_col += repeated;
                     }
                     _ => {}

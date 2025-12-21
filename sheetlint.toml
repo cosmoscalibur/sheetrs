@@ -3,7 +3,7 @@
 # Global configuration
 [global]
 # List of enabled rules (empty means all default-active rules are enabled)
-enabled_rules = ["SEC"]
+enabled_rules = ["SM"]
 
 # List of disabled rules
 disabled_rules = []
