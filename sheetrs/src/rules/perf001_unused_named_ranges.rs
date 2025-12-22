@@ -25,8 +25,12 @@ impl LinterRule for UnusedNamedRangesRule {
         let mut violations = Vec::new();
 
         // Collect all named ranges
-        let named_ranges: HashSet<&str> =
-            workbook.defined_names.keys().map(|s| s.as_str()).collect();
+        let named_ranges: HashSet<&str> = workbook
+            .defined_names
+            .keys()
+            .filter(|name| !name.starts_with("_xlnm."))
+            .map(|s| s.as_str())
+            .collect();
 
         // Collect all named ranges used in formulas
         let mut used_names = HashSet::new();

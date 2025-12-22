@@ -6,8 +6,8 @@ use std::collections::HashSet;
 
 /// List of rule IDs that are active by default
 pub const DEFAULT_ACTIVE_RULES: &[&str] = &[
-    "ERR001", "ERR002", "ERR003", "SEC001", "UX001", "PERF001", "PERF002", "PERF003", "SM001",
-    "SM002", "SM005", "FORM002", "FORM003", "FORM004", "FORM005", "FORM008", "FORM009",
+    "ERR001", "ERR002", "ERR003", "SEC001", "UX001", "PERF001", "PERF002", "PERF003", "PERF005",
+    "SM001", "SM002", "SM005", "FORM002", "FORM003", "FORM004", "FORM005", "FORM008", "FORM009",
 ];
 
 /// Get all valid configuration tokens (Rule IDs, Category Prefixes, "ALL")
@@ -65,6 +65,7 @@ fn create_all_rules(config: &LinterConfig) -> Vec<Box<dyn LinterRule>> {
         Box::new(ux003_blank_rows_columns::BlankRowsColumnsRule::new(config)),
         Box::new(perf001_unused_named_ranges::UnusedNamedRangesRule),
         Box::new(perf002_unused_sheets::UnusedSheetsRule),
+        Box::new(perf005_empty_sheets::EmptySheetsRule),
         Box::new(perf003_large_used_range::LargeUsedRangeRule::new(config)),
         Box::new(form002_volatile_functions::VolatileFunctionsRule::new(
             config,

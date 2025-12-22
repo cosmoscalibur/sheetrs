@@ -57,7 +57,8 @@ disabled_rules = ["UX", "SM"]
 | ID | Description | Default Active | Params |
 |----|-------------|----------------|--------|
 | **PERF001** | Unused named ranges | Yes | None |
-| **PERF002** | Unused sheets | Yes | None |
+| **PERF002** | Unused sheets (filled with content but unreferenced) | Yes | None |
+| **PERF005** | Empty unused sheets (no content, no formulas, unreferenced) | Yes | None |
 | **PERF003** | Large used range (empty cells beyond data) | Yes | `max_extra_row` (int, default 2), `max_extra_column` (int, default 2) |
 | **PERF004** | Excessive conditional formatting (:warning: Not tested) | No | `max_conditional_formatting` (int, default 5) |
 

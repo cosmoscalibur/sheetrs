@@ -988,7 +988,11 @@ pub fn normalize_ods_reference(reference: &str) -> String {
     normalized = local_range_ref
         .replace_all(&normalized, |caps: &regex::Captures| {
             if &caps[1] == &caps[3] {
-                format!("{}:{}", &caps[2], &caps[4])
+                if &caps[2] == &caps[4] {
+                    caps[2].to_string()
+                } else {
+                    format!("{}:{}", &caps[2], &caps[4])
+                }
             } else {
                 format!("{}!{}:{}!{}", &caps[1], &caps[2], &caps[3], &caps[4])
             }
@@ -1031,6 +1035,13 @@ pub fn normalize_ods_reference(reference: &str) -> String {
     // Matches [.1:.1], [.1:.10]
     let row_ref = ODS_ROW_REF.get_or_init(|| Regex::new(r"\[\.([0-9]+):\.([0-9]+)\]").unwrap());
     normalized = row_ref.replace_all(&normalized, "$1:$2").to_string();
+
+    // Final check for identical range parts (e.g. A1:A1 -> A1)
+    if let Some((start, end)) = normalized.split_once(':') {
+        if start == end {
+            return start.to_string();
+        }
+    }
 
     normalized
 }
@@ -1459,38 +1470,69 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
 
         let mut buf = Vec::new();
         let mut in_named_expressions = false;
+        let mut in_database_ranges = false;
 
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) if e.name().as_ref() == b"table:named-expressions" => {
+                Event::Start(ref e) if e.name().as_ref() == b"table:named-expressions" => {
                     in_named_expressions = true;
                 }
-                Event::Empty(e) | Event::Start(e)
-                    if in_named_expressions && e.name().as_ref() == b"table:named-range" =>
-                {
-                    let mut name = String::new();
-                    let mut cell_range_address = String::new();
+                Event::Start(ref e) if e.name().as_ref() == b"table:database-ranges" => {
+                    in_database_ranges = true;
+                }
+                // Combined match for Start/Empty of item tags
+                Event::Empty(ref e) | Event::Start(ref e) => {
+                    if in_named_expressions && e.name().as_ref() == b"table:named-range" {
+                        let mut name = String::new();
+                        let mut cell_range_address = String::new();
 
-                    for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
-                            b"table:name" => {
-                                name = attr.unescape_value()?.to_string();
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"table:name" => {
+                                    name = attr.unescape_value()?.to_string();
+                                }
+                                b"table:cell-range-address" => {
+                                    cell_range_address = attr.unescape_value()?.to_string();
+                                }
+                                _ => {}
                             }
-                            b"table:cell-range-address" => {
-                                cell_range_address = attr.unescape_value()?.to_string();
+                        }
+
+                        if !name.is_empty() && !cell_range_address.is_empty() {
+                            let normalized = normalize_ods_reference(&cell_range_address);
+                            defined_names.insert(name, normalized);
+                        }
+                    } else if in_database_ranges && e.name().as_ref() == b"table:database-range" {
+                        let mut name = String::new();
+                        let mut target_range_address = String::new();
+
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"table:name" => {
+                                    name = attr.unescape_value()?.to_string();
+                                }
+                                b"table:target-range-address" => {
+                                    target_range_address = attr.unescape_value()?.to_string();
+                                }
+                                _ => {}
                             }
-                            _ => {}
+                        }
+
+                        if !name.is_empty() && !target_range_address.is_empty() {
+                            // Filter out internal ODS names that start with __Anonymous_Sheet_DB__
+                            if !name.starts_with("__Anonymous_Sheet_DB__") {
+                                let normalized = normalize_ods_reference(&target_range_address);
+                                defined_names.insert(name, normalized);
+                            }
                         }
                     }
-
-                    if !name.is_empty() && !cell_range_address.is_empty() {
-                        // Normalize ODS range address to Excel-style (Sheet!A1:B2)
-                        let normalized = normalize_ods_reference(&cell_range_address);
-                        defined_names.insert(name, normalized);
-                    }
                 }
-                Event::End(e) if e.name().as_ref() == b"table:named-expressions" => {
-                    in_named_expressions = false;
+                Event::End(e) => {
+                    if e.name().as_ref() == b"table:named-expressions" {
+                        in_named_expressions = false;
+                    } else if e.name().as_ref() == b"table:database-ranges" {
+                        in_database_ranges = false;
+                    }
                 }
                 Event::Eof => break,
                 _ => {}
@@ -1561,5 +1603,50 @@ mod tests {
         );
         // Absolute local ref
         assert_eq!(normalize_ods_reference("Sheet1.$A$1"), "$A$1");
+    }
+    #[test]
+    fn test_normalize_ods_reference_single_cell_range() {
+        // PERF004 regression: "Sheet1.A1:Sheet1.A1" should normalize to "A1"
+        assert_eq!(normalize_ods_reference("Sheet1.A1:Sheet1.A1"), "A1");
+        assert_eq!(normalize_ods_reference("A1:A1"), "A1");
+        assert_eq!(normalize_ods_reference("[.A1:.A1]"), "A1");
+    }
+
+    #[test]
+    fn test_read_database_ranges_ods() {
+        use std::io::Cursor;
+        use std::io::Write;
+        use zip::write::FileOptions;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options =
+                FileOptions::<()>::default().compression_method(zip::CompressionMethod::Stored);
+
+            zip.start_file("content.xml", options).unwrap();
+            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0">
+    <office:body>
+        <office:spreadsheet>
+            <table:database-ranges>
+                <table:database-range table:name="MyRange" table:target-range-address="Sheet1.A1:Sheet1.B2"/>
+                <table:database-range table:name="OtherRange" table:target-range-address="Sheet1.C3"/>
+            </table:database-ranges>
+        </office:spreadsheet>
+    </office:body>
+</office:document-content>"#).unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        let mut archive = ZipArchive::new(Cursor::new(buf)).unwrap();
+        let mut reader = OdsReader::new(&mut archive).unwrap();
+        let defined_names = reader.read_defined_names().unwrap();
+
+        // Note: read_defined_names returns normalized Excel-style references
+        assert_eq!(defined_names.len(), 2);
+        assert_eq!(defined_names.get("MyRange"), Some(&"A1:B2".to_string())); // Sheet1.A1:Sheet1.B2 normalized
+        assert_eq!(defined_names.get("OtherRange"), Some(&"C3".to_string())); // Sheet1.C3 normalized
     }
 }

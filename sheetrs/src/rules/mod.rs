@@ -19,6 +19,7 @@ pub mod perf001_unused_named_ranges;
 pub mod perf002_unused_sheets;
 pub mod perf003_large_used_range;
 pub mod perf004_excessive_conditional_formatting;
+pub mod perf005_empty_sheets;
 pub mod sec001_external_links;
 pub mod sec002_hidden_sheets;
 pub mod sec003_hidden_columns_rows;

@@ -3,7 +3,7 @@
 # Global configuration
 [global]
 # List of enabled rules (empty means all default-active rules are enabled)
-enabled_rules = ["PERF", "ERR"]
+enabled_rules = ["PERF"]
 
 # List of disabled rules
 disabled_rules = []

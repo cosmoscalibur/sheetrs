@@ -170,6 +170,100 @@ pub fn extract_defined_names_from_xlsx(
     Ok(defined_names)
 }
 
+/// Normalize an sqref string (space-separated ranges)
+/// e.g. "A1:A1" -> "A1"
+/// "A1:B2 C3:C3" -> "A1:B2 C3"
+
+/// Extract Excel Tables from XLSX file as defined names
+/// Scans xl/tables/*.xml
+pub fn extract_tables_from_xlsx(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<HashMap<String, String>> {
+    let mut current_tables = HashMap::new();
+    let mut table_files = Vec::new();
+
+    // Find all table files
+    for i in 0..archive.len() {
+        if let Ok(file) = archive.by_index(i) {
+            let name = file.name().to_string();
+            if name.starts_with("xl/tables/") && name.ends_with(".xml") {
+                table_files.push(name);
+            }
+        }
+    }
+
+    for table_file in table_files {
+        let xml = match archive.by_name(&table_file) {
+            Ok(file) => file,
+            Err(_) => continue,
+        };
+
+        let mut reader = Reader::from_reader(BufReader::new(xml));
+        reader.config_mut().trim_text(true);
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                    if e.name().as_ref() == b"table" {
+                        let mut name = String::new();
+                        let mut ref_sqref = String::new();
+
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"name" | b"displayName" => {
+                                    // displayName is usually the safe name, name might be id
+                                    // spec says: name is collection name, displayName is unique name for formulas
+                                    // We prioritize displayName
+                                    if name.is_empty() {
+                                        name = attr.unescape_value()?.to_string();
+                                    } else if attr.key.as_ref() == b"displayName" {
+                                        name = attr.unescape_value()?.to_string();
+                                    }
+                                }
+                                b"ref" => {
+                                    ref_sqref = attr.unescape_value()?.to_string();
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        if !name.is_empty() && !ref_sqref.is_empty() {
+                            // Tables are usually local to the sheet they are in, but the table definition
+                            // DOES NOT contain the sheet name in 'ref' (it's just A1:B2).
+                            // However, defined names MUST include sheet name to be useful globally.
+                            // Problem: We don't know which sheet this table belongs to just by reading table xml.
+                            // We need to check relationships or find which sheet references this table.
+                            // BUT, Excel tables HAVE a unique name across the workbook.
+                            // A formula refers to it by name `Table1`, not `Sheet1!Table1`.
+                            // So we can just store the name.
+                            // BUT `PERF001` checks for unused named ranges.
+                            // If we just store the name, it's fine.
+                            // The associated value (reference) is for information.
+                            // If we don't have the sheet name, we can't show full address, but we can show relative.
+
+                            // Wait, PERF001 checks if the name is USED.
+                            // If users use `=SUM(Table1)`, `extract_formulas` will return strings containing `Table1`.
+                            // So we just need to register `Table1` as a defined name.
+                            // The value (range) doesn't matter for the *unused* check, only for *reporting*.
+
+                            current_tables.insert(name, ref_sqref);
+                        }
+                        // We only care about the top level table element
+                        break;
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Err(_) => break,
+                _ => {}
+            }
+            buf.clear();
+        }
+    }
+
+    Ok(current_tables)
+}
+
 pub struct XlsxReader<'a, R: std::io::Read + std::io::Seek> {
     archive: &'a mut ZipArchive<R>,
     shared_strings: Vec<String>,
@@ -221,7 +315,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
     }
 
     fn read_defined_names(&mut self) -> Result<HashMap<String, String>> {
-        extract_defined_names_from_xlsx(self.archive)
+        let mut names = extract_defined_names_from_xlsx(self.archive)?;
+        let tables = extract_tables_from_xlsx(self.archive)?;
+        names.extend(tables);
+        Ok(names)
     }
 
     fn read_hidden_sheets(&mut self) -> Result<Vec<String>> {
@@ -682,7 +779,8 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"sqref" {
                                 let sqref = attr.unescape_value()?;
-                                cf_ranges.push(sqref.to_string());
+                                // Reverting strict normalization to match user preference:
+                                cf_ranges.push(sqref.into_owned());
                             }
                         }
                     }
@@ -1617,4 +1715,50 @@ pub fn extract_formulas_from_xlsx(
     }
 
     Ok(formulas)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_extract_tables_from_xlsx() {
+        use std::io::Cursor;
+        use zip::write::FileOptions;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+
+            let options =
+                FileOptions::<()>::default().compression_method(zip::CompressionMethod::Stored);
+
+            // Add a table file
+            zip.start_file("xl/tables/table1.xml", options).unwrap();
+            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="MyTable" ref="A1:C3" tableType="xml" headerRowCount="1">
+    <tableColumns count="3">
+        <tableColumn id="1" name="Col1"/>
+        <tableColumn id="2" name="Col2"/>
+        <tableColumn id="3" name="Col3"/>
+    </tableColumns>
+</table>"#).unwrap();
+
+            // Add another table file (without displayName)
+            zip.start_file("xl/tables/table2.xml", options).unwrap();
+            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="2" name="OtherTable" ref="D4:E5" tableType="xml" headerRowCount="1">
+</table>"#).unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        let mut archive = ZipArchive::new(Cursor::new(buf)).unwrap();
+        let tables = extract_tables_from_xlsx(&mut archive).unwrap();
+
+        assert_eq!(tables.len(), 2);
+        assert_eq!(tables.get("MyTable"), Some(&"A1:C3".to_string()));
+        assert_eq!(tables.get("OtherTable"), Some(&"D4:E5".to_string()));
+    }
 }
