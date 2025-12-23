@@ -20,6 +20,10 @@ struct Cli {
     #[arg(long, num_args = 1.., value_name = "RANGE")]
     remove_ranges: Vec<String>,
 
+    /// List all named ranges with their values and status
+    #[arg(long)]
+    list_ranges: bool,
+
     /// Output file (Required for destructive operations)
     #[arg(short, long)]
     output: Option<PathBuf>,
@@ -32,10 +36,34 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let has_ops = !cli.remove_sheets.is_empty() || !cli.remove_ranges.is_empty();
+    let has_ops = !cli.remove_sheets.is_empty() || !cli.remove_ranges.is_empty() || cli.list_ranges;
 
     if !has_ops {
         println!("No operations specified. Use --help for usage.");
+        return Ok(());
+    }
+
+    if cli.list_ranges {
+        println!("Listing named ranges for '{}':", cli.file.display());
+        let workbook = sheetrs::reader::read_workbook(&cli.file)
+            .with_context(|| format!("Failed to read file: {}", cli.file.display()))?;
+
+        println!("Found {} defined names", workbook.defined_names.len());
+
+        if workbook.defined_names.is_empty() {
+            println!("  No named ranges found.");
+        } else {
+            // Sort for consistent output
+            let mut names: Vec<_> = workbook.defined_names.iter().collect();
+            names.sort_by_key(|(k, _)| k.as_str());
+
+            for (name, value) in names {
+                // ERR002 check: Broken reference contains #REF!
+                let is_broken = value.contains("#REF!");
+                let status = if is_broken { "❌" } else { "✅" };
+                println!("  {} {} -> {}", status, name, value);
+            }
+        }
         return Ok(());
     }
 

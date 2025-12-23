@@ -66,9 +66,10 @@ disabled_rules = ["UX", "SM"]
 
 | ID | Description | Default Active | Params |
 |----|-------------|----------------|--------|
-| **UX001** | Inconsistent number formatting | Yes | None |
+| **UX001** | Number as text | Yes | None |
 | **UX002** | Inconsistent date formatting | No | `date_format` (string, default: "mm/dd/yyyy") |
 | **UX003** | Blank rows/columns in used range | No | `max_blank_row` (int, default 2), `max_blank_column` (int, default 2) |
+
 
 ### Maintainability Rules (SM)
 
