@@ -822,6 +822,28 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
             buf.clear();
         }
 
+        // Include hidden rows/columns in used_range for format parity
+        // Both ODS and XLSX should report ALL empty rows/columns (visible or hidden) if they have properties
+        if let Some((mut rows, mut cols)) = dim_range {
+            if let Some(&max_hidden_row) = hidden_rows.iter().max() {
+                rows = rows.max(max_hidden_row + 1);
+            }
+            if let Some(&max_hidden_col) = hidden_columns.iter().max() {
+                cols = cols.max(max_hidden_col + 1);
+            }
+            dim_range = Some((rows, cols));
+        } else if !hidden_rows.is_empty() || !hidden_columns.is_empty() {
+            let mut rows = 1u32;
+            let mut cols = 1u32;
+            if let Some(&max_hidden_row) = hidden_rows.iter().max() {
+                rows = rows.max(max_hidden_row + 1);
+            }
+            if let Some(&max_hidden_col) = hidden_columns.iter().max() {
+                cols = cols.max(max_hidden_col + 1);
+            }
+            dim_range = Some((rows, cols));
+        }
+
         Ok((
             cells,
             hidden_columns,

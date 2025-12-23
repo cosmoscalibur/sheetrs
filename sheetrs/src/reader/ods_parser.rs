@@ -1827,7 +1827,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             }
                         }
 
-                        if has_value || formula.is_some() {
+                        if has_value || formula.is_some() || !style_name.is_empty() {
                             let mut cell_value = value;
                             if let Some(f) = formula {
                                 cell_value = match cell_value {
@@ -1933,15 +1933,25 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             ));
                         }
 
-                        // If it's an empty cell but has a formula, we should store it.
-                        if let Some(f) = formula {
+                        // If it's an empty cell but has a formula or style, we should store it.
+                        if formula.is_some() || !style_name.is_empty() {
+                            let cell_value =
+                                formula.map(CellValue::formula).unwrap_or(CellValue::Empty);
+
+                            // Look up format string from style
+                            let num_fmt = if !style_name.is_empty() {
+                                date_styles.get(&style_name).cloned()
+                            } else {
+                                None
+                            };
+
                             for r in 0..row_repeated {
                                 for c in 0..col_repeated {
                                     let cell = Cell {
                                         row: current_row + r,
                                         col: current_col + c,
-                                        value: CellValue::formula(f.clone()),
-                                        num_fmt: None,
+                                        value: cell_value.clone(),
+                                        num_fmt: num_fmt.clone(),
                                     };
                                     sheet.cells.insert((current_row + r, current_col + c), cell);
                                 }
@@ -2042,8 +2052,21 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             (None, Some((c_row, c_col))) => Some((c_row + 1, c_col + 1)),
                             (None, None) => None,
                         };
+
+                        // Include hidden rows/columns in used_range for format parity
+                        // Both ODS and XLSX should report ALL empty rows/columns (visible or hidden)
+                        if let Some((mut rows, mut cols)) = sheet.used_range {
+                            if let Some(&max_hidden_row) = sheet.hidden_rows.iter().max() {
+                                rows = rows.max(max_hidden_row + 1);
+                            }
+                            if let Some(&max_hidden_col) = sheet.hidden_columns.iter().max() {
+                                cols = cols.max(max_hidden_col + 1);
+                            }
+                            sheet.used_range = Some((rows, cols));
+                        }
                     }
                 }
+
                 // Handle conditional formatting that appears after table closing tag
                 Event::Start(e) if e.name().as_ref() == b"calcext:conditional-formats" => {
                     // This wrapper appears after </table:table>, continue processing
@@ -2390,5 +2413,45 @@ mod tests {
             defined_names.get("OtherRange"),
             Some(&"Sheet1.C3".to_string())
         );
+    }
+
+    #[test]
+    fn test_styled_empty_cell_ods() {
+        use std::io::Cursor;
+        use std::io::Write;
+        use zip::write::FileOptions;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options =
+                FileOptions::<()>::default().compression_method(zip::CompressionMethod::Stored);
+
+            zip.start_file("content.xml", options).unwrap();
+            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0">
+    <office:body>
+        <office:spreadsheet>
+            <table:table table:name="Sheet1">
+                <table:table-row>
+                    <table:table-cell table:style-name="ce1"/>
+                </table:table-row>
+            </table:table>
+        </office:spreadsheet>
+    </office:body>
+</office:document-content>"#).unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        let mut archive = ZipArchive::new(Cursor::new(buf)).unwrap();
+        let mut reader = OdsReader::new(&mut archive).unwrap();
+        let sheets = reader.read_sheets().unwrap();
+
+        assert_eq!(sheets.len(), 1);
+        let sheet = &sheets[0];
+        // The cell (0, 0) should be in the map because it has a style "ce1"
+        assert!(sheet.cells.contains_key(&(0, 0)));
+        assert_eq!(sheet.cells.get(&(0, 0)).unwrap().value, CellValue::Empty);
     }
 }

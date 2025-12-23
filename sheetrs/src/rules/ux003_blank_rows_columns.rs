@@ -1,4 +1,4 @@
-//! UX004: Blank rows/columns in used ranges
+//! UX003: Blank rows/columns in used ranges
 
 use super::{LinterRule, RuleCategory};
 use crate::reader::Workbook;
@@ -12,12 +12,8 @@ pub struct BlankRowsColumnsRule {
 
 impl BlankRowsColumnsRule {
     pub fn new(config: &crate::config::LinterConfig) -> Self {
-        let max_blank_row = config
-            .get_param_int("max_blank_row", Some("UX004"))
-            .unwrap_or(2) as u32;
-        let max_blank_column = config
-            .get_param_int("max_blank_column", Some("UX004"))
-            .unwrap_or(2) as u32;
+        let max_blank_row = config.get_param_int("max_blank_row", None).unwrap_or(2) as u32;
+        let max_blank_column = config.get_param_int("max_blank_column", None).unwrap_or(2) as u32;
 
         Self {
             max_blank_row,
@@ -43,8 +39,8 @@ impl LinterRule for BlankRowsColumnsRule {
         let mut violations = Vec::new();
 
         for sheet in &workbook.sheets {
-            // Skip sheets with no data
-            if sheet.cells.is_empty() && sheet.used_range.is_none() {
+            // Skip sheets with no cells to avoid noise and potential overflows
+            if sheet.cells.is_empty() {
                 continue;
             }
 
@@ -59,12 +55,16 @@ impl LinterRule for BlankRowsColumnsRule {
                     let max_col = used_cols.saturating_sub(1);
 
                     // Find min from actual cells
-                    let (cell_min_row, cell_min_col) = sheet
-                        .cells
-                        .keys()
-                        .fold((u32::MAX, u32::MAX), |(min_r, min_c), (r, c)| {
-                            (min_r.min(*r), min_c.min(*c))
-                        });
+                    let (cell_min_row, cell_min_col) = if sheet.cells.is_empty() {
+                        (0, 0)
+                    } else {
+                        sheet
+                            .cells
+                            .keys()
+                            .fold((u32::MAX, u32::MAX), |(min_r, min_c), (r, c)| {
+                                (min_r.min(*r), min_c.min(*c))
+                            })
+                    };
 
                     (cell_min_row, max_row, cell_min_col, max_col)
                 } else {
@@ -684,6 +684,40 @@ mod tests {
                 "Row 3 (1-based) should not be reported as blank - it's in merged cell F2:F5"
             );
         }
+    }
+
+    #[test]
+    fn test_empty_sheet_no_violations() {
+        let sheet = Sheet {
+            name: "Empty".to_string(),
+            cells: HashMap::new(),
+            used_range: Some((1, 1)), // A1 reported by parser
+            hidden_columns: Vec::new(),
+            hidden_rows: Vec::new(),
+            merged_cells: Vec::new(),
+            sheet_path: None,
+            formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
+        };
+
+        let workbook = Workbook {
+            path: PathBuf::from("test.xlsx"),
+            sheets: vec![sheet],
+            defined_names: HashMap::new(),
+            hidden_sheets: Vec::new(),
+            has_macros: false,
+            external_links: Vec::new(),
+        };
+
+        let rule = BlankRowsColumnsRule {
+            max_blank_row: 2,
+            max_blank_column: 2,
+        };
+        let violations = rule.check(&workbook).unwrap();
+
+        // Should be skipped because cells is empty
+        assert_eq!(violations.len(), 0);
     }
 
     #[test]
