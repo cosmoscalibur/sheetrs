@@ -1855,31 +1855,24 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                         num_fmt: num_fmt.clone(),
                                     };
                                     sheet.cells.insert((current_row + r, current_col + c), cell);
-                                }
-                            }
-                        }
 
-                        // Track furthest styled cell for used range metadata (Excel-like behavior)
-                        // Even if cell has no value, if it has a style, it extends the used range
-                        if !style_name.is_empty() {
-                            for r in 0..row_repeated {
-                                for c in 0..col_repeated {
+                                    // Update used_range for any inserted cell (value, formula, or style)
                                     let row_pos = current_row + r;
                                     let col_pos = current_col + c;
-
-                                    // Update max styled cell position
                                     if let Some((max_row, max_col)) = sheet.used_range {
-                                        sheet.used_range =
-                                            Some((max_row.max(row_pos), max_col.max(col_pos)));
+                                        sheet.used_range = Some((
+                                            max_row.max(row_pos + 1),
+                                            max_col.max(col_pos + 1),
+                                        ));
                                     } else {
-                                        sheet.used_range = Some((row_pos, col_pos));
+                                        sheet.used_range = Some((row_pos + 1, col_pos + 1));
                                     }
                                 }
                             }
                         }
 
                         // Multiply repeated by spanned to get true column consumption
-                        current_col += col_repeated * cols_spanned;
+                        current_col += col_repeated;
                     }
                 }
                 Event::Empty(e)
@@ -1954,30 +1947,24 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                         num_fmt: num_fmt.clone(),
                                     };
                                     sheet.cells.insert((current_row + r, current_col + c), cell);
-                                }
-                            }
-                        }
 
-                        // Track furthest styled cell for used range metadata (Excel-like behavior)
-                        if !style_name.is_empty() {
-                            for r in 0..row_repeated {
-                                for c in 0..col_repeated {
+                                    // Update used_range for any inserted cell (formula or style)
                                     let row_pos = current_row + r;
                                     let col_pos = current_col + c;
-
-                                    // Update max styled cell position
                                     if let Some((max_row, max_col)) = sheet.used_range {
-                                        sheet.used_range =
-                                            Some((max_row.max(row_pos), max_col.max(col_pos)));
+                                        sheet.used_range = Some((
+                                            max_row.max(row_pos + 1),
+                                            max_col.max(col_pos + 1),
+                                        ));
                                     } else {
-                                        sheet.used_range = Some((row_pos, col_pos));
+                                        sheet.used_range = Some((row_pos + 1, col_pos + 1));
                                     }
                                 }
                             }
                         }
 
                         // Multiply repeated by spanned to get true column consumption
-                        current_col += col_repeated * cols_spanned;
+                        current_col += col_repeated;
                     }
                 }
                 Event::Start(e) if e.name().as_ref() == b"calcext:conditional-format" => {
@@ -2043,13 +2030,13 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         let cells_range = calculate_used_range(&sheet.cells);
 
                         // Merge styled cell tracking with value cells
-                        // Convert from 0-indexed position to count format (add 1) to match XLSX
+                        // Both are already in count format (0-indexed position + 1)
                         sheet.used_range = match (sheet.used_range, cells_range) {
                             (Some((s_row, s_col)), Some((c_row, c_col))) => {
-                                Some((s_row.max(c_row) + 1, s_col.max(c_col) + 1))
+                                Some((s_row.max(c_row), s_col.max(c_col)))
                             }
-                            (Some((s_row, s_col)), None) => Some((s_row + 1, s_col + 1)),
-                            (None, Some((c_row, c_col))) => Some((c_row + 1, c_col + 1)),
+                            (Some(s), None) => Some(s),
+                            (None, Some(c)) => Some(c),
                             (None, None) => None,
                         };
 
@@ -2453,5 +2440,137 @@ mod tests {
         // The cell (0, 0) should be in the map because it has a style "ce1"
         assert!(sheet.cells.contains_key(&(0, 0)));
         assert_eq!(sheet.cells.get(&(0, 0)).unwrap().value, CellValue::Empty);
+    }
+
+    #[test]
+    fn test_merged_cells_indexing_ods() {
+        use std::io::Cursor;
+        use std::io::Write;
+        use zip::write::FileOptions;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options =
+                FileOptions::<()>::default().compression_method(zip::CompressionMethod::Stored);
+
+            zip.start_file("content.xml", options).unwrap();
+            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:office:spreadsheet="urn:oasis:names:tc:opendocument:xmlns:office:1.0">
+    <office:body>
+        <office:spreadsheet>
+            <table:table table:name="Sheet1">
+                <table:table-row>
+                    <!-- Cell A1 spans 2 columns (A, B) -->
+                    <table:table-cell table:number-columns-spanned="2" office:value-type="string">
+                        <text:p>Spanned</text:p>
+                    </table:table-cell>
+                    <!-- B1 is covered -->
+                    <table:covered-table-cell/>
+                    <!-- C1 should be at column 2 -->
+                    <table:table-cell office:value-type="string">
+                        <text:p>Target</text:p>
+                    </table:table-cell>
+                </table:table-row>
+                <table:table-row>
+                    <!-- Test repeated columns -->
+                    <table:table-cell table:number-columns-repeated="2" office:value-type="string">
+                        <text:p>Repeated</text:p>
+                    </table:table-cell>
+                    <!-- C2 should be at column 2 -->
+                    <table:table-cell office:value-type="string">
+                        <text:p>AfterRepeated</text:p>
+                    </table:table-cell>
+                </table:table-row>
+            </table:table>
+        </office:spreadsheet>
+    </office:body>
+</office:document-content>"#).unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        let mut archive = ZipArchive::new(Cursor::new(buf)).unwrap();
+        let mut reader = OdsReader::new(&mut archive).unwrap();
+        let sheets = reader.read_sheets().unwrap();
+
+        assert_eq!(sheets.len(), 1);
+        let sheet = &sheets[0];
+
+        // Row 1
+        // (0, 0) -> "Spanned"
+        assert_eq!(
+            sheet.cells.get(&(0, 0)).unwrap().value,
+            CellValue::Text("Spanned".to_string())
+        );
+        // (0, 1) -> Covered (usually not in map if empty)
+        // (0, 2) -> "Target" (This would be (0, 3) in the buggy version)
+        assert_eq!(
+            sheet.cells.get(&(0, 2)).unwrap().value,
+            CellValue::Text("Target".to_string())
+        );
+
+        // Row 2
+        // (1, 0) -> "Repeated"
+        assert_eq!(
+            sheet.cells.get(&(1, 0)).unwrap().value,
+            CellValue::Text("Repeated".to_string())
+        );
+        // (1, 1) -> "Repeated"
+        assert_eq!(
+            sheet.cells.get(&(1, 1)).unwrap().value,
+            CellValue::Text("Repeated".to_string())
+        );
+        // (1, 2) -> "AfterRepeated"
+        assert_eq!(
+            sheet.cells.get(&(1, 2)).unwrap().value,
+            CellValue::Text("AfterRepeated".to_string())
+        );
+    }
+
+
+    #[test]
+    fn test_calculate_used_range_individual_cells() {
+        use std::collections::HashMap;
+        let mut cells = HashMap::new();
+        cells.insert((5, 3), Cell {
+            row: 5, col: 3,
+            value: CellValue::Text("test".to_string()),
+            num_fmt: None,
+        });
+
+        let used_range = calculate_used_range(&cells);
+        assert_eq!(used_range, Some((5, 3)));
+
+        cells.insert((10, 7), Cell {
+            row: 10, col: 7,
+            value: CellValue::Number(42.0),
+            num_fmt: None,
+        });
+
+        let used_range = calculate_used_range(&cells);
+        assert_eq!(used_range, Some((10, 7)));
+    }
+
+    #[test]
+    fn test_calculate_used_range_merged_cells() {
+        use std::collections::HashMap;
+        let mut cells = HashMap::new();
+
+        // Merged cell B2:C3
+        cells.insert((1, 1), Cell { row: 1, col: 1, value: CellValue::Text("M".to_string()), num_fmt: None });
+        cells.insert((1, 2), Cell { row: 1, col: 2, value: CellValue::Empty, num_fmt: None });
+        cells.insert((2, 1), Cell { row: 2, col: 1, value: CellValue::Empty, num_fmt: None });
+        cells.insert((2, 2), Cell { row: 2, col: 2, value: CellValue::Empty, num_fmt: None });
+
+        let used_range = calculate_used_range(&cells);
+        assert_eq!(used_range, Some((2, 2)));
+    }
+
+    #[test]
+    fn test_calculate_used_range_empty() {
+        use std::collections::HashMap;
+        let cells: HashMap<(u32, u32), Cell> = HashMap::new();
+        assert_eq!(calculate_used_range(&cells), None);
     }
 }
