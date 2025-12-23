@@ -89,25 +89,18 @@ impl LinterRule for UnusedSheetsRule {
         // - It's the only sheet, OR
         // - It's referenced by another sheet, OR
         // - It contains formulas (it's doing work), OR
-        // - We failed to parse formulas for it (safe default)
+        // - Formula parsing failed for it (safe default)
         for sheet in &workbook.sheets {
             let is_only_sheet = workbook.sheets.len() == 1;
             let is_referenced = referenced_sheets.contains(sheet.name.as_str());
             let has_formulas = sheet.cells.values().any(|c| c.value.is_formula());
             let has_content = sheet.cells.values().any(|c| !c.value.is_empty());
-            let formula_error = &sheet.formula_parsing_error;
-
-            if let Some(_err_msg) = formula_error {
-                // If we failed to parse formulas, implicitly treat the sheet as "used" to avoid false positives.
-                // We do NOT report this as a violation or print it, as requested by the user.
-                continue;
-            }
 
             let is_hidden = workbook.hidden_sheets.contains(&sheet.name);
 
             // A sheet is unused if it's not referenced and has content.
-            // Normally we also require !has_formulas (assuming formulas do work).
-            // BUT, if a sheet is HIDDEN and unreferenced, it's dead code even if it has formulas.
+            // Hidden sheets with content but no incoming references are considered unused,
+            // even if they contain formulas, as they are effectively dead code.
             if !is_only_sheet && !is_referenced && has_content && (!has_formulas || is_hidden) {
                 violations.push(Violation::new(
                     self.id(),

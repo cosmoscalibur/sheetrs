@@ -106,11 +106,11 @@ fn count_if_nesting(formula: &str) -> usize {
 
         // Track closing parentheses to decrement depth
         if chars[i] == ')' {
-            // This is a simplified approach - we decrement for any closing paren
+            // This is a simplified approach - decrementing for any closing paren
             // A more robust approach would track which parens belong to IF statements
             if current_depth > 0 {
                 // Look ahead to see if this closes an IF
-                // For simplicity, we decrement when we see a closing paren
+                // For simplicity, decrement when a closing paren is seen
                 // This may undercount in complex cases but is good enough
                 current_depth = current_depth.saturating_sub(1);
             }

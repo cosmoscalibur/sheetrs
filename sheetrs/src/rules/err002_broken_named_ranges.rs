@@ -41,7 +41,7 @@ impl LinterRule for BrokenNamedRangesRule {
 
 /// Check if a reference is broken (contains #REF! error)
 fn is_broken_reference(_workbook: &Workbook, reference: &str) -> bool {
-    // Per user request: validate REF error in range definition, do NOT use sheet existence.
+    // Validates REF error in range definition, ignoring sheet existence.
     // Example: "INGRESOS!#REF!"
     reference.contains("#REF!")
 }

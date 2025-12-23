@@ -6,15 +6,15 @@ use crate::reader::Workbook;
 use crate::violation::{Severity, Violation, ViolationScope};
 use anyhow::Result;
 
-pub struct InconsistentNumberFormatRule;
+pub struct NumericTextRule;
 
-impl LinterRule for InconsistentNumberFormatRule {
+impl LinterRule for NumericTextRule {
     fn id(&self) -> &str {
         "UX001"
     }
 
     fn name(&self) -> &str {
-        "Inconsistent number formatting"
+        "Numeric data stored as text"
     }
 
     fn category(&self) -> RuleCategory {
@@ -215,7 +215,7 @@ mod tests {
             external_links: Vec::new(),
         };
 
-        let rule = InconsistentNumberFormatRule;
+        let rule = NumericTextRule;
         let violations = rule.check(&workbook).unwrap();
 
         // Should detect numeric text as a range

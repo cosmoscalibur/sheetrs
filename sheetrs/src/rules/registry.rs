@@ -61,7 +61,7 @@ fn create_all_rules(config: &LinterConfig) -> Vec<Box<dyn LinterRule>> {
         Box::new(sec002_hidden_sheets::HiddenSheetsRule),
         Box::new(sec003_hidden_columns_rows::HiddenColumnsRowsRule),
         Box::new(sec004_has_macros::HasMacrosRule),
-        Box::new(ux001_inconsistent_number_format::InconsistentNumberFormatRule),
+        Box::new(ux001_inconsistent_number_format::NumericTextRule),
         Box::new(ux003_blank_rows_columns::BlankRowsColumnsRule::new(config)),
         Box::new(perf001_unused_named_ranges::UnusedNamedRangesRule),
         Box::new(perf002_unused_sheets::UnusedSheetsRule),

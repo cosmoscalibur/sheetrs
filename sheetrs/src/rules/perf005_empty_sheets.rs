@@ -92,8 +92,8 @@ impl LinterRule for EmptySheetsRule {
 
             // Check if sheet has content (cells with values)
             // existing 'has_content' logic check:
-            // The sheet struct doesn't have a simple 'has_content' flag, we iterate cells.
-            // But we can check if cells map is not empty, AND if it contains non-empty values.
+            // The sheet struct doesn't have a simple 'has_content' flag, so cells are iterated.
+            // Checks if cells map is not empty, AND if it contains non-empty values.
             // (Wait, empty string cells or nulls?)
             // Usually cells.is_empty() implies no content.
             // But let's check properly:

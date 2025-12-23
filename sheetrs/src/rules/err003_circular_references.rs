@@ -396,7 +396,7 @@ mod tests {
 
         let workbook = create_test_workbook("Sheet1", cells);
         // By default expand_ranges is FALSE.
-        // We set global expand = true for this test.
+        // Global expand is set to true for this test.
         let mut config = crate::config::LinterConfig::default();
         config.global.params.insert(
             "expand_ranges_in_dependencies".to_string(),
@@ -416,7 +416,7 @@ mod tests {
         let mut cells = HashMap::new();
         // A1 = SUM(B1:B3)
         // B2 = A1
-        // Cycle: A1 -> B2 -> A1 (ONLY if we expand A1 to depend on B2)
+        // Cycle: A1 -> B2 -> A1 (ONLY if A1 is expanded to depend on B2)
         // If no expand: A1 -> B1, B3. B2 -> A1. No cycle.
         cells.insert(
             (0, 0),
@@ -496,7 +496,7 @@ mod tests {
     fn test_huge_range_limit() {
         let mut cells = HashMap::new();
         // A1 = SUM(A2:A10000) - this range is okay
-        // But if we had A1:XFD1048576 it would be skipped
+        // But if A1:XFD1048576 was present it would be skipped
         cells.insert(
             (0, 0),
             Cell {

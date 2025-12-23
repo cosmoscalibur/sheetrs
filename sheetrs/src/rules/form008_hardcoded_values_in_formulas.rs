@@ -100,14 +100,14 @@ impl LinterRule for HardcodedValuesInFormulasRule {
 
         // Regex to match numeric literals
         // Matches integers and decimals
-        // \b ensures we match complete words. Since digits are word characters, \b prevents matching
+        // \b ensures matching complete words. Since digits are word characters, \b prevents matching
         // digits preceded or followed by other word characters (like letters or underscores).
         // e.g., matches "123" in "123 + 456", but not "1" in "A1" or "10" in "LOG10".
         // Note: The regex crate does not support look-around/look-behind.
         let number_regex = Regex::new(r"\b(\d+(\.\d+)?)\b").unwrap();
 
         for sheet in &workbook.sheets {
-            // Note: Ideally we would load sheet-specific config here if overriding is needed per sheet.
+            // Note: Ideally sheet-specific config would be loaded here if overriding is needed per sheet.
             // Currently using global/constructor config for simplicity and performance.
             // To support per-sheet overrides fully, we'd need to update `new` or passing logic,
             // or store `LinterConfig` and look up here.
