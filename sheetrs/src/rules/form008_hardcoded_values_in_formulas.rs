@@ -98,6 +98,10 @@ impl LinterRule for HardcodedValuesInFormulasRule {
         // Regex to match quoted strings (to ignore them)
         let string_regex = Regex::new(r#""[^"]*""#).unwrap();
 
+        // Regex to match external workbook references like [1], [2], etc.
+        // This will be used to exclude these indices from hardcoded value detection
+        let external_ref_regex = Regex::new(r"\[(\d+)\]").unwrap();
+
         // Regex to match numeric literals
         // Matches integers and decimals
         // \b ensures matching complete words. Since digits are word characters, \b prevents matching
@@ -117,23 +121,41 @@ impl LinterRule for HardcodedValuesInFormulasRule {
                     // Remove strings first
                     let formula_no_strings = string_regex.replace_all(formula, "");
 
+                    // Collect positions of external workbook references to exclude
+                    let mut excluded_ranges: Vec<(usize, usize)> = Vec::new();
+                    for cap in external_ref_regex.captures_iter(&formula_no_strings) {
+                        if let Some(match_obj) = cap.get(0) {
+                            excluded_ranges.push((match_obj.start(), match_obj.end()));
+                        }
+                    }
+
                     for cap in number_regex.captures_iter(&formula_no_strings) {
                         if let Some(match_str) = cap.get(1) {
-                            let val_str = match_str.as_str();
-                            if let Ok(val) = val_str.parse::<f64>() {
-                                if !self.is_ignored(val) {
-                                    violations.push(Violation::new(
-                                        self.id(),
-                                        ViolationScope::Cell(
-                                            sheet.name.clone(),
-                                            crate::violation::CellReference {
-                                                row: *row,
-                                                col: *col,
-                                            },
-                                        ),
-                                        format!("Hardcoded value found in formula: {}", val),
-                                        Severity::Warning,
-                                    ));
+                            let match_start = match_str.start();
+                            let match_end = match_str.end();
+
+                            // Check if this number is within an external reference pattern
+                            let is_external_ref = excluded_ranges
+                                .iter()
+                                .any(|(start, end)| match_start >= *start && match_end <= *end);
+
+                            if !is_external_ref {
+                                let val_str = match_str.as_str();
+                                if let Ok(val) = val_str.parse::<f64>() {
+                                    if !self.is_ignored(val) {
+                                        violations.push(Violation::new(
+                                            self.id(),
+                                            ViolationScope::Cell(
+                                                sheet.name.clone(),
+                                                crate::violation::CellReference {
+                                                    row: *row,
+                                                    col: *col,
+                                                },
+                                            ),
+                                            format!("Hardcoded value found in formula: {}", val),
+                                            Severity::Warning,
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -332,5 +354,90 @@ mod tests {
 
         // 100 is NOT ignored
         assert!(msgs4.contains(&"Hardcoded value found in formula: 100".to_string()));
+    }
+
+    #[test]
+    fn test_external_link_indices_not_flagged() {
+        let mut cells = HashMap::new();
+
+        // External link formulas - indices should NOT be flagged
+        cells.insert(
+            (0, 0),
+            Cell {
+                num_fmt: None,
+                row: 0,
+                col: 0,
+                value: CellValue::formula("=[1]Sheet1!A1".to_string()),
+            },
+        );
+
+        cells.insert(
+            (0, 1),
+            Cell {
+                num_fmt: None,
+                row: 0,
+                col: 1,
+                value: CellValue::formula("=[2]Data!B5".to_string()),
+            },
+        );
+
+        // External link with actual constant - constant SHOULD be flagged
+        cells.insert(
+            (0, 2),
+            Cell {
+                num_fmt: None,
+                row: 0,
+                col: 2,
+                value: CellValue::formula("=[1]Sheet1!A1+5".to_string()),
+            },
+        );
+
+        let sheet = Sheet {
+            name: "Sheet1".to_string(),
+            cells,
+            used_range: Some((1, 3)),
+            hidden_columns: vec![],
+            hidden_rows: vec![],
+            merged_cells: vec![],
+            formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
+            sheet_path: None,
+        };
+
+        let workbook = Workbook {
+            path: PathBuf::from("test.xlsx"),
+            sheets: vec![sheet],
+            defined_names: HashMap::new(),
+            hidden_sheets: vec![],
+            has_macros: false,
+            external_links: Vec::new(),
+        };
+
+        // Disable all ignore flags to ensure only external refs are excluded
+        let mut config = LinterConfig::default();
+        config.global.params.insert(
+            "ignore_hardcoded_int_values".to_string(),
+            Value::Boolean(false),
+        );
+        config.global.params.insert(
+            "ignore_hardcoded_power_of_ten".to_string(),
+            Value::Boolean(false),
+        );
+
+        let rule = HardcodedValuesInFormulasRule::new(&config);
+        let violations = rule.check(&workbook).unwrap();
+
+        let msgs: Vec<String> = violations.iter().map(|v| v.message.clone()).collect();
+
+        // Indices 1 and 2 should NOT be flagged
+        assert!(!msgs.contains(&"Hardcoded value found in formula: 1".to_string()));
+        assert!(!msgs.contains(&"Hardcoded value found in formula: 2".to_string()));
+
+        // But the constant 5 SHOULD be flagged
+        assert!(msgs.contains(&"Hardcoded value found in formula: 5".to_string()));
+
+        // Should have exactly 1 violation (the 5)
+        assert_eq!(violations.len(), 1);
     }
 }

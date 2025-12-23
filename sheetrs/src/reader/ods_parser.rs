@@ -1965,10 +1965,13 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     }
                 }
                 Event::Empty(e) if e.name().as_ref() == b"calcext:condition" => {
-                    if let Some(ref mut _sheet) = current_sheet {
-                        // DEBUG: Inspect formula for AYUDA_MAPEADA BD881 (approx row 880, col 55)
-                        // Actually, this is conditional formatting section. I need cell formula section.
-                        // Reverting to cell parsing section approx line 1250.
+                    if let Some(ref mut sheet) = current_sheet {
+                        sheet.conditional_formatting_count += 1;
+                        if let Some(ref range) = current_cf_range {
+                            sheet
+                                .conditional_formatting_ranges
+                                .push(normalize_ods_reference(range, false, None, None));
+                        }
                     }
                 }
                 Event::End(e) if e.name().as_ref() == b"table:table-row" => {
@@ -1976,10 +1979,22 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     current_col = 0;
                 }
                 Event::End(e) if e.name().as_ref() == b"table:table" => {
-                    if let Some(mut sheet) = current_sheet.take() {
-                        // Calculate used range based on actual content and styles
-                        // This fixes PERF003 where ODS metadata might be missing or limited
-                        sheet.used_range = calculate_used_range(&sheet.cells);
+                    // Don't finalize the sheet yet - conditional formatting may follow
+                    // Just mark that we've exited the table
+                    if current_sheet.is_some() {
+                        // Calculate used range for the sheet
+                        if let Some(ref mut sheet) = current_sheet {
+                            sheet.used_range = calculate_used_range(&sheet.cells);
+                        }
+                    }
+                }
+                // Handle conditional formatting that appears after table closing tag
+                Event::Start(e) if e.name().as_ref() == b"calcext:conditional-formats" => {
+                    // This wrapper appears after </table:table>, continue processing
+                }
+                Event::End(e) if e.name().as_ref() == b"calcext:conditional-formats" => {
+                    // End of conditional formatting section - now we can finalize the sheet
+                    if let Some(sheet) = current_sheet.take() {
                         sheets.push(sheet);
                     }
                 }
@@ -1987,6 +2002,11 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                 _ => {}
             }
             buf.clear();
+        }
+
+        // Handle any remaining sheet that didn't have conditional formatting
+        if let Some(sheet) = current_sheet.take() {
+            sheets.push(sheet);
         }
 
         Ok(sheets)
