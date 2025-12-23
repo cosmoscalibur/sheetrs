@@ -96,7 +96,15 @@ impl LinterRule for ExternalLinksRule {
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
         let mut seen_workbooks = std::collections::HashSet::new();
-        let mut seen_urls = std::collections::HashSet::new();
+
+        // Build index-to-filename mapping for XLSX external links
+        // workbook.external_links contains the actual filenames in order (index 1, 2, 3...)
+        let external_link_map: std::collections::HashMap<String, String> = workbook
+            .external_links
+            .iter()
+            .enumerate()
+            .map(|(idx, filename)| (format!("[{}]", idx + 1), filename.clone()))
+            .collect();
 
         for sheet in &workbook.sheets {
             // Collect all cells with external workbook references
@@ -112,7 +120,12 @@ impl LinterRule for ExternalLinksRule {
                     if let Some(formula) = cell.value.as_formula() {
                         let workbook_names = extract_external_workbook_names(formula);
                         for workbook_name in workbook_names {
-                            workbook_cells.push((cell.row, cell.col, workbook_name));
+                            // Resolve [N] to actual filename if available
+                            let resolved_name = external_link_map
+                                .get(&workbook_name)
+                                .cloned()
+                                .unwrap_or(workbook_name);
+                            workbook_cells.push((cell.row, cell.col, resolved_name));
                         }
                     }
                 }
@@ -120,8 +133,10 @@ impl LinterRule for ExternalLinksRule {
                 // Check for external links in text values (URLs)
                 if matches!(self.mode, LinkDetectionMode::Url | LinkDetectionMode::All) {
                     if let crate::reader::workbook::CellValue::Text(text) = &cell.value {
-                        if is_external_url(text) {
-                            url_cells.push((cell.row, cell.col, text.clone()));
+                        // Extract specific URLs instead of using the whole text
+                        let urls = extract_urls(text);
+                        for url in urls {
+                            url_cells.push((cell.row, cell.col, url));
                         }
                     }
                 }
@@ -174,11 +189,8 @@ impl LinterRule for ExternalLinksRule {
             if !url_cells.is_empty() {
                 let grouped = group_cells_by_value(url_cells);
                 for (url, cells) in grouped {
-                    // Skip if already processed (deduplication)
-                    if seen_urls.contains(&url) {
-                        continue;
-                    }
-                    seen_urls.insert(url.clone());
+                    // Note: We don't deduplicate URLs across sheets - same URL can appear in multiple sheets
+                    // and should be reported for each occurrence
 
                     // Validate URL status if status is INVALID
                     if matches!(self.status, LinkStatus::Invalid) {
@@ -213,7 +225,7 @@ impl LinterRule for ExternalLinksRule {
 
         // Check for external links found in metadata (book-level)
         for link in &workbook.external_links {
-            if seen_workbooks.contains(link) || seen_urls.contains(link) {
+            if seen_workbooks.contains(link) {
                 continue;
             }
 
@@ -312,9 +324,22 @@ fn find_contiguous_ranges(cells: &[(u32, u32)]) -> Vec<Vec<(u32, u32)>> {
     ranges
 }
 
+// Helper to extract URLs from text
+fn extract_urls(text: &str) -> Vec<String> {
+    use regex::Regex;
+    // Simple regex for URLs.
+    // Note: Creating Regex every time is inefficient, but for now acceptable.
+    // Ideally use lazy_static or compile once in struct.
+    let re = Regex::new(r"(https?://|ftp://|file://)[^\s]+").unwrap();
+    re.find_iter(text).map(|m| m.as_str().to_string()).collect()
+}
+
 /// Extract external workbook names from formula, returns empty list if no external reference
 fn extract_external_workbook_names(formula: &str) -> Vec<String> {
     let mut names = Vec::new();
+
+    // Standard parser that handles both Excel [Book] and ODS ['file:///...'] styles
+    // (ODS references are often normalized to brackets by the parser)
     let mut chars = formula.chars().peekable();
     let mut in_string = false;
     let mut current_name = String::new();
@@ -344,6 +369,10 @@ fn extract_external_workbook_names(formula: &str) -> Vec<String> {
         if c == '[' {
             collecting_bracket = true;
             current_name.clear();
+            // Do NOT push '[' yet, we want clean names if possible.
+            // But existing logic kept brackets for Excel style [Book].
+            // Let's keep consistency: [Book] vs file:///...
+            // If we detect ODS style inside, we strip brackets.
             current_name.push('[');
         } else if c == ']' {
             if collecting_bracket {
@@ -357,7 +386,20 @@ fn extract_external_workbook_names(formula: &str) -> Vec<String> {
                         && !current_name.contains("#REF!")
                         && !current_name.starts_with("[$")
                     {
-                        names.push(current_name.clone());
+                        // Clean up ODS style references: ['file:///PATH'#REF] -> /PATH
+                        if current_name.starts_with("['file:///") && current_name.contains("'#") {
+                            // Extract just the file path between [' and '#
+                            if let Some(end_pos) = current_name.find("'#") {
+                                let content = &current_name[2..end_pos]; // Strip [' prefix
+                                // Strip file:// prefix for cleaner display
+                                let clean_path = content.trim_start_matches("file://");
+                                names.push(clean_path.to_string());
+                            } else {
+                                names.push(current_name.clone());
+                            }
+                        } else {
+                            names.push(current_name.clone());
+                        }
                     }
                 }
                 collecting_bracket = false;
@@ -412,14 +454,6 @@ fn check_url_status(url: &str, timeout_secs: u64) -> bool {
 fn check_url_status(_url: &str, _timeout_secs: u64) -> bool {
     // Fallback: assume valid if feature not enabled
     true
-}
-
-/// Check if text is an external URL
-fn is_external_url(text: &str) -> bool {
-    text.starts_with("http://")
-        || text.starts_with("https://")
-        || text.starts_with("ftp://")
-        || text.starts_with("file://")
 }
 
 #[cfg(test)]
@@ -626,18 +660,12 @@ mod tests {
         let rule = ExternalLinksRule::default();
         let violations = rule.check(&workbook).unwrap();
 
-        // Should only find Book1.xlsx, NOT .A1 or .B2 or .C3
-        // Currently, without fix, it will likely find 4 violations or 1 violation with multiple ranges if grouped incorrectly?
-        // Actually, it groups by workbook name.
-        // So we expect violations for: Book1.xlsx, .A1, .B2, .C3
-
-        // We want ONLY Book1.xlsx
-
+        // Expectations:
+        // - Book1.xlsx: Valid external link (Should be detected)
+        // - .A1, .B2, .C3: ODS internal references (Should be ignored)
+        //
+        // This validates that false positives from internal ODS syntax are avoided.
         let messages: Vec<String> = violations.iter().map(|v| v.message.clone()).collect();
-        println!("Violations found: {:?}", messages);
-
-        // To verify reproduction, we ASSERT that we DO NOT have false positives.
-        // This test will FAIL before the fix.
 
         let has_book1 = messages.iter().any(|m| m.contains("[Book1.xlsx]"));
         let has_a1 = messages.iter().any(|m| m.contains("[.A1]"));

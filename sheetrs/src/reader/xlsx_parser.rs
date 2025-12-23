@@ -153,7 +153,12 @@ pub fn extract_defined_names_from_xlsx(
             }
             Ok(Event::End(e)) => match e.name().as_ref() {
                 b"definedName" if !current_name.is_empty() => {
-                    defined_names.insert(current_name.clone(), current_ref.clone());
+                    // Filter out internal Excel names
+                    if !current_name.starts_with("_xlnm.")
+                        && !current_name.contains("_FilterDatabase")
+                    {
+                        defined_names.insert(current_name.clone(), current_ref.clone());
+                    }
                     current_name.clear();
                     current_ref.clear();
                 }
@@ -169,10 +174,6 @@ pub fn extract_defined_names_from_xlsx(
 
     Ok(defined_names)
 }
-
-/// Normalize an sqref string (space-separated ranges)
-/// e.g. "A1:A1" -> "A1"
-/// "A1:B2 C3:C3" -> "A1:B2 C3"
 
 /// Extract Excel Tables from XLSX file as defined names
 /// Scans xl/tables/*.xml
@@ -212,9 +213,9 @@ pub fn extract_tables_from_xlsx(
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"name" | b"displayName" => {
-                                    // displayName is usually the safe name, name might be id
-                                    // spec says: name is collection name, displayName is unique name for formulas
-                                    // We prioritize displayName
+                                    // displayName is usually the safe name, name might be id.
+                                    // Spec says: name is collection name, displayName is unique name for formulas.
+                                    // DisplayName is prioritized.
                                     if name.is_empty() {
                                         name = attr.unescape_value()?.to_string();
                                     } else if attr.key.as_ref() == b"displayName" {
@@ -232,24 +233,20 @@ pub fn extract_tables_from_xlsx(
                             // Tables are usually local to the sheet they are in, but the table definition
                             // DOES NOT contain the sheet name in 'ref' (it's just A1:B2).
                             // However, defined names MUST include sheet name to be useful globally.
-                            // Problem: We don't know which sheet this table belongs to just by reading table xml.
-                            // We need to check relationships or find which sheet references this table.
-                            // BUT, Excel tables HAVE a unique name across the workbook.
+                            //
+                            // The exact sheet ownership is not easily known from table XML alone without relationships.
+                            // But Excel tables HAVE a unique name across the workbook.
                             // A formula refers to it by name `Table1`, not `Sheet1!Table1`.
-                            // So we can just store the name.
-                            // BUT `PERF001` checks for unused named ranges.
-                            // If we just store the name, it's fine.
-                            // The associated value (reference) is for information.
-                            // If we don't have the sheet name, we can't show full address, but we can show relative.
-
-                            // Wait, PERF001 checks if the name is USED.
+                            // So storing just the name is sufficient.
+                            //
+                            // PERF001 checks for unused named ranges by looking for the name in formulas.
                             // If users use `=SUM(Table1)`, `extract_formulas` will return strings containing `Table1`.
-                            // So we just need to register `Table1` as a defined name.
-                            // The value (range) doesn't matter for the *unused* check, only for *reporting*.
+                            // Registering `Table1` as a defined name enables this check.
+                            // The associated value (range) is primarily for information/reporting.
 
                             current_tables.insert(name, ref_sqref);
                         }
-                        // We only care about the top level table element
+                        // Only the top level table element is processed
                         break;
                     }
                 }
@@ -293,7 +290,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
             sheet.sheet_path = Some(path.clone());
 
             // Parse sheet data
-            let (cells, hidden_cols, hidden_rows, merged_cells, cf_count, cf_ranges) =
+            let (cells, hidden_cols, hidden_rows, merged_cells, cf_count, cf_ranges, dim_range) =
                 self.parse_sheet_xml(&path)?;
 
             sheet.cells = cells;
@@ -303,10 +300,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
             sheet.conditional_formatting_count = cf_count;
             sheet.conditional_formatting_ranges = cf_ranges;
 
-            // Calculate used range
-            if let Some((max_row, max_col)) = sheet.last_data_cell() {
-                sheet.used_range = Some((max_row + 1, max_col + 1));
-            }
+            sheet.used_range = dim_range;
 
             sheets.push(sheet);
         }
@@ -407,7 +401,10 @@ pub fn extract_external_links_xlsx(
                                 _ => {}
                             }
                         }
-                        if r_type.ends_with("/externalWorkbook") {
+                        // Accept both externalLinkPath (for file references) and externalWorkbook
+                        if r_type.ends_with("/externalLinkPath")
+                            || r_type.ends_with("/externalWorkbook")
+                        {
                             links.push(target);
                         }
                     }
@@ -516,6 +513,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
         Vec<(u32, u32, u32, u32)>,
         usize,
         Vec<String>,
+        Option<(u32, u32)>,
     )> {
         let mut cells = HashMap::new();
         let mut hidden_columns = Vec::new();
@@ -523,6 +521,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
         let mut merged_cells = Vec::new();
         let mut cf_count = 0;
         let mut cf_ranges = Vec::new();
+        let mut dim_range = None;
         let mut shared_formulas: HashMap<
             u32,
             Vec<(String, u32, u32, Option<(u32, u32, u32, u32)>)>,
@@ -539,6 +538,20 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.name().as_ref() {
+                    b"dimension" => {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"ref" {
+                                let ref_str = attr.unescape_value()?;
+                                if let Some((_, _, end_row, end_col)) = parse_cell_range(&ref_str) {
+                                    // defined range is inclusive, so count is index + 1
+                                    dim_range = Some((end_row + 1, end_col + 1));
+                                } else if let Some((end_row, end_col)) = parse_cell_ref(&ref_str) {
+                                    // Single cell ref used as dimension? Rare but possible.
+                                    dim_range = Some((end_row + 1, end_col + 1));
+                                }
+                            }
+                        }
+                    }
                     b"col" => {
                         let mut min = 0u32;
                         let mut max = 0u32;
@@ -693,9 +706,22 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             }
                         }
                     }
+
                     _ => {}
                 },
                 Event::Empty(e) => match e.name().as_ref() {
+                    b"dimension" => {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"ref" {
+                                let ref_str = attr.unescape_value()?;
+                                if let Some((_, _, end_row, end_col)) = parse_cell_range(&ref_str) {
+                                    dim_range = Some((end_row + 1, end_col + 1));
+                                } else if let Some((end_row, end_col)) = parse_cell_ref(&ref_str) {
+                                    dim_range = Some((end_row + 1, end_col + 1));
+                                }
+                            }
+                        }
+                    }
                     b"col" => {
                         let mut min = 0u32;
                         let mut max = 0u32;
@@ -779,7 +805,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"sqref" {
                                 let sqref = attr.unescape_value()?;
-                                // Reverting strict normalization to match user preference:
+                                // Strict normalization reverted to preserve original format (e.g. A1 instead of A1:A1):
                                 cf_ranges.push(sqref.into_owned());
                             }
                         }
@@ -803,6 +829,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
             merged_cells,
             cf_count,
             cf_ranges,
+            dim_range,
         ))
     }
 }
