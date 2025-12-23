@@ -3,7 +3,7 @@ members = ["sheetrs", "sheetlint", "sheetstats", "sheetcli"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 authors = ["Edward Villegas <cosmoscalibur@gmail.com>"]
 license = "MIT"
