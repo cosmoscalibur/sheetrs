@@ -12,7 +12,7 @@ use crate::violation::{Severity, Violation, ViolationScope};
 /// - `date_format`: The required format string (default: "mm/dd/yyyy")
 pub struct InconsistentDateFormatRule {
     default_date_format: String,
-    // We store config to look up per-sheet overrides.
+    // Config is stored to look up per-sheet overrides.
     // Actually, as discussed, I'll store the object or just use default for now
     // and rely on `check` to look up (Wait, I can't look up without config).
     // I'll stick to a simple struct and assume global config for now,
@@ -45,7 +45,7 @@ impl InconsistentDateFormatRule {
         let lower_no_color = lower.replace("[red]", "").replace("[blue]", "");
 
         // Check for d, m, y. Note 'm' can be minutes, but usually in context of time.
-        // We want to flag ANY date/time that doesn't match the specific format?
+        // Should ANY date/time that doesn't match the specific format be flagged?
         // Or only Dates?
         // User request: "Detect if date not formatted as a specific format setup"
         // So if it IS a date, it must match.
@@ -83,12 +83,26 @@ impl LinterRule for InconsistentDateFormatRule {
                 .unwrap_or(&self.default_date_format);
 
             for ((row, col), cell) in &sheet.cells {
-                // We only care about date cells.
+                // Only date cells are relevant.
                 // In Excel, dates are numbers with a date format.
-                if let CellValue::Number(_) = cell.value {
+                // Only date cells are relevant.
+                // In Excel, dates are numbers. In ODS, they might be stored as text (ISO strings) with a style.
+                // Formulas can also result in dates.
+                let is_candidate = match cell.value {
+                    CellValue::Number(_) => true,
+                    CellValue::Text(_) => true,
+                    CellValue::Formula { .. } => true,
+                    _ => false,
+                };
+
+                if is_candidate {
                     if let Some(fmt) = &cell.num_fmt {
-                        if Self::is_date_format(fmt) {
-                            if fmt != required_format {
+                        // Normalize format: remove escape backslashes common in XLSX (e.g. "mm\-dd\-yyyy" -> "mm-dd-yyyy")
+                        let normalized_fmt = fmt.replace('\\', "");
+
+                        // Check if it's a date format (using original check, but on normalized or raw? usually safe to check raw)
+                        if Self::is_date_format(&normalized_fmt) {
+                            if normalized_fmt != required_format.replace('\\', "") {
                                 violations.push(Violation::new(
                                     self.id(),
                                     ViolationScope::Cell(
@@ -100,7 +114,7 @@ impl LinterRule for InconsistentDateFormatRule {
                                     ),
                                     format!(
                                         "Date format '{}' does not match required format '{}'",
-                                        fmt, required_format
+                                        normalized_fmt, required_format
                                     ),
                                     Severity::Warning,
                                 ));
@@ -181,7 +195,7 @@ mod tests {
         let config = LinterConfig::default();
         // Set default to mm/dd/yyyy
         // LinterConfig default uses empty hashmaps, so "mm/dd/yyyy" logic inside rule handles it.
-        // We can inject params if we want to test override.
+        // Params can be injected to test override.
 
         let rule = InconsistentDateFormatRule::new(&config);
         let violations = rule.check(&workbook).unwrap();
