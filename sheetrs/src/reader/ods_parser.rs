@@ -582,11 +582,11 @@ pub fn has_macros(archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>) 
 pub fn extract_external_links_ods(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<String>> {
-    let mut links = Vec::new();
+    let mut links = std::collections::HashSet::new();
 
     let content_xml = match archive.by_name("content.xml") {
         Ok(file) => file,
-        Err(_) => return Ok(links),
+        Err(_) => return Ok(Vec::new()),
     };
 
     let buf_reader = BufReader::new(content_xml);
@@ -596,10 +596,40 @@ pub fn extract_external_links_ods(
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table-source" => {
+            Event::Start(ref e) if e.name().as_ref() == b"text:a" => {
                 for attr in e.attributes().flatten() {
                     if attr.key.as_ref() == b"xlink:href" {
-                        links.push(attr.unescape_value()?.to_string());
+                        let link = attr.unescape_value()?.to_string();
+                        if !link.starts_with("#") {
+                            links.insert(link);
+                        }
+                    }
+                }
+            }
+            Event::Start(ref e) | Event::Empty(ref e)
+                if e.name().as_ref() == b"table:table-source" =>
+            {
+                for attr in e.attributes().flatten() {
+                    if attr.key.as_ref() == b"xlink:href" {
+                        links.insert(attr.unescape_value()?.to_string());
+                    }
+                }
+            }
+            Event::Start(ref e) | Event::Empty(ref e)
+                if e.name().as_ref() == b"table:table-cell" =>
+            {
+                for attr in e.attributes().flatten() {
+                    if attr.key.as_ref() == b"table:formula" {
+                        let formula = attr.unescape_value()?;
+                        if formula.contains("'file:///") {
+                            if let Some(start) = formula.find("'file:///") {
+                                let remainder = &formula[start + 1..];
+                                if let Some(end) = remainder.find("'#") {
+                                    let path = &remainder[..end];
+                                    links.insert(path.to_string());
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -609,7 +639,19 @@ pub fn extract_external_links_ods(
         buf.clear();
     }
 
-    Ok(links)
+    // Strip file:// prefix from paths for cleaner display
+    let cleaned_links: Vec<String> = links
+        .into_iter()
+        .map(|link| {
+            if link.starts_with("file://") {
+                link.trim_start_matches("file://").to_string()
+            } else {
+                link
+            }
+        })
+        .collect();
+
+    Ok(cleaned_links)
 }
 
 /// Extract cached error values from an ODS worksheet
@@ -792,6 +834,333 @@ pub fn extract_cached_errors_from_ods(
     Ok(errors)
 }
 
+/// Extract date styles from ODS content.xml and styles.xml
+/// Returns a map of style_name -> excel_format_string
+// Helper to extract date styles and cell style mappings
+fn parse_ods_date(date_str: &str) -> Option<f64> {
+    // Format: YYYY-MM-DD or YYYY-MM-DDThh:mm:ss
+    let parts: Vec<&str> = date_str.split('T').collect();
+    let date_part = parts[0];
+    let time_part = if parts.len() > 1 { parts[1] } else { "" };
+
+    let date_components: Vec<&str> = date_part.split('-').collect();
+    if date_components.len() != 3 {
+        return None;
+    }
+
+    let year = date_components[0].parse::<i32>().ok()?;
+    let month = date_components[1].parse::<u32>().ok()?;
+    let day = date_components[2].parse::<u32>().ok()?;
+
+    // Simple days count from 1899-12-30
+    // Excel epoch: 1899-12-30 = 0.
+    // 1900-01-01 = 2 (Excel bug: 1900 is leap year).
+
+    // We can use a simplified algorithm since we likely deal with modern dates
+    // Algorithm to convert YMD to total days since 0000-03-01
+    // But easier to just count days.
+
+    let is_leap = |y: i32| (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+
+    let days_in_month = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+    let mut total_days = 0;
+
+    // Years
+    for y in 1900..year {
+        total_days += if is_leap(y) { 366 } else { 365 };
+    }
+
+    // Months
+    for m in 1..month {
+        if m == 2 && is_leap(year) {
+            total_days += 29;
+        } else {
+            total_days += days_in_month[m as usize];
+        }
+    }
+
+    // Days
+    total_days += day as i32;
+
+    // Adjust for Excel epoch (1900-01-01 is day 1, but we start counting from 1900-01-01 as day 1 in this loop?)
+    // Loop starts 1900.
+    // if date is 1900-01-01: loop 0, month 0, day 1. total = 1.
+    // Excel 1900-01-01 is 2? No, 1. (Actually 1900-01-01 is 1.0).
+    // Excel thinks 1900-02-29 exists (day 60).
+
+    // If our date is > 1900-02-28, we need to ADD 1 to match Excel's bug.
+    // Unless ODS date is pre-1900, which is rare.
+
+    // Let's verify:
+    // 1999-09-30 should be 36433.
+    // Calc:
+    // Years 1900..1999 (99 years).
+    // Leaps: 1904, 08, 12, ... 96. (96-4)/4 + 1 = 24 leap years.
+    // 99 * 365 + 24 = 36135 + 24 = 36159.
+    // Months in 1999 (Jan-Aug): 31+28+31+30+31+30+31+31 = 243.
+    // Days: 30.
+    // Total = 36159 + 243 + 30 = 36432.
+    // Target 36433.
+    // Why diff 1? Because Excel has extra day (Feb 29 1900).
+    // So we add 1 offset + 1 (starting index?).
+
+    // Actually, "1900-01-01" in my loop gives 1. In Excel it is 1.
+    // "1900-02-28" loop: 31 + 28 = 59. Excel: 59.
+    // "1900-03-01" loop: 31 + 28 + 1 = 60. Excel: 61 (60 is 2/29).
+
+    // So if total_days > 59, add 1.
+    if total_days > 59 {
+        total_days += 1;
+    }
+
+    // Time
+    let mut time_fraction = 0.0;
+    if !time_part.is_empty() {
+        // HH:MM:SS or HH:MM:SS.mmm
+        let time_parts: Vec<&str> = time_part.split(':').collect();
+        if time_parts.len() >= 2 {
+            let h = time_parts[0].parse::<f64>().unwrap_or(0.0);
+            let m = time_parts[1].parse::<f64>().unwrap_or(0.0);
+            let s = if time_parts.len() > 2 {
+                time_parts[2].parse::<f64>().unwrap_or(0.0)
+            } else {
+                0.0
+            };
+
+            time_fraction = (h * 3600.0 + m * 60.0 + s) / 86400.0;
+        }
+    }
+
+    // Excel starts from Dec 30 1899?
+    // My loop started Jan 1 1900 as 1.
+    // This matches Excel (1 = 1900-01-01).
+    // So should be fine.
+
+    Some(total_days as f64 + time_fraction)
+}
+
+pub fn extract_date_styles_from_ods(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<std::collections::HashMap<String, String>> {
+    use std::collections::HashMap;
+
+    // Map: Data Style Name -> Format String (e.g., "N49" -> "dd/mm/yyyy")
+    let mut data_styles = HashMap::new();
+    // Map: Cell Style Name -> Data Style Name (e.g., "ce14" -> "N49")
+    let mut cell_styles = HashMap::new();
+
+    // Helper to parse a styles file (content.xml or styles.xml)
+    let mut parse_styles_file = |file: std::io::BufReader<zip::read::ZipFile>| -> Result<()> {
+        let mut reader = Reader::from_reader(file);
+        reader.config_mut().trim_text(false);
+
+        let mut buf = Vec::new();
+        let mut current_data_style_name = String::new();
+        let mut current_format = String::new();
+        let mut in_date_style = false;
+
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(e) => {
+                    match e.name().as_ref() {
+                        b"number:date-style" => {
+                            in_date_style = true;
+                            current_format.clear();
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"style:name" {
+                                    current_data_style_name = attr.unescape_value()?.to_string();
+                                }
+                            }
+                        }
+                        b"style:style" => {
+                            let mut is_cell_style = false;
+                            let mut style_name = String::new();
+                            let mut data_style_name = String::new();
+
+                            for attr in e.attributes().flatten() {
+                                match attr.key.as_ref() {
+                                    b"style:family" => {
+                                        if attr.value.as_ref() == b"table-cell" {
+                                            is_cell_style = true;
+                                        }
+                                    }
+                                    b"style:name" => {
+                                        style_name = attr.unescape_value()?.to_string();
+                                    }
+                                    b"style:data-style-name" => {
+                                        data_style_name = attr.unescape_value()?.to_string();
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            if is_cell_style
+                                && !style_name.is_empty()
+                                && !data_style_name.is_empty()
+                            {
+                                cell_styles.insert(style_name, data_style_name);
+                            }
+                        }
+                        b"number:day" if in_date_style => {
+                            let mut long = false;
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"number:style"
+                                    && attr.value.as_ref() == b"long"
+                                {
+                                    long = true;
+                                }
+                            }
+                            current_format.push_str(if long { "dd" } else { "d" });
+                        }
+                        b"number:month" if in_date_style => {
+                            let mut long = false;
+                            let mut textual = false;
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"number:style"
+                                    && attr.value.as_ref() == b"long"
+                                {
+                                    long = true;
+                                }
+                                if attr.key.as_ref() == b"number:textual"
+                                    && attr.value.as_ref() == b"true"
+                                {
+                                    textual = true;
+                                }
+                            }
+                            if textual {
+                                current_format.push_str(if long { "mmmm" } else { "mmm" });
+                            } else {
+                                current_format.push_str(if long { "mm" } else { "m" });
+                            }
+                        }
+                        b"number:year" if in_date_style => {
+                            let mut long = false;
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"number:style"
+                                    && attr.value.as_ref() == b"long"
+                                {
+                                    long = true;
+                                }
+                            }
+                            current_format.push_str(if long { "yyyy" } else { "yy" });
+                        }
+                        b"number:hours" if in_date_style => {
+                            current_format.push_str("hh");
+                        }
+                        b"number:minutes" if in_date_style => {
+                            current_format.push_str("mm");
+                        }
+                        b"number:seconds" if in_date_style => {
+                            current_format.push_str("ss");
+                        }
+                        b"number:text" if in_date_style => {
+                            // Will read text event next
+                        }
+                        _ => {}
+                    }
+                }
+                Event::Empty(e) => match e.name().as_ref() {
+                    b"number:day" if in_date_style => {
+                        let mut long = false;
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"number:style"
+                                && attr.value.as_ref() == b"long"
+                            {
+                                long = true;
+                            }
+                        }
+                        current_format.push_str(if long { "dd" } else { "d" });
+                    }
+                    b"number:month" if in_date_style => {
+                        let mut long = false;
+                        let mut textual = false;
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"number:style"
+                                && attr.value.as_ref() == b"long"
+                            {
+                                long = true;
+                            }
+                            if attr.key.as_ref() == b"number:textual"
+                                && attr.value.as_ref() == b"true"
+                            {
+                                textual = true;
+                            }
+                        }
+                        if textual {
+                            current_format.push_str(if long { "mmmm" } else { "mmm" });
+                        } else {
+                            current_format.push_str(if long { "mm" } else { "m" });
+                        }
+                    }
+                    b"number:year" if in_date_style => {
+                        let mut long = false;
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"number:style"
+                                && attr.value.as_ref() == b"long"
+                            {
+                                long = true;
+                            }
+                        }
+                        current_format.push_str(if long { "yyyy" } else { "yy" });
+                    }
+                    b"number:hours" if in_date_style => {
+                        current_format.push_str("hh");
+                    }
+                    b"number:minutes" if in_date_style => {
+                        current_format.push_str("mm");
+                    }
+                    b"number:seconds" if in_date_style => {
+                        current_format.push_str("ss");
+                    }
+                    _ => {}
+                },
+                Event::Text(e) if in_date_style => {
+                    current_format.push_str(&e.unescape()?.to_string());
+                }
+                Event::End(e) => {
+                    if e.name().as_ref() == b"number:date-style" {
+                        if !current_data_style_name.is_empty() {
+                            data_styles
+                                .insert(current_data_style_name.clone(), current_format.clone());
+                        }
+                        in_date_style = false;
+                    }
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+            buf.clear();
+        }
+        Ok(())
+    };
+
+    // 1. Read automatic styles from content.xml
+    if let Ok(file) = archive.by_name("content.xml") {
+        parse_styles_file(BufReader::new(file))?;
+    }
+
+    // 2. Read styles from styles.xml (global styles)
+    if let Ok(file) = archive.by_name("styles.xml") {
+        parse_styles_file(BufReader::new(file))?;
+    }
+
+    // 3. Resolve Cell Styles to Format Strings
+    let mut resolved_styles = HashMap::new();
+    for (cell_style, data_style) in cell_styles {
+        if let Some(format) = data_styles.get(&data_style) {
+            resolved_styles.insert(cell_style, format.clone());
+        }
+    }
+
+    // Also include data styles directly, just in case
+    for (data_style, format) in data_styles {
+        resolved_styles.entry(data_style).or_insert(format);
+    }
+
+    Ok(resolved_styles)
+}
+
 /// Extract formulas from an ODS worksheet
 /// ODS formulas are stored in table:formula attribute
 pub fn extract_formulas_from_ods(
@@ -946,7 +1315,16 @@ pub fn extract_formulas_from_ods(
 }
 /// Normalize ODS references (formulas, ranges, etc.) to a format consistent with XLSX.
 /// Strips "of:=" prefix, handles sheet-qualified references, and cleans up local sheet names.
-pub fn normalize_ods_reference(reference: &str) -> String {
+///
+/// If `visible_to_xml_row` is provided, converts visible row numbers (1-indexed, used in ODS formulas)
+/// to XML row numbers (0-indexed, used internally). This accounts for hidden rows.
+/// The mapping is ONLY applied to references pointing to `current_sheet_name` (or local references).
+pub fn normalize_ods_reference(
+    reference: &str,
+    preserve_sheet: bool,
+    visible_to_xml_row: Option<&HashMap<u32, u32>>,
+    current_sheet_name: Option<&str>,
+) -> String {
     use regex::Regex;
     use std::sync::OnceLock;
 
@@ -978,32 +1356,57 @@ pub fn normalize_ods_reference(reference: &str) -> String {
         .replace_all(&normalized, "$1!$2:$3")
         .to_string();
 
-    // 0c. Replace plain sheet-level ranges Sheet1.A1:Sheet1.B2 -> A1:B2
-    // Matches Sheet1.A1:Sheet1.B2, Sheet1.A1, etc.
-    // This is common in ODS conditional formatting targets.
-    // We strip the sheet name if it's the same for both parts of the range.
-    static ODS_LOCAL_RANGE_REF: OnceLock<Regex> = OnceLock::new();
-    let local_range_ref = ODS_LOCAL_RANGE_REF
-        .get_or_init(|| Regex::new(r"([^.]+)\.([A-Z0-9$]+):([^.]+)\.([A-Z0-9$]+)").unwrap());
-    normalized = local_range_ref
-        .replace_all(&normalized, |caps: &regex::Captures| {
-            if &caps[1] == &caps[3] {
-                if &caps[2] == &caps[4] {
-                    caps[2].to_string()
-                } else {
-                    format!("{}:{}", &caps[2], &caps[4])
-                }
-            } else {
-                format!("{}!{}:{}!{}", &caps[1], &caps[2], &caps[3], &caps[4])
-            }
-        })
+    // 0b2. Replace unbracketed sheet-qualified ranges $Sheet.A1:.A2 -> Sheet!A1:A2
+    // Matches $Sheet.A1:.B2 (common in database-range targets)
+    // We exclude '[' from the sheet name capture to avoid matching relative column refs like [.A:.A]
+    static ODS_SHEET_RANGE_NO_BRACKET_REF: OnceLock<Regex> = OnceLock::new();
+    let sheet_range_no_bracket_ref = ODS_SHEET_RANGE_NO_BRACKET_REF
+        .get_or_init(|| Regex::new(r"\$?([^.\[]+)\.([A-Za-z0-9$]+):\.([A-Za-z0-9$]+)").unwrap());
+    normalized = sheet_range_no_bracket_ref
+        .replace_all(&normalized, "$1!$2:$3")
         .to_string();
 
-    // 0d. Replace single local reference Sheet1.A1 -> A1
-    static ODS_LOCAL_SINGLE_REF: OnceLock<Regex> = OnceLock::new();
-    let local_single_ref =
-        ODS_LOCAL_SINGLE_REF.get_or_init(|| Regex::new(r"^([^.]+)\.([A-Z0-9$]+)$").unwrap());
-    normalized = local_single_ref.replace_all(&normalized, "$2").to_string();
+    if !preserve_sheet {
+        // 0c. Replace plain sheet-level ranges Sheet1.A1:Sheet1.B2 -> A1:B2
+        // Matches Sheet1.A1:Sheet1.B2, Sheet1.A1, etc.
+        // This is common in ODS conditional formatting targets.
+        // We strip the sheet name if it's the same for both parts of the range.
+        // Updated to handle both '.' (ODS native) and '!' (normalized) separators
+        static ODS_LOCAL_RANGE_REF: OnceLock<Regex> = OnceLock::new();
+        let local_range_ref = ODS_LOCAL_RANGE_REF.get_or_init(|| {
+            Regex::new(r"([^.!]+)[.!]([A-Z0-9$]+):([^.!]+)[.!]([A-Z0-9$]+)").unwrap()
+        });
+        normalized = local_range_ref
+            .replace_all(&normalized, |caps: &regex::Captures| {
+                if &caps[1] == &caps[3] {
+                    if &caps[2] == &caps[4] {
+                        caps[2].to_string()
+                    } else {
+                        format!("{}:{}", &caps[2], &caps[4])
+                    }
+                } else {
+                    format!("{}!{}:{}!{}", &caps[1], &caps[2], &caps[3], &caps[4])
+                }
+            })
+            .to_string();
+
+        // 0d. Replace single local reference Sheet1.A1 -> A1
+        // Updated to handle both '.' and '!' separators
+        static ODS_LOCAL_SINGLE_REF: OnceLock<Regex> = OnceLock::new();
+        let local_single_ref =
+            ODS_LOCAL_SINGLE_REF.get_or_init(|| Regex::new(r"^([^.!]+)[.!]([A-Z0-9$]+)$").unwrap());
+        normalized = local_single_ref.replace_all(&normalized, "$2").to_string();
+
+        // 0e. Replace normalized sheet ranges Sheet1!A1:B2 -> A1:B2
+        // This handles cases where 0b/0b2 normalized the range to Excel format,
+        // but we want to strip the sheet name for local context parity.
+        static ODS_NORMALIZED_RANGE_REF: OnceLock<Regex> = OnceLock::new();
+        let normalized_range_ref = ODS_NORMALIZED_RANGE_REF
+            .get_or_init(|| Regex::new(r"^([^!]+)!([A-Z0-9$]+):([A-Z0-9$]+)$").unwrap());
+        normalized = normalized_range_ref
+            .replace_all(&normalized, "$2:$3")
+            .to_string();
+    }
 
     // 1. Replace sheet references [$Sheet1.A1] -> Sheet1!A1 (BEFORE non-bracketed version)
     // Matches [$Sheet.$A$1], [$Sheet.A1], etc.
@@ -1043,6 +1446,49 @@ pub fn normalize_ods_reference(reference: &str) -> String {
         }
     }
 
+    // Convert visible row numbers to XML row numbers if mapping is provided
+    // This accounts for hidden rows in ODS files
+    if let Some(row_map) = visible_to_xml_row {
+        // Regex to match cell references: Sheet!A1, A1, $A$1, etc.
+        // Captures: (optional sheet)(column)(row number)
+        static CELL_REF_PATTERN: OnceLock<Regex> = OnceLock::new();
+        let cell_ref = CELL_REF_PATTERN
+            .get_or_init(|| Regex::new(r"(?:([A-Za-z0-9_]+)!)?(\$?[A-Z]+)(\$?)([0-9]+)").unwrap());
+
+        normalized = cell_ref
+            .replace_all(&normalized, |caps: &regex::Captures| {
+                let sheet_name = caps.get(1).map(|m| m.as_str());
+                let sheet_prefix = sheet_name.map(|s| format!("{}!", s)).unwrap_or_default();
+                let col = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+                let abs_marker = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+                let row_str = caps.get(4).map(|m| m.as_str()).unwrap_or("");
+
+                // ONLY convert row numbers for references to the CURRENT sheet
+                // This includes:
+                // 1. Local references (no sheet prefix)
+                // 2. Explicit references to the current sheet (e.g., CurrentSheet!A1)
+                let should_convert = if let Some(current_sheet) = current_sheet_name {
+                    sheet_name.is_none() || sheet_name == Some(current_sheet)
+                } else {
+                    // If no current sheet provided, only convert local references
+                    sheet_name.is_none()
+                };
+
+                if should_convert {
+                    if let Ok(visible_row) = row_str.parse::<u32>() {
+                        // Convert visible row (1-indexed) to XML row (0-indexed)
+                        if let Some(&xml_row) = row_map.get(&visible_row) {
+                            // Convert back to 1-indexed for formula representation
+                            return format!("{}{}{}", col, abs_marker, xml_row + 1);
+                        }
+                    }
+                }
+                // Keep original for cross-sheet references or if no mapping found
+                format!("{}{}{}{}", sheet_prefix, col, abs_marker, row_str)
+            })
+            .to_string();
+    }
+
     normalized
 }
 pub struct OdsReader<'a, R: std::io::Read + std::io::Seek> {
@@ -1057,6 +1503,9 @@ impl<'a, R: std::io::Read + std::io::Seek> OdsReader<'a, R> {
 
 impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
     fn read_sheets(&mut self) -> Result<Vec<Sheet>> {
+        // Initialize date styles map first to avoid borrow check issues
+        let date_styles = extract_date_styles_from_ods(self.archive)?;
+
         let mut sheets = Vec::new();
 
         let content_xml = match self.archive.by_name("content.xml") {
@@ -1073,6 +1522,12 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
         let mut row_repeated = 1u32;
         let mut current_col = 0u32;
         let mut current_cf_range: Option<String> = None;
+
+        // Track visible row numbering for ODS formulas
+        // ODS formulas use 1-indexed visible row numbers (accounting for hidden rows)
+        // but we store cells using 0-indexed XML row numbers
+        let mut visible_row_counter = 1u32; // 1-indexed (ODS formula style)
+        let mut visible_to_xml_row: HashMap<u32, u32> = HashMap::new();
 
         loop {
             match reader.read_event_into(&mut buf)? {
@@ -1183,9 +1638,14 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         }
 
                         if hidden {
-                            for _ in 0..row_repeated {
-                                sheet.hidden_rows.push(current_row);
-                                current_row += 1;
+                            for i in 0..row_repeated {
+                                sheet.hidden_rows.push(current_row + i);
+                            }
+                        } else {
+                            // Map visible row numbers to XML row indices
+                            for i in 0..row_repeated {
+                                visible_to_xml_row.insert(visible_row_counter, current_row + i);
+                                visible_row_counter += 1;
                             }
                         }
                     }
@@ -1215,6 +1675,12 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             for r in 0..row_repeated {
                                 sheet.hidden_rows.push(current_row + r);
                             }
+                        } else {
+                            // Map visible row numbers to XML row indices
+                            for r in 0..row_repeated {
+                                visible_to_xml_row.insert(visible_row_counter, current_row + r);
+                                visible_row_counter += 1;
+                            }
                         }
                     }
                     current_row += row_repeated;
@@ -1232,6 +1698,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         let mut value = CellValue::Empty;
                         let mut has_value = false;
                         let mut is_error_cell = false;
+                        let mut style_name = String::new();
 
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
@@ -1248,8 +1715,16 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                         attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
                                 b"table:formula" => {
-                                    formula =
-                                        Some(normalize_ods_reference(&attr.unescape_value()?));
+                                    let raw_formula = attr.unescape_value()?;
+                                    formula = Some(normalize_ods_reference(
+                                        &raw_formula,
+                                        false,
+                                        Some(&visible_to_xml_row),
+                                        Some(&sheet.name),
+                                    ));
+                                }
+                                b"table:style-name" => {
+                                    style_name = attr.unescape_value()?.to_string();
                                 }
                                 b"calcext:value-type" => {
                                     if attr.value.as_ref() == b"error" {
@@ -1265,6 +1740,14 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                         value = match attr.key.as_ref() {
                                             b"office:value" => {
                                                 if let Ok(n) = val_str.parse::<f64>() {
+                                                    CellValue::Number(n)
+                                                } else {
+                                                    CellValue::Text(val_str)
+                                                }
+                                            }
+                                            b"office:date-value" => {
+                                                // Convert ISO date to Serial Number
+                                                if let Some(n) = parse_ods_date(&val_str) {
                                                     CellValue::Number(n)
                                                 } else {
                                                     CellValue::Text(val_str)
@@ -1351,19 +1834,27 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 };
                             }
 
+                            // Look up format string from style
+                            let num_fmt = if !style_name.is_empty() {
+                                date_styles.get(&style_name).cloned()
+                            } else {
+                                None
+                            };
+
                             for r in 0..row_repeated {
                                 for c in 0..col_repeated {
                                     let cell = Cell {
                                         row: current_row + r,
                                         col: current_col + c,
                                         value: cell_value.clone(),
-                                        num_fmt: None,
+                                        num_fmt: num_fmt.clone(),
                                     };
                                     sheet.cells.insert((current_row + r, current_col + c), cell);
                                 }
                             }
                         }
-                        current_col += col_repeated;
+                        // Multiply repeated by spanned to get true column consumption
+                        current_col += col_repeated * cols_spanned;
                     }
                 }
                 Event::Empty(e)
@@ -1374,6 +1865,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         let mut col_repeated = 1u32;
                         let mut cols_spanned = 1u32;
                         let mut rows_spanned = 1u32;
+                        let mut formula = None;
 
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
@@ -1389,6 +1881,15 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                     rows_spanned =
                                         attr.unescape_value()?.parse::<u32>().unwrap_or(1);
                                 }
+                                b"table:formula" => {
+                                    let raw_formula = attr.unescape_value()?;
+                                    formula = Some(normalize_ods_reference(
+                                        &raw_formula,
+                                        false,
+                                        Some(&visible_to_xml_row),
+                                        Some(&sheet.name),
+                                    ));
+                                }
                                 _ => {}
                             }
                         }
@@ -1403,7 +1904,23 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             ));
                         }
 
-                        current_col += col_repeated;
+                        // If it's an empty cell but has a formula, we should store it.
+                        if let Some(f) = formula {
+                            for r in 0..row_repeated {
+                                for c in 0..col_repeated {
+                                    let cell = Cell {
+                                        row: current_row + r,
+                                        col: current_col + c,
+                                        value: CellValue::formula(f.clone()),
+                                        num_fmt: None,
+                                    };
+                                    sheet.cells.insert((current_row + r, current_col + c), cell);
+                                }
+                            }
+                        }
+
+                        // Multiply repeated by spanned to get true column consumption
+                        current_col += col_repeated * cols_spanned;
                     }
                 }
                 Event::Start(e) if e.name().as_ref() == b"calcext:conditional-format" => {
@@ -1422,18 +1939,36 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         if let Some(ref range) = current_cf_range {
                             sheet
                                 .conditional_formatting_ranges
-                                .push(normalize_ods_reference(range));
+                                .push(normalize_ods_reference(range, false, None, None));
                         }
                     }
                 }
-                Event::Empty(e) if e.name().as_ref() == b"calcext:condition" => {
+                // standard ODS conditional formatting
+                Event::Start(e) if e.name().as_ref() == b"table:conditional-formatting" => {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"table:target-range-address" {
+                            current_cf_range = Some(attr.unescape_value()?.to_string());
+                        }
+                    }
+                }
+                Event::End(e) if e.name().as_ref() == b"table:conditional-formatting" => {
+                    current_cf_range = None;
+                }
+                Event::Start(e) if e.name().as_ref() == b"table:conditional-formatting-rule" => {
                     if let Some(ref mut sheet) = current_sheet {
                         sheet.conditional_formatting_count += 1;
                         if let Some(ref range) = current_cf_range {
                             sheet
                                 .conditional_formatting_ranges
-                                .push(normalize_ods_reference(range));
+                                .push(normalize_ods_reference(range, false, None, None));
                         }
+                    }
+                }
+                Event::Empty(e) if e.name().as_ref() == b"calcext:condition" => {
+                    if let Some(ref mut _sheet) = current_sheet {
+                        // DEBUG: Inspect formula for AYUDA_MAPEADA BD881 (approx row 880, col 55)
+                        // Actually, this is conditional formatting section. I need cell formula section.
+                        // Reverting to cell parsing section approx line 1250.
                     }
                 }
                 Event::End(e) if e.name().as_ref() == b"table:table-row" => {
@@ -1442,9 +1977,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                 }
                 Event::End(e) if e.name().as_ref() == b"table:table" => {
                     if let Some(mut sheet) = current_sheet.take() {
-                        if let Some((max_row, max_col)) = sheet.last_data_cell() {
-                            sheet.used_range = Some((max_row + 1, max_col + 1));
-                        }
+                        // Calculate used range based on actual content and styles
+                        // This fixes PERF003 where ODS metadata might be missing or limited
+                        sheet.used_range = calculate_used_range(&sheet.cells);
                         sheets.push(sheet);
                     }
                 }
@@ -1499,7 +2034,8 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         }
 
                         if !name.is_empty() && !cell_range_address.is_empty() {
-                            let normalized = normalize_ods_reference(&cell_range_address);
+                            let normalized =
+                                normalize_ods_reference(&cell_range_address, true, None, None);
                             defined_names.insert(name, normalized);
                         }
                     } else if in_database_ranges && e.name().as_ref() == b"table:database-range" {
@@ -1521,7 +2057,12 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         if !name.is_empty() && !target_range_address.is_empty() {
                             // Filter out internal ODS names that start with __Anonymous_Sheet_DB__
                             if !name.starts_with("__Anonymous_Sheet_DB__") {
-                                let normalized = normalize_ods_reference(&target_range_address);
+                                let normalized = normalize_ods_reference(
+                                    &target_range_address,
+                                    true,
+                                    None,
+                                    None,
+                                );
                                 defined_names.insert(name, normalized);
                             }
                         }
@@ -1556,36 +2097,76 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
     }
 }
 
+// Helper to calculate used range from cells
+fn calculate_used_range(cells: &HashMap<(u32, u32), Cell>) -> Option<(u32, u32)> {
+    if cells.is_empty() {
+        return None;
+    }
+
+    let mut max_row = 0;
+    let mut max_col = 0;
+
+    for (row, col) in cells.keys() {
+        if *row > max_row {
+            max_row = *row;
+        }
+        if *col > max_col {
+            max_col = *col;
+        }
+    }
+
+    // Return (max_row, max_col) as inclusive indices
+    Some((max_row, max_col))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_normalize_ods_reference_basic() {
-        assert_eq!(normalize_ods_reference("of:=SUM([.A1:.B2])"), "SUM(A1:B2)");
-        assert_eq!(normalize_ods_reference("of:=[.A1]+[.B1]"), "A1+B1");
-        assert_eq!(normalize_ods_reference("of:=SUM([.A:.A])"), "SUM(A:A)");
-        assert_eq!(normalize_ods_reference("of:=SUM([.1:.1])"), "SUM(1:1)");
+        assert_eq!(
+            normalize_ods_reference("of:=SUM([.A1:.B2])", false, None, None),
+            "SUM(A1:B2)"
+        );
+        assert_eq!(
+            normalize_ods_reference("of:=[.A1]+[.B1]", false, None, None),
+            "A1+B1"
+        );
+        assert_eq!(
+            normalize_ods_reference("of:=SUM([.A:.A])", false, None, None),
+            "SUM(A:A)"
+        );
+        assert_eq!(
+            normalize_ods_reference("of:=SUM([.1:.1])", false, None, None),
+            "SUM(1:1)"
+        );
     }
 
     #[test]
     fn test_normalize_ods_reference_sheet() {
-        assert_eq!(normalize_ods_reference("of:=[$Sheet1.A1]*2"), "Sheet1!A1*2");
         assert_eq!(
-            normalize_ods_reference("of:=SUM([$Sheet1.A1:.B2])"),
+            normalize_ods_reference("of:=[$Sheet1.A1]*2", false, None, None),
+            "Sheet1!A1*2"
+        );
+        assert_eq!(
+            normalize_ods_reference("of:=SUM([$Sheet1.A1:.B2])", false, None, None),
             "SUM(Sheet1!A1:B2)"
         );
         assert_eq!(
-            normalize_ods_reference("of:=$Sheet1.$A$1+$Sheet1.B1"),
+            normalize_ods_reference("of:=$Sheet1.$A$1+$Sheet1.B1", false, None, None),
             "Sheet1!$A$1+Sheet1!B1"
         );
     }
 
     #[test]
     fn test_normalize_ods_reference_mixed() {
-        assert_eq!(normalize_ods_reference("of:=[.A1:.$B$2]"), "A1:$B$2");
         assert_eq!(
-            normalize_ods_reference("of:=[.A$1]+$Sheet1.B$2"),
+            normalize_ods_reference("of:=[.A1:.$B$2]", false, None, None),
+            "A1:$B$2"
+        );
+        assert_eq!(
+            normalize_ods_reference("of:=[.A$1]+$Sheet1.B$2", false, None, None),
             "A$1+Sheet1!B$2"
         );
     }
@@ -1593,23 +2174,102 @@ mod tests {
     #[test]
     fn test_normalize_ods_range() {
         // Local range with redundant sheet names
-        assert_eq!(normalize_ods_reference("Sheet1.B2:Sheet1.B4"), "B2:B4");
+        assert_eq!(
+            normalize_ods_reference("Sheet1.B2:Sheet1.B4", false, None, None),
+            "B2:B4"
+        );
         // Single cell ref
-        assert_eq!(normalize_ods_reference("Sheet1.A1"), "A1");
+        assert_eq!(
+            normalize_ods_reference("Sheet1.A1", false, None, None),
+            "A1"
+        );
         // Multi-sheet range
         assert_eq!(
-            normalize_ods_reference("Sheet1.A1:Sheet2.B2"),
+            normalize_ods_reference("Sheet1.A1:Sheet2.B2", false, None, None),
             "Sheet1!A1:Sheet2!B2"
         );
         // Absolute local ref
-        assert_eq!(normalize_ods_reference("Sheet1.$A$1"), "$A$1");
+        assert_eq!(
+            normalize_ods_reference("Sheet1.$A$1", false, None, None),
+            "$A$1"
+        );
     }
+    #[test]
+    fn test_normalize_ods_unbracketed_range() {
+        // User reported "Listas!$D$19:.$M$19" appearing in output (dot issue).
+        // This suggests input was "$Listas.$D$19:.$M$19" (no brackets, like database ranges)
+        // and sheet_range_ref failed because it expects brackets.
+        let raw = "$Listas.$D$19:.$M$19";
+
+        // With preserve=true (defined names), we want the full sheet qualification
+        let expected_true = "Listas!$D$19:$M$19";
+        assert_eq!(
+            normalize_ods_reference(raw, true, None, None),
+            expected_true,
+            "Failed with preserve=true"
+        );
+
+        // With preserve=false (local formulas), we want to strip the sheet name if possible
+        // to avoid false circular references (ERR003 treat explicit self-sheet as non-trivial)
+        let expected_false = "$D$19:$M$19";
+        assert_eq!(
+            normalize_ods_reference(raw, false, None, None),
+            expected_false,
+            "Failed with preserve=false"
+        );
+    }
+
+    #[test]
+    fn test_normalize_ods_strip_after_regex_match() {
+        // If 0b2 matches "$Sheet1.A1:.$B2" -> "Sheet1!A1:B2"
+        // 0c should SHOULD strip "Sheet1!" if preserve_sheet=false
+        let raw = "$Sheet1.A1:.$B2";
+        // Currently (before fix) this prints "Sheet1!A1:B2"
+        // We want "A1:B2" if preserve_sheet=false (simulating local formula)
+        // With preserve=false, it should strip matched sheet names
+        assert_eq!(normalize_ods_reference(raw, false, None, None), "A1:$B2");
+
+        // Also check bracketed case
+        let raw_bracket = "[$Sheet1.A1:.$B2]";
+        assert_eq!(
+            normalize_ods_reference(raw_bracket, false, None, None),
+            "A1:$B2"
+        );
+    }
+
+    #[test]
+    fn test_normalize_ods_preserve_sheet() {
+        // Should preserve sheet name even if it looks local
+        assert_eq!(
+            normalize_ods_reference("Sheet1.A1", true, None, None),
+            "Sheet1.A1"
+        );
+        // Should preserve absolute local ref
+        assert_eq!(
+            normalize_ods_reference("Sheet1.$G$2", true, None, None),
+            "Sheet1.$G$2"
+        );
+        // Normal ranges should still be processed if they don't match the strip pattern
+        // But our strip pattern in 0c matches: ([^.]+)\.([A-Z0-9$]+):([^.]+)\.([A-Z0-9$]+)
+        // If preserve=true, this pattern is skipped.
+        assert_eq!(
+            normalize_ods_reference("Sheet1.A1:Sheet1.B2", true, None, None),
+            "Sheet1.A1:Sheet1.B2"
+        );
+    }
+
     #[test]
     fn test_normalize_ods_reference_single_cell_range() {
         // PERF004 regression: "Sheet1.A1:Sheet1.A1" should normalize to "A1"
-        assert_eq!(normalize_ods_reference("Sheet1.A1:Sheet1.A1"), "A1");
-        assert_eq!(normalize_ods_reference("A1:A1"), "A1");
-        assert_eq!(normalize_ods_reference("[.A1:.A1]"), "A1");
+        assert_eq!(
+            normalize_ods_reference("Sheet1.A1:Sheet1.A1", false, None, None),
+            "A1"
+        );
+        assert_eq!(normalize_ods_reference("A1:A1", false, None, None), "A1");
+        assert_eq!(
+            normalize_ods_reference("[.A1:.A1]", false, None, None),
+            "A1"
+        );
     }
 
     #[test]
@@ -1646,7 +2306,15 @@ mod tests {
 
         // Note: read_defined_names returns normalized Excel-style references
         assert_eq!(defined_names.len(), 2);
-        assert_eq!(defined_names.get("MyRange"), Some(&"A1:B2".to_string())); // Sheet1.A1:Sheet1.B2 normalized
-        assert_eq!(defined_names.get("OtherRange"), Some(&"C3".to_string())); // Sheet1.C3 normalized
+        // "Sheet1.A1:Sheet1.B2" -> normalized with preserve_sheet=true keeps it as is
+        assert_eq!(
+            defined_names.get("MyRange"),
+            Some(&"Sheet1.A1:Sheet1.B2".to_string())
+        );
+        // "Sheet1.C3" -> normalizes to "Sheet1.C3"
+        assert_eq!(
+            defined_names.get("OtherRange"),
+            Some(&"Sheet1.C3".to_string())
+        );
     }
 }
