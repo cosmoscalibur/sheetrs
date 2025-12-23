@@ -674,7 +674,10 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             value: value.clone(),
                             num_fmt,
                         };
-                        if let Some(f) = formula {
+                        if let Some(mut f) = formula {
+                            if f.starts_with('=') {
+                                f = f[1..].to_string();
+                            }
                             cell.value = match cell.value {
                                 CellValue::Formula {
                                     cached_error: Some(err),
@@ -923,7 +926,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
                     if let Event::Start(_) = event {
                         let f_text = read_text_node(reader)?;
                         if !f_text.is_empty() {
-                            formula = Some(format!("={}", f_text));
+                            formula = Some(f_text);
                         }
                     }
 
@@ -971,14 +974,9 @@ fn parse_cell_contents<R: std::io::BufRead>(
     // formulas don't exist in Excel/ODS files.
     if let Some(err) = potential_error {
         if let Some(ref f) = formula {
-            // Only process if we have a formula (which we always should for t="e")
-            if !f.contains(':') {
-                // Real error - formula without range that evaluated to error
-                value = CellValue::formula_with_error("", err);
-            }
-            // If formula contains ':', it's an array formula - ignore error marker
+            // If t="e" is present with a formula, it's a formula that evaluated to an error
+            value = CellValue::formula_with_error(f.clone(), err);
         }
-        // No else needed - t="e" without formula is invalid/impossible in real files
     }
 
     Ok((value, formula, shared_si, shared_ref))
