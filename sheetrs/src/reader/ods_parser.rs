@@ -1532,6 +1532,11 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table" => {
+                    // Finalize previous sheet if it exists (handles sheets without conditional formatting)
+                    if let Some(sheet) = current_sheet.take() {
+                        sheets.push(sheet);
+                    }
+
                     let mut name = String::new();
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"table:name" {
@@ -1853,6 +1858,26 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 }
                             }
                         }
+
+                        // Track furthest styled cell for used range metadata (Excel-like behavior)
+                        // Even if cell has no value, if it has a style, it extends the used range
+                        if !style_name.is_empty() {
+                            for r in 0..row_repeated {
+                                for c in 0..col_repeated {
+                                    let row_pos = current_row + r;
+                                    let col_pos = current_col + c;
+
+                                    // Update max styled cell position
+                                    if let Some((max_row, max_col)) = sheet.used_range {
+                                        sheet.used_range =
+                                            Some((max_row.max(row_pos), max_col.max(col_pos)));
+                                    } else {
+                                        sheet.used_range = Some((row_pos, col_pos));
+                                    }
+                                }
+                            }
+                        }
+
                         // Multiply repeated by spanned to get true column consumption
                         current_col += col_repeated * cols_spanned;
                     }
@@ -1866,6 +1891,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         let mut cols_spanned = 1u32;
                         let mut rows_spanned = 1u32;
                         let mut formula = None;
+                        let mut style_name = String::new();
 
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
@@ -1889,6 +1915,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                         Some(&visible_to_xml_row),
                                         Some(&sheet.name),
                                     ));
+                                }
+                                b"table:style-name" => {
+                                    style_name = attr.unescape_value()?.to_string();
                                 }
                                 _ => {}
                             }
@@ -1915,6 +1944,24 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                         num_fmt: None,
                                     };
                                     sheet.cells.insert((current_row + r, current_col + c), cell);
+                                }
+                            }
+                        }
+
+                        // Track furthest styled cell for used range metadata (Excel-like behavior)
+                        if !style_name.is_empty() {
+                            for r in 0..row_repeated {
+                                for c in 0..col_repeated {
+                                    let row_pos = current_row + r;
+                                    let col_pos = current_col + c;
+
+                                    // Update max styled cell position
+                                    if let Some((max_row, max_col)) = sheet.used_range {
+                                        sheet.used_range =
+                                            Some((max_row.max(row_pos), max_col.max(col_pos)));
+                                    } else {
+                                        sheet.used_range = Some((row_pos, col_pos));
+                                    }
                                 }
                             }
                         }
@@ -1979,13 +2026,22 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     current_col = 0;
                 }
                 Event::End(e) if e.name().as_ref() == b"table:table" => {
-                    // Don't finalize the sheet yet - conditional formatting may follow
-                    // Just mark that we've exited the table
-                    if current_sheet.is_some() {
-                        // Calculate used range for the sheet
-                        if let Some(ref mut sheet) = current_sheet {
-                            sheet.used_range = calculate_used_range(&sheet.cells);
-                        }
+                    // Calculate used range for the sheet before finalizing
+                    // This must happen here (not at sheet finalization) because it needs to run
+                    // for ALL sheets, whether they have conditional formatting or not
+                    if let Some(ref mut sheet) = current_sheet {
+                        let cells_range = calculate_used_range(&sheet.cells);
+
+                        // Merge styled cell tracking with value cells
+                        // Convert from 0-indexed position to count format (add 1) to match XLSX
+                        sheet.used_range = match (sheet.used_range, cells_range) {
+                            (Some((s_row, s_col)), Some((c_row, c_col))) => {
+                                Some((s_row.max(c_row) + 1, s_col.max(c_col) + 1))
+                            }
+                            (Some((s_row, s_col)), None) => Some((s_row + 1, s_col + 1)),
+                            (None, Some((c_row, c_col))) => Some((c_row + 1, c_col + 1)),
+                            (None, None) => None,
+                        };
                     }
                 }
                 // Handle conditional formatting that appears after table closing tag
@@ -1993,10 +2049,8 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     // This wrapper appears after </table:table>, continue processing
                 }
                 Event::End(e) if e.name().as_ref() == b"calcext:conditional-formats" => {
-                    // End of conditional formatting section - now we can finalize the sheet
-                    if let Some(sheet) = current_sheet.take() {
-                        sheets.push(sheet);
-                    }
+                    // End of conditional formatting section
+                    // Don't finalize the sheet here - the table end handler will do it
                 }
                 Event::Eof => break,
                 _ => {}

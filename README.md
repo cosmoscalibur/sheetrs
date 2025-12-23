@@ -103,7 +103,6 @@ The suite includes several debug utilities in `sheetrs/examples/`:
 
 - **debug_formulas**: Inspect specific cell values and formulas
 - **dump_formulas**: Export all formulas from a workbook
-- **dump_named_ranges**: List all defined names
 - **inspect_dependencies**: Trace cell dependency chains
 - **inspect_errors**: Examine error cells and their formulas
 

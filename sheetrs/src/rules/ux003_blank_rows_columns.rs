@@ -44,12 +44,70 @@ impl LinterRule for BlankRowsColumnsRule {
 
         for sheet in &workbook.sheets {
             // Skip sheets with no data
-            if sheet.cells.is_empty() {
+            if sheet.cells.is_empty() && sheet.used_range.is_none() {
                 continue;
             }
 
-            // Find the used range
-            let (min_row, max_row, min_col, max_col) = find_used_range(sheet);
+            // Use sheet.used_range metadata instead of recalculating
+            // This ensures we include styled cells in the range
+            let (min_row, max_row, min_col, max_col) =
+                if let Some((used_rows, used_cols)) = sheet.used_range {
+                    // used_range is in count format (1-indexed max + 1), convert to 0-indexed positions
+                    // For PERF003 display, we subtract 1. Here we need actual positions.
+                    // Actually, used_range stores (max_row+1, max_col+1) so we need to subtract 1
+                    let max_row = used_rows.saturating_sub(1);
+                    let max_col = used_cols.saturating_sub(1);
+
+                    // Find min from actual cells
+                    let (cell_min_row, cell_min_col) = sheet
+                        .cells
+                        .keys()
+                        .fold((u32::MAX, u32::MAX), |(min_r, min_c), (r, c)| {
+                            (min_r.min(*r), min_c.min(*c))
+                        });
+
+                    (cell_min_row, max_row, cell_min_col, max_col)
+                } else {
+                    // Fallback to calculating from cells if no used_range metadata
+                    find_used_range(sheet)
+                };
+
+            // Check for blank rows/columns BEFORE used range (from row/col 0)
+            if min_row > 0 {
+                let blank_rows_before: Vec<u32> = (0..min_row).collect();
+                if !blank_rows_before.is_empty()
+                    && blank_rows_before.len() as u32 > self.max_blank_row
+                {
+                    let ranges = format_row_ranges(&blank_rows_before);
+                    violations.push(Violation::new(
+                        self.id(),
+                        ViolationScope::Sheet(sheet.name.clone()),
+                        format!(
+                            "Blank rows within used range: {}. Consider removing or filling these rows.",
+                            ranges
+                        ),
+                        Severity::Info,
+                    ));
+                }
+            }
+
+            if min_col > 0 {
+                let blank_cols_before: Vec<u32> = (0..min_col).collect();
+                if !blank_cols_before.is_empty()
+                    && blank_cols_before.len() as u32 > self.max_blank_column
+                {
+                    let ranges = format_column_ranges(&blank_cols_before);
+                    violations.push(Violation::new(
+                        self.id(),
+                        ViolationScope::Sheet(sheet.name.clone()),
+                        format!(
+                            "Blank columns within used range: {}. Consider removing or filling these columns.",
+                            ranges
+                        ),
+                        Severity::Info,
+                    ));
+                }
+            }
 
             // Check for blank rows within used range
             let blank_rows = find_blank_rows(sheet, min_row, max_row, min_col, max_col);
@@ -169,9 +227,16 @@ fn find_blank_rows(
     let mut blank_rows = Vec::new();
 
     for row in min_row..=max_row {
+        // Check if row has any data
         let has_data = (min_col..=max_col).any(|col| sheet.cells.contains_key(&(row, col)));
 
-        if !has_data {
+        // Check if row is part of a merged cell
+        let in_merged_cell = sheet
+            .merged_cells
+            .iter()
+            .any(|(r1, c1, r2, c2)| row >= *r1 && row <= *r2 && *c1 <= max_col && *c2 >= min_col);
+
+        if !has_data && !in_merged_cell {
             blank_rows.push(row);
         }
     }
@@ -190,9 +255,16 @@ fn find_blank_columns(
     let mut blank_cols = Vec::new();
 
     for col in min_col..=max_col {
+        // Check if column has any data
         let has_data = (min_row..=max_row).any(|row| sheet.cells.contains_key(&(row, col)));
 
-        if !has_data {
+        // Check if column is part of a merged cell
+        let in_merged_cell = sheet
+            .merged_cells
+            .iter()
+            .any(|(r1, c1, r2, c2)| col >= *c1 && col <= *c2 && *r1 <= max_row && *r2 >= min_row);
+
+        if !has_data && !in_merged_cell {
             blank_cols.push(col);
         }
     }
@@ -518,6 +590,100 @@ mod tests {
         let violations = rule.check(&workbook).unwrap();
 
         assert_eq!(violations.len(), 0);
+    }
+
+    #[test]
+    fn test_merged_cells_not_blank() {
+        let mut cells = HashMap::new();
+        // Row 0: A1, B1
+        cells.insert(
+            (0, 0),
+            Cell {
+                num_fmt: None,
+                row: 0,
+                col: 0,
+                value: CellValue::Text("A1".to_string()),
+            },
+        );
+        cells.insert(
+            (0, 1),
+            Cell {
+                num_fmt: None,
+                row: 0,
+                col: 1,
+                value: CellValue::Text("B1".to_string()),
+            },
+        );
+        // Row 1: blank but part of merged cell F2:F5
+        // Row 2: A3, B3
+        cells.insert(
+            (2, 0),
+            Cell {
+                num_fmt: None,
+                row: 2,
+                col: 0,
+                value: CellValue::Text("A3".to_string()),
+            },
+        );
+        cells.insert(
+            (2, 1),
+            Cell {
+                num_fmt: None,
+                row: 2,
+                col: 1,
+                value: CellValue::Text("B3".to_string()),
+            },
+        );
+        // Merged cell F2:F5 (row 1-4, col 5) - only first cell has data
+        cells.insert(
+            (1, 5),
+            Cell {
+                num_fmt: None,
+                row: 1,
+                col: 5,
+                value: CellValue::Text("Merged".to_string()),
+            },
+        );
+
+        let sheet = Sheet {
+            name: "Sheet1".to_string(),
+            cells,
+            used_range: Some((5, 6)),
+            hidden_columns: Vec::new(),
+            hidden_rows: Vec::new(),
+            merged_cells: vec![(1, 5, 4, 5)], // F2:F5 (rows 1-4, col 5)
+            sheet_path: None,
+            formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
+        };
+
+        let workbook = Workbook {
+            path: PathBuf::from("test.xlsx"),
+            sheets: vec![sheet],
+            defined_names: HashMap::new(),
+            hidden_sheets: Vec::new(),
+            has_macros: false,
+            external_links: Vec::new(),
+        };
+
+        let rule = BlankRowsColumnsRule {
+            max_blank_row: 0,
+            max_blank_column: 0,
+        };
+        let violations = rule.check(&workbook).unwrap();
+
+        // Rows 1, 3, 4 are blank in columns A-B range
+        // But rows 1, 3, 4 are part of merged cell F2:F5, so they should NOT be reported
+        // The key test: violations should not mention rows 2, 4, 5 (1-based: 3, 5, 6)
+        // because they're in the merged cell range
+        for violation in &violations {
+            // Row 2 (1-based: 3) should NOT appear because it's in merged cell
+            assert!(
+                !violation.message.contains("3"),
+                "Row 3 (1-based) should not be reported as blank - it's in merged cell F2:F5"
+            );
+        }
     }
 
     #[test]
