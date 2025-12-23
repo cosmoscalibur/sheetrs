@@ -55,7 +55,22 @@ impl LinterRule for LargeUsedRangeRule {
 
             if let Some((used_rows, used_cols)) = sheet.used_range {
                 // Find the last cell with actual data or formula
-                if let Some((last_data_row, last_data_col)) = sheet.last_data_cell() {
+                // Find the last cell with actual data or formula (ignoring empty strings)
+                // ODS parser may produce CellValue::Text("") for styled empty cells, which we want to ignore for this rule.
+                let last_data_cell = sheet
+                    .cells
+                    .values()
+                    .filter(|c| match &c.value {
+                        crate::reader::workbook::CellValue::Empty => false,
+                        crate::reader::workbook::CellValue::Text(s) => !s.trim().is_empty(),
+                        _ => true,
+                    })
+                    .fold(None, |acc: Option<(u32, u32)>, c| match acc {
+                        Some((max_r, max_c)) => Some((max_r.max(c.row), max_c.max(c.col))),
+                        None => Some((c.row, c.col)),
+                    });
+
+                if let Some((last_data_row, last_data_col)) = last_data_cell {
                     let row_diff = used_rows.saturating_sub(last_data_row + 1);
                     let col_diff = used_cols.saturating_sub(last_data_col + 1);
 
