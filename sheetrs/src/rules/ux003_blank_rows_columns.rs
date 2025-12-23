@@ -227,8 +227,13 @@ fn find_blank_rows(
     let mut blank_rows = Vec::new();
 
     for row in min_row..=max_row {
-        // Check if row has any data
-        let has_data = (min_col..=max_col).any(|col| sheet.cells.contains_key(&(row, col)));
+        // Check if row has any non-empty data
+        let has_data = (min_col..=max_col).any(|col| {
+            sheet
+                .cells
+                .get(&(row, col))
+                .map_or(false, |c| !c.value.is_empty())
+        });
 
         // Check if row is part of a merged cell
         let in_merged_cell = sheet
@@ -255,8 +260,14 @@ fn find_blank_columns(
     let mut blank_cols = Vec::new();
 
     for col in min_col..=max_col {
-        // Check if column has any data
-        let has_data = (min_row..=max_row).any(|row| sheet.cells.contains_key(&(row, col)));
+        // Check if column has any non-empty data
+        let has_data = (min_row..=max_row).any(|row| {
+            let res = sheet
+                .cells
+                .get(&(row, col))
+                .map_or(false, |c| !c.value.is_empty());
+            res
+        });
 
         // Check if column is part of a merged cell
         let in_merged_cell = sheet
@@ -718,6 +729,64 @@ mod tests {
 
         // Should be skipped because cells is empty
         assert_eq!(violations.len(), 0);
+    }
+
+    #[test]
+    fn test_styled_but_empty_row_col() {
+        let mut cells = HashMap::new();
+        // Row 0: data
+        cells.insert(
+            (0, 0),
+            Cell {
+                num_fmt: None,
+                row: 0,
+                col: 0,
+                value: CellValue::Text("A1".to_string()),
+            },
+        );
+        // Row 1: Styled but Empty. Should be reported as blank row!
+        cells.insert(
+            (1, 0),
+            Cell {
+                num_fmt: Some("custom".to_string()),
+                row: 1,
+                col: 0,
+                value: CellValue::Empty,
+            },
+        );
+
+        let sheet = Sheet {
+            name: "Sheet1".to_string(),
+            cells,
+            used_range: Some((2, 1)), // 2 rows, 1 col
+            hidden_columns: Vec::new(),
+            hidden_rows: Vec::new(),
+            merged_cells: Vec::new(),
+            sheet_path: None,
+            formula_parsing_error: None,
+            conditional_formatting_count: 0,
+            conditional_formatting_ranges: Vec::new(),
+        };
+
+        let workbook = Workbook {
+            path: PathBuf::from("test.xlsx"),
+            sheets: vec![sheet],
+            defined_names: HashMap::new(),
+            hidden_sheets: Vec::new(),
+            has_macros: false,
+            external_links: Vec::new(),
+        };
+
+        let rule = BlankRowsColumnsRule {
+            max_blank_row: 0,
+            max_blank_column: 0,
+        };
+        let violations = rule.check(&workbook).unwrap();
+
+        // Should find 1 blank row (Row 2, index 1)
+        assert_eq!(violations.len(), 1);
+        assert!(violations[0].message.contains("Blank rows"));
+        assert!(violations[0].message.contains("2")); // Row 2 (1-based)
     }
 
     #[test]
