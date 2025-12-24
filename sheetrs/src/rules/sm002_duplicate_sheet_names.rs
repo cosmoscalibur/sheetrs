@@ -69,33 +69,29 @@ mod tests {
     fn test_duplicate_sheet_names() {
         let sheets = vec![
             Sheet {
-            name: "Data".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "Data".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
             Sheet {
-            name: "data".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "data".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
             Sheet {
-            name: "Summary".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "Summary".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
         ];
 
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets,
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_links: Vec::new(),
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = DuplicateSheetNamesRule;
@@ -111,45 +107,41 @@ mod tests {
     fn test_confusingly_similar_sheet_names() {
         let sheets = vec![
             Sheet {
-            name: "Sheet1".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "Sheet1".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
             Sheet {
-            name: "sheet 1".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "sheet 1".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
             Sheet {
-            name: "Sheet-1".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "Sheet-1".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
             Sheet {
-            name: "Data_2024".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "Data_2024".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
             Sheet {
-            name: "data2024".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "data2024".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
         ];
 
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets,
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_links: Vec::new(),
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = DuplicateSheetNamesRule;

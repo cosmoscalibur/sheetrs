@@ -151,7 +151,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
-                visible: true,
+            visible: true,
         };
 
         // Filled but unused sheet (Should be PERF002, NOT PERF005)
@@ -176,7 +176,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
-                visible: true,
+            visible: true,
         };
 
         // Empty unused sheet (Should be PERF005)
@@ -230,7 +230,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
-                visible: true,
+            visible: true,
         };
 
         let sheet2 = Sheet {
@@ -244,7 +244,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
-                visible: true,
+            visible: true,
         };
 
         let mut defined_names = HashMap::new();

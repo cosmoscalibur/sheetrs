@@ -80,33 +80,29 @@ mod tests {
     fn test_non_descriptive_sheet_names() {
         let sheets = vec![
             Sheet {
-            name: "Sheet1".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "Sheet1".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
             Sheet {
-            name: "Copy of Data".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "Copy of Data".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
             Sheet {
-            name: "Analysis".to_string(),
-            cells: HashMap::new(),
-            used_range: None,
-            ..Default::default()
-        },
+                name: "Analysis".to_string(),
+                cells: HashMap::new(),
+                used_range: None,
+                ..Default::default()
+            },
         ];
 
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets,
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_links: Vec::new(),
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = NonDescriptiveSheetNameRule::default();

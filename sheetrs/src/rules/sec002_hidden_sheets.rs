@@ -42,7 +42,6 @@ impl LinterRule for HiddenSheetsRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::Sheet;
-    use std::collections::HashMap;
     use std::path::PathBuf;
 
     #[test]

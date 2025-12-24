@@ -487,7 +487,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
-                visible: true,
+            visible: true,
         };
 
         let workbook = Workbook {
@@ -533,7 +533,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
-                visible: true,
+            visible: true,
         };
 
         let workbook = Workbook {
@@ -595,7 +595,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
-                visible: true,
+            visible: true,
         };
 
         let workbook = Workbook {
@@ -652,7 +652,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
-                visible: true,
+            visible: true,
         };
 
         let workbook = Workbook {

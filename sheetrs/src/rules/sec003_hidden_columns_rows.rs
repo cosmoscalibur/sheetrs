@@ -149,7 +149,7 @@ mod tests {
                 sheet_path: None,
                 formula_parsing_error: None,
                 conditional_formatting_count: 0,
-            conditional_formatting_ranges: Vec::new(),
+                conditional_formatting_ranges: Vec::new(),
                 visible: true,
             }],
             ..Default::default()
@@ -178,7 +178,7 @@ mod tests {
                 sheet_path: None,
                 formula_parsing_error: None,
                 conditional_formatting_count: 0,
-            conditional_formatting_ranges: Vec::new(),
+                conditional_formatting_ranges: Vec::new(),
                 visible: true,
             }],
             ..Default::default()

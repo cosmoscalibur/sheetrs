@@ -2674,7 +2674,7 @@ mod tests {
                 row: 5,
                 col: 3,
                 value: CellValue::Text("test".to_string()),
-                num_fmt: None,
+                ..Default::default()
             },
         );
 
@@ -2687,7 +2687,7 @@ mod tests {
                 row: 10,
                 col: 7,
                 value: CellValue::Number(42.0),
-                num_fmt: None,
+                ..Default::default()
             },
         );
 
@@ -2707,7 +2707,7 @@ mod tests {
                 row: 1,
                 col: 1,
                 value: CellValue::Text("M".to_string()),
-                num_fmt: None,
+                ..Default::default()
             },
         );
         cells.insert(
@@ -2715,8 +2715,7 @@ mod tests {
             Cell {
                 row: 1,
                 col: 2,
-                value: CellValue::Empty,
-                num_fmt: None,
+                ..Default::default()
             },
         );
         cells.insert(
@@ -2724,8 +2723,7 @@ mod tests {
             Cell {
                 row: 2,
                 col: 1,
-                value: CellValue::Empty,
-                num_fmt: None,
+                ..Default::default()
             },
         );
         cells.insert(
@@ -2733,8 +2731,7 @@ mod tests {
             Cell {
                 row: 2,
                 col: 2,
-                value: CellValue::Empty,
-                num_fmt: None,
+                ..Default::default()
             },
         );
 
@@ -2750,73 +2747,84 @@ mod tests {
     }
 }
 
-    #[test]
-    fn test_extract_external_workbooks_with_test_asset() {
-        const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
-        let cursor = std::io::Cursor::new(TEST_ODS);
-        let mut archive = ZipArchive::new(cursor).unwrap();
-        
-        let workbooks = extract_external_workbooks_ods(&mut archive).unwrap();
-        
-        // Verify external workbooks are extracted
-        assert!(!workbooks.is_empty(), "Should detect external workbooks in test file");
-        
-        // Verify indices are 0-based and sequential (order of appearance)
-        for (i, wb) in workbooks.iter().enumerate() {
-            assert_eq!(wb.index, i, "Indices should be sequential 0-based");
-        }
-        
-        // Verify paths are not empty
-        for wb in &workbooks {
-            assert!(!wb.path.is_empty(), "External workbook path should not be empty");
-        }
+#[test]
+fn test_extract_external_workbooks_with_test_asset() {
+    const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
+    let cursor = std::io::Cursor::new(TEST_ODS);
+    let mut archive = ZipArchive::new(cursor).unwrap();
+
+    let workbooks = extract_external_workbooks_ods(&mut archive).unwrap();
+
+    // Verify external workbooks are extracted
+    assert!(
+        !workbooks.is_empty(),
+        "Should detect external workbooks in test file"
+    );
+
+    // Verify indices are 0-based and sequential (order of appearance)
+    for (i, wb) in workbooks.iter().enumerate() {
+        assert_eq!(wb.index, i, "Indices should be sequential 0-based");
     }
 
-    #[test]
-    fn test_sheet_collection_ods() {
-        const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
-        let cursor = std::io::Cursor::new(TEST_ODS);
-        let mut archive = ZipArchive::new(cursor).unwrap();
-        let mut reader = OdsReader::new(&mut archive).unwrap();
-        
-        let sheets = reader.read_sheets().unwrap();
-        
-        // Verify sheet count (should not include external sheets)
-        assert!(sheets.len() > 0, "Should have at least one sheet");
-        
-        // Verify no external sheet references in names
-        // This implicitly tests that external sheets are filtered out
-        for sheet in &sheets {
-            assert!(!sheet.name.contains("file:///"), 
-                "Sheet collection should not contain external sheets (filtered): {}", sheet.name);
-        }
-        
-        // Verify expected sheets are present
-        let sheet_names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
-        assert!(sheet_names.contains(&"Sheet7") || sheet_names.contains(&"Indexing tests"), 
-            "Should contain expected sheets");
+    // Verify paths are not empty
+    for wb in &workbooks {
+        assert!(
+            !wb.path.is_empty(),
+            "External workbook path should not be empty"
+        );
+    }
+}
+
+#[test]
+fn test_sheet_collection_ods() {
+    const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
+    let cursor = std::io::Cursor::new(TEST_ODS);
+    let mut archive = ZipArchive::new(cursor).unwrap();
+    let mut reader = OdsReader::new(&mut archive).unwrap();
+
+    let sheets = reader.read_sheets().unwrap();
+
+    // Verify sheet count (should not include external sheets)
+    assert!(sheets.len() > 0, "Should have at least one sheet");
+
+    // Verify no external sheet references in names
+    // This implicitly tests that external sheets are filtered out
+    for sheet in &sheets {
+        assert!(
+            !sheet.name.contains("file:///"),
+            "Sheet collection should not contain external sheets (filtered): {}",
+            sheet.name
+        );
     }
 
-    #[test]
-    fn test_sheet_visibility_ods() {
-        const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
-        let cursor = std::io::Cursor::new(TEST_ODS);
-        let mut archive = ZipArchive::new(cursor).unwrap();
-        let mut reader = OdsReader::new(&mut archive).unwrap();
-        
-        let sheets = reader.read_sheets().unwrap();
-        
-        // Count visible and hidden sheets
-        let visible_count = sheets.iter().filter(|s| s.visible).count();
-        let hidden_count = sheets.iter().filter(|s| !s.visible).count();
-        
-        assert!(visible_count > 0, "Should have at least one visible sheet");
-        assert!(hidden_count > 0, "Test file should have hidden sheets");
-        
-        // Verify hidden sheets have visible=false
-        for sheet in &sheets {
-            if sheet.name.contains("hidden") || sheet.name.contains("empty_hidden") {
-                assert!(!sheet.visible, "Sheet '{}' should be hidden", sheet.name);
-            }
+    // Verify expected sheets are present
+    let sheet_names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        sheet_names.contains(&"Sheet7") || sheet_names.contains(&"Indexing tests"),
+        "Should contain expected sheets"
+    );
+}
+
+#[test]
+fn test_sheet_visibility_ods() {
+    const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
+    let cursor = std::io::Cursor::new(TEST_ODS);
+    let mut archive = ZipArchive::new(cursor).unwrap();
+    let mut reader = OdsReader::new(&mut archive).unwrap();
+
+    let sheets = reader.read_sheets().unwrap();
+
+    // Count visible and hidden sheets
+    let visible_count = sheets.iter().filter(|s| s.visible).count();
+    let hidden_count = sheets.iter().filter(|s| !s.visible).count();
+
+    assert!(visible_count > 0, "Should have at least one visible sheet");
+    assert!(hidden_count > 0, "Test file should have hidden sheets");
+
+    // Verify hidden sheets have visible=false
+    for sheet in &sheets {
+        if sheet.name.contains("hidden") || sheet.name.contains("empty_hidden") {
+            assert!(!sheet.visible, "Sheet '{}' should be hidden", sheet.name);
         }
     }
+}
