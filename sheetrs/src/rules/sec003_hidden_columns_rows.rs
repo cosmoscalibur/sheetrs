@@ -150,11 +150,9 @@ mod tests {
                 formula_parsing_error: None,
                 conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
             }],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_links: Vec::new(),
+            ..Default::default()
         };
 
         let rule = HiddenColumnsRowsRule;
@@ -181,11 +179,9 @@ mod tests {
                 formula_parsing_error: None,
                 conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
             }],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_links: Vec::new(),
+            ..Default::default()
         };
 
         let rule = HiddenColumnsRowsRule;

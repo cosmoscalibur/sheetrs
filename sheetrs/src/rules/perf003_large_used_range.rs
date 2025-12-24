@@ -142,6 +142,7 @@ mod tests {
             hidden_sheets: Vec::new(),
             has_macros: false,
             external_links: Vec::new(),
+            external_workbooks: Vec::new(),
         };
 
         let rule = LargeUsedRangeRule::default();

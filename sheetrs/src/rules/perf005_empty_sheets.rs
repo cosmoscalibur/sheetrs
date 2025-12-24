@@ -151,6 +151,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
         };
 
         // Filled but unused sheet (Should be PERF002, NOT PERF005)
@@ -175,6 +176,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
         };
 
         // Empty unused sheet (Should be PERF005)
@@ -182,13 +184,7 @@ mod tests {
             name: "Empty".to_string(),
             cells: HashMap::new(),
             used_range: None,
-            hidden_columns: Vec::new(),
-            hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
-            sheet_path: None,
-            formula_parsing_error: None,
-            conditional_formatting_count: 0,
-            conditional_formatting_ranges: Vec::new(),
+            ..Default::default()
         };
 
         let workbook = Workbook {
@@ -198,6 +194,7 @@ mod tests {
             hidden_sheets: Vec::new(),
             has_macros: false,
             external_links: Vec::new(),
+            external_workbooks: Vec::new(),
         };
 
         let rule = EmptySheetsRule;
@@ -233,6 +230,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
         };
 
         let sheet2 = Sheet {
@@ -246,6 +244,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
         };
 
         let mut defined_names = HashMap::new();
@@ -266,6 +265,7 @@ mod tests {
             hidden_sheets: vec!["HiddenEmpty".to_string()],
             has_macros: false,
             external_links: Vec::new(),
+            external_workbooks: Vec::new(),
         };
 
         let rule = EmptySheetsRule;

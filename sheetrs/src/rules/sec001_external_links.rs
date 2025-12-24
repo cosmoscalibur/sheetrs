@@ -487,6 +487,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
         };
 
         let workbook = Workbook {
@@ -496,6 +497,7 @@ mod tests {
             hidden_sheets: Vec::new(),
             has_macros: false,
             external_links: Vec::new(),
+            external_workbooks: Vec::new(),
         };
 
         let rule = ExternalLinksRule::default();
@@ -531,6 +533,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
         };
 
         let workbook = Workbook {
@@ -540,6 +543,7 @@ mod tests {
             hidden_sheets: Vec::new(),
             has_macros: false,
             external_links: Vec::new(),
+            external_workbooks: Vec::new(),
         };
 
         // Use ALL mode to detect URLs (default is WORKBOOK only)
@@ -591,6 +595,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
         };
 
         let workbook = Workbook {
@@ -600,6 +605,7 @@ mod tests {
             hidden_sheets: Vec::new(),
             has_macros: false,
             external_links: Vec::new(),
+            external_workbooks: Vec::new(),
         };
 
         let rule = ExternalLinksRule::default();
@@ -646,6 +652,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
         };
 
         let workbook = Workbook {
@@ -655,6 +662,7 @@ mod tests {
             hidden_sheets: Vec::new(),
             has_macros: false,
             external_links: Vec::new(),
+            external_workbooks: Vec::new(),
         };
 
         let rule = ExternalLinksRule::default();
@@ -696,6 +704,7 @@ mod tests {
             hidden_sheets: Vec::new(),
             has_macros: false,
             external_links: vec!["external_workbook.xlsx".to_string()],
+            external_workbooks: Vec::new(),
         };
 
         let config = LinterConfig::default();

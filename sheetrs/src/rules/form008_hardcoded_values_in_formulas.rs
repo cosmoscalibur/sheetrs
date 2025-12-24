@@ -227,6 +227,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
             sheet_path: None,
         };
 
@@ -237,6 +238,7 @@ mod tests {
             hidden_sheets: vec![],
             has_macros: false,
             external_links: Vec::new(),
+            external_workbooks: Vec::new(),
         };
 
         // Case 1: Ignore ints = true, others default (false/empty)
@@ -402,6 +404,7 @@ mod tests {
             formula_parsing_error: None,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
+                visible: true,
             sheet_path: None,
         };
 
@@ -412,6 +415,7 @@ mod tests {
             hidden_sheets: vec![],
             has_macros: false,
             external_links: Vec::new(),
+            external_workbooks: Vec::new(),
         };
 
         // Disable all ignore flags to ensure only external refs are excluded
