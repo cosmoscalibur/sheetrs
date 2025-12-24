@@ -14,7 +14,7 @@ pub mod xlsx_parser;
 
 use self::ods_parser::OdsReader;
 use self::xlsx_parser::XlsxReader;
-pub use workbook::{Cell, CellValue, Sheet, Workbook};
+pub use workbook::{Cell, CellValue, ExternalWorkbook, Sheet, Workbook};
 
 /// Trait for spreadsheet format readers
 pub trait WorkbookReader {
@@ -23,6 +23,8 @@ pub trait WorkbookReader {
     fn read_hidden_sheets(&mut self) -> Result<Vec<String>>;
     fn has_macros(&mut self) -> Result<bool>;
     fn read_external_links(&mut self) -> Result<Vec<String>>;
+    /// Read external workbook references with indices
+    fn read_external_workbooks(&mut self) -> Result<Vec<ExternalWorkbook>>;
 }
 
 /// Read a workbook from a file path
@@ -45,14 +47,14 @@ pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
         .map(|s| s.eq_ignore_ascii_case("ods"))
         .unwrap_or(false);
 
-    let (sheets, defined_names, hidden_sheets, has_macros, external_links) = if is_xlsx {
+    let (sheets, defined_names, hidden_sheets, has_macros, external_workbooks) = if is_xlsx {
         let mut reader = XlsxReader::new(&mut archive)?;
         (
             reader.read_sheets()?,
             reader.read_defined_names()?,
             reader.read_hidden_sheets()?,
             reader.has_macros()?,
-            reader.read_external_links()?,
+            reader.read_external_workbooks()?,
         )
     } else if is_ods {
         let mut reader = OdsReader::new(&mut archive)?;
@@ -63,11 +65,14 @@ pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
             defined_names,
             reader.read_hidden_sheets()?,
             reader.has_macros()?,
-            reader.read_external_links()?,
+            reader.read_external_workbooks()?,
         )
     } else {
         return Err(anyhow::anyhow!("Unsupported file format"));
     };
+
+    // Maintain backward compatibility: external_links derived from external_workbooks
+    let external_links = external_workbooks.iter().map(|e| e.path.clone()).collect();
 
     Ok(Workbook {
         path: path_ref.to_path_buf(),
@@ -76,5 +81,6 @@ pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
         hidden_sheets,
         has_macros,
         external_links,
+        external_workbooks,
     })
 }

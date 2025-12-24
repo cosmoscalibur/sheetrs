@@ -654,6 +654,97 @@ pub fn extract_external_links_ods(
     Ok(cleaned_links)
 }
 
+/// Extract external workbooks with indices from ODS file
+/// Returns a vector of ExternalWorkbook where index is 0-based (order of appearance)
+pub fn extract_external_workbooks_ods(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<Vec<super::ExternalWorkbook>> {
+    use super::ExternalWorkbook;
+    use std::collections::HashMap;
+
+    let mut workbooks = Vec::new();
+    let mut path_to_index: HashMap<String, usize> = HashMap::new();
+    let mut next_index = 0;
+
+    let content_xml = match archive.by_name("content.xml") {
+        Ok(file) => file,
+        Err(_) => return Ok(workbooks),
+    };
+
+    let buf_reader = BufReader::new(content_xml);
+    let mut reader = Reader::from_reader(buf_reader);
+    reader.config_mut().trim_text(true);
+
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            // Check table:table-source elements for external workbook references
+            Event::Start(ref e) | Event::Empty(ref e)
+                if e.name().as_ref() == b"table:table-source" =>
+            {
+                for attr in e.attributes().flatten() {
+                    if attr.key.as_ref() == b"xlink:href" {
+                        let mut path = attr.unescape_value()?.to_string();
+
+                        // Strip file:// prefix for cleaner display
+                        if path.starts_with("file://") {
+                            path = path.trim_start_matches("file://").to_string();
+                        }
+
+                        // Only add if we haven't seen this path before
+                        if !path_to_index.contains_key(&path) {
+                            path_to_index.insert(path.clone(), next_index);
+                            workbooks.push(ExternalWorkbook {
+                                index: next_index,
+                                path,
+                            });
+                            next_index += 1;
+                        }
+                    }
+                }
+            }
+            // Check formulas for external references
+            Event::Start(ref e) | Event::Empty(ref e)
+                if e.name().as_ref() == b"table:table-cell" =>
+            {
+                for attr in e.attributes().flatten() {
+                    if attr.key.as_ref() == b"table:formula" {
+                        let formula = attr.unescape_value()?;
+                        if formula.contains("'file:///") {
+                            if let Some(start) = formula.find("'file:///") {
+                                let remainder = &formula[start + 1..];
+                                if let Some(end) = remainder.find("'#") {
+                                    let mut path = remainder[..end].to_string();
+
+                                    // Strip file:// prefix
+                                    if path.starts_with("file://") {
+                                        path = path.trim_start_matches("file://").to_string();
+                                    }
+
+                                    // Only add if we haven't seen this path before
+                                    if !path_to_index.contains_key(&path) {
+                                        path_to_index.insert(path.clone(), next_index);
+                                        workbooks.push(ExternalWorkbook {
+                                            index: next_index,
+                                            path,
+                                        });
+                                        next_index += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(workbooks)
+}
+
 /// Extract cached error values from an ODS worksheet
 /// ODS error values are often stored in calcext:value-type="error" and calcext:value="#ERROR!"
 pub fn extract_cached_errors_from_ods(
@@ -1515,6 +1606,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
     fn read_sheets(&mut self) -> Result<Vec<Sheet>> {
         // Initialize date styles map first to avoid borrow check issues
         let date_styles = extract_date_styles_from_ods(self.archive)?;
+        let hidden_sheets = extract_hidden_sheets_from_ods(self.archive)?;
 
         let mut sheets = Vec::new();
 
@@ -1532,6 +1624,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
         let mut row_repeated = 1u32;
         let mut current_col = 0u32;
         let mut current_cf_range: Option<String> = None;
+        let mut skip_current_sheet = false; // Flag to skip external sheets
 
         // Track visible row numbering for ODS formulas
         // ODS formulas use 1-indexed visible row numbers (accounting for hidden rows)
@@ -1542,9 +1635,11 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table" => {
-                    // Finalize previous sheet if it exists (handles sheets without conditional formatting)
+                    // Finalize previous sheet if it exists and it's not external
                     if let Some(sheet) = current_sheet.take() {
-                        sheets.push(sheet);
+                        if !skip_current_sheet {
+                            sheets.push(sheet);
+                        }
                     }
 
                     let mut name = String::new();
@@ -1553,9 +1648,25 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             name = attr.unescape_value()?.to_string();
                         }
                     }
-                    current_sheet = Some(Sheet::new(name));
+                    let mut new_sheet = Sheet::new(name.clone());
+                    new_sheet.visible = !hidden_sheets.contains(&name);
+                    current_sheet = Some(new_sheet);
                     current_row = 0;
                     current_col = 0; // Reset column tracking for new sheet
+                    skip_current_sheet = false; // Reset skip flag for new sheet
+                }
+                // Detect external sheets by checking for table:table-source
+                Event::Start(ref e) | Event::Empty(ref e)
+                    if e.name().as_ref() == b"table:table-source" =>
+                {
+                    // Check if this table-source has an xlink:href attribute
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"xlink:href" {
+                            // This sheet is from an external workbook, mark it to be skipped
+                            skip_current_sheet = true;
+                            break;
+                        }
+                    }
                 }
                 Event::Start(e) if e.name().as_ref() == b"table:table-column" => {
                     if let Some(ref mut sheet) = current_sheet {
@@ -2087,9 +2198,11 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
             buf.clear();
         }
 
-        // Handle any remaining sheet that didn't have conditional formatting
-        if let Some(sheet) = current_sheet.take() {
-            sheets.push(sheet);
+        // Finalize the last sheet if it exists and it's not external
+        if let Some(sheet) = current_sheet {
+            if !skip_current_sheet {
+                sheets.push(sheet);
+            }
         }
 
         Ok(sheets)
@@ -2197,6 +2310,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
 
     fn read_external_links(&mut self) -> Result<Vec<String>> {
         extract_external_links_ods(self.archive)
+    }
+
+    fn read_external_workbooks(&mut self) -> Result<Vec<super::ExternalWorkbook>> {
+        extract_external_workbooks_ods(self.archive)
     }
 }
 
@@ -2632,3 +2749,74 @@ mod tests {
         assert_eq!(calculate_used_range(&cells), None);
     }
 }
+
+    #[test]
+    fn test_extract_external_workbooks_with_test_asset() {
+        const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
+        let cursor = std::io::Cursor::new(TEST_ODS);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        
+        let workbooks = extract_external_workbooks_ods(&mut archive).unwrap();
+        
+        // Verify external workbooks are extracted
+        assert!(!workbooks.is_empty(), "Should detect external workbooks in test file");
+        
+        // Verify indices are 0-based and sequential (order of appearance)
+        for (i, wb) in workbooks.iter().enumerate() {
+            assert_eq!(wb.index, i, "Indices should be sequential 0-based");
+        }
+        
+        // Verify paths are not empty
+        for wb in &workbooks {
+            assert!(!wb.path.is_empty(), "External workbook path should not be empty");
+        }
+    }
+
+    #[test]
+    fn test_sheet_collection_ods() {
+        const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
+        let cursor = std::io::Cursor::new(TEST_ODS);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        let mut reader = OdsReader::new(&mut archive).unwrap();
+        
+        let sheets = reader.read_sheets().unwrap();
+        
+        // Verify sheet count (should not include external sheets)
+        assert!(sheets.len() > 0, "Should have at least one sheet");
+        
+        // Verify no external sheet references in names
+        // This implicitly tests that external sheets are filtered out
+        for sheet in &sheets {
+            assert!(!sheet.name.contains("file:///"), 
+                "Sheet collection should not contain external sheets (filtered): {}", sheet.name);
+        }
+        
+        // Verify expected sheets are present
+        let sheet_names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
+        assert!(sheet_names.contains(&"Sheet7") || sheet_names.contains(&"Indexing tests"), 
+            "Should contain expected sheets");
+    }
+
+    #[test]
+    fn test_sheet_visibility_ods() {
+        const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
+        let cursor = std::io::Cursor::new(TEST_ODS);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        let mut reader = OdsReader::new(&mut archive).unwrap();
+        
+        let sheets = reader.read_sheets().unwrap();
+        
+        // Count visible and hidden sheets
+        let visible_count = sheets.iter().filter(|s| s.visible).count();
+        let hidden_count = sheets.iter().filter(|s| !s.visible).count();
+        
+        assert!(visible_count > 0, "Should have at least one visible sheet");
+        assert!(hidden_count > 0, "Test file should have hidden sheets");
+        
+        // Verify hidden sheets have visible=false
+        for sheet in &sheets {
+            if sheet.name.contains("hidden") || sheet.name.contains("empty_hidden") {
+                assert!(!sheet.visible, "Sheet '{}' should be hidden", sheet.name);
+            }
+        }
+    }

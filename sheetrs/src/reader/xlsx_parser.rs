@@ -283,11 +283,13 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
     fn read_sheets(&mut self) -> Result<Vec<Sheet>> {
         let mut sheets = Vec::new();
         let sheet_names = self.get_sheet_names()?;
+        let hidden_sheets = self.read_hidden_sheets()?;
 
         for name in sheet_names {
             let path = get_xlsx_sheet_path(self.archive, &name)?;
             let mut sheet = Sheet::new(name.clone());
             sheet.sheet_path = Some(path.clone());
+            sheet.visible = !hidden_sheets.contains(&name);
 
             // Parse sheet data
             let (cells, hidden_cols, hidden_rows, merged_cells, cf_count, cf_ranges, dim_range) =
@@ -339,6 +341,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
 
     fn read_external_links(&mut self) -> Result<Vec<String>> {
         extract_external_links_xlsx(self.archive)
+    }
+
+    fn read_external_workbooks(&mut self) -> Result<Vec<super::ExternalWorkbook>> {
+        extract_external_workbooks_xlsx(self.archive)
     }
 }
 
@@ -417,6 +423,101 @@ pub fn extract_external_links_xlsx(
     }
 
     Ok(links)
+}
+
+/// Extract external workbooks with indices from XLSX file
+/// Returns a vector of ExternalWorkbook where index is 0-based (maps to [N+1] in formulas)
+pub fn extract_external_workbooks_xlsx(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<Vec<super::ExternalWorkbook>> {
+    use super::ExternalWorkbook;
+    let mut workbooks = Vec::new();
+    let mut external_rels = Vec::new();
+
+    // 1. Find external link relationships in workbook.xml.rels
+    // These are ordered and numbered (externalLink1.xml, externalLink2.xml, etc.)
+    if let Ok(rels_xml) = archive.by_name("xl/_rels/workbook.xml.rels") {
+        let mut reader = Reader::from_reader(BufReader::new(rels_xml));
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf)? {
+                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"Relationship" => {
+                    let mut target = String::new();
+                    let mut r_type = String::new();
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"Target" => target = attr.unescape_value()?.to_string(),
+                            b"Type" => r_type = attr.unescape_value()?.to_string(),
+                            _ => {}
+                        }
+                    }
+                    if r_type.ends_with("/externalLink") {
+                        external_rels.push(target);
+                    }
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+            buf.clear();
+        }
+    }
+
+    // 2. Resolve each external link to its target workbook
+    // Extract the numeric index from the filename (e.g., externalLink1.xml -> 1)
+    for rel_path in external_rels {
+        let filename = std::path::Path::new(&rel_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+
+        // Extract index from filename (e.g., "externalLink1.xml" -> 1)
+        // In XLSX, formulas use [1], [2], etc., so we convert to 0-based: index = N - 1
+        let xlsx_index = filename
+            .trim_start_matches("externalLink")
+            .trim_end_matches(".xml")
+            .parse::<usize>()
+            .unwrap_or(1); // Default to 1 if parsing fails
+        let index = xlsx_index.saturating_sub(1); // Convert to 0-based
+
+        let rels_of_ext = format!("xl/externalLinks/_rels/{}.rels", filename);
+
+        if let Ok(ext_rels_xml) = archive.by_name(&rels_of_ext) {
+            let mut reader = Reader::from_reader(BufReader::new(ext_rels_xml));
+            let mut buf = Vec::new();
+            loop {
+                match reader.read_event_into(&mut buf)? {
+                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"Relationship" => {
+                        let mut target = String::new();
+                        let mut r_type = String::new();
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"Target" => target = attr.unescape_value()?.to_string(),
+                                b"Type" => r_type = attr.unescape_value()?.to_string(),
+                                _ => {}
+                            }
+                        }
+                        // Accept both externalLinkPath (for file references) and externalWorkbook
+                        if r_type.ends_with("/externalLinkPath")
+                            || r_type.ends_with("/externalWorkbook")
+                        {
+                            workbooks.push(ExternalWorkbook {
+                                index,
+                                path: target,
+                            });
+                        }
+                    }
+                    Event::Eof => break,
+                    _ => {}
+                }
+                buf.clear();
+            }
+        }
+    }
+
+    // Sort by index to ensure correct order
+    workbooks.sort_by_key(|w| w.index);
+
+    Ok(workbooks)
 }
 
 fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> String {
@@ -1816,3 +1917,73 @@ mod tests {
         assert_eq!(tables.get("OtherTable"), Some(&"D4:E5".to_string()));
     }
 }
+
+    #[test]
+    fn test_extract_external_workbooks_with_test_asset() {
+        const TEST_XLSX: &[u8] = include_bytes!("../../../tests/minimal_test.xlsx");
+        let cursor = std::io::Cursor::new(TEST_XLSX);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        
+        let workbooks = extract_external_workbooks_xlsx(&mut archive).unwrap();
+        
+        // Verify external workbooks are extracted
+        assert!(!workbooks.is_empty(), "Should detect external workbooks in test file");
+        
+        // Verify indices are 0-based and sequential
+        for (i, wb) in workbooks.iter().enumerate() {
+            assert_eq!(wb.index, i, "Indices should be sequential 0-based");
+        }
+        
+        // Verify paths are not empty
+        for wb in &workbooks {
+            assert!(!wb.path.is_empty(), "External workbook path should not be empty");
+        }
+    }
+
+    #[test]
+    fn test_sheet_collection_xlsx() {
+        const TEST_XLSX: &[u8] = include_bytes!("../../../tests/minimal_test.xlsx");
+        let cursor = std::io::Cursor::new(TEST_XLSX);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        let mut reader = XlsxReader::new(&mut archive).unwrap();
+        
+        let sheets = reader.read_sheets().unwrap();
+        
+        // Verify sheet count (should not include external sheets)
+        assert!(sheets.len() > 0, "Should have at least one sheet");
+        
+        // Verify no external sheet references in names
+        for sheet in &sheets {
+            assert!(!sheet.name.contains("file:///"), 
+                "Sheet collection should not contain external sheets: {}", sheet.name);
+        }
+        
+        // Verify expected sheets are present
+        let sheet_names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
+        assert!(sheet_names.contains(&"Sheet7") || sheet_names.contains(&"Indexing tests"), 
+            "Should contain expected sheets");
+    }
+
+    #[test]
+    fn test_sheet_visibility_xlsx() {
+        const TEST_XLSX: &[u8] = include_bytes!("../../../tests/minimal_test.xlsx");
+        let cursor = std::io::Cursor::new(TEST_XLSX);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        let mut reader = XlsxReader::new(&mut archive).unwrap();
+        
+        let sheets = reader.read_sheets().unwrap();
+        
+        // Count visible and hidden sheets
+        let visible_count = sheets.iter().filter(|s| s.visible).count();
+        let hidden_count = sheets.iter().filter(|s| !s.visible).count();
+        
+        assert!(visible_count > 0, "Should have at least one visible sheet");
+        assert!(hidden_count > 0, "Test file should have hidden sheets");
+        
+        // Verify hidden sheets have visible=false
+        for sheet in &sheets {
+            if sheet.name.contains("hidden") || sheet.name.contains("empty_hidden") {
+                assert!(!sheet.visible, "Sheet '{}' should be hidden", sheet.name);
+            }
+        }
+    }

@@ -23,13 +23,15 @@ impl LinterRule for HiddenSheetsRule {
     fn check(&self, workbook: &Workbook) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
-        for hidden_sheet_name in &workbook.hidden_sheets {
-            violations.push(Violation::new(
-                self.id(),
-                ViolationScope::Book,
-                format!("Hidden sheet: {}", hidden_sheet_name),
-                Severity::Warning,
-            ));
+        for sheet in &workbook.sheets {
+            if !sheet.visible {
+                violations.push(Violation::new(
+                    self.id(),
+                    ViolationScope::Book,
+                    format!("Hidden sheet: {}", sheet.name),
+                    Severity::Warning,
+                ));
+            }
         }
 
         Ok(violations)
@@ -45,24 +47,22 @@ mod tests {
 
     #[test]
     fn test_hidden_sheets() {
+        let visible_sheet = Sheet::new("Visible".to_string());
+        let hidden_sheet1 = Sheet {
+            name: "HiddenSheet1".to_string(),
+            visible: false,
+            ..Default::default()
+        };
+        let hidden_sheet2 = Sheet {
+            name: "HiddenSheet2".to_string(),
+            visible: false,
+            ..Default::default()
+        };
+
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
-            sheets: vec![Sheet {
-                name: "Visible".to_string(),
-                cells: HashMap::new(),
-                used_range: None,
-                hidden_columns: Vec::new(),
-                hidden_rows: Vec::new(),
-                merged_cells: Vec::new(),
-                sheet_path: None,
-                formula_parsing_error: None,
-                conditional_formatting_count: 0,
-            conditional_formatting_ranges: Vec::new(),
-            }],
-            defined_names: HashMap::new(),
-            hidden_sheets: vec!["HiddenSheet1".to_string(), "HiddenSheet2".to_string()],
-            has_macros: false,
-            external_links: Vec::new(),
+            sheets: vec![visible_sheet, hidden_sheet1, hidden_sheet2],
+            ..Default::default()
         };
 
         let rule = HiddenSheetsRule;
@@ -78,11 +78,7 @@ mod tests {
     fn test_no_hidden_sheets() {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
-            sheets: vec![],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_links: Vec::new(),
+            ..Default::default()
         };
 
         let rule = HiddenSheetsRule;
