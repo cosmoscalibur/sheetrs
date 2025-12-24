@@ -615,11 +615,14 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             (current_row, c)
                         };
 
+                        let num_fmt = s_attr.and_then(|idx| self.styles.get(idx).cloned());
+
                         let (value, mut formula, shared_si, shared_ref) = parse_cell_contents(
                             &mut reader,
                             &t_attr,
                             &self.shared_strings,
                             &self.styles,
+                            num_fmt.as_deref(),
                         )?;
 
                         if let Some(si) = shared_si {
@@ -665,8 +668,6 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                                 }
                             }
                         }
-
-                        let num_fmt = s_attr.and_then(|idx| self.styles.get(idx).cloned());
 
                         let mut cell = Cell {
                             row,
@@ -864,6 +865,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
     t_attr: &str,
     shared_strings: &[String],
     _styles: &[String],
+    num_fmt: Option<&str>,
 ) -> Result<(CellValue, Option<String>, Option<u32>, Option<String>)> {
     let mut value = CellValue::Empty;
     let mut formula = None;
@@ -895,7 +897,12 @@ fn parse_cell_contents<R: std::io::BufRead>(
                             CellValue::Empty // Temporary, will be set later if needed
                         }
                         _ => {
-                            if let Ok(n) = v_text.parse::<f64>() {
+                            // Check if this is a text-formatted number
+                            // In XLSX, text format is indicated by num_fmt == "@"
+                            if num_fmt == Some("@") {
+                                // Store as text even if it looks like a number
+                                CellValue::Text(v_text)
+                            } else if let Ok(n) = v_text.parse::<f64>() {
                                 CellValue::Number(n)
                             } else {
                                 CellValue::Text(v_text)

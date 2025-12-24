@@ -973,6 +973,16 @@ pub fn extract_date_styles_from_ods(
                                 }
                             }
                         }
+                        b"number:text-style" => {
+                            // Text format style (equivalent to "@" in XLSX)
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"style:name" {
+                                    let style_name = attr.unescape_value()?.to_string();
+                                    // Mark this as a text format with "@"
+                                    data_styles.insert(style_name, "@".to_string());
+                                }
+                            }
+                        }
                         b"style:style" => {
                             let mut is_cell_style = false;
                             let mut style_name = String::new();
@@ -1846,6 +1856,15 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 None
                             };
 
+                            // Check if this is a text-formatted number
+                            // In ODS, text format is indicated by num_fmt == "@"
+                            if num_fmt.as_deref() == Some("@") {
+                                if let CellValue::Number(n) = cell_value {
+                                    // Convert number to text
+                                    cell_value = CellValue::Text(n.to_string());
+                                }
+                            }
+
                             for r in 0..row_repeated {
                                 for c in 0..col_repeated {
                                     let cell = Cell {
@@ -2528,25 +2547,32 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_calculate_used_range_individual_cells() {
         use std::collections::HashMap;
         let mut cells = HashMap::new();
-        cells.insert((5, 3), Cell {
-            row: 5, col: 3,
-            value: CellValue::Text("test".to_string()),
-            num_fmt: None,
-        });
+        cells.insert(
+            (5, 3),
+            Cell {
+                row: 5,
+                col: 3,
+                value: CellValue::Text("test".to_string()),
+                num_fmt: None,
+            },
+        );
 
         let used_range = calculate_used_range(&cells);
         assert_eq!(used_range, Some((5, 3)));
 
-        cells.insert((10, 7), Cell {
-            row: 10, col: 7,
-            value: CellValue::Number(42.0),
-            num_fmt: None,
-        });
+        cells.insert(
+            (10, 7),
+            Cell {
+                row: 10,
+                col: 7,
+                value: CellValue::Number(42.0),
+                num_fmt: None,
+            },
+        );
 
         let used_range = calculate_used_range(&cells);
         assert_eq!(used_range, Some((10, 7)));
@@ -2558,10 +2584,42 @@ mod tests {
         let mut cells = HashMap::new();
 
         // Merged cell B2:C3
-        cells.insert((1, 1), Cell { row: 1, col: 1, value: CellValue::Text("M".to_string()), num_fmt: None });
-        cells.insert((1, 2), Cell { row: 1, col: 2, value: CellValue::Empty, num_fmt: None });
-        cells.insert((2, 1), Cell { row: 2, col: 1, value: CellValue::Empty, num_fmt: None });
-        cells.insert((2, 2), Cell { row: 2, col: 2, value: CellValue::Empty, num_fmt: None });
+        cells.insert(
+            (1, 1),
+            Cell {
+                row: 1,
+                col: 1,
+                value: CellValue::Text("M".to_string()),
+                num_fmt: None,
+            },
+        );
+        cells.insert(
+            (1, 2),
+            Cell {
+                row: 1,
+                col: 2,
+                value: CellValue::Empty,
+                num_fmt: None,
+            },
+        );
+        cells.insert(
+            (2, 1),
+            Cell {
+                row: 2,
+                col: 1,
+                value: CellValue::Empty,
+                num_fmt: None,
+            },
+        );
+        cells.insert(
+            (2, 2),
+            Cell {
+                row: 2,
+                col: 2,
+                value: CellValue::Empty,
+                num_fmt: None,
+            },
+        );
 
         let used_range = calculate_used_range(&cells);
         assert_eq!(used_range, Some((2, 2)));
