@@ -116,8 +116,8 @@ impl LinterRule for ExternalLinksRule {
                 if matches!(
                     self.mode,
                     LinkDetectionMode::Workbook | LinkDetectionMode::All
-                ) {
-                    if let Some(formula) = cell.value.as_formula() {
+                )
+                    && let Some(formula) = cell.value.as_formula() {
                         let workbook_names = extract_external_workbook_names(formula);
                         for workbook_name in workbook_names {
                             // Resolve [N] to actual filename if available
@@ -128,18 +128,16 @@ impl LinterRule for ExternalLinksRule {
                             workbook_cells.push((cell.row, cell.col, resolved_name));
                         }
                     }
-                }
 
                 // Check for external links in text values (URLs)
-                if matches!(self.mode, LinkDetectionMode::Url | LinkDetectionMode::All) {
-                    if let crate::reader::workbook::CellValue::Text(text) = &cell.value {
+                if matches!(self.mode, LinkDetectionMode::Url | LinkDetectionMode::All)
+                    && let crate::reader::workbook::CellValue::Text(text) = &cell.value {
                         // Extract specific URLs instead of using the whole text
                         let urls = extract_urls(text);
                         for url in urls {
                             url_cells.push((cell.row, cell.col, url));
                         }
                     }
-                }
             }
 
             // Group workbook references by workbook name and create range-based violations
@@ -153,11 +151,10 @@ impl LinterRule for ExternalLinksRule {
                     seen_workbooks.insert(workbook_name.clone());
 
                     // Validate workbook existence if status is INVALID
-                    if matches!(self.status, LinkStatus::Invalid) {
-                        if check_workbook_exists(&workbook.path, &workbook_name) {
+                    if matches!(self.status, LinkStatus::Invalid)
+                        && check_workbook_exists(&workbook.path, &workbook_name) {
                             continue; // Skip valid workbooks
                         }
-                    }
 
                     let ranges = find_contiguous_ranges(&cells);
 
@@ -193,11 +190,10 @@ impl LinterRule for ExternalLinksRule {
                     // and should be reported for each occurrence
 
                     // Validate URL status if status is INVALID
-                    if matches!(self.status, LinkStatus::Invalid) {
-                        if check_url_status(&url, self.timeout_secs) {
+                    if matches!(self.status, LinkStatus::Invalid)
+                        && check_url_status(&url, self.timeout_secs) {
                             continue; // Skip valid URLs
                         }
-                    }
 
                     let ranges = find_contiguous_ranges(&cells);
 
@@ -250,7 +246,7 @@ fn group_cells_by_value(cells: Vec<(u32, u32, String)>) -> Vec<(String, Vec<(u32
     for (row, col, value) in cells {
         grouped
             .entry(value)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push((row, col));
     }
 
@@ -349,12 +345,11 @@ fn extract_external_workbook_names(formula: &str) -> Vec<String> {
         if c == '"' {
             if in_string {
                 // Check if it's an escaped double quote ("")
-                if let Some(&next_c) = chars.peek() {
-                    if next_c == '"' {
+                if let Some(&next_c) = chars.peek()
+                    && next_c == '"' {
                         chars.next(); // Consume the escaped quote
                         continue;
                     }
-                }
                 in_string = false;
             } else {
                 in_string = true;

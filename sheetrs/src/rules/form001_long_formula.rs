@@ -7,6 +7,7 @@ use crate::violation::{Severity, Violation, ViolationScope};
 use anyhow::Result;
 use std::collections::{HashSet, VecDeque};
 
+#[derive(Default)]
 pub struct LongFormulaRule {
     config: LinterConfig,
 }
@@ -19,13 +20,6 @@ impl LongFormulaRule {
     }
 }
 
-impl Default for LongFormulaRule {
-    fn default() -> Self {
-        Self {
-            config: LinterConfig::default(),
-        }
-    }
-}
 
 impl LinterRule for LongFormulaRule {
     fn id(&self) -> &str {
@@ -52,11 +46,10 @@ impl LinterRule for LongFormulaRule {
             let mut long_formula_cells: Vec<(u32, u32)> = Vec::new();
 
             for cell in sheet.all_cells() {
-                if let Some(formula) = cell.value.as_formula() {
-                    if formula.len() > threshold {
+                if let Some(formula) = cell.value.as_formula()
+                    && formula.len() > threshold {
                         long_formula_cells.push((cell.row, cell.col));
                     }
-                }
             }
 
             // Group into contiguous ranges and create violations

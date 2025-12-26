@@ -6,6 +6,7 @@ use crate::reader::Workbook;
 use crate::violation::{Severity, Violation, ViolationScope};
 use anyhow::Result;
 
+#[derive(Default)]
 pub struct LargeUsedRangeRule {
     config: LinterConfig,
 }
@@ -18,13 +19,6 @@ impl LargeUsedRangeRule {
     }
 }
 
-impl Default for LargeUsedRangeRule {
-    fn default() -> Self {
-        Self {
-            config: LinterConfig::default(),
-        }
-    }
-}
 
 impl LinterRule for LargeUsedRangeRule {
     fn id(&self) -> &str {

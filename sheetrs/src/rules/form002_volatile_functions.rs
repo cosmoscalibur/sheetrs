@@ -14,16 +14,14 @@ pub struct VolatileFunctionsRule {
 impl VolatileFunctionsRule {
     pub fn new(config: &LinterConfig) -> Self {
         // Default list of volatile functions
-        let default_functions = vec![
-            "NOW",
+        let default_functions = ["NOW",
             "TODAY",
             "RAND",
             "RANDBETWEEN",
             "OFFSET",
             "INDIRECT",
             "INFO",
-            "CELL",
-        ];
+            "CELL"];
 
         // Get from global/sheet scope instead of rules.PERF004
         let volatile_functions = config
@@ -82,7 +80,7 @@ impl LinterRule for VolatileFunctionsRule {
                         if formula_upper.contains(&format!("{}(", func)) {
                             function_cells
                                 .entry(func.clone())
-                                .or_insert_with(Vec::new)
+                                .or_default()
                                 .push((cell.row, cell.col));
                             break; // Only count each cell once
                         }

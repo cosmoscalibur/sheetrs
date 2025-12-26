@@ -6,6 +6,7 @@ use crate::reader::Workbook;
 use crate::violation::{Severity, Violation, ViolationScope};
 use anyhow::Result;
 
+#[derive(Default)]
 pub struct NonDescriptiveSheetNameRule {
     config: LinterConfig,
 }
@@ -18,13 +19,6 @@ impl NonDescriptiveSheetNameRule {
     }
 }
 
-impl Default for NonDescriptiveSheetNameRule {
-    fn default() -> Self {
-        Self {
-            config: LinterConfig::default(),
-        }
-    }
-}
 
 impl LinterRule for NonDescriptiveSheetNameRule {
     fn id(&self) -> &str {

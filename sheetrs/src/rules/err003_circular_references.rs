@@ -129,7 +129,7 @@ fn extract_cell_references(
         // Group 1: Sheet name wrapper
         // Group 2: Quoted content
         // Group 3: Unquoted content
-        let sheet_name = if let Some(_) = cap.get(1) {
+        let sheet_name = if cap.get(1).is_some() {
             if let Some(quoted) = cap.get(2) {
                 quoted.as_str().to_string()
             } else if let Some(unquoted) = cap.get(3) {

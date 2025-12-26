@@ -6,6 +6,7 @@ use crate::reader::Workbook;
 use crate::violation::{Severity, Violation, ViolationScope};
 use anyhow::Result;
 
+#[derive(Default)]
 pub struct ExcessiveConditionalFormattingRule {
     config: LinterConfig,
 }
@@ -18,13 +19,6 @@ impl ExcessiveConditionalFormattingRule {
     }
 }
 
-impl Default for ExcessiveConditionalFormattingRule {
-    fn default() -> Self {
-        Self {
-            config: LinterConfig::default(),
-        }
-    }
-}
 
 impl LinterRule for ExcessiveConditionalFormattingRule {
     fn id(&self) -> &str {

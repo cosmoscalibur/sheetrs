@@ -232,7 +232,7 @@ fn find_blank_rows(
             sheet
                 .cells
                 .get(&(row, col))
-                .map_or(false, |c| !c.value.is_empty())
+                .is_some_and(|c| !c.value.is_empty())
         });
 
         // Check if row is part of a merged cell
@@ -262,11 +262,11 @@ fn find_blank_columns(
     for col in min_col..=max_col {
         // Check if column has any non-empty data
         let has_data = (min_row..=max_row).any(|row| {
-            let res = sheet
+            
+            sheet
                 .cells
                 .get(&(row, col))
-                .map_or(false, |c| !c.value.is_empty());
-            res
+                .is_some_and(|c| !c.value.is_empty())
         });
 
         // Check if column is part of a merged cell

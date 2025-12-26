@@ -38,7 +38,7 @@ impl LinterRule for DuplicateSheetNamesRule {
             let normalized = normalize_sheet_name(&sheet.name);
             name_map
                 .entry(normalized)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(sheet.name.clone());
         }
 

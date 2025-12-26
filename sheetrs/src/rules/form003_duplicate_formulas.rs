@@ -34,7 +34,7 @@ impl LinterRule for DuplicateFormulasRule {
                     let normalized = formula.trim().to_string();
                     formula_cells
                         .entry(normalized)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push((cell.row, cell.col));
                 }
             }

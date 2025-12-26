@@ -46,7 +46,7 @@ pub fn read_text_node<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Str
     let mut text = String::new();
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Text(e) => text.push_str(&e.unescape()?.to_string()),
+            Event::Text(e) => text.push_str(e.unescape()?.as_ref()),
             Event::CData(e) => text.push_str(&String::from_utf8_lossy(e.as_ref())),
             Event::End(_) => break,
             Event::Eof => break,

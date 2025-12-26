@@ -30,11 +30,10 @@ impl LinterRule for NumericTextRule {
 
             for cell in sheet.all_cells() {
                 // Check if cell contains text that looks like a number
-                if let crate::reader::workbook::CellValue::Text(text) = &cell.value {
-                    if is_numeric_text(text) {
+                if let crate::reader::workbook::CellValue::Text(text) = &cell.value
+                    && is_numeric_text(text) {
                         numeric_text_cells.push((cell.row, cell.col));
                     }
-                }
             }
 
             // Group cells into ranges and create violations

@@ -95,14 +95,14 @@ impl LinterRule for InconsistentDateFormatRule {
                     _ => false,
                 };
 
-                if is_candidate {
-                    if let Some(fmt) = &cell.num_fmt {
+                if is_candidate
+                    && let Some(fmt) = &cell.num_fmt {
                         // Normalize format: remove escape backslashes common in XLSX (e.g. "mm\-dd\-yyyy" -> "mm-dd-yyyy")
                         let normalized_fmt = fmt.replace('\\', "");
 
                         // Check if it's a date format (using original check, but on normalized or raw? usually safe to check raw)
-                        if Self::is_date_format(&normalized_fmt) {
-                            if normalized_fmt != required_format.replace('\\', "") {
+                        if Self::is_date_format(&normalized_fmt)
+                            && normalized_fmt != required_format.replace('\\', "") {
                                 violations.push(Violation::new(
                                     self.id(),
                                     ViolationScope::Cell(
@@ -119,9 +119,7 @@ impl LinterRule for InconsistentDateFormatRule {
                                     Severity::Warning,
                                 ));
                             }
-                        }
                     }
-                }
             }
         }
 

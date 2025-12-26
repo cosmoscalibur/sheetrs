@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use colored::*;
-use serde_json;
 use sheetrs::{Severity, Violation, ViolationScope};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -28,15 +27,15 @@ pub fn print_human(file_path: &Path, violations: &[Violation]) {
             ViolationScope::Sheet(sheet) => {
                 sheet_violations
                     .entry(sheet.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(violation);
             }
             ViolationScope::Cell(sheet, cell_ref) => {
                 cell_violations
                     .entry(sheet.clone())
-                    .or_insert_with(BTreeMap::new)
+                    .or_default()
                     .entry(cell_ref.to_string())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(violation);
             }
         }

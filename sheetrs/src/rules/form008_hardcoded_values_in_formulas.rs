@@ -58,11 +58,10 @@ impl HardcodedValuesInFormulasRule {
         }
 
         // Check if integer
-        if self.ignore_ints {
-            if val.fract().abs() < f64::EPSILON {
+        if self.ignore_ints
+            && val.fract().abs() < f64::EPSILON {
                 return true;
             }
-        }
 
         // Check if power of 10
         if self.ignore_pow10 {
@@ -141,8 +140,8 @@ impl LinterRule for HardcodedValuesInFormulasRule {
 
                             if !is_external_ref {
                                 let val_str = match_str.as_str();
-                                if let Ok(val) = val_str.parse::<f64>() {
-                                    if !self.is_ignored(val) {
+                                if let Ok(val) = val_str.parse::<f64>()
+                                    && !self.is_ignored(val) {
                                         violations.push(Violation::new(
                                             self.id(),
                                             ViolationScope::Cell(
@@ -156,7 +155,6 @@ impl LinterRule for HardcodedValuesInFormulasRule {
                                             Severity::Warning,
                                         ));
                                     }
-                                }
                             }
                         }
                     }

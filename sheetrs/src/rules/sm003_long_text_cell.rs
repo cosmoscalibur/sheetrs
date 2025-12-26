@@ -7,6 +7,7 @@ use crate::violation::{Severity, Violation, ViolationScope};
 use anyhow::Result;
 use std::collections::{HashSet, VecDeque};
 
+#[derive(Default)]
 pub struct LongTextCellRule {
     config: LinterConfig,
 }
@@ -19,13 +20,6 @@ impl LongTextCellRule {
     }
 }
 
-impl Default for LongTextCellRule {
-    fn default() -> Self {
-        Self {
-            config: LinterConfig::default(),
-        }
-    }
-}
 
 impl LinterRule for LongTextCellRule {
     fn id(&self) -> &str {
@@ -52,11 +46,10 @@ impl LinterRule for LongTextCellRule {
             let mut long_text_cells: Vec<(u32, u32)> = Vec::new();
 
             for cell in sheet.all_cells() {
-                if let crate::reader::workbook::CellValue::Text(text) = &cell.value {
-                    if text.len() > threshold {
+                if let crate::reader::workbook::CellValue::Text(text) = &cell.value
+                    && text.len() > threshold {
                         long_text_cells.push((cell.row, cell.col));
                     }
-                }
             }
 
             // Group into contiguous ranges and create violations
