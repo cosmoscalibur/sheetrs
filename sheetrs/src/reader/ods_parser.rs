@@ -255,19 +255,17 @@ pub fn extract_hidden_columns_rows_from_ods(
                         let mut visibility = String::from("visible");
                         let mut repeated = 1u32;
 
-                        for attr in e.attributes() {
-                            if let Ok(attr) = attr {
-                                match attr.key.as_ref() {
-                                    b"table:visibility" => {
-                                        visibility = attr.unescape_value()?.to_string();
-                                    }
-                                    b"table:number-columns-repeated" => {
-                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                            repeated = val;
-                                        }
-                                    }
-                                    _ => {}
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"table:visibility" => {
+                                    visibility = attr.unescape_value()?.to_string();
                                 }
+                                b"table:number-columns-repeated" => {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                        repeated = val;
+                                    }
+                                }
+                                _ => {}
                             }
                         }
 
@@ -285,19 +283,17 @@ pub fn extract_hidden_columns_rows_from_ods(
                         let mut visibility = String::from("visible");
                         let mut repeated = 1u32;
 
-                        for attr in e.attributes() {
-                            if let Ok(attr) = attr {
-                                match attr.key.as_ref() {
-                                    b"table:visibility" => {
-                                        visibility = attr.unescape_value()?.to_string();
-                                    }
-                                    b"table:number-rows-repeated" => {
-                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                            repeated = val;
-                                        }
-                                    }
-                                    _ => {}
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"table:visibility" => {
+                                    visibility = attr.unescape_value()?.to_string();
                                 }
+                                b"table:number-rows-repeated" => {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                        repeated = val;
+                                    }
+                                }
+                                _ => {}
                             }
                         }
 
@@ -378,10 +374,10 @@ pub fn extract_merged_cells_from_ods(
                         // Tracking row repetition for spanning logic
                         current_row_repeated = 1;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                    current_row_repeated = val;
-                                }
+                            if attr.key.as_ref() == b"table:number-rows-repeated"
+                                && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                            {
+                                current_row_repeated = val;
                             }
                         }
                     }
@@ -390,26 +386,24 @@ pub fn extract_merged_cells_from_ods(
                         let mut rows_spanned = 1u32;
                         let mut repeated = 1u32;
 
-                        for attr in e.attributes() {
-                            if let Ok(attr) = attr {
-                                match attr.key.as_ref() {
-                                    b"table:number-columns-spanned" => {
-                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                            cols_spanned = val;
-                                        }
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"table:number-columns-spanned" => {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                        cols_spanned = val;
                                     }
-                                    b"table:number-rows-spanned" => {
-                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                            rows_spanned = val;
-                                        }
-                                    }
-                                    b"table:number-columns-repeated" => {
-                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                            repeated = val;
-                                        }
-                                    }
-                                    _ => {}
                                 }
+                                b"table:number-rows-spanned" => {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                        rows_spanned = val;
+                                    }
+                                }
+                                b"table:number-columns-repeated" => {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                        repeated = val;
+                                    }
+                                }
+                                _ => {}
                             }
                         }
 
@@ -429,12 +423,11 @@ pub fn extract_merged_cells_from_ods(
                         // Covered cells are part of a merged range and should increment the column counter
                         let mut repeated = 1u32;
                         for attr in e.attributes() {
-                            if let Ok(attr) = attr {
-                                if attr.key.as_ref() == b"table:number-columns-repeated" {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                        repeated = val;
-                                    }
-                                }
+                            if let Ok(attr) = attr
+                                && attr.key.as_ref() == b"table:number-columns-repeated"
+                                && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                            {
+                                repeated = val;
                             }
                         }
                         current_col += repeated;
@@ -448,10 +441,10 @@ pub fn extract_merged_cells_from_ods(
                         // Empty row - increment row counter
                         let mut repeated = 1u32;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                    repeated = val;
-                                }
+                            if attr.key.as_ref() == b"table:number-rows-repeated"
+                                && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                            {
+                                repeated = val;
                             }
                         }
                         current_row += repeated;
@@ -461,26 +454,24 @@ pub fn extract_merged_cells_from_ods(
                         let mut rows_spanned = 1u32;
                         let mut repeated = 1u32;
 
-                        for attr in e.attributes() {
-                            if let Ok(attr) = attr {
-                                match attr.key.as_ref() {
-                                    b"table:number-columns-spanned" => {
-                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                            cols_spanned = val;
-                                        }
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"table:number-columns-spanned" => {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                        cols_spanned = val;
                                     }
-                                    b"table:number-rows-spanned" => {
-                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                            rows_spanned = val;
-                                        }
-                                    }
-                                    b"table:number-columns-repeated" => {
-                                        if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                            repeated = val;
-                                        }
-                                    }
-                                    _ => {}
                                 }
+                                b"table:number-rows-spanned" => {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                        rows_spanned = val;
+                                    }
+                                }
+                                b"table:number-columns-repeated" => {
+                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                        repeated = val;
+                                    }
+                                }
+                                _ => {}
                             }
                         }
 
@@ -500,12 +491,11 @@ pub fn extract_merged_cells_from_ods(
                         // Covered cells are part of a merged range and should increment the column counter
                         let mut repeated = 1u32;
                         for attr in e.attributes() {
-                            if let Ok(attr) = attr {
-                                if attr.key.as_ref() == b"table:number-columns-repeated" {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                        repeated = val;
-                                    }
-                                }
+                            if let Ok(attr) = attr
+                                && attr.key.as_ref() == b"table:number-columns-repeated"
+                                && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                            {
+                                repeated = val;
                             }
                         }
                         current_col += repeated;
@@ -621,13 +611,13 @@ pub fn extract_external_links_ods(
                 for attr in e.attributes().flatten() {
                     if attr.key.as_ref() == b"table:formula" {
                         let formula = attr.unescape_value()?;
-                        if formula.contains("'file:///") {
-                            if let Some(start) = formula.find("'file:///") {
-                                let remainder = &formula[start + 1..];
-                                if let Some(end) = remainder.find("'#") {
-                                    let path = &remainder[..end];
-                                    links.insert(path.to_string());
-                                }
+                        if formula.contains("'file:///")
+                            && let Some(start) = formula.find("'file:///")
+                        {
+                            let remainder = &formula[start + 1..];
+                            if let Some(end) = remainder.find("'#") {
+                                let path = &remainder[..end];
+                                links.insert(path.to_string());
                             }
                         }
                     }
@@ -710,26 +700,26 @@ pub fn extract_external_workbooks_ods(
                 for attr in e.attributes().flatten() {
                     if attr.key.as_ref() == b"table:formula" {
                         let formula = attr.unescape_value()?;
-                        if formula.contains("'file:///") {
-                            if let Some(start) = formula.find("'file:///") {
-                                let remainder = &formula[start + 1..];
-                                if let Some(end) = remainder.find("'#") {
-                                    let mut path = remainder[..end].to_string();
+                        if formula.contains("'file:///")
+                            && let Some(start) = formula.find("'file:///")
+                        {
+                            let remainder = &formula[start + 1..];
+                            if let Some(end) = remainder.find("'#") {
+                                let mut path = remainder[..end].to_string();
 
-                                    // Strip file:// prefix
-                                    if path.starts_with("file://") {
-                                        path = path.trim_start_matches("file://").to_string();
-                                    }
+                                // Strip file:// prefix
+                                if path.starts_with("file://") {
+                                    path = path.trim_start_matches("file://").to_string();
+                                }
 
-                                    // Only add if we haven't seen this path before
-                                    if !path_to_index.contains_key(&path) {
-                                        path_to_index.insert(path.clone(), next_index);
-                                        workbooks.push(ExternalWorkbook {
-                                            index: next_index,
-                                            path,
-                                        });
-                                        next_index += 1;
-                                    }
+                                // Only add if we haven't seen this path before
+                                if !path_to_index.contains_key(&path) {
+                                    path_to_index.insert(path.clone(), next_index);
+                                    workbooks.push(ExternalWorkbook {
+                                        index: next_index,
+                                        path,
+                                    });
+                                    next_index += 1;
                                 }
                             }
                         }
@@ -793,12 +783,11 @@ pub fn extract_cached_errors_from_ods(
                     current_col = 0;
                     current_row_repeated = 1;
                     for attr in e.attributes() {
-                        if let Ok(attr) = attr {
-                            if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                    current_row_repeated = val;
-                                }
-                            }
+                        if let Ok(attr) = attr
+                            && attr.key.as_ref() == b"table:number-rows-repeated"
+                            && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                        {
+                            current_row_repeated = val;
                         }
                     }
                 }
@@ -807,26 +796,24 @@ pub fn extract_cached_errors_from_ods(
                     let mut is_error = false;
                     let mut error_msg = String::new();
 
-                    for attr in e.attributes() {
-                        if let Ok(attr) = attr {
-                            match attr.key.as_ref() {
-                                b"calcext:value-type" => {
-                                    if attr.value.as_ref() == b"error" {
-                                        is_error = true;
-                                    }
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"calcext:value-type" => {
+                                if attr.value.as_ref() == b"error" {
+                                    is_error = true;
                                 }
-                                b"calcext:value" | b"office:string-value" => {
-                                    if error_msg.is_empty() {
-                                        error_msg = attr.unescape_value()?.to_string();
-                                    }
-                                }
-                                b"table:number-columns-repeated" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                        repeated = val;
-                                    }
-                                }
-                                _ => {}
                             }
+                            b"calcext:value" | b"office:string-value" => {
+                                if error_msg.is_empty() {
+                                    error_msg = attr.unescape_value()?.to_string();
+                                }
+                            }
+                            b"table:number-columns-repeated" => {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                    repeated = val;
+                                }
+                            }
+                            _ => {}
                         }
                     }
 
@@ -850,12 +837,11 @@ pub fn extract_cached_errors_from_ods(
                 b"table:table-row" if in_target_sheet => {
                     let mut repeated = 1u32;
                     for attr in e.attributes() {
-                        if let Ok(attr) = attr {
-                            if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                    repeated = val;
-                                }
-                            }
+                        if let Ok(attr) = attr
+                            && attr.key.as_ref() == b"table:number-rows-repeated"
+                            && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                        {
+                            repeated = val;
                         }
                     }
                     current_row += repeated;
@@ -865,26 +851,24 @@ pub fn extract_cached_errors_from_ods(
                     let mut is_error = false;
                     let mut error_msg = String::new();
 
-                    for attr in e.attributes() {
-                        if let Ok(attr) = attr {
-                            match attr.key.as_ref() {
-                                b"calcext:value-type" => {
-                                    if attr.value.as_ref() == b"error" {
-                                        is_error = true;
-                                    }
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"calcext:value-type" => {
+                                if attr.value.as_ref() == b"error" {
+                                    is_error = true;
                                 }
-                                b"calcext:value" | b"office:string-value" => {
-                                    if error_msg.is_empty() {
-                                        error_msg = attr.unescape_value()?.to_string();
-                                    }
-                                }
-                                b"table:number-columns-repeated" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                        repeated = val;
-                                    }
-                                }
-                                _ => {}
                             }
+                            b"calcext:value" | b"office:string-value" => {
+                                if error_msg.is_empty() {
+                                    error_msg = attr.unescape_value()?.to_string();
+                                }
+                            }
+                            b"table:number-columns-repeated" => {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                    repeated = val;
+                                }
+                            }
+                            _ => {}
                         }
                     }
 
@@ -1031,6 +1015,27 @@ fn parse_ods_date(date_str: &str) -> Option<f64> {
     Some(total_days as f64 + time_fraction)
 }
 
+/// Extract date styles from ODS content.xml and styles.xml
+/// Returns a map of style_name -> excel_format_string
+///
+/// # Automatic Order Handling
+///
+/// When `number:automatic-order="true"` is set on a `number:date-style` element,
+/// this function treats day and month components as two-digit format (equivalent to
+/// `number:style="long"`) when no explicit `number:style` attribute is present.
+///
+/// This behavior aligns with:
+/// - Unicode CLDR standard patterns where `dd` and `MM` are standard for locale-aware formatting
+/// - ISO 8601 requirements for two-digit padding in international date representation
+/// - Observed behavior in LibreOffice Calc and other ODF-compliant applications
+///
+/// # Arguments
+///
+/// * `archive` - Mutable reference to the ODS ZIP archive
+///
+/// # Returns
+///
+/// A HashMap mapping style names to their Excel-compatible format strings
 pub fn extract_date_styles_from_ods(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<std::collections::HashMap<String, String>> {
@@ -1050,6 +1055,7 @@ pub fn extract_date_styles_from_ods(
         let mut current_data_style_name = String::new();
         let mut current_format = String::new();
         let mut in_date_style = false;
+        let mut automatic_order = false;
 
         loop {
             match reader.read_event_into(&mut buf)? {
@@ -1058,9 +1064,19 @@ pub fn extract_date_styles_from_ods(
                         b"number:date-style" => {
                             in_date_style = true;
                             current_format.clear();
+                            automatic_order = false;
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"style:name" {
-                                    current_data_style_name = attr.unescape_value()?.to_string();
+                                match attr.key.as_ref() {
+                                    b"style:name" => {
+                                        current_data_style_name =
+                                            attr.unescape_value()?.to_string();
+                                    }
+                                    b"number:automatic-order" => {
+                                        if attr.value.as_ref() == b"true" {
+                                            automatic_order = true;
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
                         }
@@ -1104,29 +1120,28 @@ pub fn extract_date_styles_from_ods(
                             }
                         }
                         b"number:day" if in_date_style => {
-                            let mut long = false;
+                            let mut long = automatic_order;
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"number:style"
-                                    && attr.value.as_ref() == b"long"
-                                {
-                                    long = true;
+                                if attr.key.as_ref() == b"number:style" {
+                                    long = attr.value.as_ref() == b"long";
                                 }
                             }
                             current_format.push_str(if long { "dd" } else { "d" });
                         }
                         b"number:month" if in_date_style => {
-                            let mut long = false;
+                            let mut long = automatic_order;
                             let mut textual = false;
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"number:style"
-                                    && attr.value.as_ref() == b"long"
-                                {
-                                    long = true;
-                                }
-                                if attr.key.as_ref() == b"number:textual"
-                                    && attr.value.as_ref() == b"true"
-                                {
-                                    textual = true;
+                                match attr.key.as_ref() {
+                                    b"number:style" => {
+                                        long = attr.value.as_ref() == b"long";
+                                    }
+                                    b"number:textual" => {
+                                        if attr.value.as_ref() == b"true" {
+                                            textual = true;
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
                             if textual {
@@ -1163,29 +1178,28 @@ pub fn extract_date_styles_from_ods(
                 }
                 Event::Empty(e) => match e.name().as_ref() {
                     b"number:day" if in_date_style => {
-                        let mut long = false;
+                        let mut long = automatic_order;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"number:style"
-                                && attr.value.as_ref() == b"long"
-                            {
-                                long = true;
+                            if attr.key.as_ref() == b"number:style" {
+                                long = attr.value.as_ref() == b"long";
                             }
                         }
                         current_format.push_str(if long { "dd" } else { "d" });
                     }
                     b"number:month" if in_date_style => {
-                        let mut long = false;
+                        let mut long = automatic_order;
                         let mut textual = false;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"number:style"
-                                && attr.value.as_ref() == b"long"
-                            {
-                                long = true;
-                            }
-                            if attr.key.as_ref() == b"number:textual"
-                                && attr.value.as_ref() == b"true"
-                            {
-                                textual = true;
+                            match attr.key.as_ref() {
+                                b"number:style" => {
+                                    long = attr.value.as_ref() == b"long";
+                                }
+                                b"number:textual" => {
+                                    if attr.value.as_ref() == b"true" {
+                                        textual = true;
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                         if textual {
@@ -1217,7 +1231,7 @@ pub fn extract_date_styles_from_ods(
                     _ => {}
                 },
                 Event::Text(e) if in_date_style => {
-                    current_format.push_str(&e.unescape()?.to_string());
+                    current_format.push_str(e.unescape()?.as_ref());
                 }
                 Event::End(e) => {
                     if e.name().as_ref() == b"number:date-style" {
@@ -1310,12 +1324,11 @@ pub fn extract_formulas_from_ods(
                     current_col = 0;
                     current_row_repeated = 1;
                     for attr in e.attributes() {
-                        if let Ok(attr) = attr {
-                            if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                    current_row_repeated = val;
-                                }
-                            }
+                        if let Ok(attr) = attr
+                            && attr.key.as_ref() == b"table:number-rows-repeated"
+                            && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                        {
+                            current_row_repeated = val;
                         }
                     }
                 }
@@ -1323,19 +1336,17 @@ pub fn extract_formulas_from_ods(
                     let mut repeated = 1u32;
                     let mut formula = String::new();
 
-                    for attr in e.attributes() {
-                        if let Ok(attr) = attr {
-                            match attr.key.as_ref() {
-                                b"table:formula" => {
-                                    formula = attr.unescape_value()?.to_string();
-                                }
-                                b"table:number-columns-repeated" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                        repeated = val;
-                                    }
-                                }
-                                _ => {}
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"table:formula" => {
+                                formula = attr.unescape_value()?.to_string();
                             }
+                            b"table:number-columns-repeated" => {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                    repeated = val;
+                                }
+                            }
+                            _ => {}
                         }
                     }
 
@@ -1356,12 +1367,11 @@ pub fn extract_formulas_from_ods(
                 b"table:table-row" if in_target_sheet => {
                     let mut repeated = 1u32;
                     for attr in e.attributes() {
-                        if let Ok(attr) = attr {
-                            if attr.key.as_ref() == b"table:number-rows-repeated" {
-                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                    repeated = val;
-                                }
-                            }
+                        if let Ok(attr) = attr
+                            && attr.key.as_ref() == b"table:number-rows-repeated"
+                            && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                        {
+                            repeated = val;
                         }
                     }
                     current_row += repeated;
@@ -1370,19 +1380,17 @@ pub fn extract_formulas_from_ods(
                     let mut repeated = 1u32;
                     let mut formula = String::new();
 
-                    for attr in e.attributes() {
-                        if let Ok(attr) = attr {
-                            match attr.key.as_ref() {
-                                b"table:formula" => {
-                                    formula = attr.unescape_value()?.to_string();
-                                }
-                                b"table:number-columns-repeated" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                        repeated = val;
-                                    }
-                                }
-                                _ => {}
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"table:formula" => {
+                                formula = attr.unescape_value()?.to_string();
                             }
+                            b"table:number-columns-repeated" => {
+                                if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                    repeated = val;
+                                }
+                            }
+                            _ => {}
                         }
                     }
 
@@ -1479,8 +1487,8 @@ pub fn normalize_ods_reference(
         });
         normalized = local_range_ref
             .replace_all(&normalized, |caps: &regex::Captures| {
-                if &caps[1] == &caps[3] {
-                    if &caps[2] == &caps[4] {
+                if caps[1] == caps[3] {
+                    if caps[2] == caps[4] {
                         caps[2].to_string()
                     } else {
                         format!("{}:{}", &caps[2], &caps[4])
@@ -1541,10 +1549,10 @@ pub fn normalize_ods_reference(
     normalized = row_ref.replace_all(&normalized, "$1:$2").to_string();
 
     // Final check for identical range parts (e.g. A1:A1 -> A1)
-    if let Some((start, end)) = normalized.split_once(':') {
-        if start == end {
-            return start.to_string();
-        }
+    if let Some((start, end)) = normalized.split_once(':')
+        && start == end
+    {
+        return start.to_string();
     }
 
     // Convert visible row numbers to XML row numbers if mapping is provided
@@ -1575,13 +1583,11 @@ pub fn normalize_ods_reference(
                     sheet_name.is_none()
                 };
 
-                if should_convert {
-                    if let Ok(visible_row) = row_str.parse::<u32>() {
-                        // Convert visible row (1-indexed) to XML row (0-indexed)
-                        if let Some(&xml_row) = row_map.get(&visible_row) {
-                            // Convert back to 1-indexed for formula representation
-                            return format!("{}{}{}", col, abs_marker, xml_row + 1);
-                        }
+                if should_convert && let Ok(visible_row) = row_str.parse::<u32>() {
+                    // Convert visible row (1-indexed) to XML row (0-indexed)
+                    if let Some(&xml_row) = row_map.get(&visible_row) {
+                        // Convert back to 1-indexed for formula representation
+                        return format!("{}{}{}", col, abs_marker, xml_row + 1);
                     }
                 }
                 // Keep original for cross-sheet references or if no mapping found
@@ -1636,10 +1642,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"table:table" => {
                     // Finalize previous sheet if it exists and it's not external
-                    if let Some(sheet) = current_sheet.take() {
-                        if !skip_current_sheet {
-                            sheets.push(sheet);
-                        }
+                    if let Some(sheet) = current_sheet.take()
+                        && !skip_current_sheet
+                    {
+                        sheets.push(sheet);
                     }
 
                     let mut name = String::new();
@@ -1911,7 +1917,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                     loop {
                                         match reader.read_event_into(&mut p_buf)? {
                                             Event::Text(ref t) => {
-                                                text_content.push_str(&t.unescape()?.to_string());
+                                                text_content.push_str(t.unescape()?.as_ref());
                                             }
                                             Event::End(ref pe)
                                                 if pe.name().as_ref() == b"text:p" =>
@@ -1969,11 +1975,11 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
 
                             // Check if this is a text-formatted number
                             // In ODS, text format is indicated by num_fmt == "@"
-                            if num_fmt.as_deref() == Some("@") {
-                                if let CellValue::Number(n) = cell_value {
-                                    // Convert number to text
-                                    cell_value = CellValue::Text(n.to_string());
-                                }
+                            if num_fmt.as_deref() == Some("@")
+                                && let CellValue::Number(n) = cell_value
+                            {
+                                // Convert number to text
+                                cell_value = CellValue::Text(n.to_string());
                             }
 
                             for r in 0..row_repeated {
@@ -2199,10 +2205,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
         }
 
         // Finalize the last sheet if it exists and it's not external
-        if let Some(sheet) = current_sheet {
-            if !skip_current_sheet {
-                sheets.push(sheet);
-            }
+        if let Some(sheet) = current_sheet
+            && !skip_current_sheet
+        {
+            sheets.push(sheet);
         }
 
         Ok(sheets)
@@ -2827,4 +2833,27 @@ fn test_sheet_visibility_ods() {
             assert!(!sheet.visible, "Sheet '{}' should be hidden", sheet.name);
         }
     }
+}
+
+#[test]
+fn test_extract_date_styles_with_automatic_order() {
+    const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
+    let cursor = std::io::Cursor::new(TEST_ODS);
+    let mut archive = ZipArchive::new(cursor).unwrap();
+
+    let date_styles = extract_date_styles_from_ods(&mut archive).unwrap();
+
+    // Verify that style N70 (with automatic-order="true") is parsed correctly
+    // This style is used in cell D8 of "Indexing tests" sheet
+    // Expected: "dd/mm/yy hh:mm" (two-digit day and month)
+    // Not: "d/m/yy hh:mm" (single-digit)
+    let n70_style = date_styles.get("N70");
+    assert!(n70_style.is_some(), "Style N70 should exist in date styles");
+
+    let format = n70_style.unwrap();
+    assert!(
+        format.contains("dd") && format.contains("mm"),
+        "Style N70 with automatic-order should use two-digit day/month: got '{}'",
+        format
+    );
 }
