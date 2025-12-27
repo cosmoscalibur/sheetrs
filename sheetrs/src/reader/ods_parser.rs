@@ -646,6 +646,7 @@ pub fn extract_external_links_ods(
 
 /// Extract external workbooks with indices from ODS file
 /// Returns a vector of ExternalWorkbook where index is 0-based (order of appearance)
+/// Only extracts from metadata (table:table-source), not from formulas
 pub fn extract_external_workbooks_ods(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<super::ExternalWorkbook>> {
@@ -674,54 +675,17 @@ pub fn extract_external_workbooks_ods(
             {
                 for attr in e.attributes().flatten() {
                     if attr.key.as_ref() == b"xlink:href" {
-                        let mut path = attr.unescape_value()?.to_string();
+                        let path = attr.unescape_value()?.to_string();
+                        let basename = super::parser_utils::extract_basename(&path);
 
-                        // Strip file:// prefix for cleaner display
-                        if path.starts_with("file://") {
-                            path = path.trim_start_matches("file://").to_string();
-                        }
-
-                        // Only add if we haven't seen this path before
-                        if !path_to_index.contains_key(&path) {
-                            path_to_index.insert(path.clone(), next_index);
+                        // Only add if we haven't seen this basename before
+                        if !path_to_index.contains_key(&basename) {
+                            path_to_index.insert(basename.clone(), next_index);
                             workbooks.push(ExternalWorkbook {
                                 index: next_index,
-                                path,
+                                path: basename,
                             });
                             next_index += 1;
-                        }
-                    }
-                }
-            }
-            // Check formulas for external references
-            Event::Start(ref e) | Event::Empty(ref e)
-                if e.name().as_ref() == b"table:table-cell" =>
-            {
-                for attr in e.attributes().flatten() {
-                    if attr.key.as_ref() == b"table:formula" {
-                        let formula = attr.unescape_value()?;
-                        if formula.contains("'file:///")
-                            && let Some(start) = formula.find("'file:///")
-                        {
-                            let remainder = &formula[start + 1..];
-                            if let Some(end) = remainder.find("'#") {
-                                let mut path = remainder[..end].to_string();
-
-                                // Strip file:// prefix
-                                if path.starts_with("file://") {
-                                    path = path.trim_start_matches("file://").to_string();
-                                }
-
-                                // Only add if we haven't seen this path before
-                                if !path_to_index.contains_key(&path) {
-                                    path_to_index.insert(path.clone(), next_index);
-                                    workbooks.push(ExternalWorkbook {
-                                        index: next_index,
-                                        path,
-                                    });
-                                    next_index += 1;
-                                }
-                            }
                         }
                     }
                 }
@@ -733,6 +697,55 @@ pub fn extract_external_workbooks_ods(
     }
 
     Ok(workbooks)
+}
+
+/// Normalize ODS external workbook references to XLSX index format
+/// Converts ['file:///path/to/file.xlsx'#Sheet1.A1] -> [1]Sheet1!A1
+///
+/// # Arguments
+/// * `formula` - The ODS formula string
+/// * `external_workbooks` - List of external workbooks with their indices
+///
+/// # Returns
+/// Normalized formula with XLSX-style external references
+pub fn normalize_ods_external_refs(
+    formula: &str,
+    external_workbooks: &[super::ExternalWorkbook],
+) -> String {
+    let mut result = formula.to_string();
+
+    // Build mapping from path to index
+    for wb in external_workbooks {
+        // ODS patterns to match (wb.path is basename):
+        // ['file:///absolute/path/basename.xlsx'#Sheet.Cell]
+        // ['../relative/path/basename.xlsx'#Sheet.Cell]
+        // We need to match any path ending with the basename
+
+        // XLSX format: [index] where index is 1-based
+        let xlsx_ref = format!("[{}]", wb.index + 1);
+
+        // Use regex to match paths ending with the basename
+        use regex::Regex;
+        let pattern_str = format!(r"\['[^']*{}'#", regex::escape(&wb.path));
+        if let Ok(re) = Regex::new(&pattern_str) {
+            result = re
+                .replace_all(&result, &format!("{}#", xlsx_ref))
+                .to_string();
+        }
+    }
+
+    // Convert ODS cell reference separator (.) to XLSX (!)
+    // Pattern: after ] and before cell reference
+    // Use regex to be more precise
+    use regex::Regex;
+    use std::sync::OnceLock;
+
+    static EXTERNAL_REF_PATTERN: OnceLock<Regex> = OnceLock::new();
+    let re = EXTERNAL_REF_PATTERN.get_or_init(|| Regex::new(r"\[(\d+)\]([^!]+)\.").unwrap());
+
+    result = re.replace_all(&result, "[$1]$2!").to_string();
+
+    result
 }
 
 /// Extract cached error values from an ODS worksheet
@@ -1614,6 +1627,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
         let date_styles = extract_date_styles_from_ods(self.archive)?;
         let hidden_sheets = extract_hidden_sheets_from_ods(self.archive)?;
 
+        // Extract external workbooks for formula normalization
+        let external_workbooks = self.read_external_workbooks()?;
+
         let mut sheets = Vec::new();
 
         let content_xml = match self.archive.by_name("content.xml") {
@@ -1848,11 +1864,16 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 }
                                 b"table:formula" => {
                                     let raw_formula = attr.unescape_value()?;
-                                    formula = Some(normalize_ods_reference(
+                                    let normalized = normalize_ods_reference(
                                         &raw_formula,
                                         false,
                                         Some(&visible_to_xml_row),
                                         Some(&sheet.name),
+                                    );
+                                    // Apply external workbook normalization
+                                    formula = Some(normalize_ods_external_refs(
+                                        &normalized,
+                                        &external_workbooks,
                                     ));
                                 }
                                 b"table:style-name" => {

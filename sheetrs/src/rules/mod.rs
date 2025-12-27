@@ -20,10 +20,11 @@ pub mod perf002_unused_sheets;
 pub mod perf003_large_used_range;
 pub mod perf004_excessive_conditional_formatting;
 pub mod perf005_empty_sheets;
-pub mod sec001_external_links;
+pub mod sec001_external_workbooks;
 pub mod sec002_hidden_sheets;
 pub mod sec003_hidden_columns_rows;
 pub mod sec004_has_macros;
+pub mod sec005_web_urls;
 
 pub mod sm001_excessive_sheet_counts;
 pub mod sm002_duplicate_sheet_names;

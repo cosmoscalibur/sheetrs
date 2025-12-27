@@ -58,7 +58,7 @@ sheetlint workbook.xlsx --format json > report.json
 **Key Rules:**
 
 - `ERR001`: Error cells (#DIV/0!, etc.)
-- `SEC001`: External links and metadata
+- `SEC001`: External workbook references
 - `PERF006`: Excessive conditional formatting
 - `UX002`: Inconsistent date formats
 - `SM001`: Excessive sheet counts

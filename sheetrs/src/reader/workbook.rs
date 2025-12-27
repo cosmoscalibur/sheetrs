@@ -10,11 +10,10 @@ pub struct ExternalWorkbook {
     /// For XLSX: index N corresponds to [N+1] in formulas
     /// For ODS: index N corresponds to order of appearance in metadata
     pub index: usize,
-    /// Path or URL to the external workbook
+    /// Basename of the external workbook (e.g., "Book1.xlsx")
     pub path: String,
 }
 
-/// Represents a complete workbook
 #[derive(Debug, Clone, Default)]
 pub struct Workbook {
     pub path: PathBuf,
@@ -24,9 +23,6 @@ pub struct Workbook {
     pub hidden_sheets: Vec<String>,
     /// Whether the workbook contains macros or VBA code
     pub has_macros: bool,
-    /// List of external links (URLs or workbook paths) found in metadata
-    /// Deprecated: Use external_workbooks for structured access with indices
-    pub external_links: Vec<String>,
     /// External workbooks referenced by this workbook (0-indexed collection)
     /// For XLSX: index N corresponds to [N+1] in formulas
     /// For ODS: index N corresponds to order of appearance in metadata

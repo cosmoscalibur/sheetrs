@@ -228,7 +228,6 @@ mod tests {
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),
             has_macros: false,
-            external_links: Vec::new(),
             external_workbooks: Vec::new(),
         };
 
@@ -274,7 +273,6 @@ mod tests {
             defined_names: HashMap::new(),
             hidden_sheets: Vec::new(),
             has_macros: false,
-            external_links: Vec::new(),
             external_workbooks: Vec::new(),
         };
 

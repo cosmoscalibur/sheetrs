@@ -502,7 +502,7 @@ pub fn extract_external_workbooks_xlsx(
                         {
                             workbooks.push(ExternalWorkbook {
                                 index,
-                                path: target,
+                                path: super::parser_utils::extract_basename(&target),
                             });
                         }
                     }

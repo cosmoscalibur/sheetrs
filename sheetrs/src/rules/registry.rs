@@ -57,10 +57,13 @@ fn create_all_rules(config: &LinterConfig) -> Vec<Box<dyn LinterRule>> {
     vec![
         Box::new(err001_error_cells::ErrorCellsRule),
         Box::new(err002_broken_named_ranges::BrokenNamedRangesRule),
-        Box::new(sec001_external_links::ExternalLinksRule::new(config)),
+        Box::new(sec001_external_workbooks::ExternalWorkbooksRule::new(
+            config,
+        )),
         Box::new(sec002_hidden_sheets::HiddenSheetsRule),
         Box::new(sec003_hidden_columns_rows::HiddenColumnsRowsRule),
         Box::new(sec004_has_macros::HasMacrosRule),
+        Box::new(sec005_web_urls::WebUrlsRule::new(config)),
         Box::new(ux001_inconsistent_number_format::NumericTextRule),
         Box::new(ux003_blank_rows_columns::BlankRowsColumnsRule::new(config)),
         Box::new(perf001_unused_named_ranges::UnusedNamedRangesRule),

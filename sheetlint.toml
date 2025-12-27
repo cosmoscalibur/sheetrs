@@ -3,7 +3,7 @@
 # Global configuration
 [global]
 # List of enabled rules (empty means all default-active rules are enabled)
-enabled_rules = ["ALL"]
+enabled_rules = ["SEC001"]
 
 # List of disabled rules
 disabled_rules = []
@@ -13,8 +13,7 @@ disabled_rules = []
 max_extra_row = 1
 max_extra_column = 1
 max_conditional_formatting = 0
-external_links_type = "ALL"
-external_links_status = "ALL"
+external_workbook_scope = "SHEET"
 url_timeout_seconds = 2
 max_sheets = 5
 max_formula_length = 255
