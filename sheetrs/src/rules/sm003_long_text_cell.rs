@@ -20,7 +20,6 @@ impl LongTextCellRule {
     }
 }
 
-
 impl LinterRule for LongTextCellRule {
     fn id(&self) -> &str {
         "SM003"
@@ -47,9 +46,10 @@ impl LinterRule for LongTextCellRule {
 
             for cell in sheet.all_cells() {
                 if let crate::reader::workbook::CellValue::Text(text) = &cell.value
-                    && text.len() > threshold {
-                        long_text_cells.push((cell.row, cell.col));
-                    }
+                    && text.len() > threshold
+                {
+                    long_text_cells.push((cell.row, cell.col));
+                }
             }
 
             // Group into contiguous ranges and create violations
@@ -179,10 +179,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = LongTextCellRule::default();

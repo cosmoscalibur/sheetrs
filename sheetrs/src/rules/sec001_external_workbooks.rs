@@ -125,13 +125,11 @@ fn extract_external_workbook_indices(formula: &str) -> Vec<usize> {
 
     let mut indices = Vec::new();
     for cap in re.captures_iter(formula) {
-        if let Some(num_str) = cap.get(1) {
-            if let Ok(num) = num_str.as_str().parse::<usize>() {
-                if num > 0 {
+        if let Some(num_str) = cap.get(1)
+            && let Ok(num) = num_str.as_str().parse::<usize>()
+                && num > 0 {
                     indices.push(num - 1); // Convert 1-based to 0-based
                 }
-            }
-        }
     }
     indices
 }
@@ -258,13 +256,11 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
             external_workbooks: vec![crate::reader::ExternalWorkbook {
                 index: 0,
                 path: "Book1.xlsx".to_string(),
             }],
+            ..Default::default()
         };
 
         // Test SHEET scope
@@ -291,13 +287,11 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
             external_workbooks: vec![crate::reader::ExternalWorkbook {
                 index: 0,
                 path: "external_workbook.xlsx".to_string(),
             }],
+            ..Default::default()
         };
 
         // Test BOOK scope (default)

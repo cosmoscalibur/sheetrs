@@ -225,10 +225,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = DeepIfNestingRule::default();
@@ -270,10 +267,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = DeepIfNestingRule::default();

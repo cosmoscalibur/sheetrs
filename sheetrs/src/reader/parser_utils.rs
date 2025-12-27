@@ -83,7 +83,7 @@ mod tests {
 pub fn extract_basename(path: &str) -> String {
     // Strip file:// prefix if present
     let clean_path = path.trim_start_matches("file://");
-    
+
     // Extract basename using Path
     std::path::Path::new(clean_path)
         .file_name()

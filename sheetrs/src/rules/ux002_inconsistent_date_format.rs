@@ -95,31 +95,31 @@ impl LinterRule for InconsistentDateFormatRule {
                     _ => false,
                 };
 
-                if is_candidate
-                    && let Some(fmt) = &cell.num_fmt {
-                        // Normalize format: remove escape backslashes common in XLSX (e.g. "mm\-dd\-yyyy" -> "mm-dd-yyyy")
-                        let normalized_fmt = fmt.replace('\\', "");
+                if is_candidate && let Some(fmt) = &cell.num_fmt {
+                    // Normalize format: remove escape backslashes common in XLSX (e.g. "mm\-dd\-yyyy" -> "mm-dd-yyyy")
+                    let normalized_fmt = fmt.replace('\\', "");
 
-                        // Check if it's a date format (using original check, but on normalized or raw? usually safe to check raw)
-                        if Self::is_date_format(&normalized_fmt)
-                            && normalized_fmt != required_format.replace('\\', "") {
-                                violations.push(Violation::new(
-                                    self.id(),
-                                    ViolationScope::Cell(
-                                        sheet.name.clone(),
-                                        crate::violation::CellReference {
-                                            row: *row,
-                                            col: *col,
-                                        },
-                                    ),
-                                    format!(
-                                        "Date format '{}' does not match required format '{}'",
-                                        normalized_fmt, required_format
-                                    ),
-                                    Severity::Warning,
-                                ));
-                            }
+                    // Check if it's a date format (using original check, but on normalized or raw? usually safe to check raw)
+                    if Self::is_date_format(&normalized_fmt)
+                        && normalized_fmt != required_format.replace('\\', "")
+                    {
+                        violations.push(Violation::new(
+                            self.id(),
+                            ViolationScope::Cell(
+                                sheet.name.clone(),
+                                crate::violation::CellReference {
+                                    row: *row,
+                                    col: *col,
+                                },
+                            ),
+                            format!(
+                                "Date format '{}' does not match required format '{}'",
+                                normalized_fmt, required_format
+                            ),
+                            Severity::Warning,
+                        ));
                     }
+                }
             }
         }
 
@@ -185,10 +185,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: vec![],
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let config = LinterConfig::default();

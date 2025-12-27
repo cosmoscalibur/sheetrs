@@ -113,10 +113,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: vec![],
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let config = LinterConfig::default();

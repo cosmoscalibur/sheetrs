@@ -19,7 +19,6 @@ impl NonDescriptiveSheetNameRule {
     }
 }
 
-
 impl LinterRule for NonDescriptiveSheetNameRule {
     fn id(&self) -> &str {
         "SM005"

@@ -14,14 +14,16 @@ pub struct VolatileFunctionsRule {
 impl VolatileFunctionsRule {
     pub fn new(config: &LinterConfig) -> Self {
         // Default list of volatile functions
-        let default_functions = ["NOW",
+        let default_functions = [
+            "NOW",
             "TODAY",
             "RAND",
             "RANDBETWEEN",
             "OFFSET",
             "INDIRECT",
             "INFO",
-            "CELL"];
+            "CELL",
+        ];
 
         // Get from global/sheet scope instead of rules.PERF004
         let volatile_functions = config
@@ -211,10 +213,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = VolatileFunctionsRule::default();
@@ -264,10 +263,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = VolatileFunctionsRule::default();
@@ -306,10 +302,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = VolatileFunctionsRule::default();

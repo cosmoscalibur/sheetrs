@@ -40,18 +40,14 @@ impl LinterRule for HasMacrosRule {
 mod tests {
     use super::*;
 
-    use std::collections::HashMap;
     use std::path::PathBuf;
 
     #[test]
     fn test_workbook_with_macros() {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsm"),
-            sheets: vec![],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
             has_macros: true,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = HasMacrosRule;
@@ -66,11 +62,7 @@ mod tests {
     fn test_workbook_without_macros() {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
-            sheets: vec![],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = HasMacrosRule;

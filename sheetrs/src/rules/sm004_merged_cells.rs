@@ -50,7 +50,6 @@ fn format_merged_range(start_row: u32, start_col: u32, end_row: u32, end_col: u3
 mod tests {
     use super::*;
     use crate::reader::workbook::Sheet;
-    use std::collections::HashMap;
     use std::path::PathBuf;
 
     #[test]
@@ -59,19 +58,11 @@ mod tests {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![Sheet {
                 name: "Sheet1".to_string(),
-                cells: HashMap::new(),
-                used_range: None,
-                hidden_columns: Vec::new(),
-                hidden_rows: Vec::new(),
                 merged_cells: vec![
                     (0, 0, 0, 2), // A1:C1
                     (2, 0, 4, 0), // A3:A5
                 ],
-                formula_parsing_error: None,
-                conditional_formatting_count: 0,
-                conditional_formatting_ranges: Vec::new(),
-                visible: true,
-                sheet_path: None,
+                ..Default::default()
             }],
             ..Default::default()
         };
@@ -91,16 +82,7 @@ mod tests {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![Sheet {
                 name: "Sheet1".to_string(),
-                cells: HashMap::new(),
-                used_range: None,
-                hidden_columns: Vec::new(),
-                hidden_rows: Vec::new(),
-                merged_cells: Vec::new(),
-                formula_parsing_error: None,
-                conditional_formatting_count: 0,
-                conditional_formatting_ranges: Vec::new(),
-                visible: true,
-                sheet_path: None,
+                ..Default::default()
             }],
             ..Default::default()
         };

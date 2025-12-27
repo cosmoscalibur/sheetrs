@@ -66,15 +66,17 @@ pub fn modify_workbook_xlsx(
 
             // 1. Remove sheets
             if let Some(sheets) = &modifications.remove_sheets
-                && !sheets.is_empty() {
-                    content = remove_sheets_from_workbook_xml(&content, sheets)?;
-                }
+                && !sheets.is_empty()
+            {
+                content = remove_sheets_from_workbook_xml(&content, sheets)?;
+            }
 
             // 2. Remove named ranges
             if let Some(ranges) = &modifications.remove_named_ranges
-                && !ranges.is_empty() {
-                    content = remove_named_ranges_from_workbook_xml(&content, ranges)?;
-                }
+                && !ranges.is_empty()
+            {
+                content = remove_named_ranges_from_workbook_xml(&content, ranges)?;
+            }
 
             zip_writer.start_file(&name, FileOptions::<()>::default())?;
             zip_writer.write_all(content.as_bytes())?;

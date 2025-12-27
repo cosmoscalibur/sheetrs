@@ -20,7 +20,6 @@ impl LongFormulaRule {
     }
 }
 
-
 impl LinterRule for LongFormulaRule {
     fn id(&self) -> &str {
         "FORM001"
@@ -47,9 +46,10 @@ impl LinterRule for LongFormulaRule {
 
             for cell in sheet.all_cells() {
                 if let Some(formula) = cell.value.as_formula()
-                    && formula.len() > threshold {
-                        long_formula_cells.push((cell.row, cell.col));
-                    }
+                    && formula.len() > threshold
+                {
+                    long_formula_cells.push((cell.row, cell.col));
+                }
             }
 
             // Group into contiguous ranges and create violations
@@ -166,23 +166,13 @@ mod tests {
             name: "Sheet1".to_string(),
             cells,
             used_range: Some((1, 1)),
-            hidden_columns: Vec::new(),
-            hidden_rows: Vec::new(),
-            merged_cells: Vec::new(),
-            sheet_path: None,
-            formula_parsing_error: None,
-            conditional_formatting_count: 0,
-            conditional_formatting_ranges: Vec::new(),
-            visible: true,
+            ..Default::default()
         };
 
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = LongFormulaRule::default();

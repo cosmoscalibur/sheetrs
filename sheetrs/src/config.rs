@@ -7,8 +7,7 @@ use std::fs;
 use std::path::Path;
 
 /// Main linter configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LinterConfig {
     #[serde(default)]
     pub global: GlobalConfig,
@@ -62,9 +61,9 @@ impl LinterConfig {
                 .disabled_rules
                 .iter()
                 .any(|selector| matches_rule_selector(selector, rule_id))
-            {
-                return false;
-            }
+        {
+            return false;
+        }
 
         true
     }
@@ -114,9 +113,10 @@ impl LinterConfig {
     pub fn get_param_int(&self, key: &str, sheet_name: Option<&str>) -> Option<i64> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
-            && let Some(value) = sheet.params.get(key).and_then(|v| v.as_integer()) {
-                return Some(value);
-            }
+            && let Some(value) = sheet.params.get(key).and_then(|v| v.as_integer())
+        {
+            return Some(value);
+        }
 
         // Try global
         self.global.params.get(key).and_then(|v| v.as_integer())
@@ -126,9 +126,10 @@ impl LinterConfig {
     pub fn get_param_str<'a>(&'a self, key: &str, sheet_name: Option<&str>) -> Option<&'a str> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
-            && let Some(value) = sheet.params.get(key).and_then(|v| v.as_str()) {
-                return Some(value);
-            }
+            && let Some(value) = sheet.params.get(key).and_then(|v| v.as_str())
+        {
+            return Some(value);
+        }
 
         // Try global
         self.global.params.get(key).and_then(|v| v.as_str())
@@ -144,9 +145,10 @@ impl LinterConfig {
                         .filter_map(|item| item.as_str().map(|s| s.to_string()))
                         .collect()
                 })
-            }) {
-                return Some(arr);
-            }
+            })
+        {
+            return Some(arr);
+        }
 
         // Try global
         self.global.params.get(key).and_then(|v| {
@@ -168,9 +170,10 @@ impl LinterConfig {
                         .filter_map(|item| item.as_float().or(item.as_integer().map(|i| i as f64)))
                         .collect()
                 })
-            }) {
-                return Some(arr);
-            }
+            })
+        {
+            return Some(arr);
+        }
 
         // Try global
         self.global.params.get(key).and_then(|v| {
@@ -186,15 +189,15 @@ impl LinterConfig {
     pub fn get_param_bool(&self, key: &str, sheet_name: Option<&str>) -> Option<bool> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
-            && let Some(value) = sheet.params.get(key).and_then(|v| v.as_bool()) {
-                return Some(value);
-            }
+            && let Some(value) = sheet.params.get(key).and_then(|v| v.as_bool())
+        {
+            return Some(value);
+        }
 
         // Try global
         self.global.params.get(key).and_then(|v| v.as_bool())
     }
 }
-
 
 /// Global configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

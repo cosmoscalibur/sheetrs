@@ -71,9 +71,7 @@ mod tests {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
             defined_names,
-            hidden_sheets: Vec::new(),
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         let rule = BrokenNamedRangesRule;

@@ -58,10 +58,9 @@ impl HardcodedValuesInFormulasRule {
         }
 
         // Check if integer
-        if self.ignore_ints
-            && val.fract().abs() < f64::EPSILON {
-                return true;
-            }
+        if self.ignore_ints && val.fract().abs() < f64::EPSILON {
+            return true;
+        }
 
         // Check if power of 10
         if self.ignore_pow10 {
@@ -141,20 +140,21 @@ impl LinterRule for HardcodedValuesInFormulasRule {
                             if !is_external_ref {
                                 let val_str = match_str.as_str();
                                 if let Ok(val) = val_str.parse::<f64>()
-                                    && !self.is_ignored(val) {
-                                        violations.push(Violation::new(
-                                            self.id(),
-                                            ViolationScope::Cell(
-                                                sheet.name.clone(),
-                                                crate::violation::CellReference {
-                                                    row: *row,
-                                                    col: *col,
-                                                },
-                                            ),
-                                            format!("Hardcoded value found in formula: {}", val),
-                                            Severity::Warning,
-                                        ));
-                                    }
+                                    && !self.is_ignored(val)
+                                {
+                                    violations.push(Violation::new(
+                                        self.id(),
+                                        ViolationScope::Cell(
+                                            sheet.name.clone(),
+                                            crate::violation::CellReference {
+                                                row: *row,
+                                                col: *col,
+                                            },
+                                        ),
+                                        format!("Hardcoded value found in formula: {}", val),
+                                        Severity::Warning,
+                                    ));
+                                }
                             }
                         }
                     }
@@ -232,10 +232,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: vec![],
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         // Case 1: Ignore ints = true, others default (false/empty)
@@ -408,10 +405,7 @@ mod tests {
         let workbook = Workbook {
             path: PathBuf::from("test.xlsx"),
             sheets: vec![sheet],
-            defined_names: HashMap::new(),
-            hidden_sheets: vec![],
-            has_macros: false,
-            external_workbooks: Vec::new(),
+            ..Default::default()
         };
 
         // Disable all ignore flags to ensure only external refs are excluded

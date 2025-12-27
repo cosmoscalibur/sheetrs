@@ -19,7 +19,6 @@ impl ExcessiveConditionalFormattingRule {
     }
 }
 
-
 impl LinterRule for ExcessiveConditionalFormattingRule {
     fn id(&self) -> &str {
         "PERF004"
