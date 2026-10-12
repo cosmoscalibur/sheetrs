@@ -2,6 +2,7 @@
 target/
 content.xml
 tests/production
+benchmark_*.txt
 
 # Tooling caches
 .rumdl_cache/

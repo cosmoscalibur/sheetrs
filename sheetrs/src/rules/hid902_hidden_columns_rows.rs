@@ -12,21 +12,19 @@ pub struct HiddenColumnsRowsRule;
 /// Incident data for HID902.
 #[derive(Debug)]
 pub struct HiddenColumnsRowsData {
-    /// 0-based hidden column indices.
-    pub columns: Vec<u32>,
-    /// 0-based hidden row indices.
-    pub rows: Vec<u32>,
+    /// Hidden column ranges: (start_col, end_col), 0-based, inclusive.
+    pub columns: Vec<(u32, u32)>,
+    /// Hidden row ranges: (start_row, end_row), 0-based, inclusive.
+    pub rows: Vec<(u32, u32)>,
 }
 
 impl ViolationData for HiddenColumnsRowsData {
     fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
         if !self.columns.is_empty() {
-            let ranges = group_contiguous_indices(&self.columns);
-            let strs: Vec<String> = ranges.iter().map(|r| format_column_range(r)).collect();
+            let strs: Vec<String> = self.columns.iter().map(format_column_range).collect();
             format!("Hidden columns: {}", strs.join(", "))
         } else {
-            let ranges = group_contiguous_indices(&self.rows);
-            let strs: Vec<String> = ranges.iter().map(|r| format_row_range(r)).collect();
+            let strs: Vec<String> = self.rows.iter().map(format_row_range).collect();
             format!("Hidden rows: {}", strs.join(", "))
         }
     }
@@ -52,94 +50,65 @@ impl WalkerRule for HiddenColumnsRowsRule {
     fn on_sheet_start(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
         let mut violations = Vec::new();
 
-        if !sheet.hidden_columns.is_empty() {
-            let ranges = group_contiguous_indices(&sheet.hidden_columns);
-            for range in ranges {
-                violations.push(Violation::with_data(
-                    RuleId::Hid902,
-                    ViolationScope::Sheet(sheet.sheet_index),
-                    HiddenColumnsRowsData {
-                        columns: range,
-                        rows: Vec::new(),
-                    },
-                    Severity::Warning,
-                ));
-            }
+        for range in merge_ranges(&sheet.hidden_columns) {
+            violations.push(Violation::with_data(
+                RuleId::Hid902,
+                ViolationScope::Sheet(sheet.sheet_index),
+                HiddenColumnsRowsData {
+                    columns: vec![range],
+                    rows: Vec::new(),
+                },
+                Severity::Warning,
+            ));
         }
 
-        if !sheet.hidden_rows.is_empty() {
-            let ranges = group_contiguous_indices(&sheet.hidden_rows);
-            for range in ranges {
-                violations.push(Violation::with_data(
-                    RuleId::Hid902,
-                    ViolationScope::Sheet(sheet.sheet_index),
-                    HiddenColumnsRowsData {
-                        columns: Vec::new(),
-                        rows: range,
-                    },
-                    Severity::Warning,
-                ));
-            }
+        for range in merge_ranges(&sheet.hidden_rows) {
+            violations.push(Violation::with_data(
+                RuleId::Hid902,
+                ViolationScope::Sheet(sheet.sheet_index),
+                HiddenColumnsRowsData {
+                    columns: Vec::new(),
+                    rows: vec![range],
+                },
+                Severity::Warning,
+            ));
         }
 
         violations
     }
 }
 
-/// Group contiguous indices into ranges
-fn group_contiguous_indices(indices: &[u32]) -> Vec<Vec<u32>> {
-    if indices.is_empty() {
-        return Vec::new();
-    }
-
-    let mut sorted = indices.to_vec();
+/// Sort inclusive ranges and merge those that overlap or are adjacent.
+fn merge_ranges(ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
+    let mut sorted = ranges.to_vec();
     sorted.sort_unstable();
-    sorted.dedup();
 
-    let mut ranges = Vec::new();
-    let mut current_range = vec![sorted[0]];
-
-    for &idx in &sorted[1..] {
-        if idx == *current_range.last().unwrap() + 1 {
-            current_range.push(idx);
-        } else {
-            ranges.push(current_range.clone());
-            current_range = vec![idx];
+    let mut merged: Vec<(u32, u32)> = Vec::with_capacity(sorted.len());
+    for (start, end) in sorted {
+        match merged.last_mut() {
+            Some(last) if start <= last.1.saturating_add(1) => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
         }
     }
-    ranges.push(current_range);
-
-    ranges
+    merged
 }
 
 /// Format column range (e.g., "A:C" or "A")
-fn format_column_range(indices: &[u32]) -> String {
-    if indices.is_empty() {
-        return String::new();
-    }
-
-    let start_col = column_index_to_letter(indices[0]);
-    if indices.len() == 1 {
+fn format_column_range(&(start, end): &(u32, u32)) -> String {
+    let start_col = column_index_to_letter(start);
+    if start == end {
         return start_col;
     }
-
-    let end_col = column_index_to_letter(*indices.last().unwrap());
-    format!("{}:{}", start_col, end_col)
+    format!("{}:{}", start_col, column_index_to_letter(end))
 }
 
 /// Format row range (e.g., "1:3" or "1")
-fn format_row_range(indices: &[u32]) -> String {
-    if indices.is_empty() {
-        return String::new();
+fn format_row_range(&(start, end): &(u32, u32)) -> String {
+    // Convert to 1-based
+    if start == end {
+        return (start + 1).to_string();
     }
-
-    let start_row = indices[0] + 1; // Convert to 1-based
-    if indices.len() == 1 {
-        return start_row.to_string();
-    }
-
-    let end_row = indices.last().unwrap() + 1; // Convert to 1-based
-    format!("{}:{}", start_row, end_row)
+    format!("{}:{}", start + 1, end + 1)
 }
 
 /// Convert column index (0-based) to letter (A, B, ..., Z, AA, AB, ...)
@@ -169,7 +138,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: HashMap::new(),
-            hidden_columns: vec![0, 1, 2, 5], // A, B, C, F
+            hidden_columns: vec![(0, 1), (2, 2), (5, 5)], // A:B, C, F
             ..Default::default()
         };
 
@@ -177,7 +146,8 @@ mod tests {
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&sheet, &mut ctx);
 
-        assert_eq!(violations.len(), 2); // Two ranges: A:C and F
+        let messages: Vec<String> = violations.iter().map(Violation::message).collect();
+        assert_eq!(messages, ["Hidden columns: A:C", "Hidden columns: F"]);
         assert_eq!(violations[0].rule_id, RuleId::Hid902);
     }
 
@@ -187,7 +157,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: HashMap::new(),
-            hidden_rows: vec![0, 1, 2, 10, 11], // 1:3 and 11:12
+            hidden_rows: vec![(10, 11), (0, 2), (1, 1)], // 11:12, 1:3, 2
             ..Default::default()
         };
 
@@ -195,7 +165,8 @@ mod tests {
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&sheet, &mut ctx);
 
-        assert_eq!(violations.len(), 2);
+        let messages: Vec<String> = violations.iter().map(Violation::message).collect();
+        assert_eq!(messages, ["Hidden rows: 1:3", "Hidden rows: 11:12"]);
     }
 
     #[test]

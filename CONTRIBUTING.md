@@ -67,21 +67,24 @@ docs match it:
 
 ## Changelog Fragments
 
-Each PR should include a changelog fragment in `changelog.d/`. Create a file
-named `<PR-number>.<type>.md` where `<type>` is one of:
+Each PR adds one fragment to `changelog.d/`, named after its topic (e.g.
+`changelog.d/ods-repeated-rows.md`). The fragment uses the
+[Keep a Changelog](https://keepachangelog.com/) section headings (`Added`,
+`Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`), listing only the ones
+the PR touches:
 
-- `added` — new features
-- `changed` — changes to existing functionality
-- `fixed` — bug fixes
-- `removed` — removed features
+```markdown
+### Added
 
-Example: `changelog.d/42.added.md`
+- Add CALC203 rule for detecting double operators in formulas.
 
-```text
-Add CALC203 rule for detecting double operators in formulas.
+### Fixed
+
+- Fix VUL604 false positive on XLOOKUP via word-boundary checking.
 ```
 
-Fragments are consolidated into `CHANGELOG.md` before each release.
+Before each release, fragments are merged into the `[Unreleased]` section of
+`CHANGELOG.md` and deleted.
 
 ## Pull Request Process
 

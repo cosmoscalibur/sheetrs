@@ -669,8 +669,8 @@ fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> St
 // Type alias to avoid clippy::type_complexity warning
 type ParsedSheetData = (
     HashMap<(u32, u32), Cell>,
-    Vec<u32>,
-    Vec<u32>,
+    Vec<(u32, u32)>,
+    Vec<(u32, u32)>,
     Vec<(u32, u32, u32, u32)>,
     usize,
     Vec<String>,
@@ -759,23 +759,27 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                                 _ => {}
                             }
                         }
-                        if hidden {
-                            for col in min..=max {
-                                hidden_columns.push(col);
-                            }
+                        if hidden && min <= max {
+                            hidden_columns.push((min, max));
                         }
                     }
                     b"row" => {
+                        let mut hidden = false;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"r" {
-                                current_row =
-                                    attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                            match attr.key.as_ref() {
+                                b"r" => {
+                                    current_row =
+                                        attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                }
+                                b"hidden" => {
+                                    hidden = attr.value.as_ref() == b"1"
+                                        || attr.value.as_ref() == b"true";
+                                }
+                                _ => {}
                             }
-                            if attr.key.as_ref() == b"hidden"
-                                && (attr.value.as_ref() == b"1" || attr.value.as_ref() == b"true")
-                            {
-                                hidden_rows.push(current_row);
-                            }
+                        }
+                        if hidden {
+                            hidden_rows.push((current_row, current_row));
                         }
                         current_col = 0;
                     }
@@ -929,10 +933,8 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                                 _ => {}
                             }
                         }
-                        if hidden {
-                            for col in min..=max {
-                                hidden_columns.push(col);
-                            }
+                        if hidden && min <= max {
+                            hidden_columns.push((min, max));
                         }
                     }
                     b"c" => {
@@ -970,11 +972,22 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                     }
                     b"row" => {
                         // Empty row tag
+                        let mut hidden = false;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"r" {
-                                current_row =
-                                    attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                            match attr.key.as_ref() {
+                                b"r" => {
+                                    current_row =
+                                        attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                }
+                                b"hidden" => {
+                                    hidden = attr.value.as_ref() == b"1"
+                                        || attr.value.as_ref() == b"true";
+                                }
+                                _ => {}
                             }
+                        }
+                        if hidden {
+                            hidden_rows.push((current_row, current_row));
                         }
                         current_col = 0;
                     }
@@ -1014,20 +1027,20 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
         // Include hidden rows/columns in used_range for format parity
         // Both ODS and XLSX should report ALL empty rows/columns (visible or hidden) if they have properties
         if let Some((mut rows, mut cols)) = dim_range {
-            if let Some(&max_hidden_row) = hidden_rows.iter().max() {
+            if let Some(max_hidden_row) = hidden_rows.iter().map(|&(_, end)| end).max() {
                 rows = rows.max(max_hidden_row + 1);
             }
-            if let Some(&max_hidden_col) = hidden_columns.iter().max() {
+            if let Some(max_hidden_col) = hidden_columns.iter().map(|&(_, end)| end).max() {
                 cols = cols.max(max_hidden_col + 1);
             }
             dim_range = Some((rows, cols));
         } else if !hidden_rows.is_empty() || !hidden_columns.is_empty() {
             let mut rows = 1u32;
             let mut cols = 1u32;
-            if let Some(&max_hidden_row) = hidden_rows.iter().max() {
+            if let Some(max_hidden_row) = hidden_rows.iter().map(|&(_, end)| end).max() {
                 rows = rows.max(max_hidden_row + 1);
             }
-            if let Some(&max_hidden_col) = hidden_columns.iter().max() {
+            if let Some(max_hidden_col) = hidden_columns.iter().map(|&(_, end)| end).max() {
                 cols = cols.max(max_hidden_col + 1);
             }
             dim_range = Some((rows, cols));
@@ -1343,11 +1356,14 @@ pub fn extract_hidden_sheets_from_xlsx(
     Ok(hidden_sheets)
 }
 
-/// Extract hidden columns and rows from a worksheet
+// Type alias to avoid clippy::type_complexity warning
+type HiddenColumnsRows = (Vec<(u32, u32)>, Vec<(u32, u32)>);
+
+/// Extract hidden column and row ranges, (start, end) 0-based inclusive, from a worksheet
 pub fn extract_hidden_columns_rows_from_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
     sheet_name: &str,
-) -> Result<(Vec<u32>, Vec<u32>)> {
+) -> Result<HiddenColumnsRows> {
     let mut hidden_columns = Vec::new();
     let mut hidden_rows = Vec::new();
 
@@ -1397,10 +1413,8 @@ pub fn extract_hidden_columns_rows_from_xlsx(
                             }
                         }
 
-                        if hidden {
-                            for col in min_col..=max_col {
-                                hidden_columns.push(col);
-                            }
+                        if hidden && min_col <= max_col {
+                            hidden_columns.push((min_col, max_col));
                         }
                     }
                     b"row" => {
@@ -1424,7 +1438,7 @@ pub fn extract_hidden_columns_rows_from_xlsx(
                         }
 
                         if hidden {
-                            hidden_rows.push(row_num);
+                            hidden_rows.push((row_num, row_num));
                         }
                     }
                     _ => {}
@@ -1990,6 +2004,49 @@ mod tests {
         assert_eq!(tables.len(), 2);
         assert_eq!(tables.get("MyTable"), Some(&"A1:C3".to_string()));
         assert_eq!(tables.get("OtherTable"), Some(&"D4:E5".to_string()));
+    }
+
+    #[test]
+    fn test_hidden_rows_and_columns_as_ranges_xlsx() {
+        use std::io::Cursor;
+        use zip::write::SimpleFileOptions;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+            zip.start_file("xl/worksheets/sheet1.xml", options).unwrap();
+            zip.write_all(
+                br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+    <dimension ref="A1"/>
+    <cols>
+        <col min="1" max="3" hidden="1"/>
+        <col min="4" max="16384"/>
+    </cols>
+    <sheetData>
+        <row r="1"><c r="A1"><v>1</v></c></row>
+        <row r="2" hidden="1"/>
+        <row hidden="1" r="3"></row>
+        <row hidden="1" r="1048576"/>
+    </sheetData>
+</worksheet>"#,
+            )
+            .unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        let mut archive = ZipArchive::new(Cursor::new(buf)).unwrap();
+        let mut reader = XlsxReader::new(&mut archive).unwrap();
+        let (_, hidden_columns, hidden_rows, _, _, _, used_range) =
+            reader.parse_sheet_xml("xl/worksheets/sheet1.xml").unwrap();
+
+        assert_eq!(hidden_columns, vec![(0, 2)]);
+        assert_eq!(hidden_rows, vec![(1, 1), (2, 2), (1_048_575, 1_048_575)]);
+        assert_eq!(used_range, Some((1_048_576, 3)));
     }
 }
 

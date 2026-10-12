@@ -1,3 +1,5 @@
+### Added
+
 Implemented five must-be audit rules:
 
 - **CALC203** (Double Operator): Detects redundant consecutive arithmetic operators in formulas, with configurable double-negative tolerance.
