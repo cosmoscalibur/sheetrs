@@ -501,27 +501,21 @@ static SHEET_SINGLE_PATTERN: LazyLock<Regex> =
 /// Only handles plain Sheet.Cell (no $ or brackets), which are processed in post-processing
 /// Only strips if both parts of a range have the same sheet name
 fn strip_local_sheet_refs(formula: &str) -> String {
-    let mut result = formula.to_string();
-
     // Convert plain Sheet.Cell to Sheet!Cell for multi-sheet ranges
     // Pattern: Sheet1.A1:Sheet2.B2 → Sheet1!A1:Sheet2!B2
     // Only matches Sheet.Cell (with dot), not Sheet!Cell (already processed)
-    result = SHEET_RANGE_PATTERN
-        .replace_all(&result, |caps: &regex::Captures| {
-            if caps[1] == caps[3] {
-                // Same sheet, strip it
-                format!("{}:{}", &caps[2], &caps[4])
-            } else {
-                // Different sheets, convert to ! format
-                format!("{}!{}:{}!{}", &caps[1], &caps[2], &caps[3], &caps[4])
-            }
-        })
-        .to_string();
+    let ranges = SHEET_RANGE_PATTERN.replace_all(formula, |caps: &regex::Captures| {
+        if caps[1] == caps[3] {
+            // Same sheet, strip it
+            format!("{}:{}", &caps[2], &caps[4])
+        } else {
+            // Different sheets, convert to ! format
+            format!("{}!{}:{}!{}", &caps[1], &caps[2], &caps[3], &caps[4])
+        }
+    });
 
     // Handle single cells: Sheet1.A1 → A1 (at start or end of string)
-    result = SHEET_SINGLE_PATTERN.replace_all(&result, "$2").to_string();
-
-    result
+    SHEET_SINGLE_PATTERN.replace_all(&ranges, "$2").into_owned()
 }
 
 /// Replace ODS function argument separators (`;` → `,`) outside string literals.
@@ -531,17 +525,20 @@ fn strip_local_sheet_refs(formula: &str) -> String {
 fn normalize_arg_separator(formula: &str) -> String {
     let mut result = String::with_capacity(formula.len());
     let mut in_string = false;
+    let mut run_start = 0;
 
-    for ch in formula.chars() {
-        match ch {
-            '"' => {
-                in_string = !in_string;
-                result.push(ch);
+    for (i, byte) in formula.bytes().enumerate() {
+        match byte {
+            b'"' => in_string = !in_string,
+            b';' if !in_string => {
+                result.push_str(&formula[run_start..i]);
+                result.push(',');
+                run_start = i + 1;
             }
-            ';' if !in_string => result.push(','),
-            _ => result.push(ch),
+            _ => {}
         }
     }
+    result.push_str(&formula[run_start..]);
 
     result
 }
@@ -2258,6 +2255,26 @@ mod tests {
     fn test_normalize_arg_separator_empty() {
         assert_eq!(normalize_arg_separator(""), "");
     }
+
+    #[test]
+    fn test_normalize_arg_separator_multibyte_text() {
+        assert_eq!(
+            normalize_arg_separator("SI(año;\"ñ;é\";€)"),
+            "SI(año,\"ñ;é\",€)"
+        );
+    }
+
+    #[test]
+    fn test_strip_local_sheet_refs() {
+        assert_eq!(strip_local_sheet_refs("SUM(A1:B2)"), "SUM(A1:B2)");
+        assert_eq!(strip_local_sheet_refs("Sheet1.A1:Sheet1.B2"), "A1:B2");
+        assert_eq!(
+            strip_local_sheet_refs("SUM(Sheet1.A1:Sheet2.B2)"),
+            "SUM(Sheet1!A1:Sheet2!B2)"
+        );
+        assert_eq!(strip_local_sheet_refs("Sheet1.A1"), "A1");
+    }
+
     #[test]
     fn test_normalize_ods_external_reference_inline() {
         let mut external_workbooks = Vec::new();
