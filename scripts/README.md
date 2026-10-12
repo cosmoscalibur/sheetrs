@@ -77,6 +77,20 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
+### quick-xml 0.42 and regex 1.13 (#44)
+
+Output is identical to the previous entry. One further run of each build in
+the same session, outside `benchmark.sh`, took 38.4 s (previous entry) and
+38.6 s (this entry) user time on XLSX and 37.6 s and 37.4 s on ODS, with peak
+RAM within 8 MB of each other.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 40.8s | 37.9s |
+| Peak RAM | 1945 MB | 1963 MB |
+| User instructions | 354.8 G | 348.2 G |
+| Binary size | 9.1M | - |
+
 ### Deterministic output and REF310 boundary matching (#33, #34)
 
 REF310 reports 118,501 (XLSX) and 119,735 (ODS) violations; 82f57f2 reports

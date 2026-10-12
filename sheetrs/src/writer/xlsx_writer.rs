@@ -1,5 +1,6 @@
 // ! XLSX writer functionality for removing sheets and named ranges
 
+use crate::reader::parser_utils::attr_value;
 use anyhow::Result;
 use quick_xml::events::Event;
 use quick_xml::{Reader, Writer};
@@ -119,18 +120,18 @@ fn parse_sheet_info(workbook_xml: &str) -> Result<Vec<(String, usize)>> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"sheet" => {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == "sheet" => {
                 let mut name = String::new();
                 let mut sheet_id = 0;
 
                 for attr in e.attributes() {
                     let attr = attr?;
                     match attr.key.as_ref() {
-                        b"name" => {
-                            name = String::from_utf8(attr.value.to_vec())?;
+                        "name" => {
+                            name = attr_value(&attr)?.into_owned();
                         }
-                        b"sheetId" => {
-                            sheet_id = String::from_utf8(attr.value.to_vec())?.parse()?;
+                        "sheetId" => {
+                            sheet_id = attr_value(&attr)?.into_owned().parse()?;
                         }
                         _ => {}
                     }
@@ -159,12 +160,12 @@ fn remove_sheets_from_workbook_xml(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) if e.name().as_ref() == b"sheet" => {
+            Ok(Event::Start(e)) if e.name().as_ref() == "sheet" => {
                 let mut sheet_name = String::new();
                 for attr in e.attributes() {
                     let attr = attr?;
-                    if attr.key.as_ref() == b"name" {
-                        sheet_name = String::from_utf8(attr.value.to_vec())?;
+                    if attr.key.as_ref() == "name" {
+                        sheet_name = attr_value(&attr)?.into_owned();
                         break;
                     }
                 }
@@ -175,12 +176,12 @@ fn remove_sheets_from_workbook_xml(
                     writer.write_event(Event::Start(e))?;
                 }
             }
-            Ok(Event::Empty(e)) if e.name().as_ref() == b"sheet" => {
+            Ok(Event::Empty(e)) if e.name().as_ref() == "sheet" => {
                 let mut sheet_name = String::new();
                 for attr in e.attributes() {
                     let attr = attr?;
-                    if attr.key.as_ref() == b"name" {
-                        sheet_name = String::from_utf8(attr.value.to_vec())?;
+                    if attr.key.as_ref() == "name" {
+                        sheet_name = attr_value(&attr)?.into_owned();
                         break;
                     }
                 }
@@ -189,7 +190,7 @@ fn remove_sheets_from_workbook_xml(
                     writer.write_event(Event::Empty(e))?;
                 }
             }
-            Ok(Event::End(e)) if e.name().as_ref() == b"sheet" => {
+            Ok(Event::End(e)) if e.name().as_ref() == "sheet" => {
                 if skip_current_sheet {
                     skip_current_sheet = false;
                 } else {
@@ -218,12 +219,12 @@ fn remove_sheet_content_types(xml: &str, sheet_ids: &[usize]) -> Result<String> 
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(e)) if e.name().as_ref() == b"Override" => {
+            Ok(Event::Empty(e)) if e.name().as_ref() == "Override" => {
                 let mut part_name = String::new();
                 for attr in e.attributes() {
                     let attr = attr?;
-                    if attr.key.as_ref() == b"PartName" {
-                        part_name = String::from_utf8(attr.value.to_vec())?;
+                    if attr.key.as_ref() == "PartName" {
+                        part_name = attr_value(&attr)?.into_owned();
                         break;
                     }
                 }
@@ -255,12 +256,12 @@ fn remove_sheet_relationships(xml: &str, sheet_ids: &[usize]) -> Result<String> 
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(e)) if e.name().as_ref() == b"Relationship" => {
+            Ok(Event::Empty(e)) if e.name().as_ref() == "Relationship" => {
                 let mut target = String::new();
                 for attr in e.attributes() {
                     let attr = attr?;
-                    if attr.key.as_ref() == b"Target" {
-                        target = String::from_utf8(attr.value.to_vec())?;
+                    if attr.key.as_ref() == "Target" {
+                        target = attr_value(&attr)?.into_owned();
                         break;
                     }
                 }
@@ -296,12 +297,12 @@ fn remove_named_ranges_from_workbook_xml(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) if e.name().as_ref() == b"definedName" => {
+            Ok(Event::Start(e)) if e.name().as_ref() == "definedName" => {
                 let mut range_name = String::new();
                 for attr in e.attributes() {
                     let attr = attr?;
-                    if attr.key.as_ref() == b"name" {
-                        range_name = String::from_utf8(attr.value.to_vec())?;
+                    if attr.key.as_ref() == "name" {
+                        range_name = attr_value(&attr)?.into_owned();
                         break;
                     }
                 }
@@ -312,12 +313,12 @@ fn remove_named_ranges_from_workbook_xml(
                     writer.write_event(Event::Start(e))?;
                 }
             }
-            Ok(Event::Empty(e)) if e.name().as_ref() == b"definedName" => {
+            Ok(Event::Empty(e)) if e.name().as_ref() == "definedName" => {
                 let mut range_name = String::new();
                 for attr in e.attributes() {
                     let attr = attr?;
-                    if attr.key.as_ref() == b"name" {
-                        range_name = String::from_utf8(attr.value.to_vec())?;
+                    if attr.key.as_ref() == "name" {
+                        range_name = attr_value(&attr)?.into_owned();
                         break;
                     }
                 }
@@ -326,7 +327,7 @@ fn remove_named_ranges_from_workbook_xml(
                     writer.write_event(Event::Empty(e))?;
                 }
             }
-            Ok(Event::End(e)) if e.name().as_ref() == b"definedName" => {
+            Ok(Event::End(e)) if e.name().as_ref() == "definedName" => {
                 if skip_current_range {
                     skip_current_range = false;
                 } else {
@@ -346,4 +347,36 @@ fn remove_named_ranges_from_workbook_xml(
 
     let result = writer.into_inner().into_inner();
     Ok(String::from_utf8(result)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const WORKBOOK_XML: &str = r#"<workbook><sheets><sheet name="R&amp;D" sheetId="1"/><sheet name="Data" sheetId="2"/></sheets><definedNames><definedName name="A&amp;B">Data!$A$1</definedName><definedName name="Keep">Data!$B$1</definedName></definedNames></workbook>"#;
+
+    #[test]
+    fn test_parse_sheet_info_unescapes_names() {
+        let sheets = parse_sheet_info(WORKBOOK_XML).unwrap();
+        assert_eq!(
+            sheets,
+            vec![("R&D".to_string(), 1), ("Data".to_string(), 2)]
+        );
+    }
+
+    #[test]
+    fn test_remove_sheet_with_escaped_name() {
+        let remove = HashSet::from(["R&D".to_string()]);
+        let xml = remove_sheets_from_workbook_xml(WORKBOOK_XML, &remove).unwrap();
+        assert!(!xml.contains("R&amp;D"));
+        assert!(xml.contains(r#"<sheet name="Data" sheetId="2"/>"#));
+    }
+
+    #[test]
+    fn test_remove_named_range_with_escaped_name() {
+        let remove = HashSet::from(["A&B".to_string()]);
+        let xml = remove_named_ranges_from_workbook_xml(WORKBOOK_XML, &remove).unwrap();
+        assert!(!xml.contains("A&amp;B"));
+        assert!(xml.contains(r#"<definedName name="Keep">Data!$B$1</definedName>"#));
+    }
 }

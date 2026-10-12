@@ -11,7 +11,8 @@ use std::sync::{Arc, LazyLock};
 use zip::ZipArchive;
 
 use super::parser_utils::{
-    column_index_to_letters, column_letters_to_index, parse_cell_range, parse_cell_ref,
+    attr_value, column_index_to_letters, column_letters_to_index, parse_cell_range, parse_cell_ref,
+    read_text_node,
 };
 use super::{Cell, CellValue, Sheet, WorkbookReader};
 use crate::violation::ExcelError;
@@ -33,13 +34,13 @@ pub fn get_xlsx_sheet_path(
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"sheet" => {
+                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "sheet" => {
                     let mut name = String::new();
                     let mut r_id = String::new();
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"name" => name = attr.unescape_value()?.to_string(),
-                            b"r:id" => r_id = attr.unescape_value()?.to_string(),
+                            "name" => name = attr_value(&attr)?.into_owned(),
+                            "r:id" => r_id = attr_value(&attr)?.into_owned(),
                             _ => {}
                         }
                     }
@@ -73,13 +74,13 @@ pub fn get_xlsx_sheet_path(
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"Relationship" => {
+                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "Relationship" => {
                     let mut id = String::new();
                     let mut t = String::new();
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"Id" => id = attr.unescape_value()?.to_string(),
-                            b"Target" => t = attr.unescape_value()?.to_string(),
+                            "Id" => id = attr_value(&attr)?.into_owned(),
+                            "Target" => t = attr_value(&attr)?.into_owned(),
                             _ => {}
                         }
                     }
@@ -133,14 +134,14 @@ pub fn extract_defined_names_from_xlsx(
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 match e.name().as_ref() {
-                    b"definedNames" => in_defined_names = true,
-                    b"definedName" if in_defined_names => {
+                    "definedNames" => in_defined_names = true,
+                    "definedName" if in_defined_names => {
                         // Get the name attribute
                         for attr in e.attributes() {
                             if let Ok(attr) = attr
-                                && attr.key.as_ref() == b"name"
+                                && attr.key.as_ref() == "name"
                             {
-                                current_name = attr.unescape_value()?.to_string();
+                                current_name = attr_value(&attr)?.into_owned();
                             }
                         }
                     }
@@ -148,10 +149,10 @@ pub fn extract_defined_names_from_xlsx(
                 }
             }
             Ok(Event::Text(e)) if in_defined_names && !current_name.is_empty() => {
-                current_ref = e.decode().unwrap_or_default().to_string();
+                current_ref = e.into_inner().into_owned();
             }
             Ok(Event::End(e)) => match e.name().as_ref() {
-                b"definedName" if !current_name.is_empty() => {
+                "definedName" if !current_name.is_empty() => {
                     // Filter out internal Excel names
                     if !current_name.starts_with("_xlnm.")
                         && !current_name.contains("_FilterDatabase")
@@ -161,7 +162,7 @@ pub fn extract_defined_names_from_xlsx(
                     current_name.clear();
                     current_ref.clear();
                 }
-                b"definedNames" => in_defined_names = false,
+                "definedNames" => in_defined_names = false,
                 _ => {}
             },
             Ok(Event::Eof) => break,
@@ -203,21 +204,21 @@ pub fn extract_tables_from_xlsx(
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"table" => {
+                Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == "table" => {
                     let mut name = String::new();
                     let mut ref_sqref = String::new();
 
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                                b"name" | b"displayName"
+                                "name" | "displayName"
                                     // displayName is usually the safe name, name might be id.
                                     // Spec says: name is collection name, displayName is unique name for formulas.
                                     // DisplayName is prioritized, but if name is empty, use either.
-                                    if (name.is_empty() || attr.key.as_ref() == b"displayName") => {
-                                        name = attr.unescape_value()?.to_string();
+                                    if (name.is_empty() || attr.key.as_ref() == "displayName") => {
+                                        name = attr_value(&attr)?.into_owned();
                                     }
-                                b"ref" => {
-                                    ref_sqref = attr.unescape_value()?.to_string();
+                                "ref" => {
+                                    ref_sqref = attr_value(&attr)?.into_owned();
                                 }
                                 _ => {}
                             }
@@ -376,12 +377,12 @@ fn extract_modified_date_xlsx(
             Event::Start(e) => {
                 // dcterms:modified or cp:modified
                 let name = e.name();
-                if name.as_ref().ends_with(b":modified") || name.as_ref() == b"modified" {
+                if name.as_ref().ends_with(":modified") || name.as_ref() == "modified" {
                     in_modified = true;
                 }
             }
             Event::Text(e) if in_modified => {
-                let date_str = e.decode()?.to_string();
+                let date_str = e.into_inner().into_owned();
                 // Parse ISO 8601 / RFC 3339 format
                 if let Ok(parsed) = DateTime::parse_from_rfc3339(&date_str) {
                     modified_date = Some(parsed.with_timezone(&Utc));
@@ -390,7 +391,7 @@ fn extract_modified_date_xlsx(
             }
             Event::End(e) => {
                 let name = e.name();
-                if name.as_ref().ends_with(b":modified") || name.as_ref() == b"modified" {
+                if name.as_ref().ends_with(":modified") || name.as_ref() == "modified" {
                     in_modified = false;
                 }
             }
@@ -418,10 +419,10 @@ fn extract_date1904_xlsx(
 
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"workbookPr" => {
+            Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "workbookPr" => {
                 for attr in e.attributes().flatten() {
-                    if attr.key.as_ref() == b"date1904" {
-                        let value = attr.unescape_value()?;
+                    if attr.key.as_ref() == "date1904" {
+                        let value = attr_value(&attr)?;
                         return Ok(value == "1" || value.eq_ignore_ascii_case("true"));
                     }
                 }
@@ -447,13 +448,13 @@ pub fn extract_external_links_xlsx(
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"Relationship" => {
+                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "Relationship" => {
                     let mut target = String::new();
                     let mut r_type = String::new();
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"Target" => target = attr.unescape_value()?.to_string(),
-                            b"Type" => r_type = attr.unescape_value()?.to_string(),
+                            "Target" => target = attr_value(&attr)?.into_owned(),
+                            "Type" => r_type = attr_value(&attr)?.into_owned(),
                             _ => {}
                         }
                     }
@@ -484,13 +485,13 @@ pub fn extract_external_links_xlsx(
             let mut buf = Vec::new();
             loop {
                 match reader.read_event_into(&mut buf)? {
-                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"Relationship" => {
+                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "Relationship" => {
                         let mut target = String::new();
                         let mut r_type = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"Target" => target = attr.unescape_value()?.to_string(),
-                                b"Type" => r_type = attr.unescape_value()?.to_string(),
+                                "Target" => target = attr_value(&attr)?.into_owned(),
+                                "Type" => r_type = attr_value(&attr)?.into_owned(),
                                 _ => {}
                             }
                         }
@@ -528,13 +529,13 @@ pub fn extract_external_workbooks_xlsx(
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"Relationship" => {
+                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "Relationship" => {
                     let mut target = String::new();
                     let mut r_type = String::new();
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"Target" => target = attr.unescape_value()?.to_string(),
-                            b"Type" => r_type = attr.unescape_value()?.to_string(),
+                            "Target" => target = attr_value(&attr)?.into_owned(),
+                            "Type" => r_type = attr_value(&attr)?.into_owned(),
                             _ => {}
                         }
                     }
@@ -573,13 +574,13 @@ pub fn extract_external_workbooks_xlsx(
             let mut buf = Vec::new();
             loop {
                 match reader.read_event_into(&mut buf)? {
-                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"Relationship" => {
+                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "Relationship" => {
                         let mut target = String::new();
                         let mut r_type = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"Target" => target = attr.unescape_value()?.to_string(),
-                                b"Type" => r_type = attr.unescape_value()?.to_string(),
+                                "Target" => target = attr_value(&attr)?.into_owned(),
+                                "Type" => r_type = attr_value(&attr)?.into_owned(),
                                 _ => {}
                             }
                         }
@@ -607,8 +608,20 @@ pub fn extract_external_workbooks_xlsx(
     Ok(workbooks)
 }
 
+/// Cell reference inside a shared formula, optionally sheet-qualified.
+///
+/// Capture groups:
+/// - 1: sheet qualifier (including `!`)
+/// - 2: `$` marking an absolute column, or empty
+/// - 3: column letters
+/// - 4: `$` marking an absolute row, or empty
+/// - 5: row number
+///
+/// Groups are numbered rather than named because a lookup by name hashes the
+/// name on every match, and a shared formula is translated for every cell that
+/// shares it.
 static SHARED_FORMULA_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?P<sheet>(?:'[^']+'|[A-Za-z0-9_\.\-]+)!)?(?P<col_abs>\$?)(?P<col>[A-Z]+)(?P<row_abs>\$?)(?P<row>[0-9]+)")
+    Regex::new(r"((?:'[^']+'|[A-Za-z0-9_\.\-]+)!)?(\$?)([A-Z]+)(\$?)([0-9]+)")
         .expect("shared formula reference regex must compile")
 });
 
@@ -621,11 +634,11 @@ struct SharedRefShifter {
 
 impl Replacer for SharedRefShifter {
     fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
-        let col_abs = !caps["col_abs"].is_empty();
-        let row_abs = !caps["row_abs"].is_empty();
+        let col_abs = !caps[2].is_empty();
+        let row_abs = !caps[4].is_empty();
 
-        let col = column_letters_to_index(&caps["col"]).expect("regex captures column letters");
-        let row = caps["row"].parse::<u32>().unwrap_or(1) - 1;
+        let col = column_letters_to_index(&caps[3]).expect("regex captures column letters");
+        let row = caps[5].parse::<u32>().unwrap_or(1) - 1;
 
         let new_row = if row_abs {
             row
@@ -638,7 +651,7 @@ impl Replacer for SharedRefShifter {
             col.saturating_add_signed(self.col_shift)
         };
 
-        if let Some(sheet) = caps.name("sheet") {
+        if let Some(sheet) = caps.get(1) {
             dst.push_str(sheet.as_str());
         }
         if col_abs {
@@ -688,10 +701,10 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
-                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"sheet" => {
+                Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "sheet" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"name" {
-                            names.push(attr.unescape_value()?.to_string());
+                        if attr.key.as_ref() == "name" {
+                            names.push(attr_value(&attr)?.into_owned());
                         }
                     }
                 }
@@ -724,10 +737,10 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.name().as_ref() {
-                    b"dimension" => {
+                    "dimension" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"ref" {
-                                let ref_str = attr.unescape_value()?;
+                            if attr.key.as_ref() == "ref" {
+                                let ref_str = attr_value(&attr)?;
                                 if let Some((_, _, end_row, end_col)) = parse_cell_range(&ref_str) {
                                     // defined range is inclusive, so count is index + 1
                                     dim_range = Some((end_row + 1, end_col + 1));
@@ -738,21 +751,20 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             }
                         }
                     }
-                    b"col" => {
+                    "col" => {
                         let mut min = 0u32;
                         let mut max = 0u32;
                         let mut hidden = false;
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"min" => {
-                                    min = attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                "min" => {
+                                    min = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
                                 }
-                                b"max" => {
-                                    max = attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                "max" => {
+                                    max = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
                                 }
-                                b"hidden" => {
-                                    hidden = attr.value.as_ref() == b"1"
-                                        || attr.value.as_ref() == b"true";
+                                "hidden" => {
+                                    hidden = attr.value == "1" || attr.value == "true";
                                 }
                                 _ => {}
                             }
@@ -761,17 +773,16 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             hidden_columns.push((min, max));
                         }
                     }
-                    b"row" => {
+                    "row" => {
                         let mut hidden = false;
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"r" => {
+                                "r" => {
                                     current_row =
-                                        attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                        attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
                                 }
-                                b"hidden" => {
-                                    hidden = attr.value.as_ref() == b"1"
-                                        || attr.value.as_ref() == b"true";
+                                "hidden" => {
+                                    hidden = attr.value == "1" || attr.value == "true";
                                 }
                                 _ => {}
                             }
@@ -781,15 +792,15 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         }
                         current_col = 0;
                     }
-                    b"c" => {
+                    "c" => {
                         let mut r_attr = String::new();
                         let mut s_attr = None;
                         let mut t_attr = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"r" => r_attr = attr.unescape_value()?.to_string(),
-                                b"s" => s_attr = Some(attr.unescape_value()?.parse::<usize>()?),
-                                b"t" => t_attr = attr.unescape_value()?.to_string(),
+                                "r" => r_attr = attr_value(&attr)?.into_owned(),
+                                "s" => s_attr = Some(attr_value(&attr)?.parse::<usize>()?),
+                                "t" => t_attr = attr_value(&attr)?.into_owned(),
                                 _ => {}
                             }
                         }
@@ -876,23 +887,23 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         }
                         cells.insert((row, col), cell);
                     }
-                    b"mergeCell" => {
+                    "mergeCell" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"ref" {
-                                let ref_str = attr.unescape_value()?;
+                            if attr.key.as_ref() == "ref" {
+                                let ref_str = attr_value(&attr)?;
                                 if let Some(range) = parse_cell_range(&ref_str) {
                                     merged_cells.push(range);
                                 }
                             }
                         }
                     }
-                    b"cfRule" => {
+                    "cfRule" => {
                         cf_count += 1;
                     }
-                    b"conditionalFormatting" => {
+                    "conditionalFormatting" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"sqref" {
-                                let sqref = attr.unescape_value()?;
+                            if attr.key.as_ref() == "sqref" {
+                                let sqref = attr_value(&attr)?;
                                 cf_ranges.push(sqref.to_string());
                             }
                         }
@@ -901,10 +912,10 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                     _ => {}
                 },
                 Event::Empty(e) => match e.name().as_ref() {
-                    b"dimension" => {
+                    "dimension" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"ref" {
-                                let ref_str = attr.unescape_value()?;
+                            if attr.key.as_ref() == "ref" {
+                                let ref_str = attr_value(&attr)?;
                                 if let Some((_, _, end_row, end_col)) = parse_cell_range(&ref_str) {
                                     dim_range = Some((end_row + 1, end_col + 1));
                                 } else if let Some((end_row, end_col)) = parse_cell_ref(&ref_str) {
@@ -913,21 +924,20 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             }
                         }
                     }
-                    b"col" => {
+                    "col" => {
                         let mut min = 0u32;
                         let mut max = 0u32;
                         let mut hidden = false;
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"min" => {
-                                    min = attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                "min" => {
+                                    min = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
                                 }
-                                b"max" => {
-                                    max = attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                "max" => {
+                                    max = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
                                 }
-                                b"hidden" => {
-                                    hidden = attr.value.as_ref() == b"1"
-                                        || attr.value.as_ref() == b"true";
+                                "hidden" => {
+                                    hidden = attr.value == "1" || attr.value == "true";
                                 }
                                 _ => {}
                             }
@@ -936,13 +946,13 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             hidden_columns.push((min, max));
                         }
                     }
-                    b"c" => {
+                    "c" => {
                         let mut r_attr = String::new();
                         let mut s_attr = None;
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"r" => r_attr = attr.unescape_value()?.to_string(),
-                                b"s" => s_attr = Some(attr.unescape_value()?.parse::<usize>()?),
+                                "r" => r_attr = attr_value(&attr)?.into_owned(),
+                                "s" => s_attr = Some(attr_value(&attr)?.parse::<usize>()?),
                                 _ => {}
                             }
                         }
@@ -969,18 +979,17 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             },
                         );
                     }
-                    b"row" => {
+                    "row" => {
                         // Empty row tag
                         let mut hidden = false;
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"r" => {
+                                "r" => {
                                     current_row =
-                                        attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                        attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
                                 }
-                                b"hidden" => {
-                                    hidden = attr.value.as_ref() == b"1"
-                                        || attr.value.as_ref() == b"true";
+                                "hidden" => {
+                                    hidden = attr.value == "1" || attr.value == "true";
                                 }
                                 _ => {}
                             }
@@ -990,23 +999,23 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         }
                         current_col = 0;
                     }
-                    b"mergeCell" => {
+                    "mergeCell" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"ref" {
-                                let ref_str = attr.unescape_value()?;
+                            if attr.key.as_ref() == "ref" {
+                                let ref_str = attr_value(&attr)?;
                                 if let Some(range) = parse_cell_range(&ref_str) {
                                     merged_cells.push(range);
                                 }
                             }
                         }
                     }
-                    b"cfRule" => {
+                    "cfRule" => {
                         cf_count += 1;
                     }
-                    b"conditionalFormatting" => {
+                    "conditionalFormatting" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"sqref" {
-                                let sqref = attr.unescape_value()?;
+                            if attr.key.as_ref() == "sqref" {
+                                let sqref = attr_value(&attr)?;
                                 // Strict normalization reverted to preserve original format (e.g. A1 instead of A1:A1):
                                 cf_ranges.push(sqref.into_owned());
                             }
@@ -1014,7 +1023,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                     }
                     _ => {}
                 },
-                Event::End(e) if e.name().as_ref() == b"worksheet" => {
+                Event::End(e) if e.name().as_ref() == "worksheet" => {
                     break;
                 }
                 Event::Eof => break,
@@ -1079,7 +1088,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
         let event = reader.read_event_into(&mut buf)?;
         match event {
             Event::Start(ref e) | Event::Empty(ref e) => match e.name().as_ref() {
-                b"v" => {
+                "v" => {
                     let v_text = if let Event::Start(_) = event {
                         read_text_node(reader)?
                     } else {
@@ -1116,21 +1125,21 @@ fn parse_cell_contents<R: std::io::BufRead>(
                         }
                     };
                 }
-                b"f" => {
+                "f" => {
                     let mut si = None;
                     let mut is_shared = false;
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"si" => {
-                                si = attr.unescape_value()?.parse::<u32>().ok();
+                            "si" => {
+                                si = attr_value(&attr)?.parse::<u32>().ok();
                             }
-                            b"t" => match attr.value.as_ref() {
-                                b"shared" => is_shared = true,
-                                b"array" => is_array_formula = true,
+                            "t" => match attr.value.as_ref() {
+                                "shared" => is_shared = true,
+                                "array" => is_array_formula = true,
                                 _ => {}
                             },
-                            b"ref" => {
-                                shared_ref = Some(attr.unescape_value()?.to_string());
+                            "ref" => {
+                                shared_ref = Some(attr_value(&attr)?.into_owned());
                             }
                             _ => {}
                         }
@@ -1147,17 +1156,17 @@ fn parse_cell_contents<R: std::io::BufRead>(
                         shared_si = si;
                     }
                 }
-                b"is" => {
+                "is" => {
                     // Inline string can have multiple <t> tags
                     if let Event::Start(_) = event {
                         let mut is_text = String::new();
                         let mut is_buf = Vec::new();
                         loop {
                             match reader.read_event_into(&mut is_buf)? {
-                                Event::Start(ref ee) if ee.name().as_ref() == b"t" => {
+                                Event::Start(ref ee) if ee.name().as_ref() == "t" => {
                                     is_text.push_str(&read_text_node(reader)?);
                                 }
-                                Event::End(ref ee) if ee.name().as_ref() == b"is" => break,
+                                Event::End(ref ee) if ee.name().as_ref() == "is" => break,
                                 Event::Eof => break,
                                 _ => {}
                             }
@@ -1168,7 +1177,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
                 }
                 _ => {}
             },
-            Event::End(e) if e.name().as_ref() == b"c" => break,
+            Event::End(e) if e.name().as_ref() == "c" => break,
             Event::Eof => break,
             _ => {}
         }
@@ -1217,10 +1226,10 @@ pub fn extract_shared_strings(
 
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Start(e) if e.name().as_ref() == b"t" => {
+            Event::Start(e) if e.name().as_ref() == "t" => {
                 current_string.push_str(&read_text_node(&mut reader)?);
             }
-            Event::End(e) if e.name().as_ref() == b"si" => {
+            Event::End(e) if e.name().as_ref() == "si" => {
                 strings.push(Arc::from(current_string.as_str()));
                 current_string.clear();
             }
@@ -1232,21 +1241,6 @@ pub fn extract_shared_strings(
     Ok(strings)
 }
 
-fn read_text_node<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {
-    let mut buf = Vec::new();
-    let mut text = String::new();
-    loop {
-        match reader.read_event_into(&mut buf)? {
-            Event::Text(e) => text.push_str(e.decode()?.as_ref()),
-            Event::CData(e) => text.push_str(&String::from_utf8_lossy(e.as_ref())),
-            Event::End(_) => break,
-            Event::Eof => break,
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(text)
-}
 /// Count conditional formatting rules in a worksheet
 pub fn count_conditional_formatting(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
@@ -1269,7 +1263,7 @@ pub fn count_conditional_formatting(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"cfRule" => {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == "cfRule" => {
                 cf_count += 1;
             }
             Ok(Event::Eof) => break,
@@ -1313,18 +1307,18 @@ pub fn extract_hidden_sheets_from_xlsx(
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 match e.name().as_ref() {
-                    b"sheets" => in_sheets = true,
-                    b"sheet" if in_sheets => {
+                    "sheets" => in_sheets = true,
+                    "sheet" if in_sheets => {
                         let mut name = String::new();
                         let mut state = String::new();
 
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"name" => {
-                                    name = attr.unescape_value()?.to_string();
+                                "name" => {
+                                    name = attr_value(&attr)?.into_owned();
                                 }
-                                b"state" => {
-                                    state = attr.unescape_value()?.to_string();
+                                "state" => {
+                                    state = attr_value(&attr)?.into_owned();
                                 }
                                 _ => {}
                             }
@@ -1338,7 +1332,7 @@ pub fn extract_hidden_sheets_from_xlsx(
                     _ => {}
                 }
             }
-            Ok(Event::End(e)) if e.name().as_ref() == b"sheets" => {
+            Ok(Event::End(e)) if e.name().as_ref() == "sheets" => {
                 in_sheets = false;
             }
             Ok(Event::Eof) => break,
@@ -1380,7 +1374,7 @@ pub fn extract_hidden_columns_rows_from_xlsx(
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 match e.name().as_ref() {
-                    b"col" => {
+                    "col" => {
                         // Column definition with hidden attribute
                         let mut min_col = 0u32;
                         let mut max_col = 0u32;
@@ -1388,19 +1382,19 @@ pub fn extract_hidden_columns_rows_from_xlsx(
 
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"min" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                "min" => {
+                                    if let Ok(val) = attr_value(&attr)?.parse::<u32>() {
                                         min_col = val.saturating_sub(1); // Convert to 0-based
                                     }
                                 }
-                                b"max" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                "max" => {
+                                    if let Ok(val) = attr_value(&attr)?.parse::<u32>() {
                                         max_col = val.saturating_sub(1); // Convert to 0-based
                                     }
                                 }
-                                b"hidden" => {
-                                    hidden = attr.unescape_value()? == "1"
-                                        || attr.unescape_value()?.to_lowercase() == "true";
+                                "hidden" => {
+                                    hidden = attr_value(&attr)? == "1"
+                                        || attr_value(&attr)?.to_lowercase() == "true";
                                 }
                                 _ => {}
                             }
@@ -1410,21 +1404,21 @@ pub fn extract_hidden_columns_rows_from_xlsx(
                             hidden_columns.push((min_col, max_col));
                         }
                     }
-                    b"row" => {
+                    "row" => {
                         // Row definition with hidden attribute
                         let mut row_num = 0u32;
                         let mut hidden = false;
 
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"r" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                "r" => {
+                                    if let Ok(val) = attr_value(&attr)?.parse::<u32>() {
                                         row_num = val.saturating_sub(1); // Convert to 0-based
                                     }
                                 }
-                                b"hidden" => {
-                                    hidden = attr.unescape_value()? == "1"
-                                        || attr.unescape_value()?.to_lowercase() == "true";
+                                "hidden" => {
+                                    hidden = attr_value(&attr)? == "1"
+                                        || attr_value(&attr)?.to_lowercase() == "true";
                                 }
                                 _ => {}
                             }
@@ -1470,12 +1464,12 @@ pub fn extract_merged_cells_from_xlsx(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"mergeCell" => {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == "mergeCell" => {
                 for attr in e.attributes() {
                     if let Ok(attr) = attr
-                        && attr.key.as_ref() == b"ref"
+                        && attr.key.as_ref() == "ref"
                     {
-                        let ref_str = attr.unescape_value()?;
+                        let ref_str = attr_value(&attr)?;
                         if let Some((start_row, start_col, end_row, end_col)) =
                             parse_cell_range(&ref_str)
                         {
@@ -1554,19 +1548,18 @@ pub fn parse_styles(
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
                 match e.name().as_ref() {
-                    b"numFmt" => {
+                    "numFmt" => {
                         let mut id = 0u32;
                         let mut code = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"numFmtId" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                "numFmtId" => {
+                                    if let Ok(val) = attr_value(&attr)?.parse::<u32>() {
                                         id = val;
                                     }
                                 }
-                                b"formatCode" => {
-                                    code =
-                                        attr.unescape_value().unwrap_or_default().replace('\\', "");
+                                "formatCode" => {
+                                    code = attr_value(&attr).unwrap_or_default().replace('\\', "");
                                 }
                                 _ => {}
                             }
@@ -1575,16 +1568,16 @@ pub fn parse_styles(
                             num_fmts.insert(id, code);
                         }
                     }
-                    b"cellXfs" => {
+                    "cellXfs" => {
                         in_cell_xfs = true;
                     }
-                    b"xf" if in_cell_xfs => {
+                    "xf" if in_cell_xfs => {
                         // Extract numFmtId
                         let mut num_fmt_id = 0u32;
                         for attr in e.attributes() {
                             if let Ok(attr) = attr
-                                && attr.key.as_ref() == b"numFmtId"
-                                && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                                && attr.key.as_ref() == "numFmtId"
+                                && let Ok(val) = attr_value(&attr)?.parse::<u32>()
                             {
                                 num_fmt_id = val;
                             }
@@ -1601,20 +1594,19 @@ pub fn parse_styles(
             }
             Ok(Event::Empty(e)) => {
                 match e.name().as_ref() {
-                    b"numFmt" => {
+                    "numFmt" => {
                         // Same as above, handle empty tag if it occurs (unlikely for numFmt with attrs)
                         let mut id = 0u32;
                         let mut code = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"numFmtId" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
+                                "numFmtId" => {
+                                    if let Ok(val) = attr_value(&attr)?.parse::<u32>() {
                                         id = val;
                                     }
                                 }
-                                b"formatCode" => {
-                                    code =
-                                        attr.unescape_value().unwrap_or_default().replace('\\', "");
+                                "formatCode" => {
+                                    code = attr_value(&attr).unwrap_or_default().replace('\\', "");
                                 }
                                 _ => {}
                             }
@@ -1623,12 +1615,12 @@ pub fn parse_styles(
                             num_fmts.insert(id, code);
                         }
                     }
-                    b"xf" if in_cell_xfs => {
+                    "xf" if in_cell_xfs => {
                         let mut num_fmt_id = 0u32;
                         for attr in e.attributes() {
                             if let Ok(attr) = attr
-                                && attr.key.as_ref() == b"numFmtId"
-                                && let Ok(val) = attr.unescape_value()?.parse::<u32>()
+                                && attr.key.as_ref() == "numFmtId"
+                                && let Ok(val) = attr_value(&attr)?.parse::<u32>()
                             {
                                 num_fmt_id = val;
                             }
@@ -1642,7 +1634,7 @@ pub fn parse_styles(
                     _ => {}
                 }
             }
-            Ok(Event::End(e)) if e.name().as_ref() == b"cellXfs" => {
+            Ok(Event::End(e)) if e.name().as_ref() == "cellXfs" => {
                 in_cell_xfs = false;
             }
             Ok(Event::Eof) => break,
@@ -1676,7 +1668,7 @@ pub fn extract_cell_style_indices_from_xlsx(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"c" => {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == "c" => {
                 // Cell element `c`
                 let mut row = 0u32;
                 let mut col = 0u32;
@@ -1685,15 +1677,15 @@ pub fn extract_cell_style_indices_from_xlsx(
 
                 for attr in e.attributes().flatten() {
                     match attr.key.as_ref() {
-                        b"r" => {
-                            let r_str = attr.unescape_value()?;
+                        "r" => {
+                            let r_str = attr_value(&attr)?;
                             if let Some((r, c)) = parse_cell_ref(&r_str) {
                                 row = r;
                                 col = c;
                             }
                         }
-                        b"s" => {
-                            if let Ok(val) = attr.unescape_value()?.parse::<usize>() {
+                        "s" => {
+                            if let Ok(val) = attr_value(&attr)?.parse::<usize>() {
                                 style_index = val;
                                 has_style = true;
                             }
@@ -1738,25 +1730,25 @@ pub fn extract_formulas_from_xlsx(
     loop {
         match reader.read_event_into(&mut buf)? {
             Event::Start(e) | Event::Empty(e) => match e.name().as_ref() {
-                b"c" => {
+                "c" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"r" {
-                            current_cell_ref = attr.unescape_value()?.to_string();
+                        if attr.key.as_ref() == "r" {
+                            current_cell_ref = attr_value(&attr)?.into_owned();
                         }
                     }
                 }
-                b"f" => {
+                "f" => {
                     in_formula = true;
                     let mut si = None;
                     let mut t = None;
 
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"si" => {
-                                si = attr.unescape_value()?.parse::<u32>().ok();
+                            "si" => {
+                                si = attr_value(&attr)?.parse::<u32>().ok();
                             }
-                            b"t" => {
-                                t = Some(attr.unescape_value()?.to_string());
+                            "t" => {
+                                t = Some(attr_value(&attr)?.into_owned());
                             }
                             _ => {}
                         }
@@ -1781,7 +1773,7 @@ pub fn extract_formulas_from_xlsx(
                 _ => {}
             },
             Event::Text(e) if in_formula => {
-                let formula_text = e.decode()?.to_string();
+                let formula_text = e.into_inner().into_owned();
                 if let Some((r, c)) = parse_cell_ref(&current_cell_ref) {
                     // Check if this cell was marked as shared
                     if let Some(marker) = formulas.get(&(r, c))
@@ -1793,7 +1785,7 @@ pub fn extract_formulas_from_xlsx(
                     formulas.insert((r, c), formula_text);
                 }
             }
-            Event::End(e) if e.name().as_ref() == b"f" => {
+            Event::End(e) if e.name().as_ref() == "f" => {
                 in_formula = false;
             }
             Event::Eof => break,
@@ -1844,6 +1836,34 @@ mod tests {
     #[test]
     fn test_translate_shared_formula_clamps_at_first_row_and_column() {
         assert_eq!(translate_shared_formula("B2", -5, -5), "A1");
+    }
+
+    fn parse_cell_value(cell_xml: &str, t_attr: &str, num_fmt: Option<&str>) -> CellValue {
+        let mut reader = Reader::from_str(cell_xml);
+        reader.read_event().unwrap();
+        parse_cell_contents(&mut reader, t_attr, &[], &[], num_fmt)
+            .unwrap()
+            .0
+    }
+
+    #[test]
+    fn test_parse_cell_contents_types_value_by_t_attribute() {
+        assert_eq!(
+            parse_cell_value("<c><v>42</v></c>", "", None),
+            CellValue::Number(42.0)
+        );
+        assert_eq!(
+            parse_cell_value("<c><v>1011</v></c>", "", Some("@")),
+            CellValue::Text(Arc::from("1011"))
+        );
+        assert_eq!(
+            parse_cell_value("<c><v>1</v></c>", "b", None),
+            CellValue::Boolean(true)
+        );
+        assert_eq!(
+            parse_cell_value("<c><v>0</v></c>", "b", None),
+            CellValue::Boolean(false)
+        );
     }
 
     #[test]
