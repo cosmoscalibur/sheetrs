@@ -876,4 +876,11 @@ mod tests {
 
         assert!(violations.is_empty());
     }
+
+    #[test]
+    fn test_format_ranges() {
+        assert_eq!(format_row_ranges(&[1, 3, 4, 5, 9]), "2, 4-6, 10");
+        assert_eq!(format_column_ranges(&[2, 4, 5, 6, 9]), "C, E-G, J");
+        assert_eq!(format_column_ranges(&[]), "");
+    }
 }
