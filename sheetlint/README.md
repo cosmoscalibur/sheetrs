@@ -21,17 +21,9 @@ sheetlint <FILE> [OPTIONS]
 
 ## Configuration
 
-Create a `sheetlint.toml` file:
-
-```toml
-[global]
-enabled_rules = ["ALL"]
-disabled_rules = ["PERF004"] 
-date_format = "dd-mm-yy"
-
-[sheets."RawData"]
-disabled_rules = ["UX", "SM"]
-```
+See the [`sheetlint.toml`](../sheetlint.toml) example at the workspace root.
+Rule parameters are listed in the Params column of the
+[Rule Reference](#rule-reference).
 
 ## Rule Reference
 
@@ -67,7 +59,7 @@ disabled_rules = ["UX", "SM"]
 | **REF306** | Unused sheet | ✅ | None |
 | **REF307** | Whole column or row reference | ✅ | None |
 | **REF309** | Reference to empty cell | ✅ | None |
-| **REF310** | Longer cell reference expected | ❌ | None |
+| **REF310** | Longer cell reference expected | ✅ | `ref310_min_adjacent_data` |
 
 ### 4. Formula Interruptions (INT4xx)
 

@@ -68,9 +68,10 @@ impl WalkerRule for UnusedNamedRangesRule {
 
     fn on_workbook_end(&mut self, workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
         let formulas = &self.used_names;
-        workbook
-            .defined_names
-            .keys()
+        let mut names: Vec<_> = workbook.defined_names.keys().collect();
+        names.sort_unstable();
+        names
+            .into_iter()
             .filter(|name| !name.starts_with("_xlnm."))
             .filter(|name| !formulas.iter().any(|f| f.contains(name.as_str())))
             .map(|name| {
@@ -140,5 +141,27 @@ mod tests {
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ref301);
         assert!(violations[0].message().contains("UnusedRange"));
+    }
+
+    #[test]
+    fn test_violations_ordered_by_name() {
+        let defined_names = (0..16)
+            .map(|i| (format!("Unused{i:02}"), "Sheet1!A1".to_string()))
+            .collect();
+        let workbook = Workbook {
+            defined_names,
+            ..Default::default()
+        };
+
+        let violations =
+            UnusedNamedRangesRule::new().on_workbook_end(&workbook, &mut LinterContext::default());
+        let names: Vec<_> = violations
+            .iter()
+            .map(|v| v.data::<UnusedNamedRangeData>().unwrap().name.clone())
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names.len(), 16);
+        assert_eq!(names, sorted);
     }
 }

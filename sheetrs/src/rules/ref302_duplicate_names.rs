@@ -58,7 +58,6 @@ impl WalkerRule for DuplicateSheetNamesRule {
         workbook: &Workbook,
         _ctx: &mut LinterContext,
     ) -> Vec<Violation> {
-        let mut violations = Vec::new();
         let mut name_map: HashMap<String, Vec<u16>> = HashMap::new();
 
         // Group sheet indices by their normalized name
@@ -70,21 +69,25 @@ impl WalkerRule for DuplicateSheetNamesRule {
                 .push(sheet.sheet_index);
         }
 
-        // Find duplicates
-        for (_normalized, indices) in name_map {
-            if indices.len() > 1 {
-                violations.push(Violation::with_data(
+        let mut duplicates: Vec<_> = name_map
+            .into_values()
+            .filter(|indices| indices.len() > 1)
+            .collect();
+        duplicates.sort_unstable();
+
+        duplicates
+            .into_iter()
+            .map(|indices| {
+                Violation::with_data(
                     RuleId::Ref302,
                     ViolationScope::Book,
                     DuplicateSheetNameData {
                         sheet_indices: indices,
                     },
                     Severity::Warning,
-                ));
-            }
-        }
-
-        violations
+                )
+            })
+            .collect()
     }
 }
 
@@ -190,5 +193,36 @@ mod tests {
         // 1. "Sheet1", "sheet 1", "Sheet-1" (all normalize to "sheet1")
         // 2. "Data_2024", "data2024" (both normalize to "data2024")
         assert_eq!(violations.len(), 2);
+    }
+
+    #[test]
+    fn test_violations_ordered_by_sheet() {
+        let sheets = (0..32)
+            .map(|i| Sheet {
+                name: format!("{}name{}", if i % 2 == 0 { "" } else { " " }, i / 2),
+                sheet_index: i,
+                ..Default::default()
+            })
+            .collect();
+        let workbook = Workbook {
+            sheets,
+            ..Default::default()
+        };
+
+        let violations =
+            DuplicateSheetNamesRule.on_workbook_start(&workbook, &mut LinterContext::default());
+        let groups: Vec<_> = violations
+            .iter()
+            .map(|v| {
+                v.data::<DuplicateSheetNameData>()
+                    .unwrap()
+                    .sheet_indices
+                    .clone()
+            })
+            .collect();
+        let mut sorted = groups.clone();
+        sorted.sort();
+        assert_eq!(groups.len(), 16);
+        assert_eq!(groups, sorted);
     }
 }

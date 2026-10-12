@@ -10,7 +10,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
 /// Per-sheet URL cell collection: sheet_index → Vec<(row, col, url)>.
@@ -181,13 +181,14 @@ impl WalkerRule for WebUrlsRule {
     }
 
     fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
+        let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
+        cells.sort_unstable();
 
         let mut violations = Vec::new();
         // Group cells by URL
-        let mut grouped: HashMap<String, Vec<(u32, u32)>> = HashMap::new();
+        let mut grouped: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
         for (row, col, url) in cells {
             grouped.entry(url).or_default().push((row, col));
         }

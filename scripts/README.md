@@ -26,8 +26,13 @@ violations report comes from the first run.
 **Usage:**
 
 ```bash
-./scripts/benchmark.sh
+./scripts/benchmark.sh                     # current tree only
+./scripts/benchmark.sh --baseline develop  # also time a git ref, same session
 ```
+
+`--baseline <ref>` builds the ref in a temporary git worktree (target dir
+`target/baseline/`) and times it before the current tree. Its results carry
+metrics only, without the violations report.
 
 ### Interpreting results
 
@@ -45,10 +50,13 @@ profile and the commands that produce it.
 
 Time and RAM shift between sessions on the same machine: the same binary has
 measured 1943 MB and 1990 MB peak RAM, and 37.5 s and 42.2 s user time, on the
-XLSX file. When the latest entry was measured under different conditions,
-rebuild it at its commit in the same session as the new measurement.
+XLSX file. User instructions stay stable across sessions. When only time or RAM
+differs from the latest entry, and by no more than that shift, run with
+`--baseline` to tell the change from the session.
 
-A change gets a new Comparisons entry only when it moves a metric.
+[Comparisons](#comparisons) is incremental: a new entry measures only the
+current tree. A change gets an entry when a metric moves beyond the spread
+between its two runs; a change within that spread is noise and gets no entry.
 
 ## Production Output
 
@@ -57,14 +65,10 @@ output runs to hundreds of MB, like the reference outputs in
 `tests/production/baselines/`. `benchmark.sh` writes that full output into its
 `scripts/benchmark_*.txt` results file.
 
-To compare outputs between two builds, use streaming tools (`sort -T <dir>`,
-`diff`, `md5sum`) on the text output. Tools that load the whole document into
-memory, such as `jq` on the `--format json` output, can exhaust RAM.
-
-Two runs of the same build can differ: violation order varies (#33), so sort
-both outputs before diffing, and REF310 may report a different set of
-violations (#34), so a diff limited to REF310 lines and the summary counts is
-expected.
+Two runs of one build produce byte-identical output, so outputs compare
+directly with streaming tools (`diff`, `md5sum`) on the text output. Tools that
+load the whole document into memory, such as `jq` on the `--format json`
+output, can exhaust RAM.
 
 ## Comparisons
 
@@ -72,6 +76,18 @@ Benchmarks use production files in `tests/production/`. Each entry measures
 the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
+
+### Deterministic output and REF310 boundary matching (#33, #34)
+
+REF310 reports 118,501 (XLSX) and 119,735 (ODS) violations; 82f57f2 reports
+102,182 on the XLSX file.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 40.1s | 38.3s |
+| Peak RAM | 1949 MB | 1969 MB |
+| User instructions | 362.1 G | 344.9 G |
+| Binary size | 9.1M | - |
 
 ### Lock-free walker rules (#32)
 

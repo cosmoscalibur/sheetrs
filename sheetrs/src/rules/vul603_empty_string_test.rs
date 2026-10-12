@@ -102,9 +102,10 @@ impl WalkerRule for EmptyStringTestRule {
     }
 
     fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
+        let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
+        cells.sort_unstable();
 
         let ranges = find_contiguous_ranges(&cells);
         let mut violations = Vec::new();

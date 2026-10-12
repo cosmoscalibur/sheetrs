@@ -17,19 +17,28 @@ use std::collections::HashSet;
 pub struct MultipleSheetRefRule {
     /// Maximum allowed distinct sheet references before flagging.
     max_sheet_refs: usize,
+    /// Violations of the current sheet with their `(row, col)`, emitted in
+    /// cell order at sheet end because the walker visits cells in hash order.
+    pending: Vec<((u32, u32), Violation)>,
 }
 
 impl MultipleSheetRefRule {
     /// Create a new instance from configuration.
     pub fn new(config: &LinterConfig) -> Self {
         let max_sheet_refs = config.get_param_int("max_sheet_refs", None).unwrap_or(3) as usize;
-        Self { max_sheet_refs }
+        Self {
+            max_sheet_refs,
+            pending: Vec::new(),
+        }
     }
 }
 
 impl Default for MultipleSheetRefRule {
     fn default() -> Self {
-        Self { max_sheet_refs: 3 }
+        Self {
+            max_sheet_refs: 3,
+            pending: Vec::new(),
+        }
     }
 }
 
@@ -132,18 +141,26 @@ impl WalkerRule for MultipleSheetRefRule {
         if let Some(formula) = cell.as_formula() {
             let count = count_sheet_refs(formula);
             if count >= self.max_sheet_refs {
-                return vec![Violation::with_data(
-                    RuleId::Cpx507,
-                    ViolationScope::Sheet(sheet.sheet_index),
-                    MultipleSheetRefData {
-                        count,
-                        cell: CellReference::new(cell.row, cell.col),
-                    },
-                    Severity::Warning,
-                )];
+                self.pending.push((
+                    (cell.row, cell.col),
+                    Violation::with_data(
+                        RuleId::Cpx507,
+                        ViolationScope::Sheet(sheet.sheet_index),
+                        MultipleSheetRefData {
+                            count,
+                            cell: CellReference::new(cell.row, cell.col),
+                        },
+                        Severity::Warning,
+                    ),
+                ));
             }
         }
         Vec::new()
+    }
+
+    fn on_sheet_end(&mut self, _sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        self.pending.sort_unstable_by_key(|(cell, _)| *cell);
+        self.pending.drain(..).map(|(_, v)| v).collect()
     }
 }
 
@@ -152,6 +169,17 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
+
+    fn run_violations(sheet: &Sheet) -> Vec<Violation> {
+        let mut rule = MultipleSheetRefRule::default();
+        let mut ctx = LinterContext::default();
+        let mut violations: Vec<_> = sheet
+            .all_cells()
+            .flat_map(|c| rule.on_cell(sheet, c, &mut ctx))
+            .collect();
+        violations.extend(rule.on_sheet_end(sheet, &mut ctx));
+        violations
+    }
 
     #[test]
     fn test_extract_unquoted_refs() {
@@ -201,15 +229,47 @@ mod tests {
             ..Default::default()
         };
 
-        let mut rule = MultipleSheetRefRule::default();
-        let mut ctx = LinterContext::default();
-        let violations: Vec<_> = sheet
-            .all_cells()
-            .flat_map(|c| rule.on_cell(&sheet, c, &mut ctx))
-            .collect();
+        let violations = run_violations(&sheet);
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Cpx507);
+    }
+
+    #[test]
+    fn test_violations_ordered_by_cell() {
+        let mut cells = HashMap::new();
+        for row in 0..4 {
+            for col in 0..4 {
+                cells.insert(
+                    (row, col),
+                    Cell {
+                        formula: Some(<Box<str>>::from("=Sheet1!A1+Sheet2!B2+Sheet3!C3")),
+                        is_array: false,
+                        num_fmt: None,
+                        row,
+                        col,
+                        value: CellValue::Empty,
+                    },
+                );
+            }
+        }
+        let sheet = Sheet {
+            name: "Sheet1".to_string(),
+            sheet_index: 0,
+            cells,
+            ..Default::default()
+        };
+
+        let violations = run_violations(&sheet);
+
+        let cells: Vec<_> = violations
+            .iter()
+            .map(|v| v.data::<MultipleSheetRefData>().unwrap().cell.clone())
+            .collect();
+        let mut sorted = cells.clone();
+        sorted.sort();
+        assert_eq!(cells.len(), 16);
+        assert_eq!(cells, sorted);
     }
 
     #[test]
@@ -235,12 +295,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut rule = MultipleSheetRefRule::default();
-        let mut ctx = LinterContext::default();
-        let violations: Vec<_> = sheet
-            .all_cells()
-            .flat_map(|c| rule.on_cell(&sheet, c, &mut ctx))
-            .collect();
+        let violations = run_violations(&sheet);
 
         assert!(violations.is_empty());
     }

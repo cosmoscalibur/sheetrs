@@ -3,6 +3,14 @@
 //! Description: Identifies cases where a formula's range reference stops
 //! abruptly before adjacent data, suggesting an incomplete or too-short range.
 //!
+//! **Type matching:** a range is reported only when every cell on its last
+//! row (vertical) or last column (horizontal) has the same value category as
+//! the cell next to it on the first adjacent line. A mismatch, such as a text
+//! header below numbers, suggests a different block. An empty cell is its own
+//! category; a formula without a cached value matches any category. Every
+//! distinct range in a formula is evaluated, one violation per qualifying
+//! range.
+//!
 //! **Dependency:** requires CALC202 (Circular References) to be active,
 //! as this rule re-uses the same `CELL_REF_PATTERN` regex to extract range
 //! references from formulas.
@@ -15,7 +23,7 @@ use crate::reader::workbook::CellValue;
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Rule that identifies suspiciously short references.
 pub struct LongerRefExpectedRule {
@@ -64,9 +72,8 @@ impl ViolationData for LongerRefData {
     }
 }
 
-/// Determine the value-type category of a cell for type-matching suppression.
-/// Returns `None` for empty cells, or a category discriminant for non-empty.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Value-type category of a non-empty cell, for type-matching suppression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ValueCategory {
     Numeric,
     Text,
@@ -84,28 +91,28 @@ fn categorize_value(value: &CellValue) -> Option<ValueCategory> {
     }
 }
 
-/// Determine the dominant value category of cells within a range on a sheet.
-fn dominant_category(
-    cells: &HashMap<(u32, u32), crate::reader::Cell>,
-    start_row: u32,
-    start_col: u32,
-    end_row: u32,
-    end_col: u32,
-) -> Option<ValueCategory> {
-    let mut counts: HashMap<ValueCategory, usize> = HashMap::new();
-    for row in start_row..=end_row {
-        for col in start_col..=end_col {
-            if let Some(cell) = cells.get(&(row, col))
-                && let Some(cat) = categorize_value(&cell.value)
-            {
-                *counts.entry(cat).or_default() += 1;
-            }
-        }
-    }
-    counts
-        .into_iter()
-        .max_by_key(|(_, count)| *count)
-        .map(|(cat, _)| cat)
+/// Checks that each `(last, adjacent)` cell pair has the same value category,
+/// treating an empty cell as its own category. A formula without a cached
+/// value has an unknown type and matches any category.
+fn boundary_types_match(
+    sheet: &crate::reader::Sheet,
+    mut pairs: impl Iterator<Item = ((u32, u32), (u32, u32))>,
+) -> bool {
+    let category = |(row, col)| {
+        sheet
+            .get_cell(row, col)
+            .and_then(|c| categorize_value(&c.value))
+    };
+    let is_uncached_formula = |(row, col)| {
+        sheet
+            .get_cell(row, col)
+            .is_some_and(|c| c.is_formula() && c.value.is_empty())
+    };
+    pairs.all(|(last, adjacent)| {
+        is_uncached_formula(last)
+            || is_uncached_formula(adjacent)
+            || category(last) == category(adjacent)
+    })
 }
 
 /// A range reference extracted from a formula.
@@ -121,7 +128,8 @@ struct RangeRef {
     display: String,
 }
 
-/// Extract range references from a formula (only ranges, not single-cell refs).
+/// Extracts the distinct range references of a formula, by coordinates;
+/// single-cell refs are skipped.
 fn extract_range_refs(
     formula: &str,
     current_sheet_index: u16,
@@ -170,6 +178,19 @@ fn extract_range_refs(
             continue;
         };
 
+        let coords = (sheet_index, start_row, start_col, end_row, end_col);
+        if ranges.iter().any(|r: &RangeRef| {
+            (
+                r.sheet_index,
+                r.start_row,
+                r.start_col,
+                r.end_row,
+                r.end_col,
+            ) == coords
+        }) {
+            continue;
+        }
+
         let display = cap.get(0).map_or("", |m| m.as_str()).to_string();
 
         ranges.push(RangeRef {
@@ -208,8 +229,6 @@ impl WalkerRule for LongerRefExpectedRule {
             workbook.sheets.iter().map(|s| (s.sheet_index, s)).collect();
 
         let mut violations = Vec::new();
-        // Track which cells we've already flagged to avoid duplicates
-        let mut flagged: HashSet<(u16, u32, u32)> = HashSet::new();
 
         // Iterate through all formula cells (keys of cell_dependencies)
         for formula_loc in ctx.cell_dependencies.keys() {
@@ -264,41 +283,29 @@ impl WalkerRule for LongerRefExpectedRule {
                         }
                     }
 
-                    if adjacent_count >= self.min_adjacent_data {
-                        let adj_cell = (range_ref.sheet_index, adjacent_row, range_ref.start_col);
-                        if flagged.insert(*formula_loc) {
-                            // Type-matching suppression: skip if adjacent data
-                            // has a different dominant type than the range
-                            let range_cat = dominant_category(
-                                &target_sheet.cells,
-                                range_ref.start_row,
-                                range_ref.start_col,
-                                range_ref.end_row,
-                                range_ref.end_col,
-                            );
-                            let adj_cat = target_sheet
-                                .get_cell(adjacent_row, range_ref.start_col)
-                                .and_then(|c| categorize_value(&c.value));
-
-                            if let (Some(rc), Some(ac)) = (range_cat, adj_cat)
-                                && rc != ac
-                            {
-                                continue; // Different type → likely a header
-                            }
-
-                            violations.push(Violation::with_data(
-                                RuleId::Ref310,
-                                ViolationScope::Cell(
-                                    formula_sheet_idx,
-                                    CellReference::new(formula_row, formula_col),
+                    if adjacent_count >= self.min_adjacent_data
+                        && boundary_types_match(
+                            target_sheet,
+                            (range_ref.start_col..=range_ref.end_col)
+                                .map(|col| ((range_ref.end_row, col), (adjacent_row, col))),
+                        )
+                    {
+                        violations.push(Violation::with_data(
+                            RuleId::Ref310,
+                            ViolationScope::Cell(
+                                formula_sheet_idx,
+                                CellReference::new(formula_row, formula_col),
+                            ),
+                            LongerRefData {
+                                range_str: range_ref.display.clone(),
+                                adjacent_cell: (
+                                    range_ref.sheet_index,
+                                    adjacent_row,
+                                    range_ref.start_col,
                                 ),
-                                LongerRefData {
-                                    range_str: range_ref.display.clone(),
-                                    adjacent_cell: adj_cell,
-                                },
-                                Severity::Info,
-                            ));
-                        }
+                            },
+                            Severity::Info,
+                        ));
                     }
                 }
 
@@ -328,39 +335,29 @@ impl WalkerRule for LongerRefExpectedRule {
                         }
                     }
 
-                    if adjacent_count >= self.min_adjacent_data {
-                        let adj_cell = (range_ref.sheet_index, range_ref.start_row, adjacent_col);
-                        if flagged.insert(*formula_loc) {
-                            let range_cat = dominant_category(
-                                &target_sheet.cells,
-                                range_ref.start_row,
-                                range_ref.start_col,
-                                range_ref.end_row,
-                                range_ref.end_col,
-                            );
-                            let adj_cat = target_sheet
-                                .get_cell(range_ref.start_row, adjacent_col)
-                                .and_then(|c| categorize_value(&c.value));
-
-                            if let (Some(rc), Some(ac)) = (range_cat, adj_cat)
-                                && rc != ac
-                            {
-                                continue;
-                            }
-
-                            violations.push(Violation::with_data(
-                                RuleId::Ref310,
-                                ViolationScope::Cell(
-                                    formula_sheet_idx,
-                                    CellReference::new(formula_row, formula_col),
+                    if adjacent_count >= self.min_adjacent_data
+                        && boundary_types_match(
+                            target_sheet,
+                            (range_ref.start_row..=range_ref.end_row)
+                                .map(|row| ((row, range_ref.end_col), (row, adjacent_col))),
+                        )
+                    {
+                        violations.push(Violation::with_data(
+                            RuleId::Ref310,
+                            ViolationScope::Cell(
+                                formula_sheet_idx,
+                                CellReference::new(formula_row, formula_col),
+                            ),
+                            LongerRefData {
+                                range_str: range_ref.display.clone(),
+                                adjacent_cell: (
+                                    range_ref.sheet_index,
+                                    range_ref.start_row,
+                                    adjacent_col,
                                 ),
-                                LongerRefData {
-                                    range_str: range_ref.display.clone(),
-                                    adjacent_cell: adj_cell,
-                                },
-                                Severity::Info,
-                            ));
-                        }
+                            },
+                            Severity::Info,
+                        ));
                     }
                 }
             }
@@ -506,6 +503,122 @@ mod tests {
             0,
             "Should suppress when adjacent cell is text but range is numeric"
         );
+    }
+
+    fn lint_formula(cells: Vec<Cell>, formula_loc: (u32, u32)) -> Vec<Violation> {
+        let sheet = make_sheet_with_index(0, "Sheet1", cells);
+        let workbook = make_workbook(vec![sheet]);
+        let mut rule = LongerRefExpectedRule::new(&LinterConfig::default());
+        let mut ctx = LinterContext::default();
+        ctx.name_to_index.insert("Sheet1".to_string(), 0);
+        ctx.cell_dependencies
+            .insert((0, formula_loc.0, formula_loc.1), Vec::new());
+        rule.on_workbook_end(&workbook, &mut ctx)
+    }
+
+    #[test]
+    fn test_type_match_uses_last_range_cell() {
+        // A1:A2 numbers and A3:A4 text tie by count; A4 (text) decides.
+        let mut cells = vec![
+            make_number_cell(0, 0, 1.0),
+            make_number_cell(1, 0, 2.0),
+            make_text_cell(2, 0, "a"),
+            make_text_cell(3, 0, "b"),
+            make_formula_cell(0, 1, "COUNTA(A1:A4)"),
+        ];
+        cells.push(make_text_cell(4, 0, "c"));
+        assert_eq!(lint_formula(cells.clone(), (0, 1)).len(), 1);
+
+        cells.pop();
+        cells.push(make_number_cell(4, 0, 3.0));
+        assert!(lint_formula(cells, (0, 1)).is_empty());
+    }
+
+    #[test]
+    fn test_type_match_requires_every_boundary_pair() {
+        // A1:B2 numbers; row 3 is compared column by column.
+        let mut cells = vec![
+            make_number_cell(0, 0, 1.0),
+            make_number_cell(0, 1, 1.0),
+            make_number_cell(1, 0, 1.0),
+            make_number_cell(1, 1, 1.0),
+            make_number_cell(2, 0, 1.0),
+            make_formula_cell(0, 3, "SUM(A1:B2)"),
+        ];
+        assert!(
+            lint_formula(cells.clone(), (0, 3)).is_empty(),
+            "B3 empty next to numeric B2 is a different type"
+        );
+
+        cells.push(make_number_cell(2, 1, 1.0));
+        assert_eq!(lint_formula(cells, (0, 3)).len(), 1);
+    }
+
+    #[test]
+    fn test_empty_last_cell_differs_from_data() {
+        // A3 empty, A4 number → different types → no flag.
+        let cells = vec![
+            make_number_cell(0, 0, 1.0),
+            make_number_cell(1, 0, 2.0),
+            make_number_cell(3, 0, 4.0),
+            make_formula_cell(0, 1, "SUM(A1:A3)"),
+        ];
+        assert!(lint_formula(cells, (0, 1)).is_empty());
+    }
+
+    #[test]
+    fn test_uncached_formula_matches_any_type() {
+        // A3 and A4 hold formulas without a cached value.
+        let base = vec![
+            make_number_cell(0, 0, 1.0),
+            make_number_cell(1, 0, 2.0),
+            make_formula_cell(0, 1, "SUM(A1:A3)"),
+        ];
+
+        let mut last_uncached = base.clone();
+        last_uncached.push(make_formula_cell(2, 0, "A2*2"));
+        last_uncached.push(make_number_cell(3, 0, 4.0));
+        assert_eq!(lint_formula(last_uncached, (0, 1)).len(), 1);
+
+        let mut adjacent_uncached = base;
+        adjacent_uncached.push(make_number_cell(2, 0, 3.0));
+        adjacent_uncached.push(make_formula_cell(3, 0, "A3*2"));
+        assert_eq!(lint_formula(adjacent_uncached, (0, 1)).len(), 1);
+    }
+
+    #[test]
+    fn test_every_range_in_formula_is_evaluated() {
+        // A1:A3 is followed by a text header (suppressed); C1:C3 by a number.
+        let mut cells = Vec::new();
+        for row in 0..3 {
+            cells.push(make_number_cell(row, 0, 1.0));
+            cells.push(make_number_cell(row, 2, 1.0));
+        }
+        cells.push(make_text_cell(3, 0, "Total"));
+        cells.push(make_number_cell(3, 2, 1.0));
+        cells.push(make_formula_cell(0, 4, "SUM(A1:A3)+SUM(C1:C3)"));
+
+        let violations = lint_formula(cells.clone(), (0, 4));
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            violations[0].data::<LongerRefData>().unwrap().range_str,
+            "C1:C3"
+        );
+
+        cells.retain(|c| (c.row, c.col) != (3, 0));
+        cells.push(make_number_cell(3, 0, 1.0));
+        let ranges: Vec<_> = lint_formula(cells, (0, 4))
+            .iter()
+            .map(|v| v.data::<LongerRefData>().unwrap().range_str.clone())
+            .collect();
+        assert_eq!(ranges, ["A1:A3", "C1:C3"]);
+    }
+
+    #[test]
+    fn test_repeated_range_reported_once() {
+        let mut cells: Vec<_> = (0..4).map(|row| make_number_cell(row, 0, 1.0)).collect();
+        cells.push(make_formula_cell(0, 2, "SUM(A1:A3)/COUNT($A$1:$A$3)"));
+        assert_eq!(lint_formula(cells, (0, 2)).len(), 1);
     }
 
     #[test]
