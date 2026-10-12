@@ -4,7 +4,7 @@
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::reader::Sheet;
-use crate::reader::parser_utils::column_index_to_letters;
+use crate::reader::parser_utils::column_letters;
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
 
 /// Rule that detects hidden columns and rows
@@ -96,11 +96,10 @@ fn merge_ranges(ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
 
 /// Format column range (e.g., "A:C" or "A")
 fn format_column_range(&(start, end): &(u32, u32)) -> String {
-    let start_col = column_index_to_letters(start);
     if start == end {
-        return start_col;
+        return column_letters(start).to_string();
     }
-    format!("{}:{}", start_col, column_index_to_letters(end))
+    format!("{}:{}", column_letters(start), column_letters(end))
 }
 
 /// Format row range (e.g., "1:3" or "1")

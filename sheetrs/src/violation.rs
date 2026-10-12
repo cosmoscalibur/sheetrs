@@ -1,6 +1,7 @@
 //! Violation reporting system with hierarchical structure
 
 use crate::reader::Workbook;
+use crate::reader::parser_utils::column_letters;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -449,16 +450,6 @@ impl CellReference {
     pub fn new(row: u32, col: u32) -> Self {
         Self { row, col }
     }
-
-    /// Convert to Excel-style reference (e.g., "A1")
-    pub fn to_excel_ref(&self) -> String {
-        format!("{}{}", Self::col_to_letter(self.col), self.row + 1)
-    }
-
-    /// Convert column number to letter (0 -> A, 1 -> B, etc.)
-    pub fn col_to_letter(col: u32) -> String {
-        crate::reader::parser_utils::column_index_to_letters(col)
-    }
 }
 
 impl PartialOrd for CellReference {
@@ -477,7 +468,7 @@ impl Ord for CellReference {
 
 impl std::fmt::Display for CellReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_excel_ref())
+        write!(f, "{}{}", column_letters(self.col), self.row + 1)
     }
 }
 

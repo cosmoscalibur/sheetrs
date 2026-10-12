@@ -150,7 +150,9 @@ parsers and rules:
 
 - **`column_letters_to_index(reference)`** — Column letters to a 0-based
   index (`A` → 0, `XFD` → 16383), skipping non-letter characters.
-- **`column_index_to_letters(index)`** — 0-based index to column letters.
+- **`column_letters(index)`** — 0-based index to column letters as an
+  allocation-free `impl Display` (built with `fmt::from_fn`). Write it with
+  `write!`/`format!`; call `to_string()` only when an owned `String` is needed.
 - **`read_text_node(reader)`** — Collect an element's text, resolving entity
   and character references.
 - **`push_general_ref(text, reference)`** — Append what an `Event::GeneralRef`
