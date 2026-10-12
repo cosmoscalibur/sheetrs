@@ -154,6 +154,49 @@ mod tests {
         }
     }
 
+    fn first_attr_value(xml: &str) -> quick_xml::Result<String> {
+        let mut reader = Reader::from_str(xml);
+        let Event::Empty(e) = reader.read_event()? else {
+            panic!("expected an empty element");
+        };
+        let attr = e.attributes().next().expect("attribute")?;
+        Ok(attr_value(&attr)?.into_owned())
+    }
+
+    #[test]
+    fn test_attr_value_resolves_entities() {
+        assert_eq!(
+            first_attr_value(r#"<a v="R&amp;D &lt;1&gt;"/>"#).unwrap(),
+            "R&D <1>"
+        );
+    }
+
+    #[test]
+    fn test_attr_value_keeps_char_ref_line_breaks() {
+        assert_eq!(first_attr_value(r#"<a v="x&#10;y"/>"#).unwrap(), "x\ny");
+    }
+
+    #[test]
+    fn test_attr_value_normalizes_literal_whitespace() {
+        assert_eq!(first_attr_value("<a v=\"x\ny\tz\"/>").unwrap(), "x y z");
+    }
+
+    #[test]
+    fn test_read_text_node_text_and_cdata() {
+        let mut reader = Reader::from_str("<t>a b<![CDATA[<c>]]></t>");
+        reader.read_event().unwrap();
+        assert_eq!(read_text_node(&mut reader).unwrap(), "a b<c>");
+    }
+
+    #[test]
+    fn test_read_text_node_rejects_invalid_utf8() {
+        let xml: &[u8] = b"<t>a\xFFb</t>";
+        let mut reader = Reader::from_reader(xml);
+        let mut buf = Vec::new();
+        reader.read_event_into(&mut buf).unwrap();
+        assert!(read_text_node(&mut reader).is_err());
+    }
+
     #[test]
     fn test_parse_cell_range() {
         assert_eq!(parse_cell_range("A1:B2"), Some((0, 0, 1, 1)));

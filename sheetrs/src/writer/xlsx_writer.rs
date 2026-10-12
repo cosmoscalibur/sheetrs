@@ -348,3 +348,35 @@ fn remove_named_ranges_from_workbook_xml(
     let result = writer.into_inner().into_inner();
     Ok(String::from_utf8(result)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const WORKBOOK_XML: &str = r#"<workbook><sheets><sheet name="R&amp;D" sheetId="1"/><sheet name="Data" sheetId="2"/></sheets><definedNames><definedName name="A&amp;B">Data!$A$1</definedName><definedName name="Keep">Data!$B$1</definedName></definedNames></workbook>"#;
+
+    #[test]
+    fn test_parse_sheet_info_unescapes_names() {
+        let sheets = parse_sheet_info(WORKBOOK_XML).unwrap();
+        assert_eq!(
+            sheets,
+            vec![("R&D".to_string(), 1), ("Data".to_string(), 2)]
+        );
+    }
+
+    #[test]
+    fn test_remove_sheet_with_escaped_name() {
+        let remove = HashSet::from(["R&D".to_string()]);
+        let xml = remove_sheets_from_workbook_xml(WORKBOOK_XML, &remove).unwrap();
+        assert!(!xml.contains("R&amp;D"));
+        assert!(xml.contains(r#"<sheet name="Data" sheetId="2"/>"#));
+    }
+
+    #[test]
+    fn test_remove_named_range_with_escaped_name() {
+        let remove = HashSet::from(["A&B".to_string()]);
+        let xml = remove_named_ranges_from_workbook_xml(WORKBOOK_XML, &remove).unwrap();
+        assert!(!xml.contains("A&amp;B"));
+        assert!(xml.contains(r#"<definedName name="Keep">Data!$B$1</definedName>"#));
+    }
+}
