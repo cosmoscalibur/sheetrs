@@ -12,7 +12,7 @@ use zip::ZipArchive;
 
 use super::parser_utils::{
     attr_value, column_index_to_letters, column_letters_to_index, parse_cell_range, parse_cell_ref,
-    read_text_node,
+    push_general_ref, read_text_node,
 };
 use super::{Cell, CellValue, Sheet, WorkbookReader};
 use crate::violation::ExcelError;
@@ -123,7 +123,7 @@ pub fn extract_defined_names_from_xlsx(
 
     let buf_reader = BufReader::new(workbook_xml);
     let mut reader = Reader::from_reader(buf_reader);
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
 
     let mut buf = Vec::new();
     let mut in_defined_names = false;
@@ -149,7 +149,10 @@ pub fn extract_defined_names_from_xlsx(
                 }
             }
             Ok(Event::Text(e)) if in_defined_names && !current_name.is_empty() => {
-                current_ref = e.into_inner().into_owned();
+                current_ref.push_str(&e);
+            }
+            Ok(Event::GeneralRef(e)) if in_defined_names && !current_name.is_empty() => {
+                push_general_ref(&mut current_ref, &e)?;
             }
             Ok(Event::End(e)) => match e.name().as_ref() {
                 "definedName" if !current_name.is_empty() => {
@@ -157,7 +160,7 @@ pub fn extract_defined_names_from_xlsx(
                     if !current_name.starts_with("_xlnm.")
                         && !current_name.contains("_FilterDatabase")
                     {
-                        defined_names.insert(current_name.clone(), current_ref.clone());
+                        defined_names.insert(current_name.clone(), current_ref.trim().to_string());
                     }
                     current_name.clear();
                     current_ref.clear();
@@ -287,6 +290,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
             let sheet_index = idx as u16;
             let mut sheet = Sheet::new(name.clone(), sheet_index);
             sheet.sheet_path = Some(path.clone());
+            sheet.xml_size_bytes = self.archive.by_name(&path)?.size();
             sheet.visible = !hidden_sheets.contains(&name);
 
             // Parse sheet data
@@ -369,7 +373,6 @@ fn extract_modified_date_xlsx(
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
-    let mut in_modified = false;
     let mut modified_date: Option<DateTime<Utc>> = None;
 
     loop {
@@ -378,21 +381,11 @@ fn extract_modified_date_xlsx(
                 // dcterms:modified or cp:modified
                 let name = e.name();
                 if name.as_ref().ends_with(":modified") || name.as_ref() == "modified" {
-                    in_modified = true;
-                }
-            }
-            Event::Text(e) if in_modified => {
-                let date_str = e.into_inner().into_owned();
-                // Parse ISO 8601 / RFC 3339 format
-                if let Ok(parsed) = DateTime::parse_from_rfc3339(&date_str) {
-                    modified_date = Some(parsed.with_timezone(&Utc));
-                }
-                in_modified = false;
-            }
-            Event::End(e) => {
-                let name = e.name();
-                if name.as_ref().ends_with(":modified") || name.as_ref() == "modified" {
-                    in_modified = false;
+                    let date_str = read_text_node(&mut reader)?;
+                    // Parse ISO 8601 / RFC 3339 format
+                    if let Ok(parsed) = DateTime::parse_from_rfc3339(date_str.trim()) {
+                        modified_date = Some(parsed.with_timezone(&Utc));
+                    }
                 }
             }
             Event::Eof => break,
@@ -728,7 +721,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
 
         let sheet_xml = self.archive.by_name(path)?;
         let mut reader = Reader::from_reader(BufReader::new(sheet_xml));
-        reader.config_mut().trim_text(true);
+        reader.config_mut().trim_text(false);
 
         let mut buf = Vec::new();
         let mut current_row = 0u32;
@@ -1094,9 +1087,11 @@ fn parse_cell_contents<R: std::io::BufRead>(
                     } else {
                         String::new()
                     };
+                    // Typed values ignore surrounding whitespace; text keeps it
+                    let v_typed = v_text.trim();
                     value = match t_attr {
                         "s" => {
-                            let idx = v_text.parse::<usize>().unwrap_or(0);
+                            let idx = v_typed.parse::<usize>().unwrap_or(0);
                             CellValue::Text(
                                 shared_strings
                                     .get(idx)
@@ -1104,11 +1099,11 @@ fn parse_cell_contents<R: std::io::BufRead>(
                                     .unwrap_or_else(|| Arc::from("")),
                             )
                         }
-                        "b" => CellValue::Boolean(v_text == "1"),
+                        "b" => CellValue::Boolean(v_typed == "1"),
                         "e" => {
                             // Store the error value but don't create error cell yet
                             // We need to check if there's a formula first
-                            potential_error = Some(v_text);
+                            potential_error = Some(v_typed.to_string());
                             CellValue::Empty // Temporary, will be set later if needed
                         }
                         _ => {
@@ -1117,7 +1112,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
                             if num_fmt == Some("@") {
                                 // Store as text even if it looks like a number
                                 CellValue::Text(Arc::from(v_text.as_str()))
-                            } else if let Ok(n) = v_text.parse::<f64>() {
+                            } else if let Ok(n) = v_typed.parse::<f64>() {
                                 CellValue::Number(n)
                             } else {
                                 CellValue::Text(Arc::from(v_text.as_str()))
@@ -1220,7 +1215,7 @@ pub fn extract_shared_strings(
     };
 
     let mut reader = Reader::from_reader(BufReader::new(ss_xml));
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
     let mut current_string = String::new();
 
@@ -1721,14 +1716,17 @@ pub fn extract_formulas_from_xlsx(
 
     let sheet_xml = archive.by_name(&sheet_path)?;
     let mut reader = Reader::from_reader(BufReader::new(sheet_xml));
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
 
     let mut buf = Vec::new();
     let mut current_cell_ref = String::new();
     let mut in_formula = false;
+    let mut formula_text = String::new();
 
     loop {
-        match reader.read_event_into(&mut buf)? {
+        let event = reader.read_event_into(&mut buf)?;
+        let is_start = matches!(event, Event::Start(_));
+        match event {
             Event::Start(e) | Event::Empty(e) => match e.name().as_ref() {
                 "c" => {
                     for attr in e.attributes().flatten() {
@@ -1738,7 +1736,9 @@ pub fn extract_formulas_from_xlsx(
                     }
                 }
                 "f" => {
-                    in_formula = true;
+                    // A self-closing <f/> has no text and no closing tag
+                    in_formula = is_start;
+                    formula_text.clear();
                     let mut si = None;
                     let mut t = None;
 
@@ -1772,9 +1772,15 @@ pub fn extract_formulas_from_xlsx(
                 }
                 _ => {}
             },
-            Event::Text(e) if in_formula => {
-                let formula_text = e.into_inner().into_owned();
-                if let Some((r, c)) = parse_cell_ref(&current_cell_ref) {
+            Event::Text(e) if in_formula => formula_text.push_str(&e),
+            Event::GeneralRef(e) if in_formula => push_general_ref(&mut formula_text, &e)?,
+            Event::End(e) if e.name().as_ref() == "f" => {
+                in_formula = false;
+                let formula_text = std::mem::take(&mut formula_text);
+                // An empty <f></f> is a shared-formula consumer: keep its marker
+                if !formula_text.is_empty()
+                    && let Some((r, c)) = parse_cell_ref(&current_cell_ref)
+                {
                     // Check if this cell was marked as shared
                     if let Some(marker) = formulas.get(&(r, c))
                         && marker.starts_with("__SHARED__")
@@ -1784,9 +1790,6 @@ pub fn extract_formulas_from_xlsx(
                     }
                     formulas.insert((r, c), formula_text);
                 }
-            }
-            Event::End(e) if e.name().as_ref() == "f" => {
-                in_formula = false;
             }
             Event::Eof => break,
             _ => {}
@@ -1812,7 +1815,7 @@ pub fn extract_formulas_from_xlsx(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use std::io::{Cursor, Write};
 
     #[test]
     fn test_translate_shared_formula_shifts_relative_refs() {
@@ -1863,6 +1866,90 @@ mod tests {
         assert_eq!(
             parse_cell_value("<c><v>0</v></c>", "b", None),
             CellValue::Boolean(false)
+        );
+    }
+
+    #[test]
+    fn test_parse_cell_contents_trims_typed_values() {
+        assert_eq!(
+            parse_cell_value("<c><v> 42 </v></c>", "", None),
+            CellValue::Number(42.0)
+        );
+        assert_eq!(
+            parse_cell_value("<c><v>\n 1\n</v></c>", "b", None),
+            CellValue::Boolean(true)
+        );
+        assert_eq!(
+            parse_cell_value("<c><v> a b </v></c>", "str", None),
+            CellValue::Text(Arc::from(" a b "))
+        );
+    }
+
+    /// Build an XLSX archive holding one sheet, "Data", with `sheet_xml` as
+    /// its worksheet part and `defined_names` inside `<definedNames>`.
+    fn single_sheet_archive(sheet_xml: &str, defined_names: &str) -> ZipArchive<Cursor<Vec<u8>>> {
+        use zip::write::SimpleFileOptions;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            let parts = [
+                (
+                    "xl/workbook.xml",
+                    format!(
+                        r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets><definedNames>{defined_names}</definedNames></workbook>"#
+                    ),
+                ),
+                (
+                    "xl/_rels/workbook.xml.rels",
+                    r#"<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>"#
+                        .to_string(),
+                ),
+                ("xl/worksheets/sheet1.xml", sheet_xml.to_string()),
+            ];
+            for (name, content) in parts {
+                zip.start_file(name, options).unwrap();
+                zip.write_all(content.as_bytes()).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        ZipArchive::new(Cursor::new(buf)).unwrap()
+    }
+
+    #[test]
+    fn test_extract_formulas_resolves_shared_consumers() {
+        let mut archive = single_sheet_archive(
+            r#"<worksheet><sheetData><row r="1">
+                <c r="A1"><f t="shared" si="0" ref="A1:A3">B1&amp;&quot;x&quot;</f><v>1</v></c>
+                <c r="A2"><f t="shared" si="0"></f><v>2</v></c>
+                <c r="A3"><f t="shared" si="0"/><v>3</v></c>
+                <c r="A4"><f>C4 &lt; 0</f><v>0</v></c>
+            </row></sheetData></worksheet>"#,
+            "",
+        );
+
+        let formulas = extract_formulas_from_xlsx(&mut archive, "Data").unwrap();
+
+        assert_eq!(formulas.get(&(0, 0)).map(String::as_str), Some(r#"B1&"x""#));
+        assert_eq!(formulas.get(&(1, 0)).map(String::as_str), Some(r#"B1&"x""#));
+        assert_eq!(formulas.get(&(2, 0)).map(String::as_str), Some(r#"B1&"x""#));
+        assert_eq!(formulas.get(&(3, 0)).map(String::as_str), Some("C4 < 0"));
+    }
+
+    #[test]
+    fn test_extract_defined_names_trims_and_resolves_references() {
+        let mut archive = single_sheet_archive(
+            "<worksheet/>",
+            "<definedName name=\"Range\">\n  &apos;My Data&apos;!$A$1:$B$2\n</definedName>",
+        );
+
+        let names = extract_defined_names_from_xlsx(&mut archive).unwrap();
+
+        assert_eq!(
+            names.get("Range").map(String::as_str),
+            Some("'My Data'!$A$1:$B$2")
         );
     }
 
