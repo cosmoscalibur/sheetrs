@@ -15,7 +15,7 @@ getting-started instructions, see the root [README.md](../README.md).
 - [Comparative Report](../sheetlint/comparative_report.md) — rule comparison
   with PerfectXL Risk Finder and ExceLint.
 - [Profiling](../sheetlint/docs/PROFILING.md) — phase breakdown, per-rule
-  timing, traversal pattern analysis.
+  sample share, single-pass walker architecture.
 - [Benchmarks](../scripts/README.md) — benchmark scripts and historical
   performance data.
 

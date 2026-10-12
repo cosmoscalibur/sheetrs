@@ -78,12 +78,10 @@ impl WalkerRule for DoubleCountRule {
         RuleCategory::Calculations
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(formula) = cell.as_formula() else {
+    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(formula_upper) = ctx.formula_upper(sheet, cell) else {
             return Vec::new();
         };
-
-        let formula_upper = formula.to_uppercase();
         let formula_bytes = formula_upper.as_bytes();
         let mut violations = Vec::new();
 
@@ -98,10 +96,10 @@ impl WalkerRule for DoubleCountRule {
                 let is_word_start =
                     abs_pos == 0 || !formula_bytes[abs_pos - 1].is_ascii_alphabetic();
 
-                if is_word_start && !is_inside_string(&formula_upper, abs_pos) {
+                if is_word_start && !is_inside_string(formula_upper, abs_pos) {
                     let paren_pos = abs_pos + SUM_FAMILY[i].len();
                     if let Some(overlap) =
-                        find_overlapping_args(&formula_upper, paren_pos, SUM_FAMILY[i])
+                        find_overlapping_args(formula_upper, paren_pos, SUM_FAMILY[i])
                     {
                         violations.push(Violation::with_data(
                             RuleId::Calc205,
@@ -302,6 +300,18 @@ mod tests {
     #[test]
     fn test_case_insensitive() {
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "sum(A1:A10,A5:A15)")]);
+        let violations = run_rule(&sheet);
+
+        assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    fn test_case_insensitive_non_ascii_sheet_qualifier() {
+        let sheet = make_sheet(vec![make_formula_cell(
+            0,
+            0,
+            "SUM('Año'!A1:A10,'AÑO'!A5:A15)",
+        )]);
         let violations = run_rule(&sheet);
 
         assert_eq!(violations.len(), 1);

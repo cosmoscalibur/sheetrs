@@ -75,7 +75,7 @@ impl ViolationData for ExternalWorkbookData {
 
 static INDEX_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[(\d+)\]").unwrap());
 
-/// Extract [N] indices from formula
+/// Extract `[N]` indices from formula
 fn extract_external_workbook_indices(formula: &str) -> Vec<usize> {
     let mut indices = Vec::new();
     for cap in INDEX_PATTERN.captures_iter(formula) {

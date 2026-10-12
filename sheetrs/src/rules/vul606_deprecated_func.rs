@@ -30,6 +30,14 @@ const DEPRECATED_FUNCTIONS: &[(&str, &str)] = &[
     ("FLOOR", "FLOOR.MATH"),              // Excel 2013
 ];
 
+/// Pre-computed search patterns: "FUNC(" for each deprecated function.
+static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    DEPRECATED_FUNCTIONS
+        .iter()
+        .map(|(name, _)| format!("{name}("))
+        .collect()
+});
+
 /// Per-sheet cell collection: sheet_index → Vec<(func_index, row, col)>.
 type SheetCellMap = Mutex<HashMap<u16, Vec<(u8, u32, u32)>>>;
 
@@ -103,18 +111,8 @@ impl WalkerRule for DeprecatedFuncRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        if let Some(formula) = cell.as_formula() {
-            let formula_upper = formula.to_uppercase();
-
-            // Pre-computed search patterns: "FUNC(" for each deprecated function.
-            static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
-                DEPRECATED_FUNCTIONS
-                    .iter()
-                    .map(|(name, _)| format!("{name}("))
-                    .collect()
-            });
-
+    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+        if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
             let formula_bytes = formula_upper.as_bytes();
             let mut matches = Vec::new();
             for (idx, pattern) in SEARCH_PATTERNS.iter().enumerate() {

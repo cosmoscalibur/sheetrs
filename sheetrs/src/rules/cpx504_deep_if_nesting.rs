@@ -186,12 +186,11 @@ impl ViolationData for LongFormulaData {
 // Analysis helpers
 // ---------------------------------------------------------------------------
 
-/// Count the maximum nesting depth of IF statements in a formula.
-fn count_if_nesting(formula: &str) -> usize {
-    let upper = formula.to_uppercase();
+/// Count the maximum nesting depth of IF statements in an uppercased formula.
+fn count_if_nesting(formula_upper: &str) -> usize {
     let mut max_depth: usize = 0;
     let mut current_depth: usize = 0;
-    let bytes = upper.as_bytes();
+    let bytes = formula_upper.as_bytes();
     let len = bytes.len();
     let mut i = 0;
 
@@ -356,7 +355,7 @@ impl WalkerRule for DeepIfNestingRule {
         RuleCategory::Complexity
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         let Some(formula) = cell.as_formula() else {
             return Vec::new();
         };
@@ -366,7 +365,10 @@ impl WalkerRule for DeepIfNestingRule {
 
         // --- Dependency cascade CPX504 → CPX505 → CPX506 → CPX508 / CPX509 ---
 
-        let if_depth = count_if_nesting(formula);
+        let if_depth = count_if_nesting(
+            ctx.formula_upper(sheet, cell)
+                .expect("formula cell has an uppercased formula"),
+        );
         if if_depth > self.max_if_nesting {
             return vec![Violation::with_data(
                 RuleId::Cpx504,

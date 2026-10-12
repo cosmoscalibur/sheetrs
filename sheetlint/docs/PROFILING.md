@@ -4,91 +4,88 @@ This document captures performance profiling data and architectural insights for
 
 ---
 
-## Actual Profiling Results
+## Profiling Results
 
-> **Test file**: `TC2025 2025.12.05 Motor Tributi 1402 - MY- textos sin j.xlsx` (39 MB)  
-> **Workbook stats**: 51 sheets, 4,453,591 cells
+> **Code state**: after #31 (per-cell formula allocations)  
+> **Test file**: `TC2025 2025.12.05 Motor Tributi 1402 - MY- textos sin j.xlsx` (37 MB)  
+> **Workbook stats**: 51 sheets, 4,453,591 non-empty cells, 1,855,268 formulas  
+> **Build**: `profiling` Cargo profile with frame pointers
+
+Shares are inclusive `perf` samples (a function plus its callees) over one run:
+
+```bash
+RUSTFLAGS="-C force-frame-pointers=yes" cargo build --profile profiling -p sheetlint
+perf record -F 499 --call-graph fp ./target/profiling/sheetlint <file> > /dev/null
+perf report --children --sort symbol -g none
+```
 
 ### Phase Breakdown
 
-| Phase | Time | % of Total |
-|-------|------|-----------|
-| **Phase 1: Parsing** (ZIP + XML → Workbook) | 5.0s | 9.6% |
-| **Phase 2: Rule Execution** | 47.0s | 90.4% |
-| **Total** | **52.0s** | 100% |
+| Phase | Share |
+|-------|-------|
+| **Parsing** (ZIP + XML → Workbook) | 11.8% |
+| **Rule execution** (walker and violation sorting) | 80.6% |
+| **Output formatting** (`print_human`) | 7.6% |
 
-### Per-Rule Timing (Descending)
+Parsing includes `translate_shared_formula` at 5.0%. A run with only FILE1001
+enabled, a workbook-level rule, takes 4.2 s user time against the 39.5 s of
+all rules in the #31 benchmark.
 
-| Rule | Time (ms) | % of Rules | Violations | Notes |
-|------|-----------|------------|------------|-------|
-| **Ref306** | 12,358.6 | 26.3% | 0 | Unused sheets detection |
-| **Ref303** | 11,807.3 | 25.1% | 6 | Empty sheets detection |
-| **Calc202** | 7,549.0 | 16.1% | 1 | Circular references (graph + DFS) |
-| **Ref305** | 5,986.7 | 12.7% | 34 | Blank rows/columns detection |
-| Calc201 | 1,657.4 | 3.5% | 5,926,794 | Hardcoded values |
-| Ref301 | 1,286.7 | 2.7% | 50 | Unused named ranges |
-| Vul601 | 1,093.6 | 2.3% | 29,808 | Duplicate formulas |
-| Cpx504 | 1,040.9 | 2.2% | 94 | Deep IF nesting |
-| Vul602 | 938.5 | 2.0% | 36 | Volatile functions |
-| Ref307 | 719.5 | 1.5% | 1 | Whole column/row refs |
-| Cpx505 | 663.6 | 1.4% | 2,032 | Deep formula nesting |
-| Data703 | 435.9 | 0.9% | 39,398 | Date formats |
-| Vul603 | 367.3 | 0.8% | 196 | Empty string test |
-| Err102 | 308.8 | 0.7% | 0 | Error cells |
-| Vul604 | 271.4 | 0.6% | 26,014 | Error-prone functions |
-| Ext802 | 267.9 | 0.6% | 0 | External workbooks |
-| Ext803 | 93.4 | 0.2% | 897 | Web URLs |
-| Data702 | 61.7 | 0.1% | 49 | Numeric formats |
-| Ref304 | 53.7 | 0.1% | 12 | Large used range |
-| Cpx509 | 27.3 | 0.1% | 490 | Long formulas |
-| Data704 | 21.2 | 0.0% | 502 | Long text |
-| Other (30 rules) | <1.0 | <0.1% | — | Negligible |
+### Per-Rule Share (Descending)
 
-### Top 4 Rules = 80% of Time
+| Rule | Share | Hooks |
+|------|-------|-------|
+| **CALC202** | 14.9% | `on_cell` 6.7%, `on_workbook_end` 8.2% |
+| **REF301** | 14.8% | `on_cell` 1.3%, `on_workbook_end` 13.5% |
+| **REF310** | 9.3% | `on_workbook_end` |
+| **INT401–403** | 9.0% | `on_cell` 5.4%, `on_sheet_end` 3.7% |
+| CALC201 | 4.6% | `on_cell` |
+| VUL601 | 2.8% | `on_cell` 2.1%, `on_sheet_end` 0.7% |
+| REF309 | 2.3% | `on_workbook_end` |
+| VUL606 | 2.1% | `on_cell` |
+| CALC205 | 2.0% | `on_cell` |
+| ERR102 | 1.2% | `on_cell` |
+| CPX504 | 1.2% | `on_cell` |
+| DAT706 | 1.1% | `on_workbook_end` |
+| DAT703 | 1.0% | `on_cell` |
+| CALC204 | 0.8% | `on_cell` |
+| CALC203 | 0.8% | `on_cell` |
+| REF305 | 0.7% | `on_cell` |
+| CPX507 | 0.6% | `on_cell` |
+| DAT704 | 0.5% | `on_cell` |
+| VUL604 | 0.5% | `on_cell` |
+| REF304 | 0.5% | `on_cell` |
+| EXT801 | 0.4% | `on_cell` |
+| VUL602 | 0.4% | `on_cell` |
+| VUL603 | 0.4% | `on_cell` |
+| Other rules | <0.3% each | — |
 
-```
-Ref306 (Unused sheets)    ██████████████████████████░░░░░░ 26.3%
-Ref303 (Empty sheets)     █████████████████████████░░░░░░░ 25.1%
-Calc202 (Circular refs)   ████████████████░░░░░░░░░░░░░░░░ 16.1%
-Ref305 (Blank rows/cols)  ████████████░░░░░░░░░░░░░░░░░░░░ 12.7%
-                          ─────────────────────────────────
-                          Combined: 80.2% of rule time
-```
+CALC202, REF301, REF310, and INT401–403 account for 48% of samples. REF301's
+`on_workbook_end` searches every collected formula for each defined name.
 
 ## Current Architecture
 
-### Two-Phase Execution Model
+### Single-Pass Walker
+
+Every rule implements `WalkerRule` (see [coding patterns](../../docs/coding-patterns.md#the-walker-pattern)).
+`WorkbookWalker` traverses the parsed workbook once and calls each rule's hooks:
 
 ```mermaid
 flowchart LR
-    subgraph Phase1["Phase 1: Parsing (~10%)"]
+    subgraph Parse["Parsing"]
         A[ZIP Archive] --> B[XML Parsing<br/>quick-xml]
         B --> C[Build Workbook<br/>sheets, cells, names]
     end
-    
-    subgraph Phase2["Phase 2: Linting (~90%)"]
-        D["Rule 1: check(&Workbook)"]
-        E["Rule 2: check(&Workbook)"]
-        F["..."]
-        G["Rule N: check(&Workbook)"]
-        D --> H[Collect & Sort<br/>Violations]
-        E --> H
-        F --> H
-        G --> H
+
+    subgraph Walk["Rule execution: WorkbookWalker"]
+        D[on_workbook_start<br/>all rules] --> E
+        subgraph Sheets["for each sheet"]
+            E[on_sheet_start] --> F[on_cell<br/>each cell × all rules]
+            F --> G[on_sheet_end]
+        end
+        G --> H[on_workbook_end<br/>all rules]
     end
-    
+
     C --> D
-    C --> E
-    C --> F
-    C --> G
+    H --> I[Sort violations] --> J[Format output]
 ```
-
-### Rule Traversal Patterns
-
-| Pattern | Rules | Data Access | Cost |
-|---------|-------|-------------|------|
-| **Full graph construction** | Calc202 | All formulas → build dependency graph | O(cells × refs) |
-| **Full workbook iteration** | Ref303, Ref305, Ref306 | All sheets × all cells | O(sheets × cells) |
-| **Per-sheet iteration** | Cpx502, Hid904 | Each sheet independently | O(sheets × cells/sheet) |
-| **Formula analysis** | Calc201, Vul602, Cpx504/505 | Formula strings | O(formulas) |
-| **Metadata only** | Cpx501, File1001 | Workbook-level | O(1) |

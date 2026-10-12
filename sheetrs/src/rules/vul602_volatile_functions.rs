@@ -10,7 +10,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 /// Fixed list of volatile functions as internal constants.
 const VOLATILE_FUNCTIONS: &[&str] = &[
@@ -23,6 +23,14 @@ const VOLATILE_FUNCTIONS: &[&str] = &[
     "INFO",
     "CELL",
 ];
+
+/// Pre-computed search patterns: "FUNC(" for each volatile function.
+static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    VOLATILE_FUNCTIONS
+        .iter()
+        .map(|name| format!("{name}("))
+        .collect()
+});
 
 /// Per-sheet cell collection: sheet_index → Vec<(func_index, row, col)>.
 type SheetCellMap = Mutex<HashMap<u16, Vec<(u8, u32, u32)>>>;
@@ -97,21 +105,18 @@ impl WalkerRule for VolatileFunctionsRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        if let Some(formula) = cell.as_formula() {
-            let formula_upper = formula.to_uppercase();
-
-            for (idx, func) in VOLATILE_FUNCTIONS.iter().enumerate() {
-                if formula_upper.contains(&format!("{func}(")) {
-                    self.sheet_cells
-                        .lock()
-                        .unwrap()
-                        .entry(sheet.sheet_index)
-                        .or_default()
-                        .push((idx as u8, cell.row, cell.col));
-                    break; // Only count each cell once
-                }
-            }
+    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+        if let Some(formula_upper) = ctx.formula_upper(sheet, cell)
+            && let Some(idx) = SEARCH_PATTERNS
+                .iter()
+                .position(|pattern| formula_upper.contains(pattern.as_str()))
+        {
+            self.sheet_cells
+                .lock()
+                .unwrap()
+                .entry(sheet.sheet_index)
+                .or_default()
+                .push((idx as u8, cell.row, cell.col));
         }
         Vec::new()
     }

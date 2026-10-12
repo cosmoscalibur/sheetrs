@@ -67,12 +67,10 @@ impl WalkerRule for ApproximateLookupRule {
         RuleCategory::Calculations
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(formula) = cell.as_formula() else {
+    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(formula_upper) = ctx.formula_upper(sheet, cell) else {
             return Vec::new();
         };
-
-        let formula_upper = formula.to_uppercase();
         let formula_bytes = formula_upper.as_bytes();
         let mut violations = Vec::new();
 
@@ -90,7 +88,7 @@ impl WalkerRule for ApproximateLookupRule {
 
                 if is_word_start {
                     // Check if inside a string literal
-                    if is_inside_string(&formula_upper, abs_pos) {
+                    if is_inside_string(formula_upper, abs_pos) {
                         search_from = abs_pos + pat_bytes.len();
                         continue;
                     }
@@ -99,7 +97,7 @@ impl WalkerRule for ApproximateLookupRule {
                         None => true, // LOOKUP: always approximate
                         Some(arg_idx) => {
                             let paren_start = abs_pos + func_name.len();
-                            !has_exact_match_arg(&formula_upper, paren_start, arg_idx)
+                            !has_exact_match_arg(formula_upper, paren_start, arg_idx)
                         }
                     };
 
@@ -128,11 +126,11 @@ impl WalkerRule for ApproximateLookupRule {
 }
 
 /// Check if the argument at `arg_idx` in a function call starting at
-/// `paren_pos` indicates exact match (FALSE or 0).
+/// `paren_pos` of an uppercased formula indicates exact match (FALSE or 0).
 ///
 /// Returns `true` if the argument exists and is an exact-match indicator.
-fn has_exact_match_arg(formula: &str, paren_pos: usize, arg_idx: usize) -> bool {
-    let Some(args) = extract_args(formula, paren_pos) else {
+fn has_exact_match_arg(formula_upper: &str, paren_pos: usize, arg_idx: usize) -> bool {
+    let Some(args) = extract_args(formula_upper, paren_pos) else {
         return false; // Malformed formula, flag it
     };
 
@@ -140,11 +138,8 @@ fn has_exact_match_arg(formula: &str, paren_pos: usize, arg_idx: usize) -> bool 
         return false; // Argument missing → defaults to approximate
     }
 
-    let arg = args[arg_idx].trim();
-    let arg_upper = arg.to_uppercase();
-
     // Exact-match indicators
-    matches!(arg_upper.as_str(), "FALSE" | "0")
+    matches!(args[arg_idx].trim(), "FALSE" | "0")
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 //!
 //! Description: Detects formulas with an excessive number of mathematical or logical operations.
 //!
-//! Violations for this rule are emitted by [`cpx504_deep_if_nesting::DeepIfNestingRule::on_cell`]
+//! Violations for this rule are emitted by [`super::cpx504_deep_if_nesting::DeepIfNestingRule::on_cell`]
 //! as part of the CPX5xx dependency cascade. This struct is registered as a walker
 //! rule only for configuration enable/disable.
 
