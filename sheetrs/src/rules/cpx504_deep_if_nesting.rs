@@ -355,7 +355,7 @@ impl WalkerRule for DeepIfNestingRule {
         RuleCategory::Complexity
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         let Some(formula) = cell.as_formula() else {
             return Vec::new();
         };
@@ -468,7 +468,7 @@ mod tests {
         }
     }
 
-    fn run_violations(sheet: &Sheet, rule: &DeepIfNestingRule) -> Vec<Violation> {
+    fn run_violations(sheet: &Sheet, rule: &mut DeepIfNestingRule) -> Vec<Violation> {
         let mut ctx = LinterContext::default();
         sheet
             .all_cells()
@@ -479,8 +479,8 @@ mod tests {
     #[test]
     fn test_cpx504_suppresses_others() {
         let sheet = make_sheet("=IF(A1,IF(B1,IF(C1,IF(D1,IF(E1,IF(F1,1,0),0),0),0),0),0)");
-        let rule = DeepIfNestingRule::default();
-        let violations = run_violations(&sheet, &rule);
+        let mut rule = DeepIfNestingRule::default();
+        let violations = run_violations(&sheet, &mut rule);
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Cpx504);
         let data = violations[0].data::<DeepIfNestingData>().unwrap();
@@ -490,8 +490,8 @@ mod tests {
     #[test]
     fn test_cpx505_suppresses_downstream() {
         let sheet = make_sheet("=SUM(ABS(MIN(MAX(ROUND(AVERAGE(A1),2),0),100),0),0)");
-        let rule = DeepIfNestingRule::default();
-        let violations = run_violations(&sheet, &rule);
+        let mut rule = DeepIfNestingRule::default();
+        let violations = run_violations(&sheet, &mut rule);
         assert!(violations.iter().any(|v| v.rule_id == RuleId::Cpx505));
         assert!(!violations.iter().any(|v| v.rule_id == RuleId::Cpx506));
     }
@@ -499,8 +499,8 @@ mod tests {
     #[test]
     fn test_cpx506_suppresses_cpx508() {
         let sheet = make_sheet("=A1+B1*C1-D1/E1^F1&G1+H1+I1+J1");
-        let rule = DeepIfNestingRule::default();
-        let violations = run_violations(&sheet, &rule);
+        let mut rule = DeepIfNestingRule::default();
+        let violations = run_violations(&sheet, &mut rule);
         assert!(violations.iter().any(|v| v.rule_id == RuleId::Cpx506));
         assert!(!violations.iter().any(|v| v.rule_id == RuleId::Cpx508));
     }
@@ -508,11 +508,11 @@ mod tests {
     #[test]
     fn test_cpx508_fires_when_cpx506_does_not() {
         let sheet = make_sheet("=A1+B1+C1+D1+E1+F1+G1+H1+I1+J1+K1");
-        let rule = DeepIfNestingRule {
+        let mut rule = DeepIfNestingRule {
             max_operations: 15,
             ..Default::default()
         };
-        let violations = run_violations(&sheet, &rule);
+        let violations = run_violations(&sheet, &mut rule);
         assert!(violations.iter().any(|v| v.rule_id == RuleId::Cpx508));
     }
 
@@ -520,20 +520,20 @@ mod tests {
     fn test_cpx509_fires_alone() {
         let long = "=".to_string() + &"A1+".repeat(100);
         let sheet = make_sheet(&long);
-        let rule = DeepIfNestingRule {
+        let mut rule = DeepIfNestingRule {
             max_operations: 999,
             max_references: 999,
             ..Default::default()
         };
-        let violations = run_violations(&sheet, &rule);
+        let violations = run_violations(&sheet, &mut rule);
         assert!(violations.iter().any(|v| v.rule_id == RuleId::Cpx509));
     }
 
     #[test]
     fn test_violation_data_downcast() {
         let sheet = make_sheet("=A1+B1*C1-D1/E1^F1&G1+H1+I1+J1");
-        let rule = DeepIfNestingRule::default();
-        let violations = run_violations(&sheet, &rule);
+        let mut rule = DeepIfNestingRule::default();
+        let violations = run_violations(&sheet, &mut rule);
         let v = violations
             .iter()
             .find(|v| v.rule_id == RuleId::Cpx506)
@@ -565,8 +565,8 @@ mod tests {
     #[test]
     fn test_no_violations_simple_formula() {
         let sheet = make_sheet("=A1+B1");
-        let rule = DeepIfNestingRule::default();
-        let violations = run_violations(&sheet, &rule);
+        let mut rule = DeepIfNestingRule::default();
+        let violations = run_violations(&sheet, &mut rule);
         assert!(violations.is_empty());
     }
 

@@ -52,7 +52,7 @@ impl WalkerRule for ErrorCellsRule {
         super::RuleCategory::ExcelErrors
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         let loc = (sheet.sheet_index, cell.row, cell.col);
 
         if let Some(error) = cell.value.as_error() {
@@ -72,7 +72,7 @@ impl WalkerRule for ErrorCellsRule {
         Vec::new()
     }
 
-    fn on_workbook_end(&self, _workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(&mut self, _workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
         let mut violations = Vec::new();
 
         // Collect error cells NOT on a circular reference path (CALC202 dominance).
@@ -175,7 +175,7 @@ mod tests {
             ],
         );
 
-        let rule = ErrorCellsRule;
+        let mut rule = ErrorCellsRule;
         let mut ctx = LinterContext::default();
 
         // Walk cells
@@ -200,7 +200,7 @@ mod tests {
             vec![make_cell(0, 0, CellValue::Empty, Some("SUM(A1, [#REF!])"))],
         );
 
-        let rule = ErrorCellsRule;
+        let mut rule = ErrorCellsRule;
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {
@@ -227,7 +227,7 @@ mod tests {
             ],
         );
 
-        let rule = ErrorCellsRule;
+        let mut rule = ErrorCellsRule;
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {
@@ -259,7 +259,7 @@ mod tests {
             )],
         );
 
-        let rule = ErrorCellsRule;
+        let mut rule = ErrorCellsRule;
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {

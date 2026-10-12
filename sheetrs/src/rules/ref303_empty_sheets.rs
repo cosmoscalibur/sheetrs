@@ -43,7 +43,7 @@ impl WalkerRule for EmptySheetsRule {
         RuleCategory::Reference
     }
 
-    fn on_sheet_start(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
         if sheet.cells.is_empty() {
             vec![Violation::with_data(
                 RuleId::Ref303,
@@ -77,7 +77,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = EmptySheetsRule;
+        let mut rule = EmptySheetsRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&empty_sheet, &mut ctx);
 
@@ -108,7 +108,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = EmptySheetsRule;
+        let mut rule = EmptySheetsRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&sheet, &mut ctx);
 

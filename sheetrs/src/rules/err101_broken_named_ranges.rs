@@ -46,7 +46,11 @@ impl WalkerRule for BrokenNamedRangesRule {
         super::RuleCategory::ExcelErrors
     }
 
-    fn on_workbook_start(&self, workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_start(
+        &mut self,
+        workbook: &Workbook,
+        _ctx: &mut LinterContext,
+    ) -> Vec<Violation> {
         let mut violations = Vec::new();
 
         for (name, reference) in &workbook.defined_names {
@@ -103,7 +107,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BrokenNamedRangesRule;
+        let mut rule = BrokenNamedRangesRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_workbook_start(&workbook, &mut ctx);
 

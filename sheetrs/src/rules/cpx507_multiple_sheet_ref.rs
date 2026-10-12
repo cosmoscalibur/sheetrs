@@ -128,7 +128,7 @@ impl WalkerRule for MultipleSheetRefRule {
         RuleCategory::Complexity
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula) = cell.as_formula() {
             let count = count_sheet_refs(formula);
             if count >= self.max_sheet_refs {
@@ -201,7 +201,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = MultipleSheetRefRule::default();
+        let mut rule = MultipleSheetRefRule::default();
         let mut ctx = LinterContext::default();
         let violations: Vec<_> = sheet
             .all_cells()
@@ -235,7 +235,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = MultipleSheetRefRule::default();
+        let mut rule = MultipleSheetRefRule::default();
         let mut ctx = LinterContext::default();
         let violations: Vec<_> = sheet
             .all_cells()

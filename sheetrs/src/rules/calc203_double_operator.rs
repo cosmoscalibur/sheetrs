@@ -70,7 +70,7 @@ impl WalkerRule for DoubleOperatorRule {
         RuleCategory::Calculations
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         let Some(formula) = cell.as_formula() else {
             return Vec::new();
         };
@@ -134,7 +134,7 @@ mod tests {
         }
     }
 
-    fn run_rule(rule: &DoubleOperatorRule, sheet: &Sheet) -> Vec<Violation> {
+    fn run_rule(rule: &mut DoubleOperatorRule, sheet: &Sheet) -> Vec<Violation> {
         let mut ctx = LinterContext::default();
         let mut violations = Vec::new();
         for cell in sheet.all_cells() {
@@ -146,9 +146,9 @@ mod tests {
     #[test]
     fn test_double_plus() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "A1++B1")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Calc203);
@@ -159,9 +159,9 @@ mod tests {
     #[test]
     fn test_double_minus() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "A1--B1")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
     }
@@ -173,9 +173,9 @@ mod tests {
             "calc203_allow_double_negative".to_string(),
             toml::Value::Boolean(true),
         );
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "SUMPRODUCT(--(A1:A10>5))")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -183,9 +183,9 @@ mod tests {
     #[test]
     fn test_operators_with_whitespace() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "A1 + + B1")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
     }
@@ -193,9 +193,9 @@ mod tests {
     #[test]
     fn test_string_literal_not_flagged() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "CONCAT(\"++\", A1)")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -203,9 +203,9 @@ mod tests {
     #[test]
     fn test_single_operator_ok() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "A1+B1")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -213,9 +213,9 @@ mod tests {
     #[test]
     fn test_star_slash() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "A1*/B1")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
         let data = violations[0].data::<DoubleOperatorData>().unwrap();
@@ -225,9 +225,9 @@ mod tests {
     #[test]
     fn test_unary_minus_ok() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "-A1")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -235,9 +235,9 @@ mod tests {
     #[test]
     fn test_multiply_by_negative_ok() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "A1*-B1")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -245,9 +245,9 @@ mod tests {
     #[test]
     fn test_divide_by_negative_ok() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "A1/-1")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -255,9 +255,9 @@ mod tests {
     #[test]
     fn test_power_of_negative_ok() {
         let config = LinterConfig::default();
-        let rule = DoubleOperatorRule::new(&config);
+        let mut rule = DoubleOperatorRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "A1^-2")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }

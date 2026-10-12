@@ -56,7 +56,7 @@ impl WalkerRule for NonDescriptiveSheetNameRule {
         super::RuleCategory::Data
     }
 
-    fn on_sheet_start(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
         let mut violations = Vec::new();
         let normalized_name = sheet.name.to_lowercase();
         let patterns = self
@@ -94,7 +94,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = NonDescriptiveSheetNameRule::default();
+        let mut rule = NonDescriptiveSheetNameRule::default();
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&sheet, &mut ctx);
 
@@ -112,7 +112,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = NonDescriptiveSheetNameRule::default();
+        let mut rule = NonDescriptiveSheetNameRule::default();
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&sheet, &mut ctx);
 
@@ -129,7 +129,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = NonDescriptiveSheetNameRule::default();
+        let mut rule = NonDescriptiveSheetNameRule::default();
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&sheet, &mut ctx);
 

@@ -51,26 +51,28 @@ for single-pass cell-by-cell traversal:
 - `on_workbook_end()` — called after all cells are visited. Emit violations
   based on collected data.
 
+Hooks take `&mut self`: rules keep their collected state in plain fields
+(e.g. `HashMap`), without locks. The registry creates fresh instances for every
+lint run (`registry::create_walker_rules`), so each run starts from empty state.
+The trait requires `Send` so that a future per-sheet parallel walk can move
+rule instances between threads and merge their state.
+
 ### Hierarchical Violations
 
 Violations are reported with full context: File → Sheet → Cell. Use
 `ViolationScope` to specify the granularity.
 
-### Shared-State Groups
+### Multi-ID Rules
 
 When multiple rule IDs share the same collection logic (e.g., INT401–403 all
-scan for formula interruptions), use a **shared-state group** to avoid
-redundant work:
+scan for formula interruptions), a single rule struct reports all of them:
 
-- `new_group()` returns an array of instances sharing a single
-  `Arc<Mutex<...>>` data store. Only the **collector** instance
-  (`is_collector: true`) runs `on_cell()` and `on_sheet_end()`. The collector
-  sets `emit_all_kinds: true` to emit violations for all rule IDs in the group.
-
-Both `create_all_walker_rules()` and `clone_walker_rule()` use `new_group()`
-to create INT instances. `clone_walker_rule()` returns `Vec<Box<dyn WalkerRule>>`
-so it can return the full group; `lint_workbook` deduplicates by rule ID to
-prevent triplication when all three INT rules are enabled.
+- `InterruptionRule::new(kinds, config)` takes the interruption kinds to
+  report and emits each violation under its own rule ID.
+- `create_all_walker_rules()` lists one single-kind instance per rule ID, so
+  rule metadata, configuration tokens and enablement stay per ID.
+- `create_walker_rules()` merges the enabled INT IDs into one instance for the
+  run, so cells are classified once however many of them are enabled.
 
 ### Formula Normalization
 

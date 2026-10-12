@@ -156,7 +156,7 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
         super::RuleCategory::Calculations
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula) = cell.as_formula() {
             let ignored_values = self
                 .config

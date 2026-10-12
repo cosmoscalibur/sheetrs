@@ -96,7 +96,11 @@ impl WalkerRule for OldSpreadsheetRule {
         super::RuleCategory::File
     }
 
-    fn on_workbook_start(&self, workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_start(
+        &mut self,
+        workbook: &Workbook,
+        _ctx: &mut LinterContext,
+    ) -> Vec<Violation> {
         self.check_age(workbook)
     }
 }

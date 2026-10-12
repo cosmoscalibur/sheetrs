@@ -8,7 +8,6 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 /// Threshold for rows/columns beyond data.
 const THRESHOLD_ROWS: u32 = 2;
@@ -16,7 +15,7 @@ const THRESHOLD_ROWS: u32 = 2;
 const THRESHOLD_COLS: u32 = 2;
 
 /// Per-sheet tracked max data cell: sheet_index → (max_row, max_col).
-type SheetMaxMap = Mutex<HashMap<u16, (u32, u32)>>;
+type SheetMaxMap = HashMap<u16, (u32, u32)>;
 
 /// Rule that detects excessively large used ranges.
 ///
@@ -31,7 +30,7 @@ impl LargeUsedRangeRule {
     /// Create a new instance.
     pub fn new() -> Self {
         Self {
-            sheet_max: Mutex::new(HashMap::new()),
+            sheet_max: HashMap::new(),
         }
     }
 }
@@ -90,11 +89,9 @@ impl WalkerRule for LargeUsedRangeRule {
         RuleCategory::Reference
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if is_data_cell(cell) {
             self.sheet_max
-                .lock()
-                .unwrap()
                 .entry(sheet.sheet_index)
                 .and_modify(|(max_row, max_col)| {
                     *max_row = (*max_row).max(cell.row);
@@ -105,8 +102,8 @@ impl WalkerRule for LargeUsedRangeRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(&last_data) = self.sheet_max.lock().unwrap().get(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(&last_data) = self.sheet_max.get(&sheet.sheet_index) else {
             return Vec::new(); // No data cells → skip
         };
 
@@ -173,7 +170,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = LargeUsedRangeRule::new();
+        let mut rule = LargeUsedRangeRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -207,7 +204,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = LargeUsedRangeRule::new();
+        let mut rule = LargeUsedRangeRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -227,7 +224,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = LargeUsedRangeRule::new();
+        let mut rule = LargeUsedRangeRule::new();
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_end(&sheet, &mut ctx);
 

@@ -36,7 +36,11 @@ impl WalkerRule for HasMacrosRule {
         super::RuleCategory::VBA
     }
 
-    fn on_workbook_start(&self, workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_start(
+        &mut self,
+        workbook: &Workbook,
+        _ctx: &mut LinterContext,
+    ) -> Vec<Violation> {
         let mut violations = Vec::new();
 
         if workbook.has_macros {
@@ -66,7 +70,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = HasMacrosRule;
+        let mut rule = HasMacrosRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_workbook_start(&workbook, &mut ctx);
 
@@ -82,7 +86,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = HasMacrosRule;
+        let mut rule = HasMacrosRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_workbook_start(&workbook, &mut ctx);
 

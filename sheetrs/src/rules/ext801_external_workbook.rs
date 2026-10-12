@@ -10,10 +10,10 @@ use crate::violation::{
 };
 use regex::Regex;
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 /// Per-sheet cell collection: sheet_index → Vec<(row, col, wb_index)>.
-type SheetCellMap = Mutex<HashMap<u16, Vec<(u32, u32, usize)>>>;
+type SheetCellMap = HashMap<u16, Vec<(u32, u32, usize)>>;
 
 /// Rule that detects references to external workbooks
 pub struct ExternalWorkbooksRule {
@@ -25,7 +25,7 @@ impl ExternalWorkbooksRule {
     /// Create a new instance of the rule.
     pub fn new() -> Self {
         Self {
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -102,13 +102,11 @@ impl WalkerRule for ExternalWorkbooksRule {
         RuleCategory::External
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula) = cell.as_formula() {
             let indices = extract_external_workbook_indices(formula);
             if !indices.is_empty() {
                 self.sheet_cells
-                    .lock()
-                    .unwrap()
                     .entry(sheet.sheet_index)
                     .or_default()
                     .extend(indices.into_iter().map(|idx| (cell.row, cell.col, idx)));
@@ -117,8 +115,8 @@ impl WalkerRule for ExternalWorkbooksRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -178,7 +176,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = ExternalWorkbooksRule::new();
+        let mut rule = ExternalWorkbooksRule::new();
         let mut ctx = LinterContext::default();
 
         // Walk cells

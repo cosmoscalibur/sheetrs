@@ -48,7 +48,7 @@ impl WalkerRule for HiddenColumnsRowsRule {
         RuleCategory::Hidden
     }
 
-    fn on_sheet_start(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
         let mut violations = Vec::new();
 
         for range in merge_ranges(&sheet.hidden_columns) {
@@ -128,7 +128,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = HiddenColumnsRowsRule;
+        let mut rule = HiddenColumnsRowsRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&sheet, &mut ctx);
 
@@ -147,7 +147,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = HiddenColumnsRowsRule;
+        let mut rule = HiddenColumnsRowsRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&sheet, &mut ctx);
 

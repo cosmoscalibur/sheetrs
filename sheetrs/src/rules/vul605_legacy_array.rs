@@ -10,18 +10,17 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 /// Rule that identifies legacy CSE array formulas.
 pub struct LegacyArrayRule {
     /// Per-sheet collected cells: sheet_index → Vec<(row, col)>.
-    sheet_cells: Mutex<HashMap<u16, Vec<(u32, u32)>>>,
+    sheet_cells: HashMap<u16, Vec<(u32, u32)>>,
 }
 
 impl LegacyArrayRule {
     pub fn new() -> Self {
         Self {
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -73,18 +72,18 @@ impl WalkerRule for LegacyArrayRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if cell.is_array && cell.is_formula() {
-            let mut map = self.sheet_cells.lock().unwrap();
-            map.entry(sheet.sheet_index)
+            self.sheet_cells
+                .entry(sheet.sheet_index)
                 .or_default()
                 .push((cell.row, cell.col));
         }
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -136,7 +135,7 @@ mod tests {
         }
     }
 
-    fn run_rule(rule: &LegacyArrayRule, sheet: &Sheet) -> Vec<Violation> {
+    fn run_rule(rule: &mut LegacyArrayRule, sheet: &Sheet) -> Vec<Violation> {
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(sheet, cell, &mut ctx);
@@ -147,8 +146,8 @@ mod tests {
     #[test]
     fn test_single_cse_cell() {
         let sheet = make_sheet(vec![make_cell(0, 0, Some("SUM(A2:A10)"), true)]);
-        let rule = LegacyArrayRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = LegacyArrayRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Vul605);
@@ -157,8 +156,8 @@ mod tests {
     #[test]
     fn test_non_cse_formula() {
         let sheet = make_sheet(vec![make_cell(0, 0, Some("SUM(A2:A10)"), false)]);
-        let rule = LegacyArrayRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = LegacyArrayRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -170,8 +169,8 @@ mod tests {
             make_cell(0, 1, Some("SUM(A2:A10)"), true),
             make_cell(1, 0, Some("SUM(A2:A10)"), true),
         ]);
-        let rule = LegacyArrayRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = LegacyArrayRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1, "Adjacent CSE cells should be grouped");
     }
@@ -184,8 +183,8 @@ mod tests {
             c.value = CellValue::Number(42.0);
             c
         }]);
-        let rule = LegacyArrayRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = LegacyArrayRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -196,8 +195,8 @@ mod tests {
             make_cell(0, 0, Some("SUM(A2:A10)"), true),
             make_cell(5, 5, Some("SUM(B2:B10)"), true),
         ]);
-        let rule = LegacyArrayRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = LegacyArrayRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(
             violations.len(),

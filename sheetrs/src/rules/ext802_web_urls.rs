@@ -11,10 +11,10 @@ use crate::violation::{
 };
 use regex::Regex;
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 /// Per-sheet URL cell collection: sheet_index → Vec<(row, col, url)>.
-type SheetUrlCellMap = Mutex<HashMap<u16, Vec<(u32, u32, String)>>>;
+type SheetUrlCellMap = HashMap<u16, Vec<(u32, u32, String)>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkStatus {
@@ -63,7 +63,7 @@ impl WebUrlsRule {
         Self {
             status,
             timeout_secs,
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -73,7 +73,7 @@ impl Default for WebUrlsRule {
         Self {
             status: LinkStatus::All,
             timeout_secs: 5,
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -167,13 +167,11 @@ impl WalkerRule for WebUrlsRule {
         RuleCategory::External
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if let crate::reader::workbook::CellValue::Text(text) = &cell.value {
             let urls = extract_urls(text);
             if !urls.is_empty() {
                 self.sheet_cells
-                    .lock()
-                    .unwrap()
                     .entry(sheet.sheet_index)
                     .or_default()
                     .extend(urls.into_iter().map(|url| (cell.row, cell.col, url)));
@@ -182,8 +180,8 @@ impl WalkerRule for WebUrlsRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -254,7 +252,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = WebUrlsRule::default();
+        let mut rule = WebUrlsRule::default();
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {
@@ -290,7 +288,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = WebUrlsRule::default();
+        let mut rule = WebUrlsRule::default();
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {

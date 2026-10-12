@@ -81,7 +81,7 @@ impl WalkerRule for CircularReferenceRule {
         RuleCategory::Calculations
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula) = cell.as_formula() {
             let refs = extract_cell_references(
                 formula,
@@ -101,7 +101,7 @@ impl WalkerRule for CircularReferenceRule {
         Vec::new()
     }
 
-    fn on_workbook_end(&self, _workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(&mut self, _workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
         let cycles = find_cycles(&ctx.cell_dependencies);
 
         let mut violations = Vec::new();

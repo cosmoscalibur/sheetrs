@@ -10,10 +10,9 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 /// Per-sheet formula collection: sheet_index → HashMap<formula, Vec<(row, col)>>.
-type SheetFormulaCellMap = Mutex<HashMap<u16, HashMap<String, Vec<(u32, u32)>>>>;
+type SheetFormulaCellMap = HashMap<u16, HashMap<String, Vec<(u32, u32)>>>;
 
 /// Rule that detects duplicate formulas in non-adjacent cells
 pub struct DuplicateFormulasRule {
@@ -25,7 +24,7 @@ impl DuplicateFormulasRule {
     /// Create a new instance.
     pub fn new() -> Self {
         Self {
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -84,11 +83,11 @@ impl WalkerRule for DuplicateFormulasRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula) = cell.as_formula() {
             let normalized = formula.trim().to_string();
-            let mut map = self.sheet_cells.lock().unwrap();
-            map.entry(sheet.sheet_index)
+            self.sheet_cells
+                .entry(sheet.sheet_index)
                 .or_default()
                 .entry(normalized)
                 .or_default()
@@ -97,9 +96,8 @@ impl WalkerRule for DuplicateFormulasRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(formula_cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index)
-        else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(formula_cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -168,7 +166,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = DuplicateFormulasRule::new();
+        let mut rule = DuplicateFormulasRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -212,7 +210,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = DuplicateFormulasRule::new();
+        let mut rule = DuplicateFormulasRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);

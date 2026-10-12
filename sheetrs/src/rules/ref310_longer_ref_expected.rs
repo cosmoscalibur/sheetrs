@@ -198,7 +198,7 @@ impl WalkerRule for LongerRefExpectedRule {
         RuleCategory::Reference
     }
 
-    fn on_workbook_end(&self, workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(&mut self, workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
         if ctx.cell_dependencies.is_empty() {
             return Vec::new();
         }
@@ -445,7 +445,7 @@ mod tests {
         let workbook = make_workbook(vec![sheet]);
 
         let config = LinterConfig::default();
-        let rule = LongerRefExpectedRule::new(&config);
+        let mut rule = LongerRefExpectedRule::new(&config);
         let mut ctx = LinterContext::default();
         ctx.name_to_index.insert("Sheet1".to_string(), 0);
         // B1 depends on A1..A5
@@ -470,7 +470,7 @@ mod tests {
         let workbook = make_workbook(vec![sheet]);
 
         let config = LinterConfig::default();
-        let rule = LongerRefExpectedRule::new(&config);
+        let mut rule = LongerRefExpectedRule::new(&config);
         let mut ctx = LinterContext::default();
         ctx.name_to_index.insert("Sheet1".to_string(), 0);
         ctx.cell_dependencies
@@ -494,7 +494,7 @@ mod tests {
         let workbook = make_workbook(vec![sheet]);
 
         let config = LinterConfig::default();
-        let rule = LongerRefExpectedRule::new(&config);
+        let mut rule = LongerRefExpectedRule::new(&config);
         let mut ctx = LinterContext::default();
         ctx.name_to_index.insert("Sheet1".to_string(), 0);
         ctx.cell_dependencies
@@ -522,7 +522,7 @@ mod tests {
         let workbook = make_workbook(vec![sheet]);
 
         let config = LinterConfig::default();
-        let rule = LongerRefExpectedRule::new(&config);
+        let mut rule = LongerRefExpectedRule::new(&config);
         let mut ctx = LinterContext::default();
         ctx.name_to_index.insert("Sheet1".to_string(), 0);
         ctx.cell_dependencies
@@ -538,7 +538,7 @@ mod tests {
         let workbook = make_workbook(vec![sheet]);
 
         let config = LinterConfig::default();
-        let rule = LongerRefExpectedRule::new(&config);
+        let mut rule = LongerRefExpectedRule::new(&config);
         let ctx = &mut LinterContext::default();
 
         let violations = rule.on_workbook_end(&workbook, ctx);
@@ -562,7 +562,7 @@ mod tests {
             "ref310_min_adjacent_data".to_string(),
             toml::Value::Integer(2),
         );
-        let rule = LongerRefExpectedRule::new(&config);
+        let mut rule = LongerRefExpectedRule::new(&config);
         let mut ctx = LinterContext::default();
         ctx.name_to_index.insert("Sheet1".to_string(), 0);
         ctx.cell_dependencies

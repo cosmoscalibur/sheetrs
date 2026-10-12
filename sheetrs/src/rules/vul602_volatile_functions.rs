@@ -10,7 +10,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 /// Fixed list of volatile functions as internal constants.
 const VOLATILE_FUNCTIONS: &[&str] = &[
@@ -33,7 +33,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
 });
 
 /// Per-sheet cell collection: sheet_index → Vec<(func_index, row, col)>.
-type SheetCellMap = Mutex<HashMap<u16, Vec<(u8, u32, u32)>>>;
+type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
 
 /// Rule that detects usage of volatile functions.
 pub struct VolatileFunctionsRule {
@@ -45,7 +45,7 @@ impl VolatileFunctionsRule {
     /// Create a new instance.
     pub fn new() -> Self {
         Self {
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -105,15 +105,13 @@ impl WalkerRule for VolatileFunctionsRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula_upper) = ctx.formula_upper(sheet, cell)
             && let Some(idx) = SEARCH_PATTERNS
                 .iter()
                 .position(|pattern| formula_upper.contains(pattern.as_str()))
         {
             self.sheet_cells
-                .lock()
-                .unwrap()
                 .entry(sheet.sheet_index)
                 .or_default()
                 .push((idx as u8, cell.row, cell.col));
@@ -121,8 +119,8 @@ impl WalkerRule for VolatileFunctionsRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -182,7 +180,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = VolatileFunctionsRule::new();
+        let mut rule = VolatileFunctionsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -226,7 +224,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = VolatileFunctionsRule::new();
+        let mut rule = VolatileFunctionsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -258,7 +256,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = VolatileFunctionsRule::new();
+        let mut rule = VolatileFunctionsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);

@@ -11,10 +11,9 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 /// Per-sheet cell collection: sheet_index → Vec<(row, col)>.
-type SheetCellMap = Mutex<HashMap<u16, Vec<(u32, u32)>>>;
+type SheetCellMap = HashMap<u16, Vec<(u32, u32)>>;
 
 /// Rule that detects cells with excessive text length
 pub struct LongTextCellRule {
@@ -29,7 +28,7 @@ impl LongTextCellRule {
     pub fn new(config: &LinterConfig) -> Self {
         Self {
             config: config.clone(),
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -74,7 +73,7 @@ impl WalkerRule for LongTextCellRule {
         RuleCategory::Data
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         let threshold = self
             .config
             .get_param_int("max_text_length", Some(&sheet.name))
@@ -83,16 +82,16 @@ impl WalkerRule for LongTextCellRule {
         if let CellValue::Text(text) = &cell.value
             && text.len() > threshold
         {
-            let mut map = self.sheet_cells.lock().unwrap();
-            map.entry(sheet.sheet_index)
+            self.sheet_cells
+                .entry(sheet.sheet_index)
                 .or_default()
                 .push((cell.row, cell.col));
         }
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -144,7 +143,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = LongTextCellRule::new(&LinterConfig::default());
+        let mut rule = LongTextCellRule::new(&LinterConfig::default());
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);

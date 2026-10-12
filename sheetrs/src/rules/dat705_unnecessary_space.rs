@@ -38,7 +38,7 @@ impl WalkerRule for UnnecessarySpaceRule {
         RuleCategory::Data
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if let crate::reader::CellValue::Text(text) = &cell.value {
             let bytes = text.as_bytes();
             let has_whitespace = bytes.first().is_some_and(|b| b.is_ascii_whitespace())
@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn test_leading_space() {
         let sheet = make_sheet(vec![make_text_cell(0, 0, " hello")]);
-        let rule = UnnecessarySpaceRule;
+        let mut rule = UnnecessarySpaceRule;
         let mut ctx = LinterContext::default();
 
         let violations: Vec<_> = sheet
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn test_trailing_space() {
         let sheet = make_sheet(vec![make_text_cell(0, 0, "hello ")]);
-        let rule = UnnecessarySpaceRule;
+        let mut rule = UnnecessarySpaceRule;
         let mut ctx = LinterContext::default();
 
         let violations: Vec<_> = sheet
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn test_both_spaces() {
         let sheet = make_sheet(vec![make_text_cell(0, 0, " hello ")]);
-        let rule = UnnecessarySpaceRule;
+        let mut rule = UnnecessarySpaceRule;
         let mut ctx = LinterContext::default();
 
         let violations: Vec<_> = sheet
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn test_clean_text() {
         let sheet = make_sheet(vec![make_text_cell(0, 0, "hello")]);
-        let rule = UnnecessarySpaceRule;
+        let mut rule = UnnecessarySpaceRule;
         let mut ctx = LinterContext::default();
 
         let violations: Vec<_> = sheet
@@ -167,7 +167,7 @@ mod tests {
             cells: cell_map,
             ..Default::default()
         };
-        let rule = UnnecessarySpaceRule;
+        let mut rule = UnnecessarySpaceRule;
         let mut ctx = LinterContext::default();
 
         let violations: Vec<_> = sheet
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn test_empty_string() {
         let sheet = make_sheet(vec![make_text_cell(0, 0, "")]);
-        let rule = UnnecessarySpaceRule;
+        let mut rule = UnnecessarySpaceRule;
         let mut ctx = LinterContext::default();
 
         let violations: Vec<_> = sheet
