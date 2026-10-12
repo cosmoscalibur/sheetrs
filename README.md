@@ -107,7 +107,8 @@ Provides deep insights into workbook structure, complexity, and dependencies.
 
 **Features:**
 
-- **General Stats**: Counts of sheets, cells, formulas, values.
+- **Workbook and sheet stats**: Sheets, named ranges, file size, and per-sheet
+  used cells, formulas, errors, empty cells and XML size.
 - **Dependencies**: Builds a graph of inter-sheet dependencies (upcoming).
 
 **Usage:**

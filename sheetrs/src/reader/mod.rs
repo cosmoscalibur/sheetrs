@@ -451,3 +451,58 @@ mod external_workbook_parity_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod escaped_text_parity_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn read(bytes: &[u8], extension: &str) -> Workbook {
+        read_workbook_from_reader(Cursor::new(bytes), Some(extension)).unwrap()
+    }
+
+    /// Cells whose XLSX markup holds `&quot;`, `&apos;`, `&lt;` or `&gt;`
+    /// read the same from both formats.
+    #[test]
+    fn test_escaped_text_parity() {
+        let xlsx = read(include_bytes!("../../../tests/minimal_test.xlsx"), "xlsx");
+        let ods = read(include_bytes!("../../../tests/minimal_test.ods"), "ods");
+
+        let formulas = [
+            ("Sheet7", (6, 7), r#"IF(I7="", "Y","N")"#),
+            (
+                "Sheet7",
+                (6, 11),
+                r#"IF(H7="Y", 1,IF(H8="Y",2,IF(C4<0,3,4)))"#,
+            ),
+            ("Sheet7", (7, 8), r#""""#),
+            ("hidden_formula_error", (3, 3), "'Indexing tests'!H12"),
+        ];
+        let texts = [(
+            "Summary",
+            (26, 3),
+            "Indexing tests!H12 -> hidden_formula_error!B7 -> hidden_formula_error!D4",
+        )];
+
+        for (format, workbook) in [("xlsx", &xlsx), ("ods", &ods)] {
+            let cell = |sheet: &str, (row, col): (u32, u32)| {
+                workbook
+                    .get_sheet(sheet)
+                    .and_then(|s| s.get_cell(row, col))
+                    .unwrap_or_else(|| panic!("{format}: missing {sheet} {row},{col}"))
+            };
+            for (sheet, pos, expected) in formulas {
+                let formula = cell(sheet, pos).as_formula();
+                assert_eq!(formula, Some(expected), "{format}: {sheet} {pos:?}");
+            }
+            for (sheet, pos, expected) in texts {
+                let value = &cell(sheet, pos).value;
+                assert_eq!(
+                    value,
+                    &CellValue::Text(expected.into()),
+                    "{format}: {sheet} {pos:?}"
+                );
+            }
+        }
+    }
+}
