@@ -14,7 +14,7 @@ fn main() {
     for sheet in workbook.sheets {
         println!("Sheet: {}", sheet.name);
         if let Some(err) = &sheet.formula_parsing_error {
-            println!("  [FORMULA PARSING ERROR]: {}", err);
+            println!("  [FORMULA PARSING ERROR]: {err}");
         }
         for ((row, col), cell) in sheet.cells {
             if let Some(formula) = &cell.formula {
@@ -29,15 +29,15 @@ fn main() {
                         formula
                     );
                 } else {
-                    println!("  ({}, {}) [FORMULA]: {}", row, col, formula);
+                    println!("  ({row}, {col}) [FORMULA]: {formula}");
                 }
             } else {
                 match &cell.value {
-                    CellValue::Text(t) => println!("  ({}, {}) [TEXT]: {}", row, col, t),
-                    CellValue::Number(n) => println!("  ({}, {}) [NUMBER]: {}", row, col, n),
-                    CellValue::Boolean(b) => println!("  ({}, {}) [BOOL]: {}", row, col, b),
-                    CellValue::Error(e) => println!("  ({}, {}) [ERROR]: {}", row, col, e),
-                    CellValue::Empty => println!("  ({}, {}) [EMPTY]", row, col),
+                    CellValue::Text(t) => println!("  ({row}, {col}) [TEXT]: {t}"),
+                    CellValue::Number(n) => println!("  ({row}, {col}) [NUMBER]: {n}"),
+                    CellValue::Boolean(b) => println!("  ({row}, {col}) [BOOL]: {b}"),
+                    CellValue::Error(e) => println!("  ({row}, {col}) [ERROR]: {e}"),
+                    CellValue::Empty => println!("  ({row}, {col}) [EMPTY]"),
                 }
             }
         }

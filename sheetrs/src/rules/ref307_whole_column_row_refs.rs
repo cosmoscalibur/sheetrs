@@ -68,13 +68,11 @@ impl ViolationData for WholeRefData {
 
         if self.is_column {
             format!(
-                "Whole-column reference (e.g., A:A) found in range: {}. Use bounded ranges for better performance.",
-                range_str
+                "Whole-column reference (e.g., A:A) found in range: {range_str}. Use bounded ranges for better performance."
             )
         } else {
             format!(
-                "Whole-row reference (e.g., 1:1) found in range: {}. Use bounded ranges for better performance.",
-                range_str
+                "Whole-row reference (e.g., 1:1) found in range: {range_str}. Use bounded ranges for better performance."
             )
         }
     }
@@ -89,7 +87,7 @@ impl WalkerRule for WholeColumnRowRefsRule {
         RuleId::Ref307
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Whole Column or Row Reference"
     }
 
@@ -115,10 +113,8 @@ impl WalkerRule for WholeColumnRowRefsRule {
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut map = self.sheet_cells.lock().unwrap();
-        let cells = match map.remove(&sheet.sheet_index) {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
         };
 
         let mut violations = Vec::new();

@@ -3,6 +3,7 @@
 //! Provides cell grouping, bounding-box utilities, formula-parsing helpers,
 //! and a shared cell-reference regex used by multiple rules.
 
+use crate::reader::parser_utils::column_letters_to_index;
 use regex::Regex;
 use std::collections::{HashSet, VecDeque};
 use std::sync::LazyLock;
@@ -35,16 +36,8 @@ pub static CELL_REF_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 /// Returns `None` if the row cannot be parsed or the column string is empty.
 pub fn parse_cell_coords(row_str: &str, col_str: &str) -> Option<(u32, u32)> {
     let row = row_str.parse::<u32>().ok()?;
-    let mut col = 0u32;
-    for ch in col_str.chars() {
-        if ch.is_ascii_alphabetic() {
-            col = col * 26 + (ch.to_ascii_uppercase() as u32 - 'A' as u32 + 1);
-        }
-    }
-    if col == 0 {
-        return None;
-    }
-    Some((row.saturating_sub(1), col.saturating_sub(1)))
+    let col = column_letters_to_index(col_str)?;
+    Some((row.saturating_sub(1), col))
 }
 
 /// Compute the bounding box for a set of cells.

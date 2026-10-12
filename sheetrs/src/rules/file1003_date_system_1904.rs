@@ -67,7 +67,7 @@ impl WalkerRule for DateSystem1904Rule {
         RuleId::File1003
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "1904 Date System"
     }
 

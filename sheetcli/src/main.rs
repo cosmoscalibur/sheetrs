@@ -1,3 +1,5 @@
+#![warn(dead_code_pub_in_binary)]
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use sheetrs::writer;
@@ -61,7 +63,7 @@ fn main() -> Result<()> {
                 // ERR002 check: Broken reference contains #REF!
                 let is_broken = value.contains("#REF!");
                 let status = if is_broken { "❌" } else { "✅" };
-                println!("  {} {} -> {}", status, name, value);
+                println!("  {status} {name} -> {value}");
             }
         }
         return Ok(());
@@ -89,13 +91,13 @@ fn main() -> Result<()> {
         if let Some(sheets) = &mods.remove_sheets {
             println!("  Removing sheets:");
             for s in sheets {
-                println!("    - {}", s);
+                println!("    - {s}");
             }
         }
         if let Some(ranges) = &mods.remove_named_ranges {
             println!("  Removing named ranges:");
             for r in ranges {
-                println!("    - {}", r);
+                println!("    - {r}");
             }
         }
         println!("\nOutput would be: {}", output_path.display());

@@ -247,9 +247,7 @@ mod date_format_parity_tests {
         if let CellValue::Number(val) = d7_ods.value {
             assert!(
                 (val - EXPECTED_D7_ODS_VALUE).abs() < 0.1,
-                "ODS D7 value should be ~{}, got {}",
-                EXPECTED_D7_ODS_VALUE,
-                val
+                "ODS D7 value should be ~{EXPECTED_D7_ODS_VALUE}, got {val}"
             );
         }
 
@@ -288,9 +286,7 @@ mod date_format_parity_tests {
         if let CellValue::Number(val) = d7_xlsx.value {
             assert!(
                 (val - EXPECTED_D7_XLSX_VALUE).abs() < 0.1,
-                "XLSX D7 value should be ~{}, got {}",
-                EXPECTED_D7_XLSX_VALUE,
-                val
+                "XLSX D7 value should be ~{EXPECTED_D7_XLSX_VALUE}, got {val}"
             );
         }
 
@@ -343,8 +339,7 @@ mod date_format_parity_tests {
                 assert_eq!(
                     std::mem::discriminant(&cell_ods.value),
                     std::mem::discriminant(&cell_xlsx.value),
-                    "Date cell value types should match at {:?}",
-                    pos_ods
+                    "Date cell value types should match at {pos_ods:?}"
                 );
             } else {
                 match (&cell_ods.value, &cell_xlsx.value) {
@@ -353,18 +348,14 @@ mod date_format_parity_tests {
                         let xlsx_normalized = normalize_serial(*v_xlsx, true);
                         assert!(
                             (ods_normalized - xlsx_normalized).abs() < 0.0001,
-                            "Date cells should represent the same date at {:?}: ODS serial={}, XLSX serial={}",
-                            pos_ods,
-                            v_ods,
-                            v_xlsx
+                            "Date cells should represent the same date at {pos_ods:?}: ODS serial={v_ods}, XLSX serial={v_xlsx}"
                         );
                     }
                     _ => {
                         assert_eq!(
                             std::mem::discriminant(&cell_ods.value),
                             std::mem::discriminant(&cell_xlsx.value),
-                            "Date cell value types should match at {:?}",
-                            pos_ods
+                            "Date cell value types should match at {pos_ods:?}"
                         );
                     }
                 }
@@ -401,8 +392,8 @@ mod external_workbook_parity_tests {
     #[test]
     fn test_parity_external_workbook() {
         let root = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let ods_path = format!("{}/../tests/minimal_test.ods", root);
-        let xlsx_path = format!("{}/../tests/minimal_test.xlsx", root);
+        let ods_path = format!("{root}/../tests/minimal_test.ods");
+        let xlsx_path = format!("{root}/../tests/minimal_test.xlsx");
 
         let ods_wb = read_workbook(&ods_path).unwrap();
         let xlsx_wb = read_workbook(&xlsx_path).unwrap();
@@ -447,8 +438,7 @@ mod external_workbook_parity_tests {
 
         assert!(
             ods_formula.contains("[1]"),
-            "ODS formula at Sheet7!J6 should contain '[1]', found: {}",
-            ods_formula
+            "ODS formula at Sheet7!J6 should contain '[1]', found: {ods_formula}"
         );
 
         // 4. ODS formula = XLSX formula in Sheet7!J6

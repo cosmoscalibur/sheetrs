@@ -82,8 +82,7 @@ impl LinterConfig {
             }
             if !valid_tokens.contains(rule) {
                 anyhow::bail!(
-                    "Configuration error: Unknown rule or category '{}' in global disabled_rules",
-                    rule
+                    "Configuration error: Unknown rule or category '{rule}' in global disabled_rules"
                 );
             }
         }
@@ -92,8 +91,7 @@ impl LinterConfig {
         for rule in &self.global.enabled_rules {
             if !valid_tokens.contains(rule) {
                 anyhow::bail!(
-                    "Configuration error: Unknown rule or category '{}' in global enabled_rules",
-                    rule
+                    "Configuration error: Unknown rule or category '{rule}' in global enabled_rules"
                 );
             }
         }
@@ -103,9 +101,7 @@ impl LinterConfig {
             for rule in &sheet_config.disabled_rules {
                 if !valid_tokens.contains(rule) {
                     anyhow::bail!(
-                        "Configuration error: Unknown rule or category '{}' in sheet '{}' disabled_rules",
-                        rule,
-                        sheet_name
+                        "Configuration error: Unknown rule or category '{rule}' in sheet '{sheet_name}' disabled_rules"
                     );
                 }
             }
@@ -132,9 +128,8 @@ impl LinterConfig {
         for &(dependent, dependency, resource) in DEPENDENCY_PAIRS {
             if self.is_rule_enabled(dependent) && !self.is_rule_enabled(dependency) {
                 warnings.push(format!(
-                    "Warning: {} is enabled but {} is disabled. \
-                     {} depends on {} for {} and will produce no violations.",
-                    dependent, dependency, dependent, dependency, resource
+                    "Warning: {dependent} is enabled but {dependency} is disabled. \
+                     {dependent} depends on {dependency} for {resource} and will produce no violations."
                 ));
             }
         }

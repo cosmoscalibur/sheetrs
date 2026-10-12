@@ -1,5 +1,6 @@
 use sheetrs::writer::{WorkbookModifications, modify_workbook};
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -23,10 +24,11 @@ fn create_mock_xlsx(path: &Path, sheets: &[&str], ranges: &[(&str, &str)]) -> an
 "#,
     );
     for (i, _) in sheets.iter().enumerate() {
-        content_types.push_str(&format!(
+        let _ = write!(
+            content_types,
             r#"<Override PartName="/xl/worksheets/sheet{}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>"#,
             i + 1
-        ));
+        );
     }
     content_types.push_str("</Types>");
     zip.write_all(content_types.as_bytes())?;
@@ -47,22 +49,23 @@ fn create_mock_xlsx(path: &Path, sheets: &[&str], ranges: &[(&str, &str)]) -> an
 "#,
     );
     for (i, name) in sheets.iter().enumerate() {
-        workbook_xml.push_str(&format!(
+        let _ = write!(
+            workbook_xml,
             r#"<sheet name="{}" sheetId="{}" r:id="rId{}"/>"#,
             name,
             i + 1,
             i + 1
-        ));
+        );
     }
     workbook_xml.push_str("</sheets>");
 
     if !ranges.is_empty() {
         workbook_xml.push_str("<definedNames>");
         for (name, content) in ranges {
-            workbook_xml.push_str(&format!(
-                r#"<definedName name="{}">{}</definedName>"#,
-                name, content
-            ));
+            let _ = write!(
+                workbook_xml,
+                r#"<definedName name="{name}">{content}</definedName>"#
+            );
         }
         workbook_xml.push_str("</definedNames>");
     }
@@ -78,10 +81,12 @@ fn create_mock_xlsx(path: &Path, sheets: &[&str], ranges: &[(&str, &str)]) -> an
 "#,
     );
     for (i, _) in sheets.iter().enumerate() {
-        rels_xml.push_str(&format!(
+        let _ = write!(
+            rels_xml,
             r#"<Relationship Id="rId{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{}.xml"/>"#,
-            i + 1, i + 1
-        ));
+            i + 1,
+            i + 1
+        );
     }
     rels_xml.push_str("</Relationships>");
     zip.write_all(rels_xml.as_bytes())?;

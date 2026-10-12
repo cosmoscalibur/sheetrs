@@ -67,8 +67,7 @@ impl ViolationData for EmptyStringTestData {
         };
 
         format!(
-            "Empty string test (=\"\" or LEN()=0) found in range: {}. Consider using ISBLANK() for better readability.",
-            range_str
+            "Empty string test (=\"\" or LEN()=0) found in range: {range_str}. Consider using ISBLANK() for better readability."
         )
     }
 
@@ -82,7 +81,7 @@ impl WalkerRule for EmptyStringTestRule {
         RuleId::Vul603
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Empty String Test"
     }
 
@@ -105,10 +104,8 @@ impl WalkerRule for EmptyStringTestRule {
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut map = self.sheet_cells.lock().unwrap();
-        let cells = match map.remove(&sheet.sheet_index) {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
         };
 
         let ranges = find_contiguous_ranges(&cells);

@@ -29,7 +29,7 @@ const SUM_FAMILY: &[&str] = &[
 
 /// Pre-computed search patterns: "FUNC(" for each SUM-family function.
 static SEARCH_PATTERNS: LazyLock<Vec<String>> =
-    LazyLock::new(|| SUM_FAMILY.iter().map(|name| format!("{}(", name)).collect());
+    LazyLock::new(|| SUM_FAMILY.iter().map(|name| format!("{name}(")).collect());
 
 /// Rule that identifies double count issues in formulas.
 pub struct DoubleCountRule;
@@ -70,7 +70,7 @@ impl WalkerRule for DoubleCountRule {
         RuleId::Calc205
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Double Count"
     }
 
@@ -79,9 +79,8 @@ impl WalkerRule for DoubleCountRule {
     }
 
     fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let formula = match cell.as_formula() {
-            Some(f) => f,
-            None => return Vec::new(),
+        let Some(formula) = cell.as_formula() else {
+            return Vec::new();
         };
 
         let formula_upper = formula.to_uppercase();

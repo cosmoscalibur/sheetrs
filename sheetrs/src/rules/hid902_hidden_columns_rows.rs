@@ -4,6 +4,7 @@
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::reader::Sheet;
+use crate::reader::parser_utils::column_index_to_letters;
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
 
 /// Rule that detects hidden columns and rows
@@ -39,7 +40,7 @@ impl WalkerRule for HiddenColumnsRowsRule {
         RuleId::Hid902
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Hidden Rows or Columns"
     }
 
@@ -95,11 +96,11 @@ fn merge_ranges(ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
 
 /// Format column range (e.g., "A:C" or "A")
 fn format_column_range(&(start, end): &(u32, u32)) -> String {
-    let start_col = column_index_to_letter(start);
+    let start_col = column_index_to_letters(start);
     if start == end {
         return start_col;
     }
-    format!("{}:{}", start_col, column_index_to_letter(end))
+    format!("{}:{}", start_col, column_index_to_letters(end))
 }
 
 /// Format row range (e.g., "1:3" or "1")
@@ -109,21 +110,6 @@ fn format_row_range(&(start, end): &(u32, u32)) -> String {
         return (start + 1).to_string();
     }
     format!("{}:{}", start + 1, end + 1)
-}
-
-/// Convert column index (0-based) to letter (A, B, ..., Z, AA, AB, ...)
-fn column_index_to_letter(mut index: u32) -> String {
-    let mut result = String::new();
-    index += 1; // Convert to 1-based for calculation
-
-    while index > 0 {
-        index -= 1;
-        let remainder = (index % 26) as u8;
-        result.insert(0, (b'A' + remainder) as char);
-        index /= 26;
-    }
-
-    result
 }
 
 #[cfg(test)]
@@ -167,13 +153,5 @@ mod tests {
 
         let messages: Vec<String> = violations.iter().map(Violation::message).collect();
         assert_eq!(messages, ["Hidden rows: 1:3", "Hidden rows: 11:12"]);
-    }
-
-    #[test]
-    fn test_column_index_to_letter() {
-        assert_eq!(column_index_to_letter(0), "A");
-        assert_eq!(column_index_to_letter(25), "Z");
-        assert_eq!(column_index_to_letter(26), "AA");
-        assert_eq!(column_index_to_letter(27), "AB");
     }
 }

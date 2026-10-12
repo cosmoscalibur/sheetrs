@@ -51,7 +51,7 @@ impl WalkerRule for UnusedNamedRangesRule {
         RuleId::Ref301
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Unused Defined Name"
     }
 
@@ -69,32 +69,21 @@ impl WalkerRule for UnusedNamedRangesRule {
     }
 
     fn on_workbook_end(&self, workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut violations = Vec::new();
         let formulas = self.used_names.lock().unwrap();
-
-        // Collect non-built-in named ranges
-        let named_ranges: Vec<&str> = workbook
+        workbook
             .defined_names
             .keys()
             .filter(|name| !name.starts_with("_xlnm."))
-            .map(|s| s.as_str())
-            .collect();
-
-        for name in named_ranges {
-            let is_used = formulas.iter().any(|f| f.contains(name));
-            if !is_used {
-                violations.push(Violation::with_data(
+            .filter(|name| !formulas.iter().any(|f| f.contains(name.as_str())))
+            .map(|name| {
+                Violation::with_data(
                     RuleId::Ref301,
                     ViolationScope::Book,
-                    UnusedNamedRangeData {
-                        name: name.to_string(),
-                    },
+                    UnusedNamedRangeData { name: name.clone() },
                     Severity::Warning,
-                ));
-            }
-        }
-
-        violations
+                )
+            })
+            .collect()
     }
 }
 

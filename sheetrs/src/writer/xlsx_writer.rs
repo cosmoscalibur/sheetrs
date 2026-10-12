@@ -47,8 +47,8 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
 
         // Check if we should skip this file (e.g. removed sheet xml)
         let should_skip = sheet_ids_to_remove.iter().any(|id| {
-            name == format!("xl/worksheets/sheet{}.xml", id)
-                || name == format!("xl/worksheets/_rels/sheet{}.xml.rels", id)
+            name == format!("xl/worksheets/sheet{id}.xml")
+                || name == format!("xl/worksheets/_rels/sheet{id}.xml.rels")
         });
 
         if should_skip {
@@ -139,7 +139,7 @@ fn parse_sheet_info(workbook_xml: &str) -> Result<Vec<(String, usize)>> {
                 sheets.push((name, sheet_id));
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {}", e)),
+            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {e}")),
             _ => {}
         }
         buf.clear();
@@ -202,7 +202,7 @@ fn remove_sheets_from_workbook_xml(
                     writer.write_event(e)?;
                 }
             }
-            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {}", e)),
+            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {e}")),
         }
         buf.clear();
     }
@@ -231,7 +231,7 @@ fn remove_sheet_content_types(xml: &str, sheet_ids: &[usize]) -> Result<String> 
                 // Skip if this is a sheet we're removing
                 let should_skip = sheet_ids
                     .iter()
-                    .any(|id| part_name == format!("/xl/worksheets/sheet{}.xml", id));
+                    .any(|id| part_name == format!("/xl/worksheets/sheet{id}.xml"));
 
                 if !should_skip {
                     writer.write_event(Event::Empty(e))?;
@@ -239,7 +239,7 @@ fn remove_sheet_content_types(xml: &str, sheet_ids: &[usize]) -> Result<String> 
             }
             Ok(Event::Eof) => break,
             Ok(e) => writer.write_event(e)?,
-            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {}", e)),
+            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {e}")),
         }
         buf.clear();
     }
@@ -268,7 +268,7 @@ fn remove_sheet_relationships(xml: &str, sheet_ids: &[usize]) -> Result<String> 
                 // Skip if this is a sheet relationship we're removing
                 let should_skip = sheet_ids
                     .iter()
-                    .any(|id| target == format!("worksheets/sheet{}.xml", id));
+                    .any(|id| target == format!("worksheets/sheet{id}.xml"));
 
                 if !should_skip {
                     writer.write_event(Event::Empty(e))?;
@@ -276,7 +276,7 @@ fn remove_sheet_relationships(xml: &str, sheet_ids: &[usize]) -> Result<String> 
             }
             Ok(Event::Eof) => break,
             Ok(e) => writer.write_event(e)?,
-            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {}", e)),
+            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {e}")),
         }
         buf.clear();
     }
@@ -339,7 +339,7 @@ fn remove_named_ranges_from_workbook_xml(
                     writer.write_event(e)?;
                 }
             }
-            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {}", e)),
+            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {e}")),
         }
         buf.clear();
     }

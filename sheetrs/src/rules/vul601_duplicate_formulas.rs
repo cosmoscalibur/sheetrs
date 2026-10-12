@@ -76,7 +76,7 @@ impl WalkerRule for DuplicateFormulasRule {
         RuleId::Vul601
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Duplicate Formula"
     }
 
@@ -98,10 +98,9 @@ impl WalkerRule for DuplicateFormulasRule {
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut map = self.sheet_cells.lock().unwrap();
-        let formula_cells = match map.remove(&sheet.sheet_index) {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(formula_cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index)
+        else {
+            return Vec::new();
         };
 
         let mut violations = Vec::new();

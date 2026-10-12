@@ -1,3 +1,5 @@
+#![warn(dead_code_pub_in_binary)]
+
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use sheetrs::{Linter, LinterConfig, Severity};
@@ -65,7 +67,7 @@ fn main() -> Result<()> {
 
     // Warn about implicit rule dependencies (e.g., DAT706 needs CALC202)
     for warning in config.warn_implicit_dependencies() {
-        eprintln!("{}", warning);
+        eprintln!("{warning}");
     }
 
     // Create linter and run

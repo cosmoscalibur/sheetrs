@@ -12,7 +12,7 @@ test-release:
 
 # Lint with clippy
 lint:
-    cargo clippy -- -D warnings
+    cargo clippy --all-targets -- -D warnings
 
 # Format check
 fmt-check:

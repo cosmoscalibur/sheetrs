@@ -131,9 +131,8 @@ fn extract_range_refs(
 
     for cap in CELL_REF_PATTERN.captures_iter(formula) {
         // Only process range references (those with end col/row groups)
-        let (end_col_match, end_row_match) = match (cap.get(6), cap.get(7)) {
-            (Some(ec), Some(er)) => (ec, er),
-            _ => continue, // Single cell ref — skip
+        let (Some(end_col_match), Some(end_row_match)) = (cap.get(6), cap.get(7)) else {
+            continue; // Single cell ref — skip
         };
 
         // Resolve sheet index
@@ -191,7 +190,7 @@ impl WalkerRule for LongerRefExpectedRule {
         RuleId::Ref310
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Longer Ref Expected"
     }
 

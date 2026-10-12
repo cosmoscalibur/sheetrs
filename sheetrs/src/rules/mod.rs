@@ -105,7 +105,7 @@ pub trait WalkerRule: Send + Sync {
     fn id(&self) -> RuleId;
 
     /// Human-readable rule name
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Rule category
     fn category(&self) -> RuleCategory;
@@ -165,7 +165,7 @@ pub enum RuleCategory {
 
 impl RuleCategory {
     /// Get the human-readable string representation of the category
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             RuleCategory::ExcelErrors => "Excel Errors",
             RuleCategory::Calculations => "Unreliable Calculations",

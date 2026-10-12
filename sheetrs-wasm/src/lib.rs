@@ -4,6 +4,7 @@ use sheetrs::rules::registry;
 use sheetrs::{FormatContext, Linter, LinterConfig, violation::Violation};
 use sheetrs::{Severity, ViolationScope};
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write as _;
 use std::io::Cursor;
 use wasm_bindgen::prelude::*;
 
@@ -36,7 +37,7 @@ pub fn get_rules_definition() -> Result<JsValue, JsValue> {
         .collect();
 
     serde_wasm_bindgen::to_value(&rules_info)
-        .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
 }
 
 #[wasm_bindgen]
@@ -47,19 +48,19 @@ pub fn lint_workbook(
 ) -> Result<String, JsValue> {
     let cursor = Cursor::new(file_data);
     let workbook = read_workbook_from_reader(cursor, Some(extension))
-        .map_err(|e| JsValue::from_str(&format!("Reader error: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
 
     let config = if config_toml.trim().is_empty() {
         LinterConfig::default()
     } else {
         LinterConfig::from_toml(config_toml)
-            .map_err(|e| JsValue::from_str(&format!("Config error: {}", e)))?
+            .map_err(|e| JsValue::from_str(&format!("Config error: {e}")))?
     };
 
     let linter = Linter::with_config(config.clone());
     let violations = linter
         .lint_workbook(&workbook)
-        .map_err(|e| JsValue::from_str(&format!("Linter error: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Linter error: {e}")))?;
 
     // Create a map of rule_id -> rule_name for better output
     let metadata = registry::get_all_rule_metadata(&config);
@@ -131,7 +132,7 @@ fn format_violations_human(
 
     // Print sheet-level violations
     for (sheet_name, violations) in &sheet_violations {
-        output.push_str(&format!("📄 Sheet: {}\n", sheet_name));
+        let _ = writeln!(output, "📄 Sheet: {sheet_name}");
         for violation in violations {
             output.push_str(&format_violation(violation, rule_names, 1, &ctx));
         }
@@ -140,9 +141,9 @@ fn format_violations_human(
 
     // Print cell-level violations
     for (sheet_name, cells) in &cell_violations {
-        output.push_str(&format!("📄 Sheet: {}\n", sheet_name));
+        let _ = writeln!(output, "📄 Sheet: {sheet_name}");
         for (cell_ref, violations) in cells {
-            output.push_str(&format!("  📍 Cell: {}\n", cell_ref));
+            let _ = writeln!(output, "  📍 Cell: {cell_ref}");
             for violation in violations {
                 output.push_str(&format_violation(violation, rule_names, 2, &ctx));
             }
@@ -167,13 +168,13 @@ fn format_violations_human(
     output.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
     output.push_str("📊 Summary:\n");
     if error_count > 0 {
-        output.push_str(&format!("  ❌ Errors: {}\n", error_count));
+        let _ = writeln!(output, "  ❌ Errors: {error_count}");
     }
     if warning_count > 0 {
-        output.push_str(&format!("  ⚠️  Warnings: {}\n", warning_count));
+        let _ = writeln!(output, "  ⚠️  Warnings: {warning_count}");
     }
     if info_count > 0 {
-        output.push_str(&format!("  ℹ️  Info: {}\n", info_count));
+        let _ = writeln!(output, "  ℹ️  Info: {info_count}");
     }
 
     output
@@ -212,34 +213,36 @@ fn format_violation(
 pub fn get_workbook_stats(file_data: &[u8], extension: &str) -> Result<String, JsValue> {
     let cursor = Cursor::new(file_data);
     let workbook = read_workbook_from_reader(cursor, Some(extension))
-        .map_err(|e| JsValue::from_str(&format!("Reader error: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
 
     let mut output = String::new();
 
     output.push_str("📊 Workbook Statistics\n");
     output.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
 
-    output.push_str(&format!("📄 Total Sheets: {}\n", workbook.sheets.len()));
+    let _ = writeln!(output, "📄 Total Sheets: {}", workbook.sheets.len());
     output.push_str("\nSheet Names:\n");
     for (i, sheet) in workbook.sheets.iter().enumerate() {
-        output.push_str(&format!("  {}. {}\n", i + 1, sheet.name));
+        let _ = writeln!(output, "  {}. {}", i + 1, sheet.name);
     }
 
-    output.push_str(&format!(
-        "\n🏷️  Named Ranges: {}\n",
+    let _ = writeln!(
+        output,
+        "\n🏷️  Named Ranges: {}",
         workbook.defined_names.len()
-    ));
+    );
     if !workbook.defined_names.is_empty() {
         output.push_str("\nNamed Range List:\n");
         for (i, (name, _formula)) in workbook.defined_names.iter().enumerate() {
-            output.push_str(&format!("  {}. {}\n", i + 1, name));
+            let _ = writeln!(output, "  {}. {}", i + 1, name);
         }
     }
 
-    output.push_str(&format!(
-        "\n🔧 Contains Macros: {}\n",
+    let _ = writeln!(
+        output,
+        "\n🔧 Contains Macros: {}",
         if workbook.has_macros { "Yes" } else { "No" }
-    ));
+    );
 
     Ok(output)
 }

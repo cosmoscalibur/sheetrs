@@ -13,7 +13,7 @@ The suite consists of three specialized CLI tools:
 
 ## Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install) ≥ 1.88 (edition 2024)
+- [Rust](https://www.rust-lang.org/tools/install) ≥ 1.99 (edition 2024)
 
 ## Installation
 
@@ -40,7 +40,7 @@ cargo build
 cargo test
 
 # Lint
-cargo clippy -- -D warnings
+cargo clippy --all-targets -- -D warnings
 
 # Format check
 cargo fmt --check

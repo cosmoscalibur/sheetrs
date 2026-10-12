@@ -127,35 +127,6 @@ impl Sheet {
     pub fn all_cells(&self) -> impl Iterator<Item = &Cell> {
         self.cells.values()
     }
-
-    /// Get cells in a specific column
-    pub fn cells_in_column(&self, col: u32) -> impl Iterator<Item = &Cell> {
-        self.cells.values().filter(move |c| c.col == col)
-    }
-
-    /// Get cells in a specific row
-    pub fn cells_in_row(&self, row: u32) -> impl Iterator<Item = &Cell> {
-        self.cells.values().filter(move |c| c.row == row)
-    }
-
-    /// Get the last cell with actual data (bottom-right corner of data range)
-    pub fn last_data_cell(&self) -> Option<(u32, u32)> {
-        let non_empty_cells: Vec<_> = self
-            .cells
-            .values()
-            .filter(|c| !matches!(c.value, CellValue::Empty))
-            .collect();
-
-        if non_empty_cells.is_empty() {
-            return None;
-        }
-
-        // Find the maximum row and maximum column independently
-        let max_row = non_empty_cells.iter().map(|c| c.row).max()?;
-        let max_col = non_empty_cells.iter().map(|c| c.col).max()?;
-
-        Some((max_row, max_col))
-    }
 }
 
 /// Represents a single cell

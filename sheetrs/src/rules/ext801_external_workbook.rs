@@ -8,8 +8,9 @@ use crate::reader::{Cell, Sheet};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
+use regex::Regex;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 /// Per-sheet cell collection: sheet_index → Vec<(row, col, wb_index)>.
 type SheetCellMap = Mutex<HashMap<u16, Vec<(u32, u32, usize)>>>;
@@ -64,10 +65,7 @@ impl ViolationData for ExternalWorkbookData {
             )
         };
 
-        format!(
-            "External workbook reference {} found in range: {}",
-            wb_name, range_str
-        )
+        format!("External workbook reference {wb_name} found in range: {range_str}")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -75,16 +73,12 @@ impl ViolationData for ExternalWorkbookData {
     }
 }
 
+static INDEX_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[(\d+)\]").unwrap());
+
 /// Extract [N] indices from formula
 fn extract_external_workbook_indices(formula: &str) -> Vec<usize> {
-    use regex::Regex;
-    use std::sync::OnceLock;
-
-    static INDEX_PATTERN: OnceLock<Regex> = OnceLock::new();
-    let re = INDEX_PATTERN.get_or_init(|| Regex::new(r"\[(\d+)\]").unwrap());
-
     let mut indices = Vec::new();
-    for cap in re.captures_iter(formula) {
+    for cap in INDEX_PATTERN.captures_iter(formula) {
         if let Some(num_str) = cap.get(1)
             && let Ok(num) = num_str.as_str().parse::<usize>()
             && num > 0
@@ -100,7 +94,7 @@ impl WalkerRule for ExternalWorkbooksRule {
         RuleId::Ext801
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "External Workbook Reference"
     }
 
@@ -112,40 +106,41 @@ impl WalkerRule for ExternalWorkbooksRule {
         if let Some(formula) = cell.as_formula() {
             let indices = extract_external_workbook_indices(formula);
             if !indices.is_empty() {
-                let mut map = self.sheet_cells.lock().unwrap();
-                let entry = map.entry(sheet.sheet_index).or_default();
-                for idx in indices {
-                    entry.push((cell.row, cell.col, idx));
-                }
+                self.sheet_cells
+                    .lock()
+                    .unwrap()
+                    .entry(sheet.sheet_index)
+                    .or_default()
+                    .extend(indices.into_iter().map(|idx| (cell.row, cell.col, idx)));
             }
         }
         Vec::new()
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
+        };
+
         let mut violations = Vec::new();
-        let mut map = self.sheet_cells.lock().unwrap();
+        // Group cells by workbook index
+        let mut grouped: HashMap<usize, Vec<(u32, u32)>> = HashMap::new();
+        for (row, col, idx) in cells {
+            grouped.entry(idx).or_default().push((row, col));
+        }
 
-        if let Some(cells) = map.remove(&sheet.sheet_index) {
-            // Group cells by workbook index
-            let mut grouped: HashMap<usize, Vec<(u32, u32)>> = HashMap::new();
-            for (row, col, idx) in cells {
-                grouped.entry(idx).or_default().push((row, col));
-            }
-
-            for (idx, group_cells) in grouped {
-                let ranges = find_contiguous_ranges(&group_cells);
-                for range in ranges {
-                    violations.push(Violation::with_data(
-                        RuleId::Ext801,
-                        ViolationScope::Sheet(sheet.sheet_index),
-                        ExternalWorkbookData {
-                            workbook_index: idx,
-                            range: bounding_box(&range),
-                        },
-                        Severity::Warning,
-                    ));
-                }
+        for (idx, group_cells) in grouped {
+            let ranges = find_contiguous_ranges(&group_cells);
+            for range in ranges {
+                violations.push(Violation::with_data(
+                    RuleId::Ext801,
+                    ViolationScope::Sheet(sheet.sheet_index),
+                    ExternalWorkbookData {
+                        workbook_index: idx,
+                        range: bounding_box(&range),
+                    },
+                    Severity::Warning,
+                ));
             }
         }
 

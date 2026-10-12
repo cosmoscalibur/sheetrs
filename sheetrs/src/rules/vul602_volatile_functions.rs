@@ -75,8 +75,7 @@ impl ViolationData for VolatileFunctionData {
         };
 
         format!(
-            "Volatile function {}() found in range: {}. Consider alternatives for better performance.",
-            func_name, range_str
+            "Volatile function {func_name}() found in range: {range_str}. Consider alternatives for better performance."
         )
     }
 
@@ -90,7 +89,7 @@ impl WalkerRule for VolatileFunctionsRule {
         RuleId::Vul602
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Volatile Function"
     }
 
@@ -103,9 +102,11 @@ impl WalkerRule for VolatileFunctionsRule {
             let formula_upper = formula.to_uppercase();
 
             for (idx, func) in VOLATILE_FUNCTIONS.iter().enumerate() {
-                if formula_upper.contains(&format!("{}(", func)) {
-                    let mut map = self.sheet_cells.lock().unwrap();
-                    map.entry(sheet.sheet_index)
+                if formula_upper.contains(&format!("{func}(")) {
+                    self.sheet_cells
+                        .lock()
+                        .unwrap()
+                        .entry(sheet.sheet_index)
                         .or_default()
                         .push((idx as u8, cell.row, cell.col));
                     break; // Only count each cell once
@@ -116,10 +117,8 @@ impl WalkerRule for VolatileFunctionsRule {
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut map = self.sheet_cells.lock().unwrap();
-        let cells = match map.remove(&sheet.sheet_index) {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
         };
 
         let mut violations = Vec::new();

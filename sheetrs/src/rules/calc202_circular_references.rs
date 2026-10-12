@@ -73,7 +73,7 @@ impl WalkerRule for CircularReferenceRule {
         RuleId::Calc202
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Circular Reference"
     }
 
@@ -172,9 +172,8 @@ fn extract_cell_references(
             let col_str = col_match.as_str();
             let row_str = row_match.as_str();
 
-            let (start_row, start_col) = match parse_cell_coords(row_str, col_str) {
-                Some(coords) => coords,
-                None => continue,
+            let Some((start_row, start_col)) = parse_cell_coords(row_str, col_str) else {
+                continue;
             };
 
             if let (Some(end_col_match), Some(end_row_match)) = (cap.get(6), cap.get(7)) {

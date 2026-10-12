@@ -20,7 +20,7 @@ impl WalkerRule for LongFormulaRule {
         RuleId::Cpx509
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Long Formula"
     }
 

@@ -27,3 +27,6 @@ link-validation = ["reqwest"]
 
 [dev-dependencies]
 tempfile = "3.27"
+
+[lints]
+workspace = true

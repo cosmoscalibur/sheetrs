@@ -50,7 +50,7 @@ impl WalkerRule for RefToEmptyCellRule {
         RuleId::Ref309
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Ref to Empty Cell"
     }
 

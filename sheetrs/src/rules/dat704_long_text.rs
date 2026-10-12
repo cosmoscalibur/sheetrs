@@ -53,7 +53,7 @@ impl ViolationData for LongTextData {
                 CellReference::new(er, ec)
             )
         };
-        format!("Long text cells in range: {}", range_str)
+        format!("Long text cells in range: {range_str}")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -66,7 +66,7 @@ impl WalkerRule for LongTextCellRule {
         RuleId::Data704
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Long text cell"
     }
 
@@ -92,10 +92,8 @@ impl WalkerRule for LongTextCellRule {
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut map = self.sheet_cells.lock().unwrap();
-        let cells = match map.remove(&sheet.sheet_index) {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
         };
 
         let ranges = find_contiguous_ranges(&cells);

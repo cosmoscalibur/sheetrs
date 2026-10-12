@@ -11,7 +11,7 @@ fn main() -> anyhow::Result<()> {
     let path = &args[1];
     let workbook = read_workbook(path)?;
 
-    println!("File: {}", path);
+    println!("File: {path}");
     println!("Sheets: {}", workbook.sheets.len());
 
     for sheet in &workbook.sheets {
@@ -31,7 +31,7 @@ fn main() -> anyhow::Result<()> {
 
                 match &cell.value {
                     CellValue::Text(text) => {
-                        println!("  -> Text content: '{}'", text);
+                        println!("  -> Text content: '{text}'");
                         println!("  -> Trimmed: '{}'", text.trim());
                         println!(
                             "  -> Can parse as f64: {}",
@@ -39,15 +39,15 @@ fn main() -> anyhow::Result<()> {
                         );
                     }
                     CellValue::Number(num) => {
-                        println!("  -> Number value: {}", num);
+                        println!("  -> Number value: {num}");
                     }
                     CellValue::Boolean(b) => {
-                        println!("  -> Boolean value: {}", b);
+                        println!("  -> Boolean value: {b}");
                     }
                     CellValue::Error(e) => {
-                        println!("  -> Error: {}", e);
+                        println!("  -> Error: {e}");
                         if let Some(f) = &cell.formula {
-                            println!("  -> Formula: {}", f);
+                            println!("  -> Formula: {f}");
                         }
                     }
                     CellValue::Empty => {

@@ -45,7 +45,6 @@ The binary crates are thin wrappers around `sheetrs`.
 - **`sheetlint`**:
   - Responsible for loading configuration (`sheetlint.toml`).
   - Iterates over the workbook using `sheetrs` readers.
-  - parallelizes rule checks using `rayon` (where applicable).
   - Formats output (Text/JSON).
 
 - **`sheetstats`**:
@@ -64,4 +63,3 @@ The binary crates are thin wrappers around `sheetrs`.
 4. **Performance First**:
    - Use streaming readers where possible.
    - Avoid loading unused data (e.g., loading values when only checking formulas).
-   - `rayon` for parallel processing of independent sheets/rules.

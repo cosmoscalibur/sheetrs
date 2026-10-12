@@ -26,7 +26,7 @@ impl ViolationData for NonDescriptiveSheetNameData {
             .workbook
             .sheet_name_by_index(self.sheet_index)
             .unwrap_or("Unknown");
-        format!("Non-descriptive sheet name '{}'", name)
+        format!("Non-descriptive sheet name '{name}'")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -48,7 +48,7 @@ impl WalkerRule for NonDescriptiveSheetNameRule {
         RuleId::Data701
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Non-Descriptive Sheet Name"
     }
 

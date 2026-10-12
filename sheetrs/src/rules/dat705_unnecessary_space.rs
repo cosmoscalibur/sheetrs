@@ -30,7 +30,7 @@ impl WalkerRule for UnnecessarySpaceRule {
         RuleId::Data705
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Unnecessary Space"
     }
 

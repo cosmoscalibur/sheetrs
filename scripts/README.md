@@ -21,9 +21,35 @@ The main benchmark script. Uses `/usr/bin/time -v` for comprehensive metrics:
 ./scripts/benchmark.sh
 ```
 
+## Production Output
+
+`sheetlint` reports millions of violations for the production files, so its
+output runs to hundreds of MB, like the reference outputs in
+`tests/production/baselines/`. `benchmark.sh` writes that full output into its
+`scripts/benchmark_*.txt` results file.
+
+To compare outputs between two builds, use streaming tools (`sort -T <dir>`,
+`diff`, `md5sum`) on the text output. Tools that load the whole document into
+memory, such as `jq` on the `--format json` output, can exhaust RAM.
+
+Two runs of the same build can differ: violation order varies (#33), so sort
+both outputs before diffing, and REF310 may report a different set of
+violations (#34), so a diff limited to REF310 lines and the summary counts is
+expected.
+
 ## Comparisons
 
 Benchmarks use production files in `tests/production/`.
+
+### Rust 1.99 lints and cleanups (#30)
+
+Mean of 3 runs.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 37.8s | 36.0s |
+| Peak RAM | 1944 MB | 1959 MB |
+| Binary size | 12.2M | - |
 
 ### Arc+Box+dedup+shrink+ods-no-clone (4172267)
 

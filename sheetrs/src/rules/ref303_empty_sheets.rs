@@ -22,7 +22,7 @@ impl ViolationData for EmptySheetData {
             .workbook
             .sheet_name_by_index(self.sheet_index)
             .unwrap_or("Unknown");
-        format!("Sheet '{}' is completely empty", name)
+        format!("Sheet '{name}' is completely empty")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -35,7 +35,7 @@ impl WalkerRule for EmptySheetsRule {
         RuleId::Ref303
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Empty Sheet"
     }
 

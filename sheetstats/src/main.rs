@@ -1,3 +1,5 @@
+#![warn(dead_code_pub_in_binary)]
+
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use serde::Serialize;
@@ -193,7 +195,7 @@ fn calculate_sheet_sizes(
             let sheet_name = if sheet_num > 0 && sheet_num <= workbook.sheets.len() {
                 workbook.sheets[sheet_num - 1].name.clone()
             } else {
-                format!("Sheet{}", sheet_num)
+                format!("Sheet{sheet_num}")
             };
 
             sheet_sizes.push(SheetSize {
@@ -219,7 +221,7 @@ fn humanize_size(bytes: u64) -> String {
     } else if bytes >= KB {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
-        format!("{} bytes", bytes)
+        format!("{bytes} bytes")
     }
 }
 
@@ -267,6 +269,6 @@ fn print_human(stats: &FileStats) {
 
 fn print_json(stats: &FileStats) -> Result<()> {
     let json = serde_json::to_string_pretty(stats)?;
-    println!("{}", json);
+    println!("{json}");
     Ok(())
 }

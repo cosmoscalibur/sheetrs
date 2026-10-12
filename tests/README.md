@@ -44,4 +44,4 @@ let ods_path = "tests/minimal_test.ods";
 ```
 
 ### Caching Parsed Workbooks
-Consider using `lazy_static` or `once_cell` to cache parsed workbooks across tests to improve performance.
+Consider a `std::sync::LazyLock` to cache parsed workbooks across tests to improve performance.

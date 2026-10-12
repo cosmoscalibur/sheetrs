@@ -5,6 +5,7 @@
 //! then computes blanks as `used_range - occupied` in `on_sheet_end`.
 
 use super::{LinterContext, RuleCategory, WalkerRule};
+use crate::reader::parser_utils::column_index_to_letters;
 use crate::reader::{Cell, Sheet};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
 use std::collections::{HashMap, HashSet};
@@ -35,6 +36,15 @@ impl Default for SheetOccupancy {
             min_row: u32::MAX,
             min_col: u32::MAX,
         }
+    }
+}
+
+impl SheetOccupancy {
+    fn record(&mut self, cell: &Cell) {
+        self.occupied_rows.insert(cell.row);
+        self.occupied_cols.insert(cell.col);
+        self.min_row = self.min_row.min(cell.row);
+        self.min_col = self.min_col.min(cell.col);
     }
 }
 
@@ -108,7 +118,7 @@ impl WalkerRule for BlankRowsColumnsRule {
         RuleId::Ref305
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Blank Row or Column"
     }
 
@@ -118,21 +128,19 @@ impl WalkerRule for BlankRowsColumnsRule {
 
     fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if !cell.value.is_empty() {
-            let mut map = self.sheet_data.lock().unwrap();
-            let entry = map.entry(sheet.sheet_index).or_default();
-            entry.occupied_rows.insert(cell.row);
-            entry.occupied_cols.insert(cell.col);
-            entry.min_row = entry.min_row.min(cell.row);
-            entry.min_col = entry.min_col.min(cell.col);
+            self.sheet_data
+                .lock()
+                .unwrap()
+                .entry(sheet.sheet_index)
+                .or_default()
+                .record(cell);
         }
         Vec::new()
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut map = self.sheet_data.lock().unwrap();
-        let data = match map.remove(&sheet.sheet_index) {
-            Some(d) => d,
-            None => return Vec::new(), // No non-empty cells → skip
+        let Some(data) = self.sheet_data.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new(); // No non-empty cells → skip
         };
 
         let (max_row, max_col) = match sheet.used_range {
@@ -274,7 +282,7 @@ fn format_row_ranges(rows: &[u32]) -> String {
 
 /// Format column ranges (e.g., "C, E-G, J").
 fn format_column_ranges(cols: &[u32]) -> String {
-    format_ranges(cols, column_index_to_letter)
+    format_ranges(cols, column_index_to_letters)
 }
 
 /// Generic range formatter.
@@ -311,20 +319,6 @@ where
     }
 
     ranges.join(", ")
-}
-
-/// Convert column index (0-based) to Excel-style letter (A, B, ..., Z, AA, AB, ...).
-fn column_index_to_letter(col: u32) -> String {
-    let mut result = String::new();
-    let mut col = col + 1; // Convert to 1-based
-
-    while col > 0 {
-        col -= 1;
-        result.insert(0, (b'A' + (col % 26) as u8) as char);
-        col /= 26;
-    }
-
-    result
 }
 
 #[cfg(test)]
@@ -881,13 +875,5 @@ mod tests {
         let violations = rule.on_sheet_end(&sheet, &mut ctx);
 
         assert!(violations.is_empty());
-    }
-
-    #[test]
-    fn test_column_index_to_letter() {
-        assert_eq!(column_index_to_letter(0), "A");
-        assert_eq!(column_index_to_letter(25), "Z");
-        assert_eq!(column_index_to_letter(26), "AA");
-        assert_eq!(column_index_to_letter(27), "AB");
     }
 }

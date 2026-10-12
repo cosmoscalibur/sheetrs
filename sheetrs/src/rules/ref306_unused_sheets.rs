@@ -22,7 +22,7 @@ impl ViolationData for UnusedSheetData {
             .workbook
             .sheet_name_by_index(self.sheet_index)
             .unwrap_or("Unknown");
-        format!("Sheet '{}' is not referenced by any other sheet", name)
+        format!("Sheet '{name}' is not referenced by any other sheet")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -35,7 +35,7 @@ impl WalkerRule for UnusedSheetsRule {
         RuleId::Ref306
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Unused Sheet"
     }
 

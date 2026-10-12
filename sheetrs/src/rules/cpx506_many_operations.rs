@@ -20,7 +20,7 @@ impl WalkerRule for ManyOperationsRule {
         RuleId::Cpx506
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Many Operations"
     }
 
