@@ -37,15 +37,14 @@ the workbook total):
 | Empty cells | Cells without value or formula inside the used area, which spans from A1 to the last row and column holding a used cell. |
 | XML size | Uncompressed size of the XML describing the sheet: the worksheet part in XLSX, the `<table:table>` element of `content.xml` in ODS. |
 
-Cell metrics match between an XLSX workbook and its ODS export. XML size
-depends on each format's markup, so it compares sheets within a workbook, not
-across formats.
+XML size depends on each format's markup, so it compares sheets within a
+workbook, not across formats.
 
 ### JSON output
 
 ```json
 {
-  "total_sheets": 2,
+  "total_sheets": 1,
   "total_named_ranges": 0,
   "total_file_size": 8812,
   "total_used_cells": 12,
