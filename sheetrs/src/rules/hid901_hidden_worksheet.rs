@@ -43,7 +43,7 @@ impl WalkerRule for HiddenWorksheetRule {
         super::RuleCategory::Hidden
     }
 
-    fn on_sheet_start(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
         let mut violations = Vec::new();
 
         if !sheet.visible {
@@ -75,7 +75,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = HiddenWorksheetRule;
+        let mut rule = HiddenWorksheetRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&hidden_sheet, &mut ctx);
 
@@ -89,7 +89,7 @@ mod tests {
     fn test_visible_sheet() {
         let visible_sheet = Sheet::new("Visible".to_string(), 0);
 
-        let rule = HiddenWorksheetRule;
+        let mut rule = HiddenWorksheetRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_start(&visible_sheet, &mut ctx);
 

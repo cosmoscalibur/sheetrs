@@ -43,7 +43,7 @@ impl WalkerRule for UnusedSheetsRule {
         RuleCategory::Reference
     }
 
-    fn on_workbook_end(&self, workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(&mut self, workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
         let mut violations = Vec::new();
 
         // Use referenced_sheets populated by calc202's on_cell
@@ -110,7 +110,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = UnusedSheetsRule;
+        let mut rule = UnusedSheetsRule;
         let mut ctx = LinterContext::default();
 
         // Simulate: Sheet1 (index 0) is referenced by another sheet
@@ -138,7 +138,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = UnusedSheetsRule;
+        let mut rule = UnusedSheetsRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_workbook_end(&workbook, &mut ctx);
 

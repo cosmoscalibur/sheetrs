@@ -3,6 +3,7 @@
 use super::*;
 use crate::config::LinterConfig;
 use crate::violation::RuleId;
+use int401_interrupted_by_data::{InterruptionKind, InterruptionRule};
 use std::collections::HashSet;
 
 /// List of rule IDs that are active by default
@@ -138,12 +139,14 @@ pub fn create_all_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerRule>
         )),
     ];
 
-    // Formula Interruptions (4xx) — shared state group to avoid 3× work
-    let [int_data, int_empty, int_other] =
-        int401_interrupted_by_data::InterruptionRule::new_group(config);
-    rules.push(Box::new(int_data));
-    rules.push(Box::new(int_empty));
-    rules.push(Box::new(int_other));
+    // Formula Interruptions (4xx)
+    for kind in [
+        InterruptionKind::Data,
+        InterruptionKind::Empty,
+        InterruptionKind::Other,
+    ] {
+        rules.push(Box::new(InterruptionRule::new(vec![kind], config)));
+    }
 
     // Remaining rules
     rules.extend(vec![
@@ -212,116 +215,90 @@ pub fn create_enabled_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerR
         .collect()
 }
 
-/// Clone a walker rule for execution (rules need fresh state per lint).
+/// Creates fresh instances of the given rules, in order, for one lint run.
 ///
-/// Returns one or more fresh rule instances. For shared-state groups (INT401–403),
-/// all three instances are returned together to share a single data store.
-pub fn clone_walker_rule(rule: &dyn WalkerRule, config: &LinterConfig) -> Vec<Box<dyn WalkerRule>> {
-    match rule.id() {
-        RuleId::Err101 => vec![Box::new(err101_broken_named_ranges::BrokenNamedRangesRule)],
-        RuleId::Err102 => vec![Box::new(err102_error_cells::ErrorCellsRule)],
-        RuleId::Err103 => vec![Box::new(err103_ref_to_error::RefToErrorRule)],
+/// INT401–403 share one [`InterruptionRule`] reporting every requested kind,
+/// placed at the position of the first of them.
+pub fn create_walker_rules(ids: &[RuleId], config: &LinterConfig) -> Vec<Box<dyn WalkerRule>> {
+    let interruption_kinds: Vec<InterruptionKind> = ids
+        .iter()
+        .filter_map(|&id| InterruptionKind::from_rule_id(id))
+        .collect();
+    let mut interruption_kinds = Some(interruption_kinds);
+    let mut rules: Vec<Box<dyn WalkerRule>> = Vec::with_capacity(ids.len());
+    for &id in ids {
+        if InterruptionKind::from_rule_id(id).is_none() {
+            rules.push(create_walker_rule(id, config));
+        } else if let Some(kinds) = interruption_kinds.take() {
+            rules.push(Box::new(InterruptionRule::new(kinds, config)));
+        }
+    }
+    rules
+}
+
+/// Creates a fresh instance of a single rule.
+fn create_walker_rule(id: RuleId, config: &LinterConfig) -> Box<dyn WalkerRule> {
+    match id {
+        RuleId::Err101 => Box::new(err101_broken_named_ranges::BrokenNamedRangesRule),
+        RuleId::Err102 => Box::new(err102_error_cells::ErrorCellsRule),
+        RuleId::Err103 => Box::new(err103_ref_to_error::RefToErrorRule),
         RuleId::Calc201 => {
-            vec![Box::new(
-                calc201_hardcoded_values::HardcodedValuesInFormulasRule::new(config),
-            )]
+            Box::new(calc201_hardcoded_values::HardcodedValuesInFormulasRule::new(config))
         }
-        RuleId::Calc202 => vec![Box::new(
-            calc202_circular_references::CircularReferenceRule::new(),
-        )],
-        RuleId::Calc203 => vec![Box::new(calc203_double_operator::DoubleOperatorRule::new(
+        RuleId::Calc202 => Box::new(calc202_circular_references::CircularReferenceRule::new()),
+        RuleId::Calc203 => Box::new(calc203_double_operator::DoubleOperatorRule::new(config)),
+        RuleId::Calc204 => Box::new(calc204_approximate_lookup::ApproximateLookupRule),
+        RuleId::Calc205 => Box::new(calc205_double_count::DoubleCountRule),
+        RuleId::Ref301 => Box::new(ref301_unused_named_ranges::UnusedNamedRangesRule::new()),
+        RuleId::Ref302 => Box::new(ref302_duplicate_names::DuplicateSheetNamesRule),
+        RuleId::Ref303 => Box::new(ref303_empty_sheets::EmptySheetsRule),
+        RuleId::Ref304 => Box::new(ref304_large_used_range::LargeUsedRangeRule::new()),
+        RuleId::Ref305 => Box::new(ref305_blank_rows_columns::BlankRowsColumnsRule::new()),
+        RuleId::Ref306 => Box::new(ref306_unused_sheets::UnusedSheetsRule),
+        RuleId::Ref307 => Box::new(ref307_whole_column_row_refs::WholeColumnRowRefsRule::new()),
+        RuleId::Ref309 => Box::new(ref309_ref_to_empty_cell::RefToEmptyCellRule),
+        RuleId::Ref310 => Box::new(ref310_longer_ref_expected::LongerRefExpectedRule::new(
             config,
-        ))],
-        RuleId::Calc204 => vec![Box::new(calc204_approximate_lookup::ApproximateLookupRule)],
-        RuleId::Calc205 => vec![Box::new(calc205_double_count::DoubleCountRule)],
-        RuleId::Ref301 => vec![Box::new(
-            ref301_unused_named_ranges::UnusedNamedRangesRule::new(),
-        )],
-        RuleId::Ref302 => vec![Box::new(ref302_duplicate_names::DuplicateSheetNamesRule)],
-        RuleId::Ref303 => vec![Box::new(ref303_empty_sheets::EmptySheetsRule)],
-        RuleId::Ref304 => vec![Box::new(ref304_large_used_range::LargeUsedRangeRule::new())],
-        RuleId::Ref305 => vec![Box::new(
-            ref305_blank_rows_columns::BlankRowsColumnsRule::new(),
-        )],
-        RuleId::Ref306 => vec![Box::new(ref306_unused_sheets::UnusedSheetsRule)],
-        RuleId::Ref307 => vec![Box::new(
-            ref307_whole_column_row_refs::WholeColumnRowRefsRule::new(),
-        )],
-        RuleId::Ref309 => vec![Box::new(ref309_ref_to_empty_cell::RefToEmptyCellRule)],
-        RuleId::Ref310 => vec![Box::new(
-            ref310_longer_ref_expected::LongerRefExpectedRule::new(config),
-        )],
-        // INT401–403: always create the full shared-state group together.
-        // When any one of INT401/402/403 is cloned, emit the whole group.
-        // Duplicates are prevented in lint_workbook by deduplicating rule IDs.
-        RuleId::Int401 | RuleId::Int402 | RuleId::Int403 => {
-            let [data, empty, other] =
-                int401_interrupted_by_data::InterruptionRule::new_group(config);
-            vec![Box::new(data), Box::new(empty), Box::new(other)]
-        }
-        RuleId::Cpx501 => vec![Box::new(
-            cpx501_sheet_counts::ExcessiveSheetCountsRule::new(config),
-        )],
-        RuleId::Cpx502 => vec![Box::new(cpx502_merged_cells::MergedCellsRule)],
-        RuleId::Cpx503 => vec![Box::new(
+        )),
+        RuleId::Int401 | RuleId::Int402 | RuleId::Int403 => Box::new(InterruptionRule::new(
+            InterruptionKind::from_rule_id(id).into_iter().collect(),
+            config,
+        )),
+        RuleId::Cpx501 => Box::new(cpx501_sheet_counts::ExcessiveSheetCountsRule::new(config)),
+        RuleId::Cpx502 => Box::new(cpx502_merged_cells::MergedCellsRule),
+        RuleId::Cpx503 => Box::new(
             cpx503_excessive_conditional_formatting::ExcessiveConditionalFormattingRule::new(
                 config,
             ),
-        )],
-        RuleId::Cpx504 => vec![Box::new(cpx504_deep_if_nesting::DeepIfNestingRule::new(
+        ),
+        RuleId::Cpx504 => Box::new(cpx504_deep_if_nesting::DeepIfNestingRule::new(config)),
+        RuleId::Cpx505 => Box::new(cpx505_deep_formula_nesting::DeepFormulaNestingRule),
+        RuleId::Cpx506 => Box::new(cpx506_many_operations::ManyOperationsRule),
+        RuleId::Cpx507 => Box::new(cpx507_multiple_sheet_ref::MultipleSheetRefRule::new(config)),
+        RuleId::Cpx508 => Box::new(cpx508_many_references::ManyReferencesRule),
+        RuleId::Cpx509 => Box::new(cpx509_long_formula::LongFormulaRule),
+        RuleId::Vul601 => Box::new(vul601_duplicate_formulas::DuplicateFormulasRule::new()),
+        RuleId::Vul602 => Box::new(vul602_volatile_functions::VolatileFunctionsRule::new()),
+        RuleId::Vul603 => Box::new(vul603_empty_string_test::EmptyStringTestRule::new()),
+        RuleId::Vul604 => Box::new(vul604_error_prone_functions::ErrorProneFunctionsRule::new(
             config,
-        ))],
-        RuleId::Cpx505 => vec![Box::new(
-            cpx505_deep_formula_nesting::DeepFormulaNestingRule,
-        )],
-        RuleId::Cpx506 => vec![Box::new(cpx506_many_operations::ManyOperationsRule)],
-        RuleId::Cpx507 => vec![Box::new(
-            cpx507_multiple_sheet_ref::MultipleSheetRefRule::new(config),
-        )],
-        RuleId::Cpx508 => vec![Box::new(cpx508_many_references::ManyReferencesRule)],
-        RuleId::Cpx509 => vec![Box::new(cpx509_long_formula::LongFormulaRule)],
-        RuleId::Vul601 => vec![Box::new(
-            vul601_duplicate_formulas::DuplicateFormulasRule::new(),
-        )],
-        RuleId::Vul602 => vec![Box::new(
-            vul602_volatile_functions::VolatileFunctionsRule::new(),
-        )],
-        RuleId::Vul603 => vec![Box::new(
-            vul603_empty_string_test::EmptyStringTestRule::new(),
-        )],
-        RuleId::Vul604 => vec![Box::new(
-            vul604_error_prone_functions::ErrorProneFunctionsRule::new(config),
-        )],
-        RuleId::Vul605 => vec![Box::new(vul605_legacy_array::LegacyArrayRule::new())],
-        RuleId::Vul606 => vec![Box::new(vul606_deprecated_func::DeprecatedFuncRule::new())],
-        RuleId::Data701 => vec![Box::new(
-            dat701_sheet_names::NonDescriptiveSheetNameRule::new(config),
-        )],
-        RuleId::Data702 => vec![Box::new(
-            dat702_numeric_formats::InconsistentNumberFormatRule::new(),
-        )],
-        RuleId::Data703 => vec![Box::new(
-            dat703_date_formats::InconsistentDateFormatRule::new(config),
-        )],
-        RuleId::Data704 => vec![Box::new(dat704_long_text::LongTextCellRule::new(config))],
-        RuleId::Data705 => vec![Box::new(dat705_unnecessary_space::UnnecessarySpaceRule)],
-        RuleId::Data706 => vec![Box::new(dat706_numeric_text_calc::NumericTextCalcRule)],
-        RuleId::Ext801 => vec![Box::new(
-            ext801_external_workbook::ExternalWorkbooksRule::new(),
-        )],
-        RuleId::Ext802 => vec![Box::new(ext802_web_urls::WebUrlsRule::new(config))],
-        RuleId::Hid901 => vec![Box::new(hid901_hidden_worksheet::HiddenWorksheetRule)],
-        RuleId::Hid902 => vec![Box::new(hid902_hidden_columns_rows::HiddenColumnsRowsRule)],
-        RuleId::File1001 => vec![Box::new(file1001_large_file_size::LargeFileSizeRule::new(
-            config,
-        ))],
-        RuleId::File1002 => vec![Box::new(file1002_old_spreadsheet::OldSpreadsheetRule::new(
-            config,
-        ))],
-        RuleId::File1003 => vec![Box::new(
-            file1003_date_system_1904::DateSystem1904Rule::new(),
-        )],
-        RuleId::Vba1101 => vec![Box::new(vba1101_has_macros::HasMacrosRule)],
+        )),
+        RuleId::Vul605 => Box::new(vul605_legacy_array::LegacyArrayRule::new()),
+        RuleId::Vul606 => Box::new(vul606_deprecated_func::DeprecatedFuncRule::new()),
+        RuleId::Data701 => Box::new(dat701_sheet_names::NonDescriptiveSheetNameRule::new(config)),
+        RuleId::Data702 => Box::new(dat702_numeric_formats::InconsistentNumberFormatRule::new()),
+        RuleId::Data703 => Box::new(dat703_date_formats::InconsistentDateFormatRule::new(config)),
+        RuleId::Data704 => Box::new(dat704_long_text::LongTextCellRule::new(config)),
+        RuleId::Data705 => Box::new(dat705_unnecessary_space::UnnecessarySpaceRule),
+        RuleId::Data706 => Box::new(dat706_numeric_text_calc::NumericTextCalcRule),
+        RuleId::Ext801 => Box::new(ext801_external_workbook::ExternalWorkbooksRule::new()),
+        RuleId::Ext802 => Box::new(ext802_web_urls::WebUrlsRule::new(config)),
+        RuleId::Hid901 => Box::new(hid901_hidden_worksheet::HiddenWorksheetRule),
+        RuleId::Hid902 => Box::new(hid902_hidden_columns_rows::HiddenColumnsRowsRule),
+        RuleId::File1001 => Box::new(file1001_large_file_size::LargeFileSizeRule::new(config)),
+        RuleId::File1002 => Box::new(file1002_old_spreadsheet::OldSpreadsheetRule::new(config)),
+        RuleId::File1003 => Box::new(file1003_date_system_1904::DateSystem1904Rule::new()),
+        RuleId::Vba1101 => Box::new(vba1101_has_macros::HasMacrosRule),
     }
 }
 
@@ -335,6 +312,34 @@ mod tests {
         config.global.enabled_rules.insert("ERR".to_string());
         let enabled = create_enabled_walker_rules(&config);
         assert!(enabled.iter().any(|r| r.id() == RuleId::Err102));
+    }
+
+    #[test]
+    fn test_create_walker_rules_merges_interruption_rules() {
+        let config = LinterConfig::default();
+        let ids = [
+            RuleId::Calc202,
+            RuleId::Int402,
+            RuleId::Err102,
+            RuleId::Int401,
+        ];
+        let rules = create_walker_rules(&ids, &config);
+        let created: Vec<RuleId> = rules.iter().map(|r| r.id()).collect();
+        assert_eq!(created, [RuleId::Calc202, RuleId::Int402, RuleId::Err102]);
+    }
+
+    #[test]
+    fn test_interruption_rules_listed_individually() {
+        let config = LinterConfig::default();
+        let metadata_ids: Vec<RuleId> = get_all_rule_metadata(&config)
+            .iter()
+            .map(|m| m.id)
+            .collect();
+        let tokens = get_all_valid_tokens();
+        for id in [RuleId::Int401, RuleId::Int402, RuleId::Int403] {
+            assert!(metadata_ids.contains(&id));
+            assert!(tokens.contains(id.as_str()));
+        }
     }
 
     #[test]

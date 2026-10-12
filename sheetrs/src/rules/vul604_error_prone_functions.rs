@@ -12,7 +12,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 /// Error-prone function entries: (function_name, recommended_alternative).
 const ERROR_PRONE_FUNCTIONS: &[(&str, &str)] = &[
@@ -30,7 +30,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
 });
 
 /// Per-sheet cell collection: sheet_index → Vec<(func_index, row, col)>.
-type SheetCellMap = Mutex<HashMap<u16, Vec<(u8, u32, u32)>>>;
+type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
 
 /// Rule that detects error-prone functions like VLOOKUP, HLOOKUP, and LOOKUP.
 pub struct ErrorProneFunctionsRule {
@@ -41,7 +41,7 @@ pub struct ErrorProneFunctionsRule {
 impl ErrorProneFunctionsRule {
     pub fn new(_config: &LinterConfig) -> Self {
         Self {
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -95,7 +95,7 @@ impl WalkerRule for ErrorProneFunctionsRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
             let formula_bytes = formula_upper.as_bytes();
             let mut matches = Vec::new();
@@ -121,8 +121,6 @@ impl WalkerRule for ErrorProneFunctionsRule {
             }
             if !matches.is_empty() {
                 self.sheet_cells
-                    .lock()
-                    .unwrap()
                     .entry(sheet.sheet_index)
                     .or_default()
                     .extend(matches);
@@ -131,8 +129,8 @@ impl WalkerRule for ErrorProneFunctionsRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -194,7 +192,7 @@ mod tests {
         }
     }
 
-    fn run_rule(rule: &ErrorProneFunctionsRule, sheet: &Sheet) -> Vec<Violation> {
+    fn run_rule(rule: &mut ErrorProneFunctionsRule, sheet: &Sheet) -> Vec<Violation> {
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(sheet, cell, &mut ctx);
@@ -205,9 +203,9 @@ mod tests {
     #[test]
     fn test_vlookup_detection() {
         let config = LinterConfig::default();
-        let rule = ErrorProneFunctionsRule::new(&config);
+        let mut rule = ErrorProneFunctionsRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "VLOOKUP(A1,B:C,2,FALSE)")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Vul604);
@@ -216,9 +214,9 @@ mod tests {
     #[test]
     fn test_hlookup_detection() {
         let config = LinterConfig::default();
-        let rule = ErrorProneFunctionsRule::new(&config);
+        let mut rule = ErrorProneFunctionsRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "HLOOKUP(A1,1:3,2,FALSE)")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
     }
@@ -226,9 +224,9 @@ mod tests {
     #[test]
     fn test_lookup_detection() {
         let config = LinterConfig::default();
-        let rule = ErrorProneFunctionsRule::new(&config);
+        let mut rule = ErrorProneFunctionsRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "LOOKUP(A1,B1:B10,C1:C10)")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
     }
@@ -236,9 +234,9 @@ mod tests {
     #[test]
     fn test_xlookup_no_false_positive() {
         let config = LinterConfig::default();
-        let rule = ErrorProneFunctionsRule::new(&config);
+        let mut rule = ErrorProneFunctionsRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "XLOOKUP(A1,B1:B10,C1:C10)")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -246,9 +244,9 @@ mod tests {
     #[test]
     fn test_sum_not_flagged() {
         let config = LinterConfig::default();
-        let rule = ErrorProneFunctionsRule::new(&config);
+        let mut rule = ErrorProneFunctionsRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "SUM(A1:A10)")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -256,9 +254,9 @@ mod tests {
     #[test]
     fn test_case_insensitive() {
         let config = LinterConfig::default();
-        let rule = ErrorProneFunctionsRule::new(&config);
+        let mut rule = ErrorProneFunctionsRule::new(&config);
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "vlookup(A1,B:C,2,FALSE)")]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
     }
@@ -266,12 +264,12 @@ mod tests {
     #[test]
     fn test_multiple_functions_separate_violations() {
         let config = LinterConfig::default();
-        let rule = ErrorProneFunctionsRule::new(&config);
+        let mut rule = ErrorProneFunctionsRule::new(&config);
         let sheet = make_sheet(vec![
             make_formula_cell(0, 0, "VLOOKUP(A1,B:C,2,FALSE)"),
             make_formula_cell(0, 1, "HLOOKUP(A1,B:C,2,FALSE)"),
         ]);
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         // VLOOKUP and HLOOKUP are different func_index → separate groups
         assert_eq!(violations.len(), 2);
@@ -280,7 +278,7 @@ mod tests {
     #[test]
     fn test_no_formula() {
         let config = LinterConfig::default();
-        let rule = ErrorProneFunctionsRule::new(&config);
+        let mut rule = ErrorProneFunctionsRule::new(&config);
         let mut cell_map = HashMap::new();
         cell_map.insert(
             (0, 0),
@@ -299,7 +297,7 @@ mod tests {
             cells: cell_map,
             ..Default::default()
         };
-        let violations = run_rule(&rule, &sheet);
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }

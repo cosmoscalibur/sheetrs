@@ -75,7 +75,11 @@ impl WalkerRule for DateSystem1904Rule {
         super::RuleCategory::File
     }
 
-    fn on_workbook_start(&self, workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_start(
+        &mut self,
+        workbook: &Workbook,
+        _ctx: &mut LinterContext,
+    ) -> Vec<Violation> {
         self.check_date_system(workbook)
     }
 }

@@ -10,7 +10,7 @@ use crate::violation::{
 };
 use regex::Regex;
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 /// Matches `=""` or `<>""` patterns.
 static EMPTY_STRING_EQ_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -23,7 +23,7 @@ static LEN_ZERO_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Per-sheet cell collection: sheet_index → Vec<(row, col)>.
-type SheetCellMap = Mutex<HashMap<u16, Vec<(u32, u32)>>>;
+type SheetCellMap = HashMap<u16, Vec<(u32, u32)>>;
 
 /// Rule that detects inefficient empty string tests in formulas.
 pub struct EmptyStringTestRule {
@@ -35,7 +35,7 @@ impl EmptyStringTestRule {
     /// Create a new instance.
     pub fn new() -> Self {
         Self {
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -89,20 +89,20 @@ impl WalkerRule for EmptyStringTestRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula_upper) = ctx.formula_upper(sheet, cell)
             && (EMPTY_STRING_EQ_RE.is_match(formula_upper) || LEN_ZERO_RE.is_match(formula_upper))
         {
-            let mut map = self.sheet_cells.lock().unwrap();
-            map.entry(sheet.sheet_index)
+            self.sheet_cells
+                .entry(sheet.sheet_index)
                 .or_default()
                 .push((cell.row, cell.col));
         }
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -151,7 +151,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = EmptyStringTestRule::new();
+        let mut rule = EmptyStringTestRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -184,7 +184,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = EmptyStringTestRule::new();
+        let mut rule = EmptyStringTestRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -217,7 +217,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = EmptyStringTestRule::new();
+        let mut rule = EmptyStringTestRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);

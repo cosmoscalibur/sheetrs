@@ -53,7 +53,11 @@ impl WalkerRule for DuplicateSheetNamesRule {
         RuleCategory::Reference
     }
 
-    fn on_workbook_start(&self, workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_start(
+        &mut self,
+        workbook: &Workbook,
+        _ctx: &mut LinterContext,
+    ) -> Vec<Violation> {
         let mut violations = Vec::new();
         let mut name_map: HashMap<String, Vec<u16>> = HashMap::new();
 
@@ -124,7 +128,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = DuplicateSheetNamesRule;
+        let mut rule = DuplicateSheetNamesRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_workbook_start(&workbook, &mut ctx);
 
@@ -178,7 +182,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = DuplicateSheetNamesRule;
+        let mut rule = DuplicateSheetNamesRule;
         let mut ctx = LinterContext::default();
         let violations = rule.on_workbook_start(&workbook, &mut ctx);
 

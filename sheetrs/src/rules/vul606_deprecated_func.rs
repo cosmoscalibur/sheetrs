@@ -9,7 +9,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 /// Deprecated function entries: (deprecated_name, replacement_name).
 const DEPRECATED_FUNCTIONS: &[(&str, &str)] = &[
@@ -39,7 +39,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
 });
 
 /// Per-sheet cell collection: sheet_index → Vec<(func_index, row, col)>.
-type SheetCellMap = Mutex<HashMap<u16, Vec<(u8, u32, u32)>>>;
+type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
 
 /// Rule that detects usage of deprecated functions.
 pub struct DeprecatedFuncRule {
@@ -51,7 +51,7 @@ impl DeprecatedFuncRule {
     /// Create a new instance.
     pub fn new() -> Self {
         Self {
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -111,7 +111,7 @@ impl WalkerRule for DeprecatedFuncRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
             let formula_bytes = formula_upper.as_bytes();
             let mut matches = Vec::new();
@@ -133,8 +133,6 @@ impl WalkerRule for DeprecatedFuncRule {
             }
             if !matches.is_empty() {
                 self.sheet_cells
-                    .lock()
-                    .unwrap()
                     .entry(sheet.sheet_index)
                     .or_default()
                     .extend(matches);
@@ -143,8 +141,8 @@ impl WalkerRule for DeprecatedFuncRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -206,7 +204,7 @@ mod tests {
         }
     }
 
-    fn run_rule(rule: &DeprecatedFuncRule, sheet: &Sheet) -> Vec<Violation> {
+    fn run_rule(rule: &mut DeprecatedFuncRule, sheet: &Sheet) -> Vec<Violation> {
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(sheet, cell, &mut ctx);
@@ -217,8 +215,8 @@ mod tests {
     #[test]
     fn test_single_deprecated_function() {
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "CONCATENATE(A2,B2)")]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Vul606);
@@ -227,8 +225,8 @@ mod tests {
     #[test]
     fn test_replacement_not_flagged() {
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "CONCAT(A2,B2)")]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -236,8 +234,8 @@ mod tests {
     #[test]
     fn test_case_insensitive() {
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "concatenate(A2,B2)")]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 1);
     }
@@ -248,8 +246,8 @@ mod tests {
             make_formula_cell(0, 0, "STDEV(A1:A10)"),
             make_formula_cell(1, 0, "RANK(B1,B1:B10)"),
         ]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 2);
     }
@@ -257,8 +255,8 @@ mod tests {
     #[test]
     fn test_substring_not_false_positive() {
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "STDEV.S(A1:A10)")]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -283,8 +281,8 @@ mod tests {
             cells: cell_map,
             ..Default::default()
         };
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
 
         assert_eq!(violations.len(), 0);
     }
@@ -293,16 +291,16 @@ mod tests {
     fn test_vlookup_not_false_positive() {
         // VLOOKUP contains LOOKUP but should NOT trigger the deprecated LOOKUP rule
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "VLOOKUP(A1,B:C,2,FALSE)")]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
         assert_eq!(violations.len(), 0);
     }
 
     #[test]
     fn test_hlookup_not_false_positive() {
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "HLOOKUP(A1,1:3,2,FALSE)")]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
         assert_eq!(violations.len(), 0);
     }
 
@@ -310,16 +308,16 @@ mod tests {
     fn test_xlookup_not_false_positive() {
         // XLOOKUP is the recommended replacement for LOOKUP — must NOT be flagged
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "XLOOKUP(A1,B1:B10,C1:C10)")]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
         assert_eq!(violations.len(), 0);
     }
 
     #[test]
     fn test_bare_lookup_still_flagged() {
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "LOOKUP(A1,B1:B10,C1:C10)")]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
         assert_eq!(violations.len(), 1);
     }
 
@@ -327,8 +325,8 @@ mod tests {
     fn test_covar_not_flagged_as_var() {
         // COVAR contains VAR but should only flag COVAR, not VAR
         let sheet = make_sheet(vec![make_formula_cell(0, 0, "COVAR(A1:A10,B1:B10)")]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
         // Should flag COVAR only, not also VAR
         assert_eq!(violations.len(), 1);
     }
@@ -341,8 +339,8 @@ mod tests {
             0,
             "CONCATENATE(STDEV(A1:A10),B1)",
         )]);
-        let rule = DeprecatedFuncRule::new();
-        let violations = run_rule(&rule, &sheet);
+        let mut rule = DeprecatedFuncRule::new();
+        let violations = run_rule(&mut rule, &sheet);
         assert_eq!(violations.len(), 2);
     }
 }

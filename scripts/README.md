@@ -73,6 +73,18 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
+### Lock-free walker rules (#32)
+
+Baseline rebuilt at 634d52e in the same session: 365.1 G (XLSX) and 347.3 G
+(ODS) user instructions.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 40.5s | 38.3s |
+| Peak RAM | 1942 MB | 1957 MB |
+| User instructions | 364.0 G | 346.4 G |
+| Binary size | 9.0M | - |
+
 ### Per-cell formula allocations (#31)
 
 | Metric | XLSX | ODS |

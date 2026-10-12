@@ -57,7 +57,7 @@ impl WalkerRule for NumericTextCalcRule {
         RuleCategory::Data
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         // Collect numeric-text cells: text values that parse as f64
         if let CellValue::Text(ref t) = cell.value
             && !cell.is_formula()
@@ -69,7 +69,7 @@ impl WalkerRule for NumericTextCalcRule {
         Vec::new()
     }
 
-    fn on_workbook_end(&self, _workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(&mut self, _workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
         if ctx.numeric_text_cells.is_empty() || ctx.cell_dependencies.is_empty() {
             return Vec::new();
         }
@@ -167,7 +167,7 @@ mod tests {
         ]);
         let workbook = make_workbook(vec![sheet.clone()]);
 
-        let rule = NumericTextCalcRule;
+        let mut rule = NumericTextCalcRule;
         let mut ctx = LinterContext::default();
 
         // Simulate walk
@@ -189,7 +189,7 @@ mod tests {
         ]);
         let workbook = make_workbook(vec![sheet.clone()]);
 
-        let rule = NumericTextCalcRule;
+        let mut rule = NumericTextCalcRule;
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {
@@ -209,7 +209,7 @@ mod tests {
         ]);
         let workbook = make_workbook(vec![sheet.clone()]);
 
-        let rule = NumericTextCalcRule;
+        let mut rule = NumericTextCalcRule;
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {
@@ -230,7 +230,7 @@ mod tests {
         ]);
         let workbook = make_workbook(vec![sheet.clone()]);
 
-        let rule = NumericTextCalcRule;
+        let mut rule = NumericTextCalcRule;
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {
@@ -251,7 +251,7 @@ mod tests {
         ]);
         let workbook = make_workbook(vec![sheet.clone()]);
 
-        let rule = NumericTextCalcRule;
+        let mut rule = NumericTextCalcRule;
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {
@@ -272,7 +272,7 @@ mod tests {
         ]);
         let workbook = make_workbook(vec![sheet.clone()]);
 
-        let rule = NumericTextCalcRule;
+        let mut rule = NumericTextCalcRule;
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {

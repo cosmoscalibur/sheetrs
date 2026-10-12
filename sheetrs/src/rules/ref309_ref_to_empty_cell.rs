@@ -58,7 +58,7 @@ impl WalkerRule for RefToEmptyCellRule {
         RuleCategory::Reference
     }
 
-    fn on_workbook_end(&self, workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(&mut self, workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
         if ctx.cell_dependencies.is_empty() {
             return Vec::new();
         }
@@ -161,7 +161,7 @@ mod tests {
         let sheet = make_sheet_with_index(0, "Sheet1", vec![make_formula_cell(0, 1, "A1")]);
         let workbook = make_workbook(vec![sheet]);
 
-        let rule = RefToEmptyCellRule;
+        let mut rule = RefToEmptyCellRule;
         let mut ctx = LinterContext::default();
         // B1(0,1) depends on A1(0,0) which is not in the sheet
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
@@ -179,7 +179,7 @@ mod tests {
         );
         let workbook = make_workbook(vec![sheet]);
 
-        let rule = RefToEmptyCellRule;
+        let mut rule = RefToEmptyCellRule;
         let mut ctx = LinterContext::default();
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 
@@ -193,7 +193,7 @@ mod tests {
         let sheet2 = make_sheet_with_index(1, "Sheet2", vec![]);
         let workbook = make_workbook(vec![sheet1, sheet2]);
 
-        let rule = RefToEmptyCellRule;
+        let mut rule = RefToEmptyCellRule;
         let mut ctx = LinterContext::default();
         ctx.cell_dependencies.insert((0, 0, 1), vec![(1, 0, 0)]); // Sheet1!B1 → Sheet2!A1
 
@@ -207,7 +207,7 @@ mod tests {
         let sheet = make_sheet_with_index(0, "Sheet1", vec![]);
         let workbook = make_workbook(vec![sheet]);
 
-        let rule = RefToEmptyCellRule;
+        let mut rule = RefToEmptyCellRule;
         let mut ctx = LinterContext::default();
         // Formula at A1 depends on B1 — but A1 isn't even in the sheet
         ctx.cell_dependencies.insert((0, 0, 0), vec![(0, 0, 1)]);
@@ -221,7 +221,7 @@ mod tests {
         let sheet = make_sheet_with_index(0, "Sheet1", vec![make_formula_cell(0, 2, "A1+A2")]);
         let workbook = make_workbook(vec![sheet]);
 
-        let rule = RefToEmptyCellRule;
+        let mut rule = RefToEmptyCellRule;
         let mut ctx = LinterContext::default();
         ctx.cell_dependencies
             .insert((0, 0, 2), vec![(0, 0, 0), (0, 1, 0)]);
@@ -242,7 +242,7 @@ mod tests {
         );
         let workbook = make_workbook(vec![sheet]);
 
-        let rule = RefToEmptyCellRule;
+        let mut rule = RefToEmptyCellRule;
         let mut ctx = LinterContext::default();
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 

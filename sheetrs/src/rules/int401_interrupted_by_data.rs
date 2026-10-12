@@ -5,9 +5,9 @@
 //! - INT402: Interrupted by empty cell
 //! - INT403: Interrupted by a different formula pattern
 //!
-//! All three rules share a single `InterruptionRule` struct parameterized by
-//! `InterruptionKind`. A single `on_cell()` pass collects cell classification data,
-//! and `on_sheet_end()` emits violations for all three kinds simultaneously.
+//! All three rules share a single `InterruptionRule` struct parameterized by the
+//! `InterruptionKind`s it reports. One instance covers every enabled kind, so cells
+//! are classified once regardless of how many of the three rules are enabled.
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::config::LinterConfig;
@@ -19,7 +19,7 @@ use crate::violation::{
 use regex::{Captures, Regex, Replacer};
 use std::collections::HashMap;
 use std::fmt::Write;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::LazyLock;
 
 /// Which type of interruption this rule instance detects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +30,27 @@ pub enum InterruptionKind {
     Empty,
     /// INT403: formula sequence interrupted by a different formula pattern.
     Other,
+}
+
+impl InterruptionKind {
+    /// Returns the kind reported under `rule_id`, or `None` for non-INT rules.
+    pub fn from_rule_id(rule_id: RuleId) -> Option<Self> {
+        match rule_id {
+            RuleId::Int401 => Some(Self::Data),
+            RuleId::Int402 => Some(Self::Empty),
+            RuleId::Int403 => Some(Self::Other),
+            _ => None,
+        }
+    }
+
+    /// Returns the rule ID under which this kind is reported.
+    pub fn rule_id(self) -> RuleId {
+        match self {
+            Self::Data => RuleId::Int401,
+            Self::Empty => RuleId::Int402,
+            Self::Other => RuleId::Int403,
+        }
+    }
 }
 
 /// Classification of a cell for interruption analysis.
@@ -44,7 +65,7 @@ enum CellType {
 }
 
 /// Per-sheet collected cell data: sheet_index → Vec<(row, col, CellType)>.
-type SheetCellData = Mutex<HashMap<u16, Vec<(u32, u32, CellType)>>>;
+type SheetCellData = HashMap<u16, Vec<(u32, u32, CellType)>>;
 
 /// An interruption detected during sequence scanning.
 #[derive(Debug)]
@@ -67,18 +88,13 @@ struct Interruption {
 
 /// Rule that detects formula interruptions.
 pub struct InterruptionRule {
-    /// Which kind of interruption this instance reports.
-    kind: InterruptionKind,
+    /// Kinds of interruption this instance reports; the first one gives its
+    /// [`WalkerRule::id`] and [`WalkerRule::name`].
+    kinds: Vec<InterruptionKind>,
     /// Minimum number of formula cells for a sequence to be considered.
     min_formula_sequence: usize,
-    /// Per-sheet collected cell classifications (shared across instances in a group).
-    sheet_data: Arc<SheetCellData>,
-    /// Whether this instance is the "collector" that gathers cell data.
-    /// Only one instance per group should be the collector.
-    is_collector: bool,
-    /// Whether this collector should emit violations for all kinds (group mode)
-    /// or only for `self.kind` (standalone mode from `clone_walker_rule`).
-    emit_all_kinds: bool,
+    /// Per-sheet collected cell classifications.
+    sheet_data: SheetCellData,
 }
 
 /// Match cell references: optional $ + 1-3 uppercase letters + optional $ + digits.
@@ -135,51 +151,24 @@ impl Replacer for R1C1Replacer<'_> {
 }
 
 impl InterruptionRule {
-    /// Create a standalone instance (used by `clone_walker_rule`).
-    /// Standalone instances collect data and emit violations only for their own kind.
-    pub fn new(kind: InterruptionKind, config: &LinterConfig) -> Self {
+    /// Creates a rule reporting the given interruption kinds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `kinds` is empty.
+    pub fn new(kinds: Vec<InterruptionKind>, config: &LinterConfig) -> Self {
+        assert!(
+            !kinds.is_empty(),
+            "InterruptionRule needs at least one kind"
+        );
         let min_seq = config
             .get_param_int("int_min_formula_sequence", None)
             .unwrap_or(3) as usize;
         Self {
-            kind,
+            kinds,
             min_formula_sequence: min_seq,
-            sheet_data: Arc::new(Mutex::new(HashMap::new())),
-            is_collector: true,
-            emit_all_kinds: false,
+            sheet_data: HashMap::new(),
         }
-    }
-
-    /// Create a group of 3 instances sharing a single data store.
-    /// Only the first (Data) instance collects data and emits all violations.
-    pub fn new_group(config: &LinterConfig) -> [Self; 3] {
-        let min_seq = config
-            .get_param_int("int_min_formula_sequence", None)
-            .unwrap_or(3) as usize;
-        let shared = Arc::new(Mutex::new(HashMap::new()));
-        [
-            Self {
-                kind: InterruptionKind::Data,
-                min_formula_sequence: min_seq,
-                sheet_data: Arc::clone(&shared),
-                is_collector: true,
-                emit_all_kinds: true,
-            },
-            Self {
-                kind: InterruptionKind::Empty,
-                min_formula_sequence: min_seq,
-                sheet_data: Arc::clone(&shared),
-                is_collector: false,
-                emit_all_kinds: false,
-            },
-            Self {
-                kind: InterruptionKind::Other,
-                min_formula_sequence: min_seq,
-                sheet_data: Arc::clone(&shared),
-                is_collector: false,
-                emit_all_kinds: false,
-            },
-        ]
     }
 
     /// Normalize a formula by converting cell references to R1C1-style offsets.
@@ -380,15 +369,11 @@ impl ViolationData for InterruptionData {
 
 impl WalkerRule for InterruptionRule {
     fn id(&self) -> RuleId {
-        match self.kind {
-            InterruptionKind::Data => RuleId::Int401,
-            InterruptionKind::Empty => RuleId::Int402,
-            InterruptionKind::Other => RuleId::Int403,
-        }
+        self.kinds[0].rule_id()
     }
 
     fn name(&self) -> &'static str {
-        match self.kind {
+        match self.kinds[0] {
             InterruptionKind::Data => "Interrupted by Data",
             InterruptionKind::Empty => "Interrupted by Empty",
             InterruptionKind::Other => "Interrupted by Other",
@@ -399,11 +384,7 @@ impl WalkerRule for InterruptionRule {
         RuleCategory::Interruptions
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
-        if !self.is_collector {
-            return Vec::new();
-        }
-
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         let cell_type = if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
             CellType::Formula(Self::normalize_formula(formula_upper, cell.row, cell.col))
         } else if cell.value.is_empty() {
@@ -413,8 +394,6 @@ impl WalkerRule for InterruptionRule {
         };
 
         self.sheet_data
-            .lock()
-            .unwrap()
             .entry(sheet.sheet_index)
             .or_default()
             .push((cell.row, cell.col, cell_type));
@@ -422,23 +401,12 @@ impl WalkerRule for InterruptionRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        if !self.is_collector {
-            return Vec::new();
-        }
-
-        let Some(cells) = self.sheet_data.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_data.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
         let mut violations = Vec::new();
-
-        // Helper to map InterruptionKind → RuleId
-        let rule_id_for = |kind: InterruptionKind| match kind {
-            InterruptionKind::Data => RuleId::Int401,
-            InterruptionKind::Empty => RuleId::Int402,
-            InterruptionKind::Other => RuleId::Int403,
-        };
 
         // Group by column → scan vertically
         let mut by_col: HashMap<u32, Vec<(u32, CellType)>> = HashMap::new();
@@ -449,12 +417,11 @@ impl WalkerRule for InterruptionRule {
             col_cells.sort_by_key(|(row, _)| *row);
             let ints = Self::find_interruptions(&col_cells, true, col, self.min_formula_sequence);
             for int in ints {
-                // In standalone mode, only emit violations matching self.kind
-                if !self.emit_all_kinds && int.kind != self.kind {
+                if !self.kinds.contains(&int.kind) {
                     continue;
                 }
                 violations.push(Violation::with_data(
-                    rule_id_for(int.kind),
+                    int.kind.rule_id(),
                     ViolationScope::Cell(sheet.sheet_index, CellReference::new(int.row, int.col)),
                     InterruptionData {
                         kind: int.kind,
@@ -477,12 +444,11 @@ impl WalkerRule for InterruptionRule {
             row_cells.sort_by_key(|(col, _)| *col);
             let ints = Self::find_interruptions(&row_cells, false, row, self.min_formula_sequence);
             for int in ints {
-                // In standalone mode, only emit violations matching self.kind
-                if !self.emit_all_kinds && int.kind != self.kind {
+                if !self.kinds.contains(&int.kind) {
                     continue;
                 }
                 violations.push(Violation::with_data(
-                    rule_id_for(int.kind),
+                    int.kind.rule_id(),
                     ViolationScope::Cell(sheet.sheet_index, CellReference::new(int.row, int.col)),
                     InterruptionData {
                         kind: int.kind,
@@ -543,7 +509,7 @@ mod tests {
 
     fn run_rule(kind: InterruptionKind, sheet: &Sheet) -> Vec<Violation> {
         let config = LinterConfig::default();
-        let rule = InterruptionRule::new(kind, &config);
+        let mut rule = InterruptionRule::new(vec![kind], &config);
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(sheet, cell, &mut ctx);
@@ -714,6 +680,72 @@ mod tests {
         );
     }
 
+    // --- Requested kinds ---
+
+    /// Column A breaks one run per kind: a value at row 3, an absent cell at
+    /// row 8 and a different formula at row 13.
+    fn make_sheet_with_every_kind() -> Sheet {
+        let mut cells = Vec::new();
+        for row in 0..18 {
+            match row {
+                3 => cells.push(make_value_cell(row, 0, 42.0)),
+                8 => {}
+                13 => cells.push(make_formula_cell(row, 0, "SUM(B1:C1)")),
+                _ => cells.push(make_formula_cell(row, 0, &format!("B{0}+C{0}", row + 1))),
+            }
+        }
+        make_sheet(cells)
+    }
+
+    fn run_rule_with_kinds(kinds: Vec<InterruptionKind>, sheet: &Sheet) -> Vec<RuleId> {
+        let mut rule = InterruptionRule::new(kinds, &LinterConfig::default());
+        let mut ctx = LinterContext::default();
+        for cell in sheet.all_cells() {
+            rule.on_cell(sheet, cell, &mut ctx);
+        }
+        let mut ids: Vec<RuleId> = rule
+            .on_sheet_end(sheet, &mut ctx)
+            .iter()
+            .map(|v| v.rule_id)
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn test_reports_every_requested_kind_once() {
+        let ids = run_rule_with_kinds(
+            vec![
+                InterruptionKind::Data,
+                InterruptionKind::Empty,
+                InterruptionKind::Other,
+            ],
+            &make_sheet_with_every_kind(),
+        );
+        assert_eq!(ids, [RuleId::Int401, RuleId::Int402, RuleId::Int403]);
+    }
+
+    #[test]
+    fn test_reports_only_requested_kinds() {
+        let ids = run_rule_with_kinds(vec![InterruptionKind::Empty], &make_sheet_with_every_kind());
+        assert_eq!(ids, [RuleId::Int402]);
+    }
+
+    #[test]
+    fn test_id_is_first_requested_kind() {
+        let rule = InterruptionRule::new(
+            vec![InterruptionKind::Other, InterruptionKind::Data],
+            &LinterConfig::default(),
+        );
+        assert_eq!(rule.id(), RuleId::Int403);
+    }
+
+    #[test]
+    #[should_panic(expected = "at least one kind")]
+    fn test_new_rejects_empty_kinds() {
+        InterruptionRule::new(Vec::new(), &LinterConfig::default());
+    }
+
     // --- Config ---
 
     #[test]
@@ -723,7 +755,7 @@ mod tests {
             "int_min_formula_sequence".to_string(),
             toml::Value::Integer(5),
         );
-        let rule = InterruptionRule::new(InterruptionKind::Data, &config);
+        let mut rule = InterruptionRule::new(vec![InterruptionKind::Data], &config);
 
         // Column: F×5,V,F×5 — each side has 5 formulas, which meets min=5
         let sheet = make_sheet(vec![
@@ -756,7 +788,7 @@ mod tests {
             "int_min_formula_sequence".to_string(),
             toml::Value::Integer(5),
         );
-        let rule = InterruptionRule::new(InterruptionKind::Data, &config);
+        let mut rule = InterruptionRule::new(vec![InterruptionKind::Data], &config);
 
         // Column: F×3,V,F×3 — each side has only 3, below min=5
         let sheet = make_sheet(vec![

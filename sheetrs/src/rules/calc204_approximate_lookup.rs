@@ -67,7 +67,7 @@ impl WalkerRule for ApproximateLookupRule {
         RuleCategory::Calculations
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         let Some(formula_upper) = ctx.formula_upper(sheet, cell) else {
             return Vec::new();
         };
@@ -174,7 +174,7 @@ mod tests {
     }
 
     fn run_rule(sheet: &Sheet) -> Vec<Violation> {
-        let rule = ApproximateLookupRule;
+        let mut rule = ApproximateLookupRule;
         let mut ctx = LinterContext::default();
         let mut violations = Vec::new();
         for cell in sheet.all_cells() {

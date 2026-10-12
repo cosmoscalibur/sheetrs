@@ -6,19 +6,18 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::reader::{Cell, Sheet, Workbook};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
 use std::collections::HashSet;
-use std::sync::Mutex;
 
 /// Rule that detects unused named ranges
 pub struct UnusedNamedRangesRule {
     /// Named ranges found in formulas during the walk.
-    used_names: Mutex<HashSet<String>>,
+    used_names: HashSet<String>,
 }
 
 impl UnusedNamedRangesRule {
     /// Create a new instance of the rule.
     pub fn new() -> Self {
         Self {
-            used_names: Mutex::new(HashSet::new()),
+            used_names: HashSet::new(),
         }
     }
 }
@@ -59,17 +58,16 @@ impl WalkerRule for UnusedNamedRangesRule {
         RuleCategory::Reference
     }
 
-    fn on_cell(&self, _sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, _sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula) = cell.as_formula() {
-            let mut used = self.used_names.lock().unwrap();
             // Record the formula text; matching is deferred to on_workbook_end
-            used.insert(formula.to_string());
+            self.used_names.insert(formula.to_string());
         }
         Vec::new()
     }
 
-    fn on_workbook_end(&self, workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let formulas = self.used_names.lock().unwrap();
+    fn on_workbook_end(&mut self, workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let formulas = &self.used_names;
         workbook
             .defined_names
             .keys()
@@ -129,7 +127,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = UnusedNamedRangesRule::new();
+        let mut rule = UnusedNamedRangesRule::new();
         let mut ctx = LinterContext::default();
 
         // Walk cells

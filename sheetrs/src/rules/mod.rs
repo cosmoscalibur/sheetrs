@@ -124,7 +124,7 @@ impl LinterContext {
 }
 
 /// Trait for optimized single-pass walker rules
-pub trait WalkerRule: Send + Sync {
+pub trait WalkerRule: Send {
     /// Unique rule identifier
     fn id(&self) -> RuleId;
 
@@ -135,27 +135,40 @@ pub trait WalkerRule: Send + Sync {
     fn category(&self) -> RuleCategory;
 
     /// Called once at the start of workbook processing
-    fn on_workbook_start(&self, _workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_start(
+        &mut self,
+        _workbook: &Workbook,
+        _ctx: &mut LinterContext,
+    ) -> Vec<Violation> {
         Vec::new()
     }
 
     /// Called at the start of each sheet
-    fn on_sheet_start(&self, _sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_start(&mut self, _sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
         Vec::new()
     }
 
     /// Called for each cell in the workbook
-    fn on_cell(&self, _sheet: &Sheet, _cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        _sheet: &Sheet,
+        _cell: &Cell,
+        _ctx: &mut LinterContext,
+    ) -> Vec<Violation> {
         Vec::new()
     }
 
     /// Called at the end of each sheet
-    fn on_sheet_end(&self, _sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, _sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
         Vec::new()
     }
 
     /// Called once after all sheets have been processed
-    fn on_workbook_end(&self, _workbook: &Workbook, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(
+        &mut self,
+        _workbook: &Workbook,
+        _ctx: &mut LinterContext,
+    ) -> Vec<Violation> {
         Vec::new()
     }
 }

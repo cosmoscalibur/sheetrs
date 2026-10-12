@@ -133,7 +133,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = ErrorCellsRule;
+        let mut rule = ErrorCellsRule;
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {

@@ -10,7 +10,7 @@ use crate::violation::{
 };
 use regex::Regex;
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 /// Matches whole-column references (A:A, A:Z, etc.).
 static COLUMN_PATTERN: LazyLock<Regex> =
@@ -21,7 +21,7 @@ static ROW_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b\d+:\d+\b").expect("REF307 row regex must compile"));
 
 /// Per-sheet cell collection: sheet_index → Vec<(row, col, is_column)>.
-type SheetCellMap = Mutex<HashMap<u16, Vec<(u32, u32, bool)>>>;
+type SheetCellMap = HashMap<u16, Vec<(u32, u32, bool)>>;
 
 /// Rule that detects whole-column (e.g., A:A) or whole-row (e.g., 1:1) references.
 pub struct WholeColumnRowRefsRule {
@@ -33,7 +33,7 @@ impl WholeColumnRowRefsRule {
     /// Create a new instance.
     pub fn new() -> Self {
         Self {
-            sheet_cells: Mutex::new(HashMap::new()),
+            sheet_cells: HashMap::new(),
         }
     }
 }
@@ -95,14 +95,14 @@ impl WalkerRule for WholeColumnRowRefsRule {
         RuleCategory::Reference
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
             let has_column = COLUMN_PATTERN.is_match(formula_upper);
             let has_row = !has_column && ROW_PATTERN.is_match(formula_upper);
 
             if has_column || has_row {
-                let mut map = self.sheet_cells.lock().unwrap();
-                map.entry(sheet.sheet_index)
+                self.sheet_cells
+                    .entry(sheet.sheet_index)
                     .or_default()
                     .push((cell.row, cell.col, has_column));
             }
@@ -110,8 +110,8 @@ impl WalkerRule for WholeColumnRowRefsRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
 
@@ -174,7 +174,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = WholeColumnRowRefsRule::new();
+        let mut rule = WholeColumnRowRefsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -207,7 +207,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = WholeColumnRowRefsRule::new();
+        let mut rule = WholeColumnRowRefsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -240,7 +240,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = WholeColumnRowRefsRule::new();
+        let mut rule = WholeColumnRowRefsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);

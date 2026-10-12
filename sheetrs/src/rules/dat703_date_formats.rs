@@ -77,7 +77,7 @@ impl WalkerRule for InconsistentDateFormatRule {
         RuleCategory::Data
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         let is_candidate = matches!(cell.value, CellValue::Number(_) | CellValue::Text(_));
 
         if is_candidate && let Some(fmt) = &cell.num_fmt {
@@ -165,7 +165,7 @@ mod tests {
         };
 
         let config = LinterConfig::default();
-        let rule = InconsistentDateFormatRule::new(&config);
+        let mut rule = InconsistentDateFormatRule::new(&config);
         let mut ctx = LinterContext::default();
 
         let mut violations = Vec::new();

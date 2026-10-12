@@ -9,7 +9,6 @@ use crate::reader::parser_utils::column_index_to_letters;
 use crate::reader::{Cell, Sheet};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
 
 /// Threshold for contiguous blank rows to trigger a violation.
 const MAX_BLANK_ROW: u32 = 2;
@@ -55,14 +54,14 @@ impl SheetOccupancy {
 /// every (row, col) pair.
 pub struct BlankRowsColumnsRule {
     /// Per-sheet occupancy data.
-    sheet_data: Mutex<HashMap<u16, SheetOccupancy>>,
+    sheet_data: HashMap<u16, SheetOccupancy>,
 }
 
 impl BlankRowsColumnsRule {
     /// Create a new instance.
     pub fn new() -> Self {
         Self {
-            sheet_data: Mutex::new(HashMap::new()),
+            sheet_data: HashMap::new(),
         }
     }
 }
@@ -126,11 +125,9 @@ impl WalkerRule for BlankRowsColumnsRule {
         RuleCategory::Reference
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if !cell.value.is_empty() {
             self.sheet_data
-                .lock()
-                .unwrap()
                 .entry(sheet.sheet_index)
                 .or_default()
                 .record(cell);
@@ -138,8 +135,8 @@ impl WalkerRule for BlankRowsColumnsRule {
         Vec::new()
     }
 
-    fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(data) = self.sheet_data.lock().unwrap().remove(&sheet.sheet_index) else {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        let Some(data) = self.sheet_data.remove(&sheet.sheet_index) else {
             return Vec::new(); // No non-empty cells → skip
         };
 
@@ -387,7 +384,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BlankRowsColumnsRule::new();
+        let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -461,7 +458,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BlankRowsColumnsRule::new();
+        let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -532,7 +529,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BlankRowsColumnsRule::new();
+        let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -599,7 +596,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BlankRowsColumnsRule::new();
+        let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -666,7 +663,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BlankRowsColumnsRule::new();
+        let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -734,7 +731,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BlankRowsColumnsRule::new();
+        let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -801,7 +798,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BlankRowsColumnsRule::new();
+        let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -849,7 +846,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BlankRowsColumnsRule::new();
+        let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
             rule.on_cell(&sheet, cell, &mut ctx);
@@ -870,7 +867,7 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = BlankRowsColumnsRule::new();
+        let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         let violations = rule.on_sheet_end(&sheet, &mut ctx);
 
