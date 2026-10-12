@@ -373,7 +373,6 @@ fn extract_modified_date_xlsx(
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
-    let mut in_modified = false;
     let mut modified_date: Option<DateTime<Utc>> = None;
 
     loop {
@@ -382,21 +381,11 @@ fn extract_modified_date_xlsx(
                 // dcterms:modified or cp:modified
                 let name = e.name();
                 if name.as_ref().ends_with(":modified") || name.as_ref() == "modified" {
-                    in_modified = true;
-                }
-            }
-            Event::Text(e) if in_modified => {
-                let date_str = e.into_inner().into_owned();
-                // Parse ISO 8601 / RFC 3339 format
-                if let Ok(parsed) = DateTime::parse_from_rfc3339(&date_str) {
-                    modified_date = Some(parsed.with_timezone(&Utc));
-                }
-                in_modified = false;
-            }
-            Event::End(e) => {
-                let name = e.name();
-                if name.as_ref().ends_with(":modified") || name.as_ref() == "modified" {
-                    in_modified = false;
+                    let date_str = read_text_node(&mut reader)?;
+                    // Parse ISO 8601 / RFC 3339 format
+                    if let Ok(parsed) = DateTime::parse_from_rfc3339(date_str.trim()) {
+                        modified_date = Some(parsed.with_timezone(&Utc));
+                    }
                 }
             }
             Event::Eof => break,

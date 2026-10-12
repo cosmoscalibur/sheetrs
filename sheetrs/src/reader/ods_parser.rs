@@ -1,7 +1,7 @@
 //! ODS (OpenDocument Spreadsheet) parser implementation
 
 use super::WorkbookReader;
-use super::parser_utils::{attr_value, push_general_ref};
+use super::parser_utils::{attr_value, push_general_ref, read_text_node};
 use super::workbook::{Cell, CellValue, ExternalWorkbook, Sheet};
 use crate::violation::ExcelError;
 use anyhow::Result;
@@ -1947,7 +1947,6 @@ fn extract_modified_date_ods(
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
-    let mut in_date = false;
     let mut modified_date: Option<DateTime<Utc>> = None;
 
     loop {
@@ -1956,21 +1955,11 @@ fn extract_modified_date_ods(
                 // dc:date element contains the last modified date
                 let name = e.name();
                 if name.as_ref().ends_with(":date") || name.as_ref() == "date" {
-                    in_date = true;
-                }
-            }
-            Event::Text(e) if in_date => {
-                let date_str = e.into_inner().into_owned();
-                // Parse ISO 8601 / RFC 3339 format
-                if let Ok(parsed) = DateTime::parse_from_rfc3339(&date_str) {
-                    modified_date = Some(parsed.with_timezone(&Utc));
-                }
-                in_date = false;
-            }
-            Event::End(e) => {
-                let name = e.name();
-                if name.as_ref().ends_with(":date") || name.as_ref() == "date" {
-                    in_date = false;
+                    let date_str = read_text_node(&mut reader)?;
+                    // Parse ISO 8601 / RFC 3339 format
+                    if let Ok(parsed) = DateTime::parse_from_rfc3339(date_str.trim()) {
+                        modified_date = Some(parsed.with_timezone(&Utc));
+                    }
                 }
             }
             Event::Eof => break,

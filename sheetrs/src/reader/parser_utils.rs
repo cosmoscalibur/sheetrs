@@ -209,14 +209,44 @@ mod tests {
         assert_eq!(read_text_node(&mut reader).unwrap(), "a b<c>");
     }
 
-    #[test]
-    fn test_read_text_node_resolves_references() {
-        let mut reader =
-            Reader::from_str(r#"<f>IF(A1&lt;0, &quot;a &amp; b&quot;,&#65;&unknown;)</f>"#);
+    fn text_of(xml: &str) -> String {
+        let mut reader = Reader::from_str(xml);
         reader.read_event().unwrap();
+        read_text_node(&mut reader).unwrap()
+    }
+
+    #[test]
+    fn test_read_text_node_resolves_predefined_entities() {
+        assert_eq!(text_of("<t>&amp;&lt;&gt;&quot;&apos;</t>"), r#"&<>"'"#);
+    }
+
+    #[test]
+    fn test_read_text_node_resolves_char_refs() {
+        assert_eq!(text_of("<t>a&#10;b&#x41;</t>"), "a\nbA");
+    }
+
+    #[test]
+    fn test_read_text_node_keeps_spaces_around_references() {
+        assert_eq!(text_of("<t> a &amp; b </t>"), " a & b ");
+    }
+
+    #[test]
+    fn test_read_text_node_keeps_unknown_entities_verbatim() {
+        assert_eq!(text_of("<t>a&nbsp;b</t>"), "a&nbsp;b");
+    }
+
+    #[test]
+    fn test_read_text_node_rejects_invalid_char_ref() {
+        let mut reader = Reader::from_str("<t>&#0;</t>");
+        reader.read_event().unwrap();
+        assert!(read_text_node(&mut reader).is_err());
+    }
+
+    #[test]
+    fn test_read_text_node_reads_xlsx_formula() {
         assert_eq!(
-            read_text_node(&mut reader).unwrap(),
-            r#"IF(A1<0, "a & b",A&unknown;)"#
+            text_of("<f>IF(H7=&quot;Y&quot;, 1,IF(C4&lt;0,3,4))&amp;&apos;My Sheet&apos;!A1</f>"),
+            r#"IF(H7="Y", 1,IF(C4<0,3,4))&'My Sheet'!A1"#
         );
     }
 
