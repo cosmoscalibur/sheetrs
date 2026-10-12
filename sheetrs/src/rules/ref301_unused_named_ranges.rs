@@ -132,6 +132,7 @@ impl WalkerRule for UnusedNamedRangesRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reader::read_workbook_from_reader;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use crate::rules::LinterContext;
     use crate::rules::walker::WorkbookWalker;
@@ -247,6 +248,27 @@ mod tests {
             .iter()
             .map(|v| v.data::<UnusedNamedRangeData>().unwrap().name.clone())
             .collect()
+    }
+
+    /// Lints a test asset with REF301 alone and returns the names it reports.
+    fn unused_names_in_asset(bytes: &[u8], extension: &str) -> Vec<String> {
+        let workbook =
+            read_workbook_from_reader(std::io::Cursor::new(bytes), Some(extension)).unwrap();
+        let rules: Vec<Box<dyn WalkerRule>> = vec![Box::new(UnusedNamedRangesRule::new())];
+        WorkbookWalker::new(&workbook, rules)
+            .walk()
+            .iter()
+            .map(|v| v.data::<UnusedNamedRangeData>().unwrap().name.clone())
+            .collect()
+    }
+
+    #[test]
+    fn test_parity_minimal_assets() {
+        const TEST_XLSX: &[u8] = include_bytes!("../../../tests/minimal_test.xlsx");
+        const TEST_ODS: &[u8] = include_bytes!("../../../tests/minimal_test.ods");
+        let expected = ["text_not_used_range"];
+        assert_eq!(unused_names_in_asset(TEST_XLSX, "xlsx"), expected);
+        assert_eq!(unused_names_in_asset(TEST_ODS, "ods"), expected);
     }
 
     #[test]
