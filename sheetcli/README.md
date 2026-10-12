@@ -23,6 +23,9 @@ sheetcli <FILE> --remove-ranges "MyRange" "OldData" --output <OUT_FILE>
 
 # Combined operations
 sheetcli <FILE> --remove-sheets "Temp" --remove-ranges "TempRange" -o cleaned.xlsx
+
+# ODS files are modified the same way
+sheetcli <FILE>.ods --remove-sheets "Temp" -o cleaned.ods
 ```
 
 #### Convert formulas to values
@@ -44,13 +47,25 @@ sheetcli master.xlsx --convert-to-values "Model!F" "'R!D'!2" -o run.xlsx
   saved the file; the file is not recalculated. A formula without a stored
   value keeps its formula.
 - Formulas that return text become text cells. Error results become error
-  constants.
-- A shared formula group whose first cell is converted gives each remaining
-  cell outside the scope its own formula, so they keep calculating.
+  constants in XLSX. ODF has no error constants, so in ODS they keep their
+  text (`#DIV/0!`), which LibreOffice shows as text and sheetrs still reads as
+  an error.
 - Array formulas and data tables are converted only when one scope covers
   their whole range.
-- The calculation chain (`xl/calcChain.xml`) is removed; Excel rebuilds it.
 - An unknown sheet name is an error.
+
+XLSX only:
+
+- A shared formula group whose first cell is converted gives each remaining
+  cell outside the scope its own formula, so they keep calculating.
+- The calculation chain (`xl/calcChain.xml`) is removed; Excel rebuilds it.
+
+ODS only:
+
+- Repeated rows and cells (`table:number-rows-repeated`,
+  `table:number-columns-repeated`) are split where a scope starts or ends.
+- `--remove-ranges` also removes database ranges, which sheetrs lists as named
+  ranges.
 
 ### 2. Inspection
 
@@ -71,5 +86,6 @@ sheetcli <FILE> --remove-sheets "Old" --dry-run
 
 ## Supported Formats
 
-- **Input**: XLSX (Full support), ODS (Read-only for inspection/linting purposes in this tool).
-- **Output (Modification)**: XLSX.
+- **Input**: XLSX and ODS.
+- **Output (Modification)**: the input format. Every modification supports
+  XLSX and ODS (LibreOffice).

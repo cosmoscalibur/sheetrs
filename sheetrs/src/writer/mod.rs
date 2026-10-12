@@ -1,22 +1,36 @@
 // ! Writer module for manipulating Excel/ODS files
 
+mod ods_writer;
 mod xlsx_writer;
 
-pub use xlsx_writer::{WorkbookModifications, modify_workbook_xlsx};
+pub use ods_writer::modify_workbook_ods;
+pub use xlsx_writer::modify_workbook_xlsx;
 
 use anyhow::{Result, bail};
 
+use std::collections::HashSet;
 use std::fmt;
 use std::fs::File;
 use std::path::Path;
 use std::str::FromStr;
 
-use crate::reader::parser_utils::{column_index_to_letters, column_letters_to_index};
+use quick_xml::events::BytesStart;
+
+use crate::reader::parser_utils::{attr_value, column_index_to_letters, column_letters_to_index};
 
 /// Last 0-based column index of a worksheet (`XFD`).
 const MAX_COL: u32 = 16_383;
 /// Last 1-based row number of a worksheet.
 const MAX_ROW: u32 = 1_048_576;
+
+/// Struct used to define modifications to be applied to a workbook
+#[derive(Debug, Default)]
+pub struct WorkbookModifications {
+    pub remove_sheets: Option<HashSet<String>>,
+    pub remove_named_ranges: Option<HashSet<String>>,
+    /// Replace formulas by their cached values in these cells.
+    pub convert_to_values: Vec<ValueScope>,
+}
 
 /// Cells of one sheet whose formulas are replaced by their cached values.
 ///
@@ -46,6 +60,14 @@ impl ValueScope {
             ValueTarget::Columns(first, last) => (first..=last).contains(&col),
             ValueTarget::Rows(first, last) => (first..=last).contains(&row),
         }
+    }
+
+    /// Whether the 0-based range from `first` to `last` (`(row, col)`, both
+    /// inclusive) falls inside this scope.
+    pub fn contains_range(&self, first: (u32, u32), last: (u32, u32)) -> bool {
+        // A scope is a whole sheet, a column band or a row band, so holding
+        // two opposite corners means holding the whole range.
+        self.contains(first.0, first.1) && self.contains(last.0, last.1)
     }
 }
 
@@ -148,6 +170,17 @@ fn parse_row(part: &str) -> Option<u32> {
     (1..=MAX_ROW).contains(&row).then(|| row - 1)
 }
 
+/// The unescaped value of the `key` attribute of an XML element.
+fn attribute(element: &BytesStart, key: &str) -> Result<Option<String>> {
+    for attr in element.attributes() {
+        let attr = attr?;
+        if attr.key.as_ref() == key {
+            return Ok(Some(attr_value(&attr)?.into_owned()));
+        }
+    }
+    Ok(None)
+}
+
 /// Modify a workbook file (supports multiple operations)
 pub fn modify_workbook<P: AsRef<Path>>(
     input_path: P,
@@ -163,9 +196,7 @@ pub fn modify_workbook<P: AsRef<Path>>(
     // Determine file type by extension
     match input.extension().and_then(|s| s.to_str()) {
         Some("xlsx") => modify_workbook_xlsx(input_file, output_file, modifications),
-        Some("ods") => {
-            anyhow::bail!("ODS format not yet supported for modification")
-        }
+        Some("ods") => modify_workbook_ods(input_file, output_file, modifications),
         _ => anyhow::bail!("Unsupported file format"),
     }
 }

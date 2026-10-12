@@ -125,7 +125,7 @@ A swiss-army knife for spreadsheet manipulation.
 **Features:**
 
 - **Modification**: Remove sheets, delete named ranges, convert formulas to
-  their values by sheet, column or row.
+  their values by sheet, column or row, in XLSX and ODS files.
 
 **Usage:**
 

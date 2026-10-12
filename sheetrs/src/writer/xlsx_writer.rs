@@ -1,7 +1,7 @@
 // ! XLSX writer functionality for removing sheets and named ranges, and for
 // ! converting formulas to values
 
-use super::ValueScope;
+use super::{ValueScope, WorkbookModifications, attribute};
 use crate::reader::parser_utils::{attr_value, parse_cell_range, parse_cell_ref, push_general_ref};
 use crate::reader::xlsx_parser::{get_xlsx_sheet_path, translate_shared_formula};
 use anyhow::{Context, Result};
@@ -13,15 +13,6 @@ use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 /// Part name of the calculation chain, which lists every formula cell.
 const CALC_CHAIN_PART: &str = "xl/calcChain.xml";
-
-/// Struct used to define modifications to be applied to a workbook
-#[derive(Debug, Default)]
-pub struct WorkbookModifications {
-    pub remove_sheets: Option<HashSet<String>>,
-    pub remove_named_ranges: Option<HashSet<String>>,
-    /// Replace formulas by their cached values in these cells.
-    pub convert_to_values: Vec<ValueScope>,
-}
 
 /// Modify an XLSX file by applying specified modifications
 pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
@@ -447,16 +438,6 @@ impl CellCursor {
     }
 }
 
-fn attribute(element: &BytesStart, key: &str) -> Result<Option<String>> {
-    for attr in element.attributes() {
-        let attr = attr?;
-        if attr.key.as_ref() == key {
-            return Ok(Some(attr_value(&attr)?.into_owned()));
-        }
-    }
-    Ok(None)
-}
-
 /// Read the events of a `<c>` element up to, not including, its end tag.
 fn read_cell_body<'a>(reader: &mut Reader<&'a [u8]>) -> Result<Vec<Event<'a>>> {
     let mut body = Vec::new();
@@ -533,11 +514,9 @@ fn converts_to_value(
         Some("array" | "dataTable") => {
             let (first_row, first_col, last_row, last_col) =
                 formula.range.unwrap_or((row, col, row, col));
-            // Scopes are whole sheets, column bands or row bands, so holding
-            // two opposite corners means holding the whole range.
-            scopes.iter().any(|scope| {
-                scope.contains(first_row, first_col) && scope.contains(last_row, last_col)
-            })
+            scopes
+                .iter()
+                .any(|scope| scope.contains_range((first_row, first_col), (last_row, last_col)))
         }
         _ => scopes.iter().any(|scope| scope.contains(row, col)),
     }

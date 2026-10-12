@@ -1,5 +1,5 @@
 use sheetrs::reader::{CellValue, read_workbook};
-use sheetrs::writer::{WorkbookModifications, modify_workbook};
+use sheetrs::writer::{ValueScope, ValueTarget, WorkbookModifications, modify_workbook};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::fs::File;
@@ -433,38 +433,128 @@ fn test_convert_removed_sheet_is_skipped() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Converting every sheet of the shared test asset keeps each cached value and
-/// leaves no formula behind.
-#[test]
-fn test_convert_minimal_asset_keeps_values() -> anyhow::Result<()> {
-    let input_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/minimal_test.xlsx");
+/// Convert `scopes` of a shared test asset and check, cell by cell, that
+/// every value is kept, formulas inside the scopes are gone and formulas
+/// outside them are untouched. Returns how many formulas were converted.
+fn check_asset_conversion(asset: &str, scopes: &[&str]) -> anyhow::Result<usize> {
+    let input_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests")
+        .join(asset);
     let dir = tempfile::tempdir()?;
-    let output_path = dir.path().join("values.xlsx");
+    let output_path = dir.path().join(asset);
 
-    let original = read_workbook(&input_path)?;
+    let scopes: Vec<ValueScope> = scopes.iter().map(|s| s.parse()).collect::<Result<_, _>>()?;
     let mods = WorkbookModifications {
-        convert_to_values: original
-            .sheets
-            .iter()
-            .map(|sheet| sheet.name.parse())
-            .collect::<Result<_, _>>()?,
+        convert_to_values: scopes.clone(),
         ..Default::default()
     };
     modify_workbook(&input_path, &output_path, &mods)?;
+    let original = read_workbook(&input_path)?;
     let converted = read_workbook(&output_path)?;
 
-    let mut formula_cells = 0;
+    let mut converted_formulas = 0;
+    assert_eq!(original.sheets.len(), converted.sheets.len());
     for (before, after) in original.sheets.iter().zip(&converted.sheets) {
         assert_eq!(before.name, after.name);
-        for (pos, cell) in &before.cells {
-            let new_cell = &after.cells[pos];
-            assert_eq!(new_cell.value, cell.value, "{}!{pos:?}", before.name);
-            if cell.formula.is_some() {
-                formula_cells += 1;
-                assert_eq!(new_cell.formula, None, "{}!{pos:?}", before.name);
+        for (&(row, col), cell) in &before.cells {
+            let new_cell = &after.cells[&(row, col)];
+            let at = format!("{asset} {}!{row}:{col}", before.name);
+            assert_eq!(new_cell.value, cell.value, "{at}");
+            let in_scope = scopes
+                .iter()
+                .any(|scope| scope.sheet == before.name && scope.contains(row, col));
+            if cell.formula.is_some() && in_scope && !cell.is_array {
+                assert_eq!(new_cell.formula, None, "{at}");
+                converted_formulas += 1;
+            } else if !in_scope {
+                assert_eq!(new_cell.formula, cell.formula, "{at}");
             }
         }
     }
-    assert!(formula_cells > 0, "the asset should contain formulas");
+    Ok(converted_formulas)
+}
+
+/// Converting every sheet of the shared test assets keeps each cached value
+/// and leaves no formula behind, in XLSX and ODS alike.
+#[test]
+fn test_convert_minimal_assets_whole_sheets() -> anyhow::Result<()> {
+    let sheets =
+        read_workbook(Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/minimal_test.xlsx"))?
+            .sheets
+            .iter()
+            .map(|sheet| {
+                ValueScope {
+                    sheet: sheet.name.clone(),
+                    target: ValueTarget::Sheet,
+                }
+                .to_string()
+            })
+            .collect::<Vec<_>>();
+    let sheets: Vec<&str> = sheets.iter().map(String::as_str).collect();
+
+    let xlsx = check_asset_conversion("minimal_test.xlsx", &sheets)?;
+    let ods = check_asset_conversion("minimal_test.ods", &sheets)?;
+    assert!(xlsx > 0, "the assets should contain formulas");
+    assert_eq!(xlsx, ods, "XLSX and ODS should convert the same formulas");
+    Ok(())
+}
+
+/// Column and row scopes convert the same cells in XLSX and ODS.
+#[test]
+fn test_convert_minimal_assets_columns_and_rows() -> anyhow::Result<()> {
+    let scopes = ["Indexing tests!J:K", "Indexing tests!12:15", "Summary!D"];
+    let xlsx = check_asset_conversion("minimal_test.xlsx", &scopes)?;
+    let ods = check_asset_conversion("minimal_test.ods", &scopes)?;
+    assert!(xlsx > 0, "the scopes should hold formulas");
+    assert_eq!(xlsx, ods, "XLSX and ODS should convert the same formulas");
+    Ok(())
+}
+
+#[test]
+fn test_convert_ods_keeps_mimetype_first_and_stored() -> anyhow::Result<()> {
+    let input_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/minimal_test.ods");
+    let dir = tempfile::tempdir()?;
+    let output_path = dir.path().join("values.ods");
+    let mods = WorkbookModifications {
+        convert_to_values: vec!["Summary".parse()?],
+        ..Default::default()
+    };
+    modify_workbook(&input_path, &output_path, &mods)?;
+
+    let mut zip = zip::ZipArchive::new(File::open(&output_path)?)?;
+    let mimetype = zip.by_index(0)?;
+    assert_eq!(mimetype.name(), "mimetype");
+    assert_eq!(mimetype.compression(), zip::CompressionMethod::Stored);
+    Ok(())
+}
+
+#[test]
+fn test_remove_sheets_and_ranges_ods() -> anyhow::Result<()> {
+    let input_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/minimal_test.ods");
+    let dir = tempfile::tempdir()?;
+    let output_path = dir.path().join("removed.ods");
+    let original = read_workbook(&input_path)?;
+    let range = original
+        .defined_names
+        .keys()
+        .next()
+        .expect("the asset should define names")
+        .clone();
+
+    let mods = WorkbookModifications {
+        remove_sheets: Some(HashSet::from(["empty".to_string()])),
+        remove_named_ranges: Some(HashSet::from([range.clone()])),
+        ..Default::default()
+    };
+    modify_workbook(&input_path, &output_path, &mods)?;
+
+    let modified = read_workbook(&output_path)?;
+    assert_eq!(modified.sheets.len(), original.sheets.len() - 1);
+    assert!(modified.sheets.iter().all(|sheet| sheet.name != "empty"));
+    assert!(!modified.defined_names.contains_key(&range));
+    assert_eq!(
+        modified.defined_names.len(),
+        original.defined_names.len() - 1
+    );
     Ok(())
 }
