@@ -2,7 +2,7 @@
 //!
 //! Description: Flags formulas referencing cells that currently store an error (#REF!, #DIV/0!, etc.).
 //!
-//! Violations for this rule are emitted by [`err102_error_cells::ErrorCellsRule::on_workbook_end`]
+//! Violations for this rule are emitted by [`super::err102_error_cells::ErrorCellsRule::on_workbook_end`]
 //! because the classification requires the error set, dependency graph, and circular-cell set
 //! in one place. This struct is registered as a walker rule only for configuration enable/disable.
 
