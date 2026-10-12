@@ -1445,6 +1445,7 @@ dependencies = [
 name = "sheetrs"
 version = "0.3.2"
 dependencies = [
+ "aho-corasick",
  "anyhow",
  "chrono",
  "quick-xml",

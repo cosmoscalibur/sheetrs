@@ -6,7 +6,7 @@ This document captures performance profiling data and architectural insights for
 
 ## Profiling Results
 
-> **Code state**: after #31 (per-cell formula allocations)  
+> **Code state**: after #37 (REF301 single formula scan)  
 > **Test file**: `TC2025 2025.12.05 Motor Tributi 1402 - MY- textos sin j.xlsx` (37 MB)  
 > **Workbook stats**: 51 sheets, 4,453,591 non-empty cells, 1,855,268 formulas  
 > **Build**: `profiling` Cargo profile with frame pointers
@@ -19,15 +19,18 @@ perf record -F 499 --call-graph fp ./target/profiling/sheetlint <file> > /dev/nu
 perf report --children --sort symbol -g none
 ```
 
+Benchmark metrics per change live in
+[Comparisons](../../scripts/README.md#comparisons).
+
 ### Phase Breakdown
 
 | Phase | Share |
 |-------|-------|
-| **Parsing** (ZIP + XML → Workbook) | 11.8% |
-| **Rule execution** (walker and violation sorting) | 80.6% |
-| **Output formatting** (`print_human`) | 7.6% |
+| **Parsing** (ZIP + XML → Workbook) | 14.3% |
+| **Rule execution** (walker and violation sorting) | 79.6% |
+| **Output formatting** (`print_human`) | 6.1% |
 
-Parsing includes `translate_shared_formula` at 5.0%. A run with only FILE1001
+Parsing includes `translate_shared_formula` at 4.6%. A run with only FILE1001
 enabled, a workbook-level rule, takes 4.2 s user time against the 39.5 s of
 all rules in the #31 benchmark.
 
@@ -35,33 +38,30 @@ all rules in the #31 benchmark.
 
 | Rule | Share | Hooks |
 |------|-------|-------|
-| **CALC202** | 14.9% | `on_cell` 6.7%, `on_workbook_end` 8.2% |
-| **REF301** | 14.8% | `on_cell` 1.3%, `on_workbook_end` 13.5% |
-| **REF310** | 9.3% | `on_workbook_end` |
-| **INT401–403** | 9.0% | `on_cell` 5.4%, `on_sheet_end` 3.7% |
-| CALC201 | 4.6% | `on_cell` |
-| VUL601 | 2.8% | `on_cell` 2.1%, `on_sheet_end` 0.7% |
-| REF309 | 2.3% | `on_workbook_end` |
-| VUL606 | 2.1% | `on_cell` |
-| CALC205 | 2.0% | `on_cell` |
-| ERR102 | 1.2% | `on_cell` |
-| CPX504 | 1.2% | `on_cell` |
-| DAT706 | 1.1% | `on_workbook_end` |
-| DAT703 | 1.0% | `on_cell` |
-| CALC204 | 0.8% | `on_cell` |
-| CALC203 | 0.8% | `on_cell` |
-| REF305 | 0.7% | `on_cell` |
-| CPX507 | 0.6% | `on_cell` |
-| DAT704 | 0.5% | `on_cell` |
-| VUL604 | 0.5% | `on_cell` |
-| REF304 | 0.5% | `on_cell` |
-| EXT801 | 0.4% | `on_cell` |
-| VUL602 | 0.4% | `on_cell` |
-| VUL603 | 0.4% | `on_cell` |
-| Other rules | <0.3% each | — |
+| **CALC202** | 20.1% | `on_cell` 8.9%, `on_workbook_end` 11.3% |
+| **INT401–403** | 11.9% | `on_cell` 7.1%, `on_sheet_end` 4.8% |
+| **REF310** | 8.7% | `on_workbook_end` |
+| CALC201 | 5.7% | `on_cell` |
+| VUL601 | 3.5% | `on_cell` 2.2%, `on_sheet_end` 1.2% |
+| REF309 | 3.0% | `on_workbook_end` |
+| VUL606 | 2.6% | `on_cell` |
+| CALC205 | 2.1% | `on_cell` |
+| CPX504 | 2.1% | `on_cell` |
+| ERR102 | 1.9% | `on_cell` |
+| DAT706 | 1.3% | `on_workbook_end` |
+| DAT703 | 1.1% | `on_cell` |
+| VUL602 | 1.1% | `on_cell` |
+| CALC204 | 1.0% | `on_cell` |
+| CALC203 | 1.0% | `on_cell` |
+| REF305 | 0.9% | `on_cell` |
+| CPX507 | 0.7% | `on_cell` |
+| REF301 | 0.7% | `on_cell` |
+| VUL604 | 0.6% | `on_cell` |
+| EXT801 | 0.5% | `on_cell` |
+| VUL603 | 0.5% | `on_cell` |
+| Other rules | <0.4% each | — |
 
-CALC202, REF301, REF310, and INT401–403 account for 48% of samples. REF301's
-`on_workbook_end` searches every collected formula for each defined name.
+CALC202, INT401–403, and REF310 account for 41% of samples.
 
 ## Current Architecture
 
