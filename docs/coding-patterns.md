@@ -144,11 +144,16 @@ parsers and rules:
   index (`A` → 0, `XFD` → 16383), skipping non-letter characters.
 - **`column_index_to_letters(index)`** — 0-based index to column letters.
 
-
 ## Performance Guidelines
 
 - Use streaming readers — avoid loading data that is not needed.
-- Compile static regexes once, in a module-level `LazyLock<Regex>`.
+- Compile static regexes once, in a module-level `LazyLock<Regex>`. Build
+  derived search patterns (e.g. `"FUNC("` strings) the same way.
+- For case-insensitive formula matching in `on_cell()`, use
+  `LinterContext::formula_upper(sheet, cell)`, which converts each cell's formula once
+  for all rules. Use the original formula to inspect string literal content.
+- In regex replacements on hot paths, implement `regex::Replacer::replace_append`
+  and write into the output buffer instead of returning a `String` per match.
 - Prefer `include_bytes!` in tests over file I/O.
 
 ## CLI Conventions

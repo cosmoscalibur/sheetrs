@@ -3,8 +3,9 @@
 use anyhow::{Context, Result};
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use regex::Regex;
+use regex::{Captures, Regex, Replacer};
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::sync::{Arc, LazyLock};
 use zip::ZipArchive;
@@ -611,42 +612,56 @@ static SHARED_FORMULA_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
         .expect("shared formula reference regex must compile")
 });
 
+/// `SHARED_FORMULA_REF_RE` replacer that writes each reference shifted by the
+/// shared-formula offset straight into the output buffer.
+struct SharedRefShifter {
+    row_shift: i32,
+    col_shift: i32,
+}
+
+impl Replacer for SharedRefShifter {
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+        let col_abs = !caps["col_abs"].is_empty();
+        let row_abs = !caps["row_abs"].is_empty();
+
+        let col = column_letters_to_index(&caps["col"]).expect("regex captures column letters");
+        let row = caps["row"].parse::<u32>().unwrap_or(1) - 1;
+
+        let new_row = if row_abs {
+            row
+        } else {
+            row.saturating_add_signed(self.row_shift)
+        };
+        let new_col = if col_abs {
+            col
+        } else {
+            col.saturating_add_signed(self.col_shift)
+        };
+
+        if let Some(sheet) = caps.name("sheet") {
+            dst.push_str(sheet.as_str());
+        }
+        if col_abs {
+            dst.push('$');
+        }
+        dst.push_str(&column_index_to_letters(new_col));
+        if row_abs {
+            dst.push('$');
+        }
+        let _ = write!(dst, "{}", new_row + 1);
+    }
+}
+
 fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> String {
     SHARED_FORMULA_REF_RE
-        .replace_all(formula, |caps: &regex::Captures| {
-            let sheet = caps.name("sheet").map(|m| m.as_str()).unwrap_or("");
-            let col_abs = !caps.name("col_abs").unwrap().as_str().is_empty();
-            let col_str = caps.name("col").unwrap().as_str();
-            let row_abs = !caps.name("row_abs").unwrap().as_str().is_empty();
-            let row_str = caps.name("row").unwrap().as_str();
-
-            let col = column_letters_to_index(col_str).expect("regex captures column letters");
-            let row = row_str.parse::<u32>().unwrap_or(1) - 1;
-
-            let new_row = if row_abs {
-                row
-            } else {
-                row.saturating_add_signed(row_shift)
-            };
-            let new_col = if col_abs {
-                col
-            } else {
-                col.saturating_add_signed(col_shift)
-            };
-
-            let mut result = sheet.to_string();
-            if col_abs {
-                result.push('$');
-            }
-            result.push_str(&column_index_to_letters(new_col));
-            if row_abs {
-                result.push('$');
-            }
-            result.push_str(&(new_row + 1).to_string());
-
-            result
-        })
-        .to_string()
+        .replace_all(
+            formula,
+            SharedRefShifter {
+                row_shift,
+                col_shift,
+            },
+        )
+        .into_owned()
 }
 
 // Type alias to avoid clippy::type_complexity warning
@@ -1812,6 +1827,10 @@ mod tests {
         assert_eq!(translate_shared_formula("A1+B2", 2, 1), "B3+C4");
         assert_eq!(translate_shared_formula("Z1", 0, 1), "AA1");
         assert_eq!(translate_shared_formula("Sheet2!C5", -1, -2), "Sheet2!A4");
+        assert_eq!(
+            translate_shared_formula("'My Sheet'!A1+1", 1, 0),
+            "'My Sheet'!A2+1"
+        );
     }
 
     #[test]

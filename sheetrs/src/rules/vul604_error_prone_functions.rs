@@ -95,9 +95,8 @@ impl WalkerRule for ErrorProneFunctionsRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        if let Some(formula) = cell.as_formula() {
-            let formula_upper = formula.to_uppercase();
+    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+        if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
             let formula_bytes = formula_upper.as_bytes();
             let mut matches = Vec::new();
 

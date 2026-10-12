@@ -89,16 +89,14 @@ impl WalkerRule for EmptyStringTestRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        if let Some(formula) = cell.as_formula() {
-            let formula_upper = formula.to_uppercase();
-
-            if EMPTY_STRING_EQ_RE.is_match(&formula_upper) || LEN_ZERO_RE.is_match(&formula_upper) {
-                let mut map = self.sheet_cells.lock().unwrap();
-                map.entry(sheet.sheet_index)
-                    .or_default()
-                    .push((cell.row, cell.col));
-            }
+    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+        if let Some(formula_upper) = ctx.formula_upper(sheet, cell)
+            && (EMPTY_STRING_EQ_RE.is_match(formula_upper) || LEN_ZERO_RE.is_match(formula_upper))
+        {
+            let mut map = self.sheet_cells.lock().unwrap();
+            map.entry(sheet.sheet_index)
+                .or_default()
+                .push((cell.row, cell.col));
         }
         Vec::new()
     }

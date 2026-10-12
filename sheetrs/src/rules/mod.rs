@@ -97,6 +97,30 @@ pub struct LinterContext {
     pub circular_cells: HashSet<(u16, u32, u32)>,
     /// Cells containing numeric-looking text values (populated by dat706).
     pub numeric_text_cells: HashSet<(u16, u32, u32)>,
+    /// Uppercased formula of the last cell requested through
+    /// [`Self::formula_upper`], keyed by `(sheet_index, row, col)`.
+    formula_upper: Option<((u16, u32, u32), Box<str>)>,
+}
+
+impl LinterContext {
+    /// Returns the cell's formula in uppercase, or `None` for non-formula cells.
+    ///
+    /// The result is cached for the cell's location, so every rule visiting the
+    /// same cell shares one conversion. The location key assumes one context per
+    /// workbook, as [`walker::WorkbookWalker`] creates.
+    /// Rules that inspect string literals must use the original formula.
+    pub fn formula_upper(&mut self, sheet: &Sheet, cell: &Cell) -> Option<&str> {
+        let formula = cell.as_formula()?;
+        let location = (sheet.sheet_index, cell.row, cell.col);
+        if self
+            .formula_upper
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != location)
+        {
+            self.formula_upper = Some((location, formula.to_uppercase().into_boxed_str()));
+        }
+        self.formula_upper.as_ref().map(|(_, upper)| &**upper)
+    }
 }
 
 /// Trait for optimized single-pass walker rules
@@ -179,5 +203,59 @@ impl RuleCategory {
             RuleCategory::File => "Files & Settings",
             RuleCategory::VBA => "VBA Issues",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reader::workbook::CellValue;
+
+    fn make_cell(row: u32, col: u32, formula: Option<&str>) -> Cell {
+        Cell {
+            formula: formula.map(Into::into),
+            is_array: false,
+            num_fmt: None,
+            row,
+            col,
+            value: CellValue::Empty,
+        }
+    }
+
+    #[test]
+    fn test_formula_upper_non_formula_cell() {
+        let mut ctx = LinterContext::default();
+        let sheet = Sheet::default();
+        assert_eq!(ctx.formula_upper(&sheet, &make_cell(0, 0, None)), None);
+    }
+
+    #[test]
+    fn test_formula_upper_unicode() {
+        let mut ctx = LinterContext::default();
+        let sheet = Sheet::default();
+        let cell = make_cell(0, 0, Some("sum('año'!a1)"));
+        assert_eq!(ctx.formula_upper(&sheet, &cell), Some("SUM('AÑO'!A1)"));
+    }
+
+    #[test]
+    fn test_formula_upper_recomputes_per_cell() {
+        let mut ctx = LinterContext::default();
+        let sheet = Sheet::default();
+        let other_sheet = Sheet {
+            sheet_index: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            ctx.formula_upper(&sheet, &make_cell(0, 0, Some("now()"))),
+            Some("NOW()")
+        );
+        assert_eq!(
+            ctx.formula_upper(&sheet, &make_cell(1, 0, Some("rand()"))),
+            Some("RAND()")
+        );
+        assert_eq!(
+            ctx.formula_upper(&other_sheet, &make_cell(1, 0, Some("today()"))),
+            Some("TODAY()")
+        );
     }
 }

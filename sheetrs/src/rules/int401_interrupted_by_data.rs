@@ -16,8 +16,9 @@ use crate::reader::{Cell, Sheet};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use regex::Regex;
+use regex::{Captures, Regex, Replacer};
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::sync::{Arc, LazyLock, Mutex};
 
 /// Which type of interruption this rule instance detects.
@@ -35,7 +36,7 @@ pub enum InterruptionKind {
 #[derive(Debug, Clone)]
 enum CellType {
     /// Cell has a formula with the given normalized pattern.
-    Formula(String),
+    Formula(Box<str>),
     /// Cell has a value but no formula.
     Value,
     /// Cell is empty (no value, no formula).
@@ -84,6 +85,54 @@ pub struct InterruptionRule {
 /// The {1,3} limit matches valid Excel columns (A–XFD).
 static ABS_REF_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\$?)([A-Z]{1,3})(\$?)([0-9]+)").unwrap());
+
+/// `ABS_REF_RE` replacer that writes R1C1-style offsets relative to the
+/// formula's cell straight into the output buffer.
+struct R1C1Replacer<'a> {
+    formula_bytes: &'a [u8],
+    cell_row: i64,
+    cell_col: i64,
+}
+
+impl Replacer for R1C1Replacer<'_> {
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+        let m = caps.get(0).unwrap();
+
+        // Skip if preceded by a letter — part of a function or sheet name
+        // (e.g. LOG10 → LOG is preceded by nothing but "10" is the row part;
+        //  the full match LOG10 would be LOG as col + 10 as row)
+        if m.start() > 0 && self.formula_bytes[m.start() - 1].is_ascii_alphabetic() {
+            dst.push_str(m.as_str());
+            return;
+        }
+
+        // Skip if followed by ! (sheet qualifier, e.g. S1!A1 → skip S1)
+        // or ( (function call, e.g. IF(...) — unlikely with {1,3} but safe)
+        if matches!(self.formula_bytes.get(m.end()), Some(b'!' | b'(')) {
+            dst.push_str(m.as_str());
+            return;
+        }
+
+        let col_abs = &caps[1] == "$";
+        let row_abs = &caps[3] == "$";
+
+        let ref_col = i64::from(
+            column_letters_to_index(&caps[2]).expect("ABS_REF_RE captures column letters"),
+        );
+        let ref_row = caps[4].parse::<i64>().unwrap_or(1) - 1;
+
+        let _ = if row_abs {
+            write!(dst, "R{ref_row}")
+        } else {
+            write!(dst, "R[{}]", ref_row - self.cell_row)
+        };
+        let _ = if col_abs {
+            write!(dst, "C{ref_col}")
+        } else {
+            write!(dst, "C[{}]", ref_col - self.cell_col)
+        };
+    }
+}
 
 impl InterruptionRule {
     /// Create a standalone instance (used by `clone_walker_rule`).
@@ -136,53 +185,19 @@ impl InterruptionRule {
     /// Normalize a formula by converting cell references to R1C1-style offsets.
     /// Relative references become relative offsets; absolute ($) references stay absolute.
     /// Skips false matches on function names (e.g. LOG10) and sheet qualifiers (e.g. SHEET1!).
-    pub(crate) fn normalize_formula(formula: &str, cell_row: u32, cell_col: u32) -> String {
-        let formula_bytes = formula.as_bytes();
-
-        ABS_REF_RE
-            .replace_all(formula, |caps: &regex::Captures| {
-                let m = caps.get(0).unwrap();
-
-                // Skip if preceded by a letter — part of a function or sheet name
-                // (e.g. LOG10 → LOG is preceded by nothing but "10" is the row part;
-                //  the full match LOG10 would be LOG as col + 10 as row)
-                if m.start() > 0 && formula_bytes[m.start() - 1].is_ascii_alphabetic() {
-                    return m.as_str().to_string();
-                }
-
-                // Skip if followed by ! (sheet qualifier, e.g. S1!A1 → skip S1)
-                // or ( (function call, e.g. IF(...) — unlikely with {1,3} but safe)
-                if m.end() < formula_bytes.len() {
-                    let next = formula_bytes[m.end()];
-                    if next == b'!' || next == b'(' {
-                        return m.as_str().to_string();
-                    }
-                }
-
-                let col_abs = &caps[1] == "$";
-                let col_str = &caps[2];
-                let row_abs = &caps[3] == "$";
-                let row_str = &caps[4];
-
-                let ref_col = i64::from(
-                    column_letters_to_index(col_str).expect("ABS_REF_RE captures column letters"),
-                );
-                let ref_row = row_str.parse::<i64>().unwrap_or(1) - 1;
-
-                let row_part = if row_abs {
-                    format!("R{ref_row}")
-                } else {
-                    format!("R[{}]", ref_row - cell_row as i64)
-                };
-                let col_part = if col_abs {
-                    format!("C{ref_col}")
-                } else {
-                    format!("C[{}]", ref_col - cell_col as i64)
-                };
-
-                format!("{row_part}{col_part}")
-            })
-            .to_string()
+    pub(crate) fn normalize_formula(formula: &str, cell_row: u32, cell_col: u32) -> Box<str> {
+        let normalized = ABS_REF_RE.replace_all(
+            formula,
+            R1C1Replacer {
+                formula_bytes: formula.as_bytes(),
+                cell_row: i64::from(cell_row),
+                cell_col: i64::from(cell_col),
+            },
+        );
+        // Copied to an exact-size allocation: patterns are retained for every
+        // formula cell of the sheet, and shrinking the oversized replacement
+        // buffer in place fragments the heap and raises peak RSS.
+        Box::from(&*normalized)
     }
 
     /// Scan a sequence of cells along one axis and find interruptions.
@@ -384,14 +399,13 @@ impl WalkerRule for InterruptionRule {
         RuleCategory::Interruptions
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         if !self.is_collector {
             return Vec::new();
         }
 
-        let cell_type = if let Some(formula) = cell.as_formula() {
-            let normalized = Self::normalize_formula(&formula.to_uppercase(), cell.row, cell.col);
-            CellType::Formula(normalized)
+        let cell_type = if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
+            CellType::Formula(Self::normalize_formula(formula_upper, cell.row, cell.col))
         } else if cell.value.is_empty() {
             CellType::Empty
         } else {
@@ -682,6 +696,22 @@ mod tests {
         let n3 = InterruptionRule::normalize_formula("B3+C3", 2, 0);
         assert_eq!(n1, n2);
         assert_eq!(n2, n3);
+    }
+
+    #[test]
+    fn test_normalization_absolute_and_mixed_refs() {
+        assert_eq!(
+            &*InterruptionRule::normalize_formula("$B$3+B$3+$B3+B3", 1, 0),
+            "R2C1+R2C[1]+R[1]C1+R[1]C[1]"
+        );
+    }
+
+    #[test]
+    fn test_normalization_skips_function_names_and_sheet_qualifiers() {
+        assert_eq!(
+            &*InterruptionRule::normalize_formula("LOG10(S1!A1)", 0, 0),
+            "LOG10(S1!R[0]C[0])"
+        );
     }
 
     // --- Config ---

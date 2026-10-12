@@ -95,12 +95,10 @@ impl WalkerRule for WholeColumnRowRefsRule {
         RuleCategory::Reference
     }
 
-    fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        if let Some(formula) = cell.as_formula() {
-            let formula_upper = formula.to_uppercase();
-
-            let has_column = COLUMN_PATTERN.is_match(&formula_upper);
-            let has_row = !has_column && ROW_PATTERN.is_match(&formula_upper);
+    fn on_cell(&self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+        if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
+            let has_column = COLUMN_PATTERN.is_match(formula_upper);
+            let has_row = !has_column && ROW_PATTERN.is_match(formula_upper);
 
             if has_column || has_row {
                 let mut map = self.sheet_cells.lock().unwrap();
