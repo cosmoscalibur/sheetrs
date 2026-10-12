@@ -1,7 +1,7 @@
 //! ODS (OpenDocument Spreadsheet) parser implementation
 
 use super::WorkbookReader;
-use super::parser_utils::attr_value;
+use super::parser_utils::{attr_value, push_general_ref, read_text_node};
 use super::workbook::{Cell, CellValue, ExternalWorkbook, Sheet};
 use crate::violation::ExcelError;
 use anyhow::Result;
@@ -790,6 +790,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     Event::Text(e) if in_date_style => {
                         current_format.push_str(&e);
                     }
+                    Event::GeneralRef(e) if in_date_style => {
+                        push_general_ref(&mut current_format, &e)?;
+                    }
                     Event::End(e) if e.name().as_ref() == "number:date-style" => {
                         if !current_data_style_name.is_empty() {
                             data_styles.insert(
@@ -831,12 +834,15 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
             reader.config_mut().trim_text(false);
 
             let mut buf = Vec::new();
+            // Byte offset in content.xml where the current <table:table> starts
+            let mut table_start = 0u64;
 
             // ============================================================
             // UNIFIED PARSING LOOP
             // ============================================================
 
             loop {
+                let event_start = reader.buffer_position();
                 match reader.read_event_into(&mut buf)? {
                     // --------------------------------------------------------
                     // DATE STYLES: number:date-style
@@ -1039,6 +1045,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     Event::Text(e) if in_date_style => {
                         current_format.push_str(&e);
                     }
+                    Event::GeneralRef(e) if in_date_style => {
+                        push_general_ref(&mut current_format, &e)?;
+                    }
                     // DATE STYLES: end of date-style
                     Event::End(e) if e.name().as_ref() == "number:date-style" => {
                         if !current_data_style_name.is_empty() {
@@ -1106,6 +1115,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         // Assign sheet_index based on the current count of sheets parsed
                         let sheet_index = sheets.len() as u16;
                         let mut new_sheet = Sheet::new(name.clone(), sheet_index);
+                        // Covers a self-closing table; the closing tag overwrites it
+                        table_start = event_start;
+                        new_sheet.xml_size_bytes = reader.buffer_position() - table_start;
                         // Check if this sheet's style is in hidden_styles
                         let is_hidden =
                             !style_name.is_empty() && hidden_styles.contains(&style_name);
@@ -1380,6 +1392,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                         match reader.read_event_into(&mut p_buf)? {
                                             Event::Text(ref t) => {
                                                 text_content.push_str(t);
+                                            }
+                                            Event::GeneralRef(ref r) => {
+                                                push_general_ref(&mut text_content, r)?;
                                             }
                                             Event::End(ref pe)
                                                 if pe.name().as_ref() == "text:p" =>
@@ -1669,6 +1684,8 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         if e.name().as_ref() == "table:table"
                             && let Some(sheet) = current_sheet.as_mut() =>
                     {
+                        sheet.xml_size_bytes = reader.buffer_position() - table_start;
+
                         // Calculate used range for the sheet before finalizing
                         // This must happen here (not at sheet finalization) because it needs to run
                         // for ALL sheets, whether they have conditional formatting or not
@@ -1930,7 +1947,6 @@ fn extract_modified_date_ods(
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
-    let mut in_date = false;
     let mut modified_date: Option<DateTime<Utc>> = None;
 
     loop {
@@ -1939,21 +1955,11 @@ fn extract_modified_date_ods(
                 // dc:date element contains the last modified date
                 let name = e.name();
                 if name.as_ref().ends_with(":date") || name.as_ref() == "date" {
-                    in_date = true;
-                }
-            }
-            Event::Text(e) if in_date => {
-                let date_str = e.into_inner().into_owned();
-                // Parse ISO 8601 / RFC 3339 format
-                if let Ok(parsed) = DateTime::parse_from_rfc3339(&date_str) {
-                    modified_date = Some(parsed.with_timezone(&Utc));
-                }
-                in_date = false;
-            }
-            Event::End(e) => {
-                let name = e.name();
-                if name.as_ref().ends_with(":date") || name.as_ref() == "date" {
-                    in_date = false;
+                    let date_str = read_text_node(&mut reader)?;
+                    // Parse ISO 8601 / RFC 3339 format
+                    if let Ok(parsed) = DateTime::parse_from_rfc3339(date_str.trim()) {
+                        modified_date = Some(parsed.with_timezone(&Utc));
+                    }
                 }
             }
             Event::Eof => break,

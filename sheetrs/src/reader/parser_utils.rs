@@ -3,8 +3,9 @@
 use std::borrow::Cow;
 
 use anyhow::Result;
-use quick_xml::events::Event;
+use quick_xml::escape::resolve_predefined_entity;
 use quick_xml::events::attributes::Attribute;
+use quick_xml::events::{BytesRef, Event};
 use quick_xml::{Reader, XmlVersion};
 
 /// Parse a cell reference like "A1" into (row, col) as 0-based indices
@@ -90,6 +91,7 @@ pub fn read_text_node<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Str
         match reader.read_event_into(&mut buf)? {
             Event::Text(e) => text.push_str(&e),
             Event::CData(e) => text.push_str(&e),
+            Event::GeneralRef(e) => push_general_ref(&mut text, &e)?,
             Event::End(_) => break,
             Event::Eof => break,
             _ => {}
@@ -97,6 +99,25 @@ pub fn read_text_node<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Str
         buf.clear();
     }
     Ok(text)
+}
+
+/// Append the text an entity or character reference stands for.
+///
+/// quick-xml reports `&amp;`, `&#10;` and the like as `Event::GeneralRef`,
+/// apart from the surrounding `Event::Text`, so every reader that collects
+/// element text must route references through here. References to entities
+/// other than the predefined XML ones are kept verbatim.
+pub fn push_general_ref(text: &mut String, reference: &BytesRef) -> Result<()> {
+    if let Some(ch) = reference.resolve_char_ref()? {
+        text.push(ch);
+    } else if let Some(resolved) = resolve_predefined_entity(reference) {
+        text.push_str(resolved);
+    } else {
+        text.push('&');
+        text.push_str(reference);
+        text.push(';');
+    }
+    Ok(())
 }
 
 /// Extract basename from a file path
@@ -186,6 +207,47 @@ mod tests {
         let mut reader = Reader::from_str("<t>a b<![CDATA[<c>]]></t>");
         reader.read_event().unwrap();
         assert_eq!(read_text_node(&mut reader).unwrap(), "a b<c>");
+    }
+
+    fn text_of(xml: &str) -> String {
+        let mut reader = Reader::from_str(xml);
+        reader.read_event().unwrap();
+        read_text_node(&mut reader).unwrap()
+    }
+
+    #[test]
+    fn test_read_text_node_resolves_predefined_entities() {
+        assert_eq!(text_of("<t>&amp;&lt;&gt;&quot;&apos;</t>"), r#"&<>"'"#);
+    }
+
+    #[test]
+    fn test_read_text_node_resolves_char_refs() {
+        assert_eq!(text_of("<t>a&#10;b&#x41;</t>"), "a\nbA");
+    }
+
+    #[test]
+    fn test_read_text_node_keeps_spaces_around_references() {
+        assert_eq!(text_of("<t> a &amp; b </t>"), " a & b ");
+    }
+
+    #[test]
+    fn test_read_text_node_keeps_unknown_entities_verbatim() {
+        assert_eq!(text_of("<t>a&nbsp;b</t>"), "a&nbsp;b");
+    }
+
+    #[test]
+    fn test_read_text_node_rejects_invalid_char_ref() {
+        let mut reader = Reader::from_str("<t>&#0;</t>");
+        reader.read_event().unwrap();
+        assert!(read_text_node(&mut reader).is_err());
+    }
+
+    #[test]
+    fn test_read_text_node_reads_xlsx_formula() {
+        assert_eq!(
+            text_of("<f>IF(H7=&quot;Y&quot;, 1,IF(C4&lt;0,3,4))&amp;&apos;My Sheet&apos;!A1</f>"),
+            r#"IF(H7="Y", 1,IF(C4<0,3,4))&'My Sheet'!A1"#
+        );
     }
 
     #[test]

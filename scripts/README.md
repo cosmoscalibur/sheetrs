@@ -57,8 +57,9 @@ rule or phase updates that profile along with its Comparisons entry.
 
 Time and RAM shift between sessions on the same machine: the same binary has
 measured 1943 MB and 1990 MB peak RAM, and 37.5 s and 42.2 s user time, on the
-XLSX file. User instructions stay stable across sessions. When only time or RAM
-differs from the latest entry, and by no more than that shift, run with
+XLSX file. User instructions shift less: the same binary has measured 339.3 G
+and 335.8 G on the XLSX file, and 335.8 G and 333.0 G on the ODS file. When a
+metric differs from the latest entry by no more than its shift, run with
 `--baseline` to tell the change from the session.
 
 [Comparisons](#comparisons) is incremental: a new entry measures only the
@@ -86,6 +87,23 @@ Benchmarks use production files in `tests/production/`. Each entry measures
 the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
+
+### XML entity references in element text (#48)
+
+XLSX formulas and text keep their entity references and the whitespace next
+to them, so CALC201, CPX506, CPX508, CPX509 and VUL603 report the same counts
+as ODS, and DATA705 reports 40,614 XLSX violations (none before). ODS output
+changes in DATA704, DATA705 and EXT802. Peak RAM on XLSX grows with the larger
+report. The previous entry's build, run once in the same session, measured
+335.8 G (XLSX) and 333.0 G (ODS) user instructions and 1799 MB (XLSX) peak RAM.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 30.7s | 30.4s |
+| Peak RAM | 1813 MB | 1821 MB |
+| User instructions | 336.0 G | 332.9 G |
+| Output MD5 | `27417019c56695b4857551f630a8ffb1` | `c51c9d7817650f251ff10455b3c548db` |
+| Binary size | 9.2M | - |
 
 ### REF301 single formula scan (#37)
 

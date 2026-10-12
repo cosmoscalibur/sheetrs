@@ -49,7 +49,8 @@ The binary crates are thin wrappers around `sheetrs`.
 
 - **`sheetstats`**:
   - Focuses on aggregating metrics.
-  - Uses the same `Workbook` trait but collects different data points (counts, distributions).
+  - Uses the same `Workbook` model but collects different data points (counts, distributions).
+  - `stats.rs` computes workbook and per-sheet metrics; `main.rs` handles arguments and output.
 
 - **`sheetcli`**:
   - Handles command-line arguments for operations.
