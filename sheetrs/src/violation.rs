@@ -450,11 +450,6 @@ impl CellReference {
     pub fn new(row: u32, col: u32) -> Self {
         Self { row, col }
     }
-
-    /// Convert to Excel-style reference (e.g., "A1")
-    pub fn to_excel_ref(&self) -> String {
-        self.to_string()
-    }
 }
 
 impl PartialOrd for CellReference {

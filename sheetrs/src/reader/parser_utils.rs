@@ -68,8 +68,6 @@ const MAX_COLUMN_LETTERS: usize = 7;
 
 /// Displays a 0-based column index as column letters (`0` → `A`, `26` → `AA`)
 /// without allocating.
-///
-/// Use it in `format!`/`write!`, or call `to_string()` for an owned `String`.
 pub fn column_letters(index: u32) -> impl fmt::Display {
     fmt::from_fn(move |f| {
         let mut letters = [0u8; MAX_COLUMN_LETTERS];
