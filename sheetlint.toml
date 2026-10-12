@@ -44,14 +44,14 @@ max_operations = 8
 max_sheet_refs = 3
 # CPX508: Maximum cell references per formula
 max_references = 10
-# CPX509: Maximum formula length in characters
+# CPX509: Maximum formula length in bytes (UTF-8)
 max_formula_length = 255
 
 # DATA701: Sheet name substrings to avoid (per sheet)
 avoid_sheet_names = ["sheet", "copy"]
 # DATA703: Expected date format (per sheet)
 date_format = "mm/dd/yyyy"
-# DATA704: Maximum text length in characters (per sheet)
+# DATA704: Maximum text length in bytes (UTF-8) (per sheet)
 max_text_length = 255
 
 # EXT802: Web URLs. "ALL" reports every URL; "INVALID" only unreachable ones.
