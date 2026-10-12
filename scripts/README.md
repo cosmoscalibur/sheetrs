@@ -14,12 +14,18 @@ comprehensive metrics:
 - Peak RAM (Maximum resident set size)
 - User-space instructions (`perf stat`), stable across sessions where time and
   RAM shift
+- MD5 of each run's output
 - Binary size
 
 The script builds `sheetlint` with the `profiling` Cargo profile (release with
 fat LTO and one codegen unit), so binary size and timings refer to that build.
 Each production file runs twice, with both runs' metrics reported; the
 violations report comes from the first run.
+
+`sheetlint` runs with `scripts/benchmark.toml`, so changes to the root
+`sheetlint.toml` example leave the measured rule work unchanged. A change to
+its thresholds changes the output and the metrics, so the next Comparisons
+entry states it.
 
 **Requirements:** `time` package (provides `/usr/bin/time`) and `perf`
 
@@ -46,7 +52,8 @@ cargo flamegraph --profile profiling -p sheetlint -- <file>
 ```
 
 [PROFILING.md](../sheetlint/docs/PROFILING.md) holds the phase and per-rule
-profile and the commands that produce it.
+profile and the commands that produce it. A change that targets the cost of a
+rule or phase updates that profile along with its Comparisons entry.
 
 Time and RAM shift between sessions on the same machine: the same binary has
 measured 1943 MB and 1990 MB peak RAM, and 37.5 s and 42.2 s user time, on the
@@ -65,10 +72,13 @@ output runs to hundreds of MB, like the reference outputs in
 `tests/production/baselines/`. `benchmark.sh` writes that full output into its
 `scripts/benchmark_*.txt` results file.
 
-Two runs of one build produce byte-identical output, so outputs compare
-directly with streaming tools (`diff`, `md5sum`) on the text output. Tools that
-load the whole document into memory, such as `jq` on the `--format json`
-output, can exhaust RAM.
+Two runs of one build produce byte-identical output. Each
+[Comparisons](#comparisons) entry records the output MD5 that `benchmark.sh`
+reports, so a change checks its output by comparing MD5 against the latest
+entry. When the MD5 differs and the change does not explain it, regenerate both
+outputs and compare them with streaming tools (`diff`) to find the difference.
+Tools that load the whole document into memory, such as `jq` on the
+`--format json` output, can exhaust RAM.
 
 ## Comparisons
 
@@ -76,6 +86,19 @@ Benchmarks use production files in `tests/production/`. Each entry measures
 the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
+
+### REF301 single formula scan (#37)
+
+Output is byte-identical to 4fe45d7 (previous entry), with all rules and
+with only REF301 enabled (50 XLSX and 38 ODS REF301 violations).
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 31.8s | 31.9s |
+| Peak RAM | 1801 MB | 1819 MB |
+| User instructions | 339.3 G | 335.8 G |
+| Output MD5 | `c2e8390c660ac4627ed2a2225888963d` | `9d0adac635fbfb95cc61ee8158fdd1cf` |
+| Binary size | 9.1M | - |
 
 ### quick-xml 0.42 and regex 1.13 (#44)
 
