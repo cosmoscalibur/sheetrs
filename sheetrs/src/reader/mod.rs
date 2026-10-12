@@ -457,29 +457,51 @@ mod escaped_text_parity_tests {
     use super::*;
     use std::io::Cursor;
 
-    fn sheet7(bytes: &[u8], extension: &str) -> Sheet {
-        read_workbook_from_reader(Cursor::new(bytes), Some(extension))
-            .unwrap()
-            .sheets
-            .into_iter()
-            .find(|s| s.name == "Sheet7")
-            .unwrap()
+    fn read(bytes: &[u8], extension: &str) -> Workbook {
+        read_workbook_from_reader(Cursor::new(bytes), Some(extension)).unwrap()
     }
 
+    /// Cells whose XLSX markup holds `&quot;`, `&apos;`, `&lt;` or `&gt;`
+    /// read the same from both formats.
     #[test]
-    fn test_formulas_keep_escaped_characters() {
-        let xlsx = sheet7(include_bytes!("../../../tests/minimal_test.xlsx"), "xlsx");
-        let ods = sheet7(include_bytes!("../../../tests/minimal_test.ods"), "ods");
+    fn test_escaped_text_parity() {
+        let xlsx = read(include_bytes!("../../../tests/minimal_test.xlsx"), "xlsx");
+        let ods = read(include_bytes!("../../../tests/minimal_test.ods"), "ods");
 
-        // H7, L7 and I8 hold `&quot;` and `&lt;` in the XLSX markup
-        for (pos, expected) in [
-            ((6, 7), r#"IF(I7="", "Y","N")"#),
-            ((6, 11), r#"IF(H7="Y", 1,IF(H8="Y",2,IF(C4<0,3,4)))"#),
-            ((7, 8), r#""""#),
-        ] {
-            for (format, sheet) in [("xlsx", &xlsx), ("ods", &ods)] {
-                let formula = sheet.get_cell(pos.0, pos.1).and_then(Cell::as_formula);
-                assert_eq!(formula, Some(expected), "{format} cell {pos:?}");
+        let formulas = [
+            ("Sheet7", (6, 7), r#"IF(I7="", "Y","N")"#),
+            (
+                "Sheet7",
+                (6, 11),
+                r#"IF(H7="Y", 1,IF(H8="Y",2,IF(C4<0,3,4)))"#,
+            ),
+            ("Sheet7", (7, 8), r#""""#),
+            ("hidden_formula_error", (3, 3), "'Indexing tests'!H12"),
+        ];
+        let texts = [(
+            "Summary",
+            (26, 3),
+            "Indexing tests!H12 -> hidden_formula_error!B7 -> hidden_formula_error!D4",
+        )];
+
+        for (format, workbook) in [("xlsx", &xlsx), ("ods", &ods)] {
+            let cell = |sheet: &str, (row, col): (u32, u32)| {
+                workbook
+                    .get_sheet(sheet)
+                    .and_then(|s| s.get_cell(row, col))
+                    .unwrap_or_else(|| panic!("{format}: missing {sheet} {row},{col}"))
+            };
+            for (sheet, pos, expected) in formulas {
+                let formula = cell(sheet, pos).as_formula();
+                assert_eq!(formula, Some(expected), "{format}: {sheet} {pos:?}");
+            }
+            for (sheet, pos, expected) in texts {
+                let value = &cell(sheet, pos).value;
+                assert_eq!(
+                    value,
+                    &CellValue::Text(expected.into()),
+                    "{format}: {sheet} {pos:?}"
+                );
             }
         }
     }

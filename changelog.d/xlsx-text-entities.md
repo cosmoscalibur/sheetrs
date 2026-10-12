@@ -1,3 +1,3 @@
 ### Fixed
 
-- Fix XLSX formulas, shared strings and defined names dropping escaped characters (`"`, `<`, `>`, `&`, `'` and character references) and the spaces next to them. Formulas such as `IF(A1<0,"Y","N")` were read as `IF(A10,Y,N)`, causing wrong results in formula rules and differences with the ODS reader. ODS cell text and date formats resolve references the same way.
+- Fix entity and character references (`&quot;`, `&apos;`, `&lt;`, `&gt;`, `&amp;`, `&#N;`) being dropped from element text, together with the spaces next to them (#48). XLSX formulas such as `IF(A1<0,"Y","N")` were read as `IF(A10,Y,N)`, quoted sheet names lost their quotes, and shared strings, inline strings, defined names, ODS cell text and ODS date formats lost the escaped characters. Rules on XLSX workbooks now see the real formulas, which changes their findings (e.g. VUL603, CALC201, CALC202, ERR102, ERR103, REF309 on `tests/minimal_test.xlsx`) and brings them in line with ODS.
