@@ -1,8 +1,11 @@
 //! Common parsing utilities shared between XLSX and ODS parsers
 
+use std::borrow::Cow;
+
 use anyhow::Result;
-use quick_xml::Reader;
 use quick_xml::events::Event;
+use quick_xml::events::attributes::Attribute;
+use quick_xml::{Reader, XmlVersion};
 
 /// Parse a cell reference like "A1" into (row, col) as 0-based indices
 ///
@@ -71,14 +74,22 @@ pub fn column_index_to_letters(mut index: u32) -> String {
     letters.iter().rev().map(|&b| char::from(b)).collect()
 }
 
+/// Returns the value of an XML attribute with entities resolved.
+///
+/// Applies XML 1.0 attribute-value normalization: literal tabs and line breaks
+/// become spaces, while character references such as `&#10;` are kept.
+pub fn attr_value<'a>(attr: &Attribute<'a>) -> quick_xml::Result<Cow<'a, str>> {
+    attr.normalized_value(XmlVersion::Implicit1_0)
+}
+
 /// Read text content from an XML node
 pub fn read_text_node<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {
     let mut buf = Vec::new();
     let mut text = String::new();
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Text(e) => text.push_str(e.decode()?.as_ref()),
-            Event::CData(e) => text.push_str(&String::from_utf8_lossy(e.as_ref())),
+            Event::Text(e) => text.push_str(&e),
+            Event::CData(e) => text.push_str(&e),
             Event::End(_) => break,
             Event::Eof => break,
             _ => {}
@@ -141,6 +152,49 @@ mod tests {
             let letters = column_index_to_letters(index);
             assert_eq!(column_letters_to_index(&letters), Some(index), "{letters}");
         }
+    }
+
+    fn first_attr_value(xml: &str) -> quick_xml::Result<String> {
+        let mut reader = Reader::from_str(xml);
+        let Event::Empty(e) = reader.read_event()? else {
+            panic!("expected an empty element");
+        };
+        let attr = e.attributes().next().expect("attribute")?;
+        Ok(attr_value(&attr)?.into_owned())
+    }
+
+    #[test]
+    fn test_attr_value_resolves_entities() {
+        assert_eq!(
+            first_attr_value(r#"<a v="R&amp;D &lt;1&gt;"/>"#).unwrap(),
+            "R&D <1>"
+        );
+    }
+
+    #[test]
+    fn test_attr_value_keeps_char_ref_line_breaks() {
+        assert_eq!(first_attr_value(r#"<a v="x&#10;y"/>"#).unwrap(), "x\ny");
+    }
+
+    #[test]
+    fn test_attr_value_normalizes_literal_whitespace() {
+        assert_eq!(first_attr_value("<a v=\"x\ny\tz\"/>").unwrap(), "x y z");
+    }
+
+    #[test]
+    fn test_read_text_node_text_and_cdata() {
+        let mut reader = Reader::from_str("<t>a b<![CDATA[<c>]]></t>");
+        reader.read_event().unwrap();
+        assert_eq!(read_text_node(&mut reader).unwrap(), "a b<c>");
+    }
+
+    #[test]
+    fn test_read_text_node_rejects_invalid_utf8() {
+        let xml: &[u8] = b"<t>a\xFFb</t>";
+        let mut reader = Reader::from_reader(xml);
+        let mut buf = Vec::new();
+        reader.read_event_into(&mut buf).unwrap();
+        assert!(read_text_node(&mut reader).is_err());
     }
 
     #[test]
