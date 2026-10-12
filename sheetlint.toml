@@ -21,10 +21,14 @@ date_format = "mm-dd-yyyy"
 max_formula_nesting = 2
 max_if_nesting = 2
 
-# FORM008: Hardcoded values config
-ignore_hardcoded_num_values = []
+# CALC201: Hardcoded values config
+# Uncomment to add specific values to ignore (code default is empty):
+# ignore_hardcoded_num_values = [0.25, 0.5, 0.75]
+ignore_hardcoded_func_args = true
+ignore_hardcoded_zero_one = true
+ignore_hardcoded_time_constants = true
 ignore_hardcoded_int_values = false
-ignore_hardcoded_power_of_ten = false
+ignore_hardcoded_power_of_ten = true
 
 # Sheet-specific configuration
 # Override global parameters or disable rules for specific sheets

@@ -125,6 +125,58 @@ Rules may accept configuration parameters via `LinterConfig`:
 - `ref310_min_adjacent_data` (int, default 1) — Minimum number of contiguous
   adjacent data cells beyond a range boundary to trigger REF310 (Longer Ref
   Expected). PerfectXL uses 1.
+- `ignore_hardcoded_zero_one` (bool, default true) — If `true`, the values
+  `0` and `1` are not flagged by CALC201. These are structurally ubiquitous
+  in boolean logic and identity operations.
+- `ignore_hardcoded_time_constants` (bool, default true) — If `true`, common
+  time and calendar constants are not flagged by CALC201. Covered values:
+
+  | Value | Meaning                               |
+  |------:|---------------------------------------|
+  |     7 | days per week                         |
+  |    12 | months per year                       |
+  |    24 | hours per day                         |
+  |    30 | days per month (approx)               |
+  |    31 | days per month (max)                  |
+  |    52 | weeks per year                        |
+  |    53 | weeks per year (max)                  |
+  |    60 | minutes per hour / seconds per minute |
+  |   365 | days per year                         |
+  |   366 | days per leap year                    |
+  |  3600 | seconds per hour                      |
+
+- `ignore_hardcoded_func_args` (bool, default true) — If `true`, numeric
+  literals that are the **sole content** of a structural function argument
+  position are not flagged by CALC201. This distinguishes mechanical function
+  parameters (column indices, decimal places) from business logic constants
+  (tax rates, thresholds). Covered functions:
+
+  | Function       | Structural arg(s)        | Meaning                 |
+  |----------------|--------------------------|-------------------------|
+  | ROUND/UP/DOWN  | 2nd (num_digits)         | Decimal places          |
+  | VLOOKUP/HLOOKUP| 3rd (col/row index), 4th | Position, match flag    |
+  | INDEX          | 2nd, 3rd (row, col)      | Array position          |
+  | MATCH          | 3rd (match_type)         | Behavior flag           |
+  | CHOOSE         | 1st (index_num)          | Selector                |
+  | LEFT/RIGHT     | 2nd (num_chars)          | Character count         |
+  | MID            | 2nd, 3rd (start, length) | Extraction positions    |
+  | WEEKDAY        | 2nd (return_type)        | Behavior flag           |
+  | YEARFRAC       | 3rd (basis)              | Day-count convention    |
+  | RANK/RANK.EQ/AVG| 3rd (order)             | Sort direction          |
+  | SUBTOTAL       | 1st (function_num)       | Function selector       |
+
+  **Not structural** (business logic even in function args):
+  `PERCENTILE`/`QUARTILE` k, `CEILING`/`FLOOR`/`MROUND` significance,
+  `LARGE`/`SMALL` k, `IF` comparison values.
+
+- `ignore_hardcoded_num_values` (float array, default `[]`) — Specific
+  numeric values to ignore in CALC201. Add values here to suppress
+  domain-specific constants that are legitimate for your workbooks.
+- `ignore_hardcoded_int_values` (bool, default false) — If `true`, all integer
+  literals are ignored by CALC201. Useful for data-heavy sheets.
+- `ignore_hardcoded_power_of_ten` (bool, default true) — If `true`, powers of
+  10 (0.01, 0.1, 1, 10, 100, 1000…) are not flagged by CALC201. Matches
+  PerfectXL behavior.
 
 ### Shared Formula Helpers
 
