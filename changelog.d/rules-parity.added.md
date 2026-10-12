@@ -1,1 +1,0 @@
-Implement CALC205 (Double Count) and REF310 (Longer Ref Expected) rules. Refactor VUL604 to aggregation pattern and add LOOKUP detection. Extract shared cell-reference parsing into `helpers` module, removing duplication across calc202, calc205, and ref310.

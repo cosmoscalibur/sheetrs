@@ -79,10 +79,12 @@ pub struct Sheet {
     pub cells: HashMap<(u32, u32), Cell>,
     /// The used range of the sheet: (max_row, max_col) inclusive. 0-based.
     pub used_range: Option<(u32, u32)>, // (rows, cols)
-    /// List of hidden column indices (0-based)
-    pub hidden_columns: Vec<u32>,
-    /// List of hidden row indices (0-based)
-    pub hidden_rows: Vec<u32>,
+    /// Hidden column ranges: (start_col, end_col), 0-based, inclusive.
+    /// Ranges are in source order and may be adjacent or overlap.
+    pub hidden_columns: Vec<(u32, u32)>,
+    /// Hidden row ranges: (start_row, end_row), 0-based, inclusive.
+    /// Ranges are in source order and may be adjacent or overlap.
+    pub hidden_rows: Vec<(u32, u32)>,
     /// Merged cell ranges: (start_row, start_col, end_row, end_col), 0-based, inclusive
     pub merged_cells: Vec<(u32, u32, u32, u32)>,
     /// Error message if there was an error parsing formulas for this sheet

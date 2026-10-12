@@ -12,8 +12,8 @@ Read these before planning or implementing any change:
 
 - `docs/coding-patterns.md` — SoC, WalkerRule pattern, formula normalization,
   rule config parameters, shared helpers, CLI/library conventions.
-- `CONTRIBUTING.md` — testing (ODS/XLSX parity, TDD), documentation
-  maintenance, changelog fragments, PR process.
+- `CONTRIBUTING.md` — testing (ODS/XLSX parity, TDD), documentation maintenance,
+  changelog fragments, PR process.
 
 Load on demand:
 
@@ -24,7 +24,7 @@ Load on demand:
 
 ## Agent readiness
 
-Re-run `tributi-hardness:agent-readiness` when agent-facing tooling changes
+Re-run `agent-harness:agent-readiness` when agent-facing tooling changes
 (CI/workflows, linter/formatter/type-checker config, test infrastructure,
 documentation structure, build/devcontainer setup, tooling dependencies).
 Persist reports under `docs/agent-readiness/`.

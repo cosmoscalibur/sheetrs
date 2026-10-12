@@ -621,11 +621,6 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
         let mut current_cf_range: Option<String> = None;
         let mut skip_current_sheet = false; // Flag to skip external sheets
 
-        // ODS formulas use 1-indexed visible row numbers (accounting for hidden rows)
-        // but we store cells using 0-indexed XML row numbers
-        let mut visible_row_counter = 1u32; // 1-indexed (ODS formula style)
-        let mut visible_to_xml_row: HashMap<u32, u32> = HashMap::new();
-
         // ============================================================
         // PARSE styles.xml FIRST to populate date_styles
         // ============================================================
@@ -1201,14 +1196,12 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                     _ => {}
                                 }
                             }
-                            if hidden {
-                                for _ in 0..repeated {
-                                    sheet.hidden_columns.push(current_col);
-                                    current_col += 1;
-                                }
-                            } else {
-                                current_col += repeated;
+                            if hidden && repeated > 0 {
+                                sheet
+                                    .hidden_columns
+                                    .push((current_col, current_col + repeated - 1));
                             }
+                            current_col += repeated;
 
                             // If it's a start tag, we need to skip to its end tag to avoid nested column issues
                             let mut col_buf = Vec::new();
@@ -1245,14 +1238,12 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                     _ => {}
                                 }
                             }
-                            if hidden {
-                                for _ in 0..repeated {
-                                    sheet.hidden_columns.push(current_col);
-                                    current_col += 1;
-                                }
-                            } else {
-                                current_col += repeated;
+                            if hidden && repeated > 0 {
+                                sheet
+                                    .hidden_columns
+                                    .push((current_col, current_col + repeated - 1));
                             }
+                            current_col += repeated;
                         }
                     }
                     Event::Start(e) if e.name().as_ref() == b"table:table-row" => {
@@ -1276,16 +1267,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 }
                             }
 
-                            if hidden {
-                                for i in 0..row_repeated {
-                                    sheet.hidden_rows.push(current_row + i);
-                                }
-                            } else {
-                                // Map visible row numbers to XML row indices
-                                for i in 0..row_repeated {
-                                    visible_to_xml_row.insert(visible_row_counter, current_row + i);
-                                    visible_row_counter += 1;
-                                }
+                            if hidden && row_repeated > 0 {
+                                sheet
+                                    .hidden_rows
+                                    .push((current_row, current_row + row_repeated - 1));
                             }
                         }
                     }
@@ -1310,16 +1295,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                     _ => {}
                                 }
                             }
-                            if hidden {
-                                for r in 0..row_repeated {
-                                    sheet.hidden_rows.push(current_row + r);
-                                }
-                            } else {
-                                // Map visible row numbers to XML row indices
-                                for r in 0..row_repeated {
-                                    visible_to_xml_row.insert(visible_row_counter, current_row + r);
-                                    visible_row_counter += 1;
-                                }
+                            if hidden && row_repeated > 0 {
+                                sheet
+                                    .hidden_rows
+                                    .push((current_row, current_row + row_repeated - 1));
                             }
                         }
                         current_row += row_repeated;
@@ -1743,10 +1722,14 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             // Include hidden rows/columns in used_range for format parity
                             // Both ODS and XLSX should report ALL empty rows/columns (visible or hidden)
                             if let Some((mut rows, mut cols)) = sheet.used_range {
-                                if let Some(&max_hidden_row) = sheet.hidden_rows.iter().max() {
+                                if let Some(max_hidden_row) =
+                                    sheet.hidden_rows.iter().map(|&(_, end)| end).max()
+                                {
                                     rows = rows.max(max_hidden_row + 1);
                                 }
-                                if let Some(&max_hidden_col) = sheet.hidden_columns.iter().max() {
+                                if let Some(max_hidden_col) =
+                                    sheet.hidden_columns.iter().map(|&(_, end)| end).max()
+                                {
                                     cols = cols.max(max_hidden_col + 1);
                                 }
                                 sheet.used_range = Some((rows, cols));
@@ -2414,6 +2397,51 @@ mod tests {
         // The cell (0, 0) should be in the map because it has a style "ce1"
         assert!(sheet.cells.contains_key(&(0, 0)));
         assert_eq!(sheet.cells.get(&(0, 0)).unwrap().value, CellValue::Empty);
+    }
+
+    #[test]
+    fn test_hidden_repeated_rows_and_columns_as_ranges_ods() {
+        use std::io::Cursor;
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+            zip.start_file("content.xml", options).unwrap();
+            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0">
+    <office:body>
+        <office:spreadsheet>
+            <table:table table:name="Sheet1">
+                <table:table-column table:visibility="collapse" table:number-columns-repeated="3"/>
+                <table:table-column table:number-columns-repeated="16381"/>
+                <table:table-row>
+                    <table:table-cell office:value-type="float" office:value="1"></table:table-cell>
+                </table:table-row>
+                <table:table-row table:visibility="collapse" table:number-rows-repeated="2">
+                    <table:table-cell/>
+                </table:table-row>
+                <table:table-row table:visibility="filter" table:number-rows-repeated="1048573"/>
+            </table:table>
+        </office:spreadsheet>
+    </office:body>
+</office:document-content>"#).unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        let mut archive = ZipArchive::new(Cursor::new(buf)).unwrap();
+        let mut reader = OdsReader::new(&mut archive).unwrap();
+        let sheets = reader.read_sheets().unwrap();
+
+        let sheet = &sheets[0];
+        assert_eq!(sheet.hidden_columns, vec![(0, 2)]);
+        assert_eq!(sheet.hidden_rows, vec![(1, 2), (3, 1_048_575)]);
+        assert_eq!(sheet.used_range, Some((1_048_576, 3)));
     }
 
     #[test]
