@@ -456,16 +456,8 @@ impl CellReference {
     }
 
     /// Convert column number to letter (0 -> A, 1 -> B, etc.)
-    pub fn col_to_letter(mut col: u32) -> String {
-        let mut result = String::new();
-        loop {
-            result.insert(0, (b'A' + (col % 26) as u8) as char);
-            if col < 26 {
-                break;
-            }
-            col = col / 26 - 1;
-        }
-        result
+    pub fn col_to_letter(col: u32) -> String {
+        crate::reader::parser_utils::column_index_to_letters(col)
     }
 }
 
@@ -662,7 +654,7 @@ impl Serialize for Violation {
         // formatter should pre-render via format_message before JSON output).
         let message = match &self.message_inner {
             ViolationMessageInner::Legacy(msg) => msg.clone(),
-            ViolationMessageInner::Data(data) => format!("{:?}", data),
+            ViolationMessageInner::Data(data) => format!("{data:?}"),
         };
         state.serialize_field("message", &message)?;
         state.serialize_field("severity", &self.severity)?;

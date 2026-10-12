@@ -5,7 +5,7 @@ resolver = "2"
 [workspace.package]
 version = "0.3.2"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.99"
 authors = ["Edward Villegas <cosmoscalibur@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/cosmoscalibur/sheetrs"
@@ -32,3 +32,11 @@ zip = { version = "8.3", default-features = false, features = ["deflate"] }
 # HTTP client for link validation
 reqwest = { version = "0.13", features = ["blocking"] }
 regex = "1.12"
+
+[workspace.lints.clippy]
+manual_let_else = "warn"
+uninlined_format_args = "warn"
+collection_is_never_read = "warn"
+significant_drop_tightening = "warn"
+cast_possible_wrap = "warn"
+format_push_string = "warn"

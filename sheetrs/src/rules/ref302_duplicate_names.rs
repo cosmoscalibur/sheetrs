@@ -45,7 +45,7 @@ impl WalkerRule for DuplicateSheetNamesRule {
         RuleId::Ref302
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Duplicate Sheet Name"
     }
 

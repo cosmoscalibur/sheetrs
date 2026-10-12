@@ -88,7 +88,7 @@ impl WalkerRule for OldSpreadsheetRule {
         RuleId::File1002
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Old Spreadsheet Format"
     }
 

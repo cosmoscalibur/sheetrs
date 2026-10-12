@@ -59,8 +59,7 @@ impl ViolationData for LargeUsedRangeData {
         );
         let last_data = CellReference::new(self.last_data.0, self.last_data.1);
         format!(
-            "Used range extends beyond data: last used cell {}, last data/formula cell {} (threshold: {}/{} rows/cols)",
-            last_used, last_data, THRESHOLD_ROWS, THRESHOLD_COLS,
+            "Used range extends beyond data: last used cell {last_used}, last data/formula cell {last_data} (threshold: {THRESHOLD_ROWS}/{THRESHOLD_COLS} rows/cols)",
         )
     }
 
@@ -83,7 +82,7 @@ impl WalkerRule for LargeUsedRangeRule {
         RuleId::Ref304
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Large Used Range"
     }
 
@@ -93,24 +92,26 @@ impl WalkerRule for LargeUsedRangeRule {
 
     fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
         if is_data_cell(cell) {
-            let mut map = self.sheet_max.lock().unwrap();
-            let entry = map.entry(sheet.sheet_index).or_insert((0, 0));
-            entry.0 = entry.0.max(cell.row);
-            entry.1 = entry.1.max(cell.col);
+            self.sheet_max
+                .lock()
+                .unwrap()
+                .entry(sheet.sheet_index)
+                .and_modify(|(max_row, max_col)| {
+                    *max_row = (*max_row).max(cell.row);
+                    *max_col = (*max_col).max(cell.col);
+                })
+                .or_insert((cell.row, cell.col));
         }
         Vec::new()
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let map = self.sheet_max.lock().unwrap();
-        let last_data = match map.get(&sheet.sheet_index) {
-            Some(&max) => max,
-            None => return Vec::new(), // No data cells → skip
+        let Some(&last_data) = self.sheet_max.lock().unwrap().get(&sheet.sheet_index) else {
+            return Vec::new(); // No data cells → skip
         };
 
-        let (used_rows, used_cols) = match sheet.used_range {
-            Some(ur) => ur,
-            None => return Vec::new(),
+        let Some((used_rows, used_cols)) = sheet.used_range else {
+            return Vec::new();
         };
 
         let row_diff = used_rows.saturating_sub(last_data.0 + 1);

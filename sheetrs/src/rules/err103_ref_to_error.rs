@@ -27,10 +27,7 @@ impl ViolationData for RefToErrorData {
         let (idx, r, c) = self.error_source;
         let sheet_name = ctx.workbook.sheet_name_by_index(idx).unwrap_or("Unknown");
         let cell_ref = CellReference::new(r, c);
-        format!(
-            "Formula references cell with error: {}!{}",
-            sheet_name, cell_ref
-        )
+        format!("Formula references cell with error: {sheet_name}!{cell_ref}")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -43,7 +40,7 @@ impl WalkerRule for RefToErrorRule {
         RuleId::Err103
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Ref to Excel Error"
     }
 

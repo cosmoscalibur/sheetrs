@@ -137,11 +137,18 @@ Rules may accept configuration parameters via `LinterConfig`:
   `A1:B10`, `$A$1`) into 0-based `(start_row, start_col, end_row, end_col)`.
   Strips `$` signs. Used by CALC205.
 
+`reader/parser_utils.rs` provides the column-letter conversions used by both
+parsers and rules:
+
+- **`column_letters_to_index(reference)`** — Column letters to a 0-based
+  index (`A` → 0, `XFD` → 16383), skipping non-letter characters.
+- **`column_index_to_letters(index)`** — 0-based index to column letters.
+
 
 ## Performance Guidelines
 
 - Use streaming readers — avoid loading data that is not needed.
-- `rayon` for parallel processing of independent sheets/rules.
+- Compile static regexes once, in a module-level `LazyLock<Regex>`.
 - Prefer `include_bytes!` in tests over file I/O.
 
 ## CLI Conventions

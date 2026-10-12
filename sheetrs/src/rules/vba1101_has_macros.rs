@@ -28,7 +28,7 @@ impl WalkerRule for HasMacrosRule {
         RuleId::Vba1101
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Has Macros"
     }
 

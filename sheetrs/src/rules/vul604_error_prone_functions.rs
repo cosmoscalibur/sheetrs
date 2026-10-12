@@ -25,7 +25,7 @@ const ERROR_PRONE_FUNCTIONS: &[(&str, &str)] = &[
 static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
     ERROR_PRONE_FUNCTIONS
         .iter()
-        .map(|(name, _)| format!("{}(", name))
+        .map(|(name, _)| format!("{name}("))
         .collect()
 });
 
@@ -73,8 +73,7 @@ impl ViolationData for ErrorProneFuncData {
         };
 
         format!(
-            "Error-prone function {}() found in range: {}. Use {} instead.",
-            func_name, range_str, alternative
+            "Error-prone function {func_name}() found in range: {range_str}. Use {alternative} instead."
         )
     }
 
@@ -88,7 +87,7 @@ impl WalkerRule for ErrorProneFunctionsRule {
         RuleId::Vul604
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Error Prone Functions"
     }
 
@@ -100,7 +99,7 @@ impl WalkerRule for ErrorProneFunctionsRule {
         if let Some(formula) = cell.as_formula() {
             let formula_upper = formula.to_uppercase();
             let formula_bytes = formula_upper.as_bytes();
-            let mut map = self.sheet_cells.lock().unwrap();
+            let mut matches = Vec::new();
 
             for (idx, pattern) in SEARCH_PATTERNS.iter().enumerate() {
                 let pat_bytes = pattern.as_bytes();
@@ -114,24 +113,28 @@ impl WalkerRule for ErrorProneFunctionsRule {
                         abs_pos == 0 || !formula_bytes[abs_pos - 1].is_ascii_alphabetic();
 
                     if is_word_start {
-                        map.entry(sheet.sheet_index)
-                            .or_default()
-                            .push((idx as u8, cell.row, cell.col));
+                        matches.push((idx as u8, cell.row, cell.col));
                         break; // One match per function per cell
                     }
 
                     search_from = abs_pos + pat_bytes.len();
                 }
             }
+            if !matches.is_empty() {
+                self.sheet_cells
+                    .lock()
+                    .unwrap()
+                    .entry(sheet.sheet_index)
+                    .or_default()
+                    .extend(matches);
+            }
         }
         Vec::new()
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut map = self.sheet_cells.lock().unwrap();
-        let cells = match map.remove(&sheet.sheet_index) {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
         };
 
         let mut violations = Vec::new();

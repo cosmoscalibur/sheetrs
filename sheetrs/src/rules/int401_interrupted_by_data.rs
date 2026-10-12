@@ -11,6 +11,7 @@
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::config::LinterConfig;
+use crate::reader::parser_utils::column_letters_to_index;
 use crate::reader::{Cell, Sheet};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
@@ -79,6 +80,11 @@ pub struct InterruptionRule {
     emit_all_kinds: bool,
 }
 
+/// Match cell references: optional $ + 1-3 uppercase letters + optional $ + digits.
+/// The {1,3} limit matches valid Excel columns (A–XFD).
+static ABS_REF_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(\$?)([A-Z]{1,3})(\$?)([0-9]+)").unwrap());
+
 impl InterruptionRule {
     /// Create a standalone instance (used by `clone_walker_rule`).
     /// Standalone instances collect data and emit violations only for their own kind.
@@ -131,11 +137,6 @@ impl InterruptionRule {
     /// Relative references become relative offsets; absolute ($) references stay absolute.
     /// Skips false matches on function names (e.g. LOG10) and sheet qualifiers (e.g. SHEET1!).
     pub(crate) fn normalize_formula(formula: &str, cell_row: u32, cell_col: u32) -> String {
-        // Match cell references: optional $ + 1-3 uppercase letters + optional $ + digits.
-        // The {1,3} limit matches valid Excel columns (A–XFD).
-        static ABS_REF_RE: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"(\$?)([A-Z]{1,3})(\$?)([0-9]+)").unwrap());
-
         let formula_bytes = formula.as_bytes();
 
         ABS_REF_RE
@@ -163,24 +164,23 @@ impl InterruptionRule {
                 let row_abs = &caps[3] == "$";
                 let row_str = &caps[4];
 
-                let ref_col = col_str
-                    .chars()
-                    .fold(0i64, |acc, c| acc * 26 + (c as i64 - 'A' as i64 + 1))
-                    - 1;
+                let ref_col = i64::from(
+                    column_letters_to_index(col_str).expect("ABS_REF_RE captures column letters"),
+                );
                 let ref_row = row_str.parse::<i64>().unwrap_or(1) - 1;
 
                 let row_part = if row_abs {
-                    format!("R{}", ref_row)
+                    format!("R{ref_row}")
                 } else {
                     format!("R[{}]", ref_row - cell_row as i64)
                 };
                 let col_part = if col_abs {
-                    format!("C{}", ref_col)
+                    format!("C{ref_col}")
                 } else {
                     format!("C[{}]", ref_col - cell_col as i64)
                 };
 
-                format!("{}{}", row_part, col_part)
+                format!("{row_part}{col_part}")
             })
             .to_string()
     }
@@ -372,7 +372,7 @@ impl WalkerRule for InterruptionRule {
         }
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         match self.kind {
             InterruptionKind::Data => "Interrupted by Data",
             InterruptionKind::Empty => "Interrupted by Empty",
@@ -398,8 +398,10 @@ impl WalkerRule for InterruptionRule {
             CellType::Value
         };
 
-        let mut map = self.sheet_data.lock().unwrap();
-        map.entry(sheet.sheet_index)
+        self.sheet_data
+            .lock()
+            .unwrap()
+            .entry(sheet.sheet_index)
             .or_default()
             .push((cell.row, cell.col, cell_type));
 
@@ -411,10 +413,8 @@ impl WalkerRule for InterruptionRule {
             return Vec::new();
         }
 
-        let mut map = self.sheet_data.lock().unwrap();
-        let cells = match map.remove(&sheet.sheet_index) {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(cells) = self.sheet_data.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
         };
 
         let mut violations = Vec::new();

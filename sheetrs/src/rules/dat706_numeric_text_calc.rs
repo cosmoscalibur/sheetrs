@@ -49,7 +49,7 @@ impl WalkerRule for NumericTextCalcRule {
         RuleId::Data706
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Numeric Text Calc"
     }
 

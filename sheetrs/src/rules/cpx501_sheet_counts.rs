@@ -50,7 +50,7 @@ impl WalkerRule for ExcessiveSheetCountsRule {
         RuleId::Cpx501
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Sheet Counts"
     }
 
@@ -88,7 +88,7 @@ mod tests {
         let mut sheets = Vec::new();
         for i in 0..60 {
             sheets.push(Sheet {
-                name: format!("Sheet{}", i),
+                name: format!("Sheet{i}"),
                 sheet_index: i as u16,
                 cells: HashMap::new(),
                 used_range: None,

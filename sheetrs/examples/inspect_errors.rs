@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     let file_path = &args[1];
     let target_sheet = args.get(2).map(|s| s.as_str());
 
-    println!("Reading workbook: {}", file_path);
+    println!("Reading workbook: {file_path}");
     let workbook = read_workbook(file_path)?;
 
     for sheet in &workbook.sheets {
@@ -59,7 +59,7 @@ fn main() -> Result<()> {
             for (row, col, formula, error) in error_cells {
                 let col_letter = num_to_col(col as usize);
                 println!("    {}{}:", col_letter, row + 1);
-                println!("      Error: {}", error);
+                println!("      Error: {error}");
                 println!(
                     "      Formula: {}",
                     if formula.is_empty() {

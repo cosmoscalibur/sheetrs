@@ -56,10 +56,7 @@ pub struct DateFormatData {
 impl ViolationData for DateFormatData {
     fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
         let normalized = self.num_fmt.replace('\\', "");
-        format!(
-            "Date format '{}' does not match required format",
-            normalized
-        )
+        format!("Date format '{normalized}' does not match required format")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -72,7 +69,7 @@ impl WalkerRule for InconsistentDateFormatRule {
         RuleId::Data703
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Inconsistent Date Format"
     }
 

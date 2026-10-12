@@ -120,7 +120,7 @@ impl WalkerRule for MultipleSheetRefRule {
         RuleId::Cpx507
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Multiple Sheet Ref"
     }
 

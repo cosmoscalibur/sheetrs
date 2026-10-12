@@ -54,7 +54,7 @@ impl ViolationData for NumericTextData {
                 CellReference::new(er, ec)
             )
         };
-        format!("Numeric data stored as text in range: {}", range_str)
+        format!("Numeric data stored as text in range: {range_str}")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -76,7 +76,7 @@ impl WalkerRule for InconsistentNumberFormatRule {
         RuleId::Data702
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Number Stored as Text"
     }
 
@@ -97,10 +97,8 @@ impl WalkerRule for InconsistentNumberFormatRule {
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut map = self.sheet_cells.lock().unwrap();
-        let cells = match map.remove(&sheet.sheet_index) {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
         };
 
         let ranges = find_contiguous_ranges(&cells);

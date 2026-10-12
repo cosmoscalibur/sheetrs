@@ -20,7 +20,7 @@ impl WalkerRule for DeepFormulaNestingRule {
         RuleId::Cpx505
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Many Nested Functions"
     }
 

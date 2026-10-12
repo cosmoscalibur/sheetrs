@@ -23,7 +23,7 @@ impl ViolationData for MergedCellsData {
         let (sr, sc, er, ec) = self.range;
         let start = CellReference::new(sr, sc);
         let end = CellReference::new(er, ec);
-        format!("Merged cells in range: {}:{}", start, end)
+        format!("Merged cells in range: {start}:{end}")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -36,7 +36,7 @@ impl WalkerRule for MergedCellsRule {
         RuleId::Cpx502
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Merged Cells"
     }
 

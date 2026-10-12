@@ -62,7 +62,7 @@ impl WalkerRule for DoubleOperatorRule {
         RuleId::Calc203
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Double Operator"
     }
 
@@ -71,9 +71,8 @@ impl WalkerRule for DoubleOperatorRule {
     }
 
     fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let formula = match cell.as_formula() {
-            Some(f) => f,
-            None => return Vec::new(),
+        let Some(formula) = cell.as_formula() else {
+            return Vec::new();
         };
 
         // Strip string literals to avoid false positives in text constants

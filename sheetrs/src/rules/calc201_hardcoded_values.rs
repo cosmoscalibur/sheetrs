@@ -148,7 +148,7 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
         RuleId::Calc201
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Hardcoded Number"
     }
 

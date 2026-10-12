@@ -27,7 +27,7 @@ fn main() {
         if let Some(cell) = sheet.cells.get(&(row, col)) {
             println!("{}: {:?}", cell_ref_str, cell.value);
         } else {
-            println!("{}: NOT FOUND", cell_ref_str);
+            println!("{cell_ref_str}: NOT FOUND");
         }
     }
 }

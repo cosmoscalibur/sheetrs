@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
     LOOKUP_FUNCTIONS
         .iter()
-        .map(|(name, _)| format!("{}(", name))
+        .map(|(name, _)| format!("{name}("))
         .collect()
 });
 
@@ -59,7 +59,7 @@ impl WalkerRule for ApproximateLookupRule {
         RuleId::Calc204
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Approximate Lookup"
     }
 
@@ -68,9 +68,8 @@ impl WalkerRule for ApproximateLookupRule {
     }
 
     fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let formula = match cell.as_formula() {
-            Some(f) => f,
-            None => return Vec::new(),
+        let Some(formula) = cell.as_formula() else {
+            return Vec::new();
         };
 
         let formula_upper = formula.to_uppercase();
@@ -133,9 +132,8 @@ impl WalkerRule for ApproximateLookupRule {
 ///
 /// Returns `true` if the argument exists and is an exact-match indicator.
 fn has_exact_match_arg(formula: &str, paren_pos: usize, arg_idx: usize) -> bool {
-    let args = match extract_args(formula, paren_pos) {
-        Some(a) => a,
-        None => return false, // Malformed formula, flag it
+    let Some(args) = extract_args(formula, paren_pos) else {
+        return false; // Malformed formula, flag it
     };
 
     if arg_idx >= args.len() {

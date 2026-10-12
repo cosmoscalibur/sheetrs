@@ -13,7 +13,7 @@ Closes #<!-- issue number -->
 ## Testing
 
 - [ ] `cargo test` passes
-- [ ] `cargo clippy -- -D warnings` passes
+- [ ] `cargo clippy --all-targets -- -D warnings` passes
 - [ ] `cargo fmt --check` passes
 - [ ] Tested with `tests/minimal_test.xlsx` and `tests/minimal_test.ods`
   (parity check)

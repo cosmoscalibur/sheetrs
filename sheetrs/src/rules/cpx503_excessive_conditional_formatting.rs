@@ -53,7 +53,7 @@ impl WalkerRule for ExcessiveConditionalFormattingRule {
         RuleId::Cpx503
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Excessive Conditional Formatting"
     }
 

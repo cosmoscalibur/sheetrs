@@ -17,3 +17,6 @@ clap.workspace = true
 anyhow.workspace = true
 zip.workspace = true
 quick-xml.workspace = true
+
+[lints]
+workspace = true

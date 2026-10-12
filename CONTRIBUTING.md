@@ -4,7 +4,7 @@ Thank you for your interest in contributing to the SheetRS Suite.
 
 ## Development Setup
 
-**Prerequisites**: Rust ≥ 1.88 (edition 2024).
+**Prerequisites**: Rust ≥ 1.99 (edition 2024).
 
 ```bash
 git clone https://github.com/cosmoscalibur/sheetrs.git
@@ -46,7 +46,7 @@ Run these checks before submitting:
 
 ```bash
 cargo fmt --check
-cargo clippy -- -D warnings
+cargo clippy --all-targets -- -D warnings
 ```
 
 See [docs/coding-patterns.md](docs/coding-patterns.md) for architecture

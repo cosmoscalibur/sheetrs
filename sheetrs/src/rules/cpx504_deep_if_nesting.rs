@@ -348,7 +348,7 @@ impl WalkerRule for DeepIfNestingRule {
         RuleId::Cpx504
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Deep IF Nesting"
     }
 
@@ -357,9 +357,8 @@ impl WalkerRule for DeepIfNestingRule {
     }
 
     fn on_cell(&self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let formula = match cell.as_formula() {
-            Some(f) => f,
-            None => return Vec::new(),
+        let Some(formula) = cell.as_formula() else {
+            return Vec::new();
         };
 
         let cell_ref = CellReference::new(cell.row, cell.col);

@@ -6,8 +6,7 @@ getting-started instructions, see the root [README.md](../README.md).
 ## Architecture & Design
 
 - [Architecture](../ARCHITECTURE.md) — workspace structure, module layout,
-  design principles (format-agnostic rules, streaming readers, rayon
-  parallelism).
+  design principles (format-agnostic rules, streaming readers).
 - [Coding Patterns](coding-patterns.md) — conventions, naming, SoC principle,
   WalkerRule trait pattern, CLI and library guidelines.
 

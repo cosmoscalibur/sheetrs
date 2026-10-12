@@ -20,7 +20,7 @@ impl WalkerRule for ManyReferencesRule {
         RuleId::Cpx508
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Many References"
     }
 

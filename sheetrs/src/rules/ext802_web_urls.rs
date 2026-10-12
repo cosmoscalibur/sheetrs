@@ -9,8 +9,9 @@ use crate::reader::{Cell, Sheet};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
+use regex::Regex;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 /// Per-sheet URL cell collection: sheet_index → Vec<(row, col, url)>.
 type SheetUrlCellMap = Mutex<HashMap<u16, Vec<(u32, u32, String)>>>;
@@ -116,15 +117,15 @@ impl ViolationData for WebUrlData {
     }
 }
 
+static URL_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(https?://|ftp://|file://)[^\s]+").unwrap());
+
 /// Extract URLs from text using regex
 fn extract_urls(text: &str) -> Vec<String> {
-    use regex::Regex;
-    use std::sync::OnceLock;
-
-    static URL_PATTERN: OnceLock<Regex> = OnceLock::new();
-    let re = URL_PATTERN.get_or_init(|| Regex::new(r"(https?://|ftp://|file://)[^\s]+").unwrap());
-
-    re.find_iter(text).map(|m| m.as_str().to_string()).collect()
+    URL_PATTERN
+        .find_iter(text)
+        .map(|m| m.as_str().to_string())
+        .collect()
 }
 
 /// Check if a URL is accessible (returns true if accessible, false otherwise)
@@ -133,12 +134,11 @@ fn check_url_status(url: &str, timeout_secs: u64) -> bool {
     use reqwest::blocking::Client;
     use std::time::Duration;
 
-    let client = match Client::builder()
+    let Ok(client) = Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
         .build()
-    {
-        Ok(c) => c,
-        Err(_) => return false,
+    else {
+        return false;
     };
 
     // Use HEAD request to avoid downloading content
@@ -159,7 +159,7 @@ impl WalkerRule for WebUrlsRule {
         RuleId::Ext802
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Web URLs"
     }
 
@@ -171,50 +171,51 @@ impl WalkerRule for WebUrlsRule {
         if let crate::reader::workbook::CellValue::Text(text) = &cell.value {
             let urls = extract_urls(text);
             if !urls.is_empty() {
-                let mut map = self.sheet_cells.lock().unwrap();
-                let entry = map.entry(sheet.sheet_index).or_default();
-                for url in urls {
-                    entry.push((cell.row, cell.col, url));
-                }
+                self.sheet_cells
+                    .lock()
+                    .unwrap()
+                    .entry(sheet.sheet_index)
+                    .or_default()
+                    .extend(urls.into_iter().map(|url| (cell.row, cell.col, url)));
             }
         }
         Vec::new()
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut violations = Vec::new();
-        let mut map = self.sheet_cells.lock().unwrap();
+        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
+        };
 
-        if let Some(cells) = map.remove(&sheet.sheet_index) {
-            // Group cells by URL
-            let mut grouped: HashMap<String, Vec<(u32, u32)>> = HashMap::new();
-            for (row, col, url) in cells {
-                grouped.entry(url).or_default().push((row, col));
+        let mut violations = Vec::new();
+        // Group cells by URL
+        let mut grouped: HashMap<String, Vec<(u32, u32)>> = HashMap::new();
+        for (row, col, url) in cells {
+            grouped.entry(url).or_default().push((row, col));
+        }
+
+        for (url, group_cells) in grouped {
+            // Validate URL status if configured for INVALID-only mode
+            if matches!(self.status, LinkStatus::Invalid)
+                && check_url_status(&url, self.timeout_secs)
+            {
+                continue; // Skip valid URLs
             }
 
-            for (url, group_cells) in grouped {
-                // Validate URL status if configured for INVALID-only mode
-                if matches!(self.status, LinkStatus::Invalid)
-                    && check_url_status(&url, self.timeout_secs)
-                {
-                    continue; // Skip valid URLs
-                }
+            let is_invalid = matches!(self.status, LinkStatus::Invalid);
 
-                let is_invalid = matches!(self.status, LinkStatus::Invalid);
-
-                let ranges = find_contiguous_ranges(&group_cells);
-                for range in ranges {
-                    violations.push(Violation::with_data(
-                        RuleId::Ext802,
-                        ViolationScope::Sheet(sheet.sheet_index),
-                        WebUrlData {
-                            url: url.clone(),
-                            range: bounding_box(&range),
-                            is_invalid,
-                        },
-                        Severity::Warning,
-                    ));
-                }
+            let ranges = find_contiguous_ranges(&group_cells);
+            for range in ranges {
+                violations.push(Violation::with_data(
+                    RuleId::Ext802,
+                    ViolationScope::Sheet(sheet.sheet_index),
+                    WebUrlData {
+                        url: url.clone(),
+                        range: bounding_box(&range),
+                        is_invalid,
+                    },
+                    Severity::Warning,
+                ));
             }
         }
 

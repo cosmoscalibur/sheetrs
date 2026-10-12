@@ -3,11 +3,15 @@
 use anyhow::{Context, Result};
 use quick_xml::Reader;
 use quick_xml::events::Event;
+use regex::Regex;
 use std::collections::HashMap;
 use std::io::BufReader;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use zip::ZipArchive;
 
+use super::parser_utils::{
+    column_index_to_letters, column_letters_to_index, parse_cell_range, parse_cell_ref,
+};
 use super::{Cell, CellValue, Sheet, WorkbookReader};
 use crate::violation::ExcelError;
 
@@ -52,8 +56,7 @@ pub fn get_xlsx_sheet_path(
 
     if rid.is_empty() {
         return Err(anyhow::anyhow!(
-            "Sheet '{}' not found in workbook.xml",
-            sheet_name
+            "Sheet '{sheet_name}' not found in workbook.xml"
         ));
     }
 
@@ -93,15 +96,13 @@ pub fn get_xlsx_sheet_path(
 
     if target.is_empty() {
         return Err(anyhow::anyhow!(
-            "Relationship '{}' not found for sheet '{}'",
-            rid,
-            sheet_name
+            "Relationship '{rid}' not found for sheet '{sheet_name}'"
         ));
     }
 
     // Target is usually "worksheets/sheet1.xml", we need to prepend "xl/" if it's relative
     if target.starts_with("worksheets/") {
-        Ok(format!("xl/{}", target))
+        Ok(format!("xl/{target}"))
     } else {
         Ok(target)
     }
@@ -114,9 +115,8 @@ pub fn extract_defined_names_from_xlsx(
     let mut defined_names = HashMap::new();
 
     // Try to read workbook.xml
-    let workbook_xml = match archive.by_name("xl/workbook.xml") {
-        Ok(file) => file,
-        Err(_) => return Ok(defined_names), // No workbook.xml, return empty
+    let Ok(workbook_xml) = archive.by_name("xl/workbook.xml") else {
+        return Ok(defined_names); // No workbook.xml, return empty
     };
 
     let buf_reader = BufReader::new(workbook_xml);
@@ -164,7 +164,7 @@ pub fn extract_defined_names_from_xlsx(
                 _ => {}
             },
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {}", e)),
+            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {e}")),
             _ => {}
         }
         buf.clear();
@@ -192,9 +192,8 @@ pub fn extract_tables_from_xlsx(
     }
 
     for table_file in table_files {
-        let xml = match archive.by_name(&table_file) {
-            Ok(file) => file,
-            Err(_) => continue,
+        let Ok(xml) = archive.by_name(&table_file) else {
+            continue;
         };
 
         let mut reader = Reader::from_reader(BufReader::new(xml));
@@ -360,9 +359,8 @@ fn extract_modified_date_xlsx(
 ) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
     use chrono::{DateTime, Utc};
 
-    let core_xml = match archive.by_name("docProps/core.xml") {
-        Ok(file) => file,
-        Err(_) => return Ok(None),
+    let Ok(core_xml) = archive.by_name("docProps/core.xml") else {
+        return Ok(None);
     };
 
     let mut reader = Reader::from_reader(BufReader::new(core_xml));
@@ -408,9 +406,8 @@ fn extract_modified_date_xlsx(
 fn extract_date1904_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<bool> {
-    let workbook_xml = match archive.by_name("xl/workbook.xml") {
-        Ok(file) => file,
-        Err(_) => return Ok(false),
+    let Ok(workbook_xml) = archive.by_name("xl/workbook.xml") else {
+        return Ok(false);
     };
 
     let mut reader = Reader::from_reader(BufReader::new(workbook_xml));
@@ -479,7 +476,7 @@ pub fn extract_external_links_xlsx(
             .and_then(|s| s.to_str())
             .unwrap_or("");
 
-        let rels_of_ext = format!("xl/externalLinks/_rels/{}.rels", filename);
+        let rels_of_ext = format!("xl/externalLinks/_rels/{filename}.rels");
 
         if let Ok(ext_rels_xml) = archive.by_name(&rels_of_ext) {
             let mut reader = Reader::from_reader(BufReader::new(ext_rels_xml));
@@ -568,7 +565,7 @@ pub fn extract_external_workbooks_xlsx(
             .unwrap_or(1); // Default to 1 if parsing fails
         let index = xlsx_index.saturating_sub(1); // Convert to 0-based
 
-        let rels_of_ext = format!("xl/externalLinks/_rels/{}.rels", filename);
+        let rels_of_ext = format!("xl/externalLinks/_rels/{filename}.rels");
 
         if let Ok(ext_rels_xml) = archive.by_name(&rels_of_ext) {
             let mut reader = Reader::from_reader(BufReader::new(ext_rels_xml));
@@ -609,52 +606,39 @@ pub fn extract_external_workbooks_xlsx(
     Ok(workbooks)
 }
 
+static SHARED_FORMULA_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?P<sheet>(?:'[^']+'|[A-Za-z0-9_\.\-]+)!)?(?P<col_abs>\$?)(?P<col>[A-Z]+)(?P<row_abs>\$?)(?P<row>[0-9]+)")
+        .expect("shared formula reference regex must compile")
+});
+
 fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> String {
-    thread_local! {
-        static RE: regex::Regex = regex::Regex::new(r"(?P<sheet>(?:'[^']+'|[A-Za-z0-9_\.\-]+)!)?(?P<col_abs>\$?)(?P<col>[A-Z]+)(?P<row_abs>\$?)(?P<row>[0-9]+)").unwrap();
-    }
-    RE.with(|re| {
-        re.replace_all(formula, |caps: &regex::Captures| {
+    SHARED_FORMULA_REF_RE
+        .replace_all(formula, |caps: &regex::Captures| {
             let sheet = caps.name("sheet").map(|m| m.as_str()).unwrap_or("");
             let col_abs = !caps.name("col_abs").unwrap().as_str().is_empty();
             let col_str = caps.name("col").unwrap().as_str();
             let row_abs = !caps.name("row_abs").unwrap().as_str().is_empty();
             let row_str = caps.name("row").unwrap().as_str();
 
-            let mut col = 0u32;
-            for ch in col_str.chars() {
-                col = col * 26 + (ch.to_ascii_uppercase() as u32 - 'A' as u32 + 1);
-            }
-            col -= 1;
-
+            let col = column_letters_to_index(col_str).expect("regex captures column letters");
             let row = row_str.parse::<u32>().unwrap_or(1) - 1;
 
             let new_row = if row_abs {
                 row
             } else {
-                (row as i32 + row_shift).max(0) as u32
+                row.saturating_add_signed(row_shift)
             };
             let new_col = if col_abs {
                 col
             } else {
-                (col as i32 + col_shift).max(0) as u32
+                col.saturating_add_signed(col_shift)
             };
 
             let mut result = sheet.to_string();
             if col_abs {
                 result.push('$');
             }
-
-            // Col to letter logic
-            let mut c = new_col + 1;
-            let mut col_letter = String::new();
-            while c > 0 {
-                let m = (c - 1) % 26;
-                col_letter.insert(0, (b'A' + m as u8) as char);
-                c = (c - m) / 26;
-            }
-            result.push_str(&col_letter);
-
+            result.push_str(&column_index_to_letters(new_col));
             if row_abs {
                 result.push('$');
             }
@@ -663,7 +647,6 @@ fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> St
             result
         })
         .to_string()
-    })
 }
 
 // Type alias to avoid clippy::type_complexity warning
@@ -849,9 +832,10 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                                     best_def = defs.last();
                                 }
 
-                                if let Some((base_formula, base_row, base_col, _)) = best_def {
-                                    let row_shift = row as i32 - *base_row as i32;
-                                    let col_shift = col as i32 - *base_col as i32;
+                                if let Some((base_formula, base_row, base_col, _)) = best_def
+                                    && let Some(row_shift) = row.checked_signed_diff(*base_row)
+                                    && let Some(col_shift) = col.checked_signed_diff(*base_col)
+                                {
                                     formula = Some(translate_shared_formula(
                                         base_formula,
                                         row_shift,
@@ -1207,9 +1191,8 @@ pub fn extract_shared_strings(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<Arc<str>>> {
     let mut strings = Vec::new();
-    let ss_xml = match archive.by_name("xl/sharedStrings.xml") {
-        Ok(file) => file,
-        Err(_) => return Ok(strings),
+    let Ok(ss_xml) = archive.by_name("xl/sharedStrings.xml") else {
+        return Ok(strings);
     };
 
     let mut reader = Reader::from_reader(BufReader::new(ss_xml));
@@ -1254,14 +1237,12 @@ pub fn count_conditional_formatting(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
     sheet_name: &str,
 ) -> Result<usize> {
-    let sheet_path = match get_xlsx_sheet_path(archive, sheet_name) {
-        Ok(path) => path,
-        Err(_) => return Ok(0),
+    let Ok(sheet_path) = get_xlsx_sheet_path(archive, sheet_name) else {
+        return Ok(0);
     };
 
-    let sheet_xml = match archive.by_name(&sheet_path) {
-        Ok(file) => file,
-        Err(_) => return Ok(0), // No sheet file, return 0
+    let Ok(sheet_xml) = archive.by_name(&sheet_path) else {
+        return Ok(0); // No sheet file, return 0
     };
 
     let buf_reader = BufReader::new(sheet_xml);
@@ -1278,7 +1259,7 @@ pub fn count_conditional_formatting(
             }
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(anyhow::anyhow!("XML parsing error: {}", e));
+                return Err(anyhow::anyhow!("XML parsing error: {e}"));
             }
             _ => {}
         }
@@ -1302,9 +1283,8 @@ pub fn extract_hidden_sheets_from_xlsx(
     let mut hidden_sheets = Vec::new();
 
     // Try to read workbook.xml
-    let workbook_xml = match archive.by_name("xl/workbook.xml") {
-        Ok(file) => file,
-        Err(_) => return Ok(hidden_sheets), // No workbook.xml, return empty
+    let Ok(workbook_xml) = archive.by_name("xl/workbook.xml") else {
+        return Ok(hidden_sheets); // No workbook.xml, return empty
     };
 
     let buf_reader = BufReader::new(workbook_xml);
@@ -1347,7 +1327,7 @@ pub fn extract_hidden_sheets_from_xlsx(
                 in_sheets = false;
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {}", e)),
+            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {e}")),
             _ => {}
         }
         buf.clear();
@@ -1367,14 +1347,12 @@ pub fn extract_hidden_columns_rows_from_xlsx(
     let mut hidden_columns = Vec::new();
     let mut hidden_rows = Vec::new();
 
-    let sheet_path = match get_xlsx_sheet_path(archive, sheet_name) {
-        Ok(path) => path,
-        Err(_) => return Ok((hidden_columns, hidden_rows)),
+    let Ok(sheet_path) = get_xlsx_sheet_path(archive, sheet_name) else {
+        return Ok((hidden_columns, hidden_rows));
     };
 
-    let sheet_xml = match archive.by_name(&sheet_path) {
-        Ok(file) => file,
-        Err(_) => return Ok((hidden_columns, hidden_rows)),
+    let Ok(sheet_xml) = archive.by_name(&sheet_path) else {
+        return Ok((hidden_columns, hidden_rows));
     };
 
     let buf_reader = BufReader::new(sheet_xml);
@@ -1445,7 +1423,7 @@ pub fn extract_hidden_columns_rows_from_xlsx(
                 }
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {}", e)),
+            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {e}")),
             _ => {}
         }
         buf.clear();
@@ -1461,14 +1439,12 @@ pub fn extract_merged_cells_from_xlsx(
 ) -> Result<Vec<(u32, u32, u32, u32)>> {
     let mut merged_cells = Vec::new();
 
-    let sheet_path = match get_xlsx_sheet_path(archive, sheet_name) {
-        Ok(path) => path,
-        Err(_) => return Ok(merged_cells),
+    let Ok(sheet_path) = get_xlsx_sheet_path(archive, sheet_name) else {
+        return Ok(merged_cells);
     };
 
-    let sheet_xml = match archive.by_name(&sheet_path) {
-        Ok(file) => file,
-        Err(_) => return Ok(merged_cells),
+    let Ok(sheet_xml) = archive.by_name(&sheet_path) else {
+        return Ok(merged_cells);
     };
 
     let buf_reader = BufReader::new(sheet_xml);
@@ -1494,7 +1470,7 @@ pub fn extract_merged_cells_from_xlsx(
                 }
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {}", e)),
+            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {e}")),
             _ => {}
         }
         buf.clear();
@@ -1503,184 +1479,52 @@ pub fn extract_merged_cells_from_xlsx(
     Ok(merged_cells)
 }
 
-/// Parse a cell range like "A1:B2" into (start_row, start_col, end_row, end_col)
-fn parse_cell_range(range: &str) -> Option<(u32, u32, u32, u32)> {
-    let parts: Vec<&str> = range.split(':').collect();
-    if parts.len() != 2 {
-        return None;
-    }
+/// Built-in number formats by `numFmtId`, which `styles.xml` references without
+/// declaring them.
+///
+/// See <https://github.com/dtjohnson/xlsx-populate/blob/master/lib/NumFmt.js>.
+const BUILTIN_NUM_FMTS: &[(u32, &str)] = &[
+    (0, "General"),
+    (1, "0"),
+    (2, "0.00"),
+    (3, "#,##0"),
+    (4, "#,##0.00"),
+    (9, "0%"),
+    (10, "0.00%"),
+    (11, "0.00E+00"),
+    (12, "# ?/?"),
+    (13, "# ??/??"),
+    (14, "mm-dd-yy"),
+    (15, "d-mmm-yy"),
+    (16, "d-mmm"),
+    (17, "mmm-yy"),
+    (18, "h:mm AM/PM"),
+    (19, "h:mm:ss AM/PM"),
+    (20, "h:mm"),
+    (21, "h:mm:ss"),
+    (22, "m/d/yy h:mm"),
+    (37, "#,##0 ;(#,##0)"),
+    (38, "#,##0 ;[Red](#,##0)"),
+    (39, "#,##0.00;(#,##0.00)"),
+    (40, "#,##0.00;[Red](#,##0.00)"),
+    (45, "mm:ss"),
+    (46, "[h]:mm:ss"),
+    (47, "mmss.0"),
+    (48, "##0.0E+0"),
+    (49, "@"),
+];
 
-    let (start_row, start_col) = parse_cell_ref(parts[0])?;
-    let (end_row, end_col) = parse_cell_ref(parts[1])?;
-
-    Some((start_row, start_col, end_row, end_col))
-}
-
-/// Parse a cell reference like "A1" into (row, col) as 0-based indices
-fn parse_cell_ref(cell_ref: &str) -> Option<(u32, u32)> {
-    let mut col = 0u32;
-    let mut row_str = String::new();
-
-    for ch in cell_ref.chars() {
-        if ch.is_ascii_alphabetic() {
-            col = col * 26 + (ch.to_ascii_uppercase() as u32 - 'A' as u32 + 1);
-        } else if ch.is_ascii_digit() {
-            row_str.push(ch);
-        }
-    }
-
-    if row_str.is_empty() {
-        return None;
-    }
-
-    let row = row_str.parse::<u32>().ok()?;
-
-    // Convert to 0-based
-    Some((row.saturating_sub(1), col.saturating_sub(1)))
-}
-
-/// Extract cell formats from XLSX file
-/// Returns a list of format strings indexed by style index (xf index)
-pub fn extract_formats_from_xlsx(
-    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
-) -> Result<Vec<Arc<str>>> {
-    let formats = Vec::new();
-    let mut num_fmts = HashMap::new();
-
-    // Built-in formats (simplified subset)
-    // See https://github.com/dtjohnson/xlsx-populate/blob/master/lib/NumFmt.js
-    num_fmts.insert(0, "General".to_string());
-    num_fmts.insert(1, "0".to_string());
-    num_fmts.insert(2, "0.00".to_string());
-    num_fmts.insert(3, "#,##0".to_string());
-    num_fmts.insert(4, "#,##0.00".to_string());
-    num_fmts.insert(9, "0%".to_string());
-    num_fmts.insert(10, "0.00%".to_string());
-    num_fmts.insert(11, "0.00E+00".to_string());
-    num_fmts.insert(12, "# ?/?".to_string());
-    num_fmts.insert(13, "# ??/??".to_string());
-    num_fmts.insert(14, "mm-dd-yy".to_string());
-    num_fmts.insert(15, "d-mmm-yy".to_string());
-    num_fmts.insert(16, "d-mmm".to_string());
-    num_fmts.insert(17, "mmm-yy".to_string());
-    num_fmts.insert(18, "h:mm AM/PM".to_string());
-    num_fmts.insert(19, "h:mm:ss AM/PM".to_string());
-    num_fmts.insert(20, "h:mm".to_string());
-    num_fmts.insert(21, "h:mm:ss".to_string());
-    num_fmts.insert(22, "m/d/yy h:mm".to_string());
-    num_fmts.insert(37, "#,##0 ;(#,##0)".to_string());
-    num_fmts.insert(38, "#,##0 ;[Red](#,##0)".to_string());
-    num_fmts.insert(39, "#,##0.00;(#,##0.00)".to_string());
-    num_fmts.insert(40, "#,##0.00;[Red](#,##0.00)".to_string());
-    num_fmts.insert(45, "mm:ss".to_string());
-    num_fmts.insert(46, "[h]:mm:ss".to_string());
-    num_fmts.insert(47, "mmss.0".to_string());
-    num_fmts.insert(48, "##0.0E+0".to_string());
-    num_fmts.insert(49, "@".to_string());
-
-    // Parse styles.xml
-    let styles_xml = match archive.by_name("xl/styles.xml") {
-        Ok(file) => file,
-        Err(_) => return Ok(formats), // No styles, return empty
-    };
-
-    let buf_reader = BufReader::new(styles_xml);
-    let mut reader = Reader::from_reader(buf_reader);
-    reader.config_mut().trim_text(true);
-
-    let mut buf = Vec::new();
-
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(e)) | Ok(Event::Start(e)) => {
-                match e.name().as_ref() {
-                    b"numFmt" => {
-                        let mut id = 0u32;
-                        let mut code = String::new();
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                b"numFmtId" => {
-                                    if let Ok(val) = attr.unescape_value()?.parse::<u32>() {
-                                        id = val;
-                                    }
-                                }
-                                b"formatCode" => {
-                                    code =
-                                        attr.unescape_value().unwrap_or_default().replace('\\', "");
-                                }
-                                _ => {}
-                            }
-                        }
-                        if !code.is_empty() {
-                            num_fmts.insert(id, code);
-                        }
-                    }
-                    b"xf" => {
-                        // We need to know if we are in cellXfs.
-                        // However, quick-xml is stream. styleSheet usually has <cellStyleXfs> then <cellXfs>.
-                        // We only care about <cellXfs>.
-                        // Determining if we are in cellXfs is tricky without state.
-                        // But usually cellXfs come after numFmts.
-                        // And cellStyleXfs also use `xf` tag.
-                        // We might need to track depth or parent.
-                        // Or simplistic: gather all xfs and hope cellXfs are processed in order?
-                        // No, `cellStyleXfs` are different.
-                        // I'll track `in_cell_xfs`.
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Event::Eof) => break,
-            _ => {}
-        }
-        buf.clear();
-    }
-
-    // Reset reader to parse xfs properly
-    // ... Actually easier to do it in one pass if we track state.
-    // Let's rewrite the loop logic above.
-    Ok(Vec::new()) // Placeholder
-}
-
-/// Actual implementation of parsing styles
+/// Parses `xl/styles.xml` into the number format code of each cell style (`xf`), by index.
 pub fn parse_styles(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<Arc<str>>> {
-    let mut num_fmts = HashMap::new();
+    let mut num_fmts: HashMap<u32, String> = BUILTIN_NUM_FMTS
+        .iter()
+        .map(|&(id, code)| (id, code.to_string()))
+        .collect();
 
-    // Built-in formats (same as above)
-    num_fmts.insert(0, "General".to_string());
-    num_fmts.insert(1, "0".to_string());
-    num_fmts.insert(2, "0.00".to_string());
-    num_fmts.insert(3, "#,##0".to_string());
-    num_fmts.insert(4, "#,##0.00".to_string());
-    num_fmts.insert(9, "0%".to_string());
-    num_fmts.insert(10, "0.00%".to_string());
-    num_fmts.insert(11, "0.00E+00".to_string());
-    num_fmts.insert(12, "# ?/?".to_string());
-    num_fmts.insert(13, "# ??/??".to_string());
-    num_fmts.insert(14, "mm-dd-yy".to_string());
-    num_fmts.insert(15, "d-mmm-yy".to_string());
-    num_fmts.insert(16, "d-mmm".to_string());
-    num_fmts.insert(17, "mmm-yy".to_string());
-    num_fmts.insert(18, "h:mm AM/PM".to_string());
-    num_fmts.insert(19, "h:mm:ss AM/PM".to_string());
-    num_fmts.insert(20, "h:mm".to_string());
-    num_fmts.insert(21, "h:mm:ss".to_string());
-    num_fmts.insert(22, "m/d/yy h:mm".to_string());
-    num_fmts.insert(37, "#,##0 ;(#,##0)".to_string());
-    num_fmts.insert(38, "#,##0 ;[Red](#,##0)".to_string());
-    num_fmts.insert(39, "#,##0.00;(#,##0.00)".to_string());
-    num_fmts.insert(40, "#,##0.00;[Red](#,##0.00)".to_string());
-    num_fmts.insert(45, "mm:ss".to_string());
-    num_fmts.insert(46, "[h]:mm:ss".to_string());
-    num_fmts.insert(47, "mmss.0".to_string());
-    num_fmts.insert(48, "##0.0E+0".to_string());
-    num_fmts.insert(49, "@".to_string());
-
-    let styles_xml = match archive.by_name("xl/styles.xml") {
-        Ok(file) => file,
-        Err(_) => return Ok(Vec::new()),
+    let Ok(styles_xml) = archive.by_name("xl/styles.xml") else {
+        return Ok(Vec::new());
     };
 
     let buf_reader = BufReader::new(styles_xml);
@@ -1802,13 +1646,11 @@ pub fn extract_cell_style_indices_from_xlsx(
 ) -> Result<HashMap<(u32, u32), usize>> {
     let mut cell_styles = HashMap::new();
 
-    let sheet_path = match get_xlsx_sheet_path(archive, sheet_name) {
-        Ok(path) => path,
-        Err(_) => return Ok(cell_styles),
+    let Ok(sheet_path) = get_xlsx_sheet_path(archive, sheet_name) else {
+        return Ok(cell_styles);
     };
-    let sheet_xml = match archive.by_name(&sheet_path) {
-        Ok(file) => file,
-        Err(_) => return Ok(cell_styles),
+    let Ok(sheet_xml) = archive.by_name(&sheet_path) else {
+        return Ok(cell_styles);
     };
 
     let buf_reader = BufReader::new(sheet_xml);
@@ -1866,9 +1708,8 @@ pub fn extract_formulas_from_xlsx(
     let mut formulas = HashMap::new();
     let mut shared_formulas = HashMap::new();
 
-    let sheet_path = match get_xlsx_sheet_path(archive, sheet_name) {
-        Ok(path) => path,
-        Err(_) => return Ok(formulas),
+    let Ok(sheet_path) = get_xlsx_sheet_path(archive, sheet_name) else {
+        return Ok(formulas);
     };
 
     let sheet_xml = archive.by_name(&sheet_path)?;
@@ -1919,7 +1760,7 @@ pub fn extract_formulas_from_xlsx(
                     {
                         // Temporarily store si to handle it in Text
                         // We use a prefix to distinguish from actual formulas
-                        formulas.insert((r, c), format!("__SHARED__{}", s_idx));
+                        formulas.insert((r, c), format!("__SHARED__{s_idx}"));
                     }
                 }
                 _ => {}
@@ -1965,6 +1806,26 @@ pub fn extract_formulas_from_xlsx(
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn test_translate_shared_formula_shifts_relative_refs() {
+        assert_eq!(translate_shared_formula("A1+B2", 2, 1), "B3+C4");
+        assert_eq!(translate_shared_formula("Z1", 0, 1), "AA1");
+        assert_eq!(translate_shared_formula("Sheet2!C5", -1, -2), "Sheet2!A4");
+    }
+
+    #[test]
+    fn test_translate_shared_formula_keeps_absolute_refs() {
+        assert_eq!(
+            translate_shared_formula("$A$1+A$1+$A1", 3, 3),
+            "$A$1+D$1+$A4"
+        );
+    }
+
+    #[test]
+    fn test_translate_shared_formula_clamps_at_first_row_and_column() {
+        assert_eq!(translate_shared_formula("B2", -5, -5), "A1");
+    }
 
     #[test]
     fn test_extract_tables_from_xlsx() {

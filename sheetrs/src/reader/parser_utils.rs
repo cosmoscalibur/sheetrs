@@ -14,25 +14,12 @@ use quick_xml::events::Event;
 ///
 /// * `Option<(u32, u32)>` - The (row, col) indices if parsing is successful.
 pub fn parse_cell_ref(cell_ref: &str) -> Option<(u32, u32)> {
-    let mut col = 0u32;
-    let mut row_str = String::new();
-
-    for ch in cell_ref.chars() {
-        if ch.is_ascii_alphabetic() {
-            col = col * 26 + (ch.to_ascii_uppercase() as u32 - 'A' as u32 + 1);
-        } else if ch.is_ascii_digit() {
-            row_str.push(ch);
-        }
-    }
-
-    if row_str.is_empty() {
-        return None;
-    }
-
+    let row_str: String = cell_ref.chars().filter(char::is_ascii_digit).collect();
     let row = row_str.parse::<u32>().ok()?;
+    let col = column_letters_to_index(cell_ref).unwrap_or(0);
 
     // Convert to 0-based
-    Some((row.saturating_sub(1), col.saturating_sub(1)))
+    Some((row.saturating_sub(1), col))
 }
 
 /// Parse a cell range like "A1:B2" into (start_row, start_col, end_row, end_col)
@@ -54,6 +41,34 @@ pub fn parse_cell_range(range: &str) -> Option<(u32, u32, u32, u32)> {
     let (end_row, end_col) = parse_cell_ref(parts[1])?;
 
     Some((start_row, start_col, end_row, end_col))
+}
+
+/// Converts the column letters in `reference` to a 0-based column index
+/// (`A` → 0, `AA` → 26), case-insensitively.
+///
+/// Non-letter characters are skipped, so a full reference such as `$AA$1`
+/// yields its column. Returns `None` when `reference` has no letters.
+pub fn column_letters_to_index(reference: &str) -> Option<u32> {
+    reference
+        .bytes()
+        .filter(u8::is_ascii_alphabetic)
+        .fold(0u32, |acc, b| {
+            acc * 26 + u32::from(b.to_ascii_uppercase() - b'A') + 1
+        })
+        .checked_sub(1)
+}
+
+/// Converts a 0-based column index to column letters (`0` → `A`, `26` → `AA`).
+pub fn column_index_to_letters(mut index: u32) -> String {
+    let mut letters = Vec::new();
+    loop {
+        letters.push(b'A' + (index % 26) as u8);
+        if index < 26 {
+            break;
+        }
+        index = index / 26 - 1;
+    }
+    letters.iter().rev().map(|&b| char::from(b)).collect()
 }
 
 /// Read text content from an XML node
@@ -98,6 +113,34 @@ mod tests {
         assert_eq!(parse_cell_ref("Z26"), Some((25, 25)));
         assert_eq!(parse_cell_ref("AA1"), Some((0, 26)));
         assert_eq!(parse_cell_ref("AB10"), Some((9, 27)));
+    }
+
+    #[test]
+    fn test_column_letters_to_index() {
+        assert_eq!(column_letters_to_index("A"), Some(0));
+        assert_eq!(column_letters_to_index("Z"), Some(25));
+        assert_eq!(column_letters_to_index("AA"), Some(26));
+        assert_eq!(column_letters_to_index("XFD"), Some(16383));
+        assert_eq!(column_letters_to_index("xfd"), Some(16383));
+        assert_eq!(column_letters_to_index("$AA$1"), Some(26));
+        assert_eq!(column_letters_to_index(""), None);
+        assert_eq!(column_letters_to_index("12"), None);
+    }
+
+    #[test]
+    fn test_column_index_to_letters() {
+        assert_eq!(column_index_to_letters(0), "A");
+        assert_eq!(column_index_to_letters(25), "Z");
+        assert_eq!(column_index_to_letters(26), "AA");
+        assert_eq!(column_index_to_letters(16383), "XFD");
+    }
+
+    #[test]
+    fn test_column_conversion_round_trip() {
+        for index in 0..=16383 {
+            let letters = column_index_to_letters(index);
+            assert_eq!(column_letters_to_index(&letters), Some(index), "{letters}");
+        }
     }
 
     #[test]

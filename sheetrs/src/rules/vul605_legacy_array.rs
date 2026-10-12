@@ -52,10 +52,7 @@ impl ViolationData for LegacyArrayData {
             )
         };
 
-        format!(
-            "Legacy array formula (CSE) found in range: {}. Convert to dynamic array.",
-            range_str
-        )
+        format!("Legacy array formula (CSE) found in range: {range_str}. Convert to dynamic array.")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -68,7 +65,7 @@ impl WalkerRule for LegacyArrayRule {
         RuleId::Vul605
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Legacy Array"
     }
 
@@ -87,10 +84,8 @@ impl WalkerRule for LegacyArrayRule {
     }
 
     fn on_sheet_end(&self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut map = self.sheet_cells.lock().unwrap();
-        let cells = match map.remove(&sheet.sheet_index) {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(cells) = self.sheet_cells.lock().unwrap().remove(&sheet.sheet_index) else {
+            return Vec::new();
         };
 
         let mut violations = Vec::new();

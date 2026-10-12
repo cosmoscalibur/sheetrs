@@ -87,7 +87,7 @@ impl WalkerRule for LargeFileSizeRule {
         RuleId::File1001
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Large File Size"
     }
 

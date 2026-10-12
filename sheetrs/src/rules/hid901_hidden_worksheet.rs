@@ -22,7 +22,7 @@ impl ViolationData for HiddenWorksheetData {
             .workbook
             .sheet_name_by_index(self.sheet_index)
             .unwrap_or("Unknown");
-        format!("Hidden sheet: {}", name)
+        format!("Hidden sheet: {name}")
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -35,7 +35,7 @@ impl WalkerRule for HiddenWorksheetRule {
         RuleId::Hid901
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Hidden Worksheet"
     }
 

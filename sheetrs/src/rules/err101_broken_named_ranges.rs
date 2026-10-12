@@ -38,7 +38,7 @@ impl WalkerRule for BrokenNamedRangesRule {
         RuleId::Err101
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Broken Named Ranges"
     }
 
