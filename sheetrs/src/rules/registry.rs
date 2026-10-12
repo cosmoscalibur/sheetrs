@@ -215,6 +215,44 @@ pub fn create_enabled_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerR
         .collect()
 }
 
+/// Rules that must run for `id` to report its violations.
+///
+/// A provider either emits the rule's violations (CPX504 emits CPX505/506/508/509,
+/// ERR102 emits ERR103) or collects context data the rule reads (CALC202 fills
+/// `cell_dependencies`, `referenced_sheets` and `circular_cells`).
+pub fn rule_providers(id: RuleId) -> &'static [RuleId] {
+    match id {
+        RuleId::Err102 | RuleId::Ref306 | RuleId::Ref309 | RuleId::Ref310 | RuleId::Data706 => {
+            &[RuleId::Calc202]
+        }
+        RuleId::Err103 => &[RuleId::Err102, RuleId::Calc202],
+        RuleId::Cpx505 | RuleId::Cpx506 | RuleId::Cpx508 | RuleId::Cpx509 => &[RuleId::Cpx504],
+        _ => &[],
+    }
+}
+
+/// Rules to run so that every rule in `reported` gives the same result whether
+/// or not its providers are enabled: `reported` plus their providers, in
+/// execution order.
+///
+/// The caller drops the violations of the providers that are not in `reported`.
+pub fn run_rule_ids(reported: &HashSet<RuleId>, config: &LinterConfig) -> Vec<RuleId> {
+    let mut run = reported.clone();
+    let mut pending: Vec<RuleId> = reported.iter().copied().collect();
+    while let Some(id) = pending.pop() {
+        for &provider in rule_providers(id) {
+            if run.insert(provider) {
+                pending.push(provider);
+            }
+        }
+    }
+    create_all_walker_rules(config)
+        .iter()
+        .map(|rule| rule.id())
+        .filter(|id| run.contains(id))
+        .collect()
+}
+
 /// Creates fresh instances of the given rules, in order, for one lint run.
 ///
 /// INT401–403 share one [`InterruptionRule`] reporting every requested kind,
@@ -326,6 +364,22 @@ mod tests {
         let rules = create_walker_rules(&ids, &config);
         let created: Vec<RuleId> = rules.iter().map(|r| r.id()).collect();
         assert_eq!(created, [RuleId::Calc202, RuleId::Int402, RuleId::Err102]);
+    }
+
+    #[test]
+    fn test_run_rule_ids_adds_providers_in_execution_order() {
+        let config = LinterConfig::default();
+        let reported: HashSet<RuleId> = [RuleId::Err103, RuleId::Cpx509].into();
+        assert_eq!(
+            run_rule_ids(&reported, &config),
+            [
+                RuleId::Calc202,
+                RuleId::Err102,
+                RuleId::Err103,
+                RuleId::Cpx504,
+                RuleId::Cpx509,
+            ]
+        );
     }
 
     #[test]
