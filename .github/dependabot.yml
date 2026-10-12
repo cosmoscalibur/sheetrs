@@ -10,8 +10,15 @@ updates:
       semver-minor-days: 30
       semver-patch-days: 15
     groups:
-      all-dependencies:
+      # Patch and minor updates in one PR. Dependabot counts a 0.x bump such
+      # as 0.39 -> 0.42 as minor although Cargo treats it as breaking, so
+      # quick-xml, whose 0.x bumps have broken the build, gets its own PR.
+      # Major updates are never grouped.
+      compatible:
         patterns:
           - "*"
-    reviewers:
-      - "cosmoscalibur"
+        exclude-patterns:
+          - "quick-xml"
+        update-types:
+          - "minor"
+          - "patch"
