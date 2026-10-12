@@ -1,8 +1,11 @@
 //! Common parsing utilities shared between XLSX and ODS parsers
 
+use std::borrow::Cow;
+
 use anyhow::Result;
-use quick_xml::Reader;
 use quick_xml::events::Event;
+use quick_xml::events::attributes::Attribute;
+use quick_xml::{Reader, XmlVersion};
 
 /// Parse a cell reference like "A1" into (row, col) as 0-based indices
 ///
@@ -71,14 +74,22 @@ pub fn column_index_to_letters(mut index: u32) -> String {
     letters.iter().rev().map(|&b| char::from(b)).collect()
 }
 
+/// Returns the value of an XML attribute with entities resolved.
+///
+/// Applies XML 1.0 attribute-value normalization: literal tabs and line breaks
+/// become spaces, while character references such as `&#10;` are kept.
+pub fn attr_value<'a>(attr: &Attribute<'a>) -> quick_xml::Result<Cow<'a, str>> {
+    attr.normalized_value(XmlVersion::Implicit1_0)
+}
+
 /// Read text content from an XML node
 pub fn read_text_node<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {
     let mut buf = Vec::new();
     let mut text = String::new();
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Text(e) => text.push_str(e.decode()?.as_ref()),
-            Event::CData(e) => text.push_str(&String::from_utf8_lossy(e.as_ref())),
+            Event::Text(e) => text.push_str(&e),
+            Event::CData(e) => text.push_str(&e),
             Event::End(_) => break,
             Event::Eof => break,
             _ => {}
