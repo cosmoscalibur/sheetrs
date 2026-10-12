@@ -290,6 +290,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
             let sheet_index = idx as u16;
             let mut sheet = Sheet::new(name.clone(), sheet_index);
             sheet.sheet_path = Some(path.clone());
+            sheet.xml_size_bytes = self.archive.by_name(&path)?.size();
             sheet.visible = !hidden_sheets.contains(&name);
 
             // Parse sheet data

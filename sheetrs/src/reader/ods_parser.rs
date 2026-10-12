@@ -834,12 +834,15 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
             reader.config_mut().trim_text(false);
 
             let mut buf = Vec::new();
+            // Byte offset in content.xml where the current <table:table> starts
+            let mut table_start = 0u64;
 
             // ============================================================
             // UNIFIED PARSING LOOP
             // ============================================================
 
             loop {
+                let event_start = reader.buffer_position();
                 match reader.read_event_into(&mut buf)? {
                     // --------------------------------------------------------
                     // DATE STYLES: number:date-style
@@ -1112,6 +1115,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         // Assign sheet_index based on the current count of sheets parsed
                         let sheet_index = sheets.len() as u16;
                         let mut new_sheet = Sheet::new(name.clone(), sheet_index);
+                        // Covers a self-closing table; the closing tag overwrites it
+                        table_start = event_start;
+                        new_sheet.xml_size_bytes = reader.buffer_position() - table_start;
                         // Check if this sheet's style is in hidden_styles
                         let is_hidden =
                             !style_name.is_empty() && hidden_styles.contains(&style_name);
@@ -1678,6 +1684,8 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         if e.name().as_ref() == "table:table"
                             && let Some(sheet) = current_sheet.as_mut() =>
                     {
+                        sheet.xml_size_bytes = reader.buffer_position() - table_start;
+
                         // Calculate used range for the sheet before finalizing
                         // This must happen here (not at sheet finalization) because it needs to run
                         // for ALL sheets, whether they have conditional formatting or not
