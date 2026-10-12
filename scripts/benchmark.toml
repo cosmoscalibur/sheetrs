@@ -1,0 +1,33 @@
+# Rule thresholds for benchmark.sh. They stay fixed so every Comparisons entry
+# in scripts/README.md measures the same rule work.
+
+[global]
+# Empty: every default-active rule runs.
+enabled_rules = []
+disabled_rules = []
+
+# CALC201: Hardcoded numbers in formulas
+ignore_hardcoded_num_values = []
+ignore_hardcoded_int_values = false
+ignore_hardcoded_power_of_ten = false
+
+# CPX501: Maximum number of sheets
+max_sheets = 5
+# CPX503: Maximum conditional formatting rules per sheet
+max_conditional_formatting = 0
+# CPX504: Maximum IF nesting depth
+max_if_nesting = 2
+# CPX505: Maximum function nesting depth
+max_formula_nesting = 2
+# CPX509: Maximum formula length in bytes (UTF-8)
+max_formula_length = 255
+
+# DATA701: Sheet name substrings to avoid
+avoid_sheet_names = ["sheet", "copy"]
+# DATA703: Expected date format
+date_format = "mm-dd-yyyy"
+# DATA704: Maximum text length in bytes (UTF-8)
+max_text_length = 255
+
+# EXT802: Timeout in seconds for each URL check
+url_timeout_seconds = 2

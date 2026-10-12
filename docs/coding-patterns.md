@@ -164,6 +164,14 @@ parsers and rules:
 - **`column_letters_to_index(reference)`** — Column letters to a 0-based
   index (`A` → 0, `XFD` → 16383), skipping non-letter characters.
 - **`column_index_to_letters(index)`** — 0-based index to column letters.
+- **`read_text_node(reader)`** — Collect an element's text, resolving entity
+  and character references.
+- **`push_general_ref(text, reference)`** — Append what an `Event::GeneralRef`
+  stands for. quick-xml reports `&quot;`, `&lt;`, `&#10;` apart from the
+  surrounding `Event::Text`, so every loop that collects element text must
+  handle `GeneralRef` too, and must read with `trim_text(false)`: trimming
+  applies to each fragment between references and drops the spaces around
+  them.
 
 ## Performance Guidelines
 

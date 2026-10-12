@@ -91,6 +91,11 @@ pub struct Sheet {
     pub formula_parsing_error: Option<String>,
     /// Internal path to the sheet XML file in the ZIP archive
     pub sheet_path: Option<String>,
+    /// Uncompressed size in bytes of the XML that describes this sheet.
+    ///
+    /// XLSX: size of the sheet's worksheet part (e.g. `xl/worksheets/sheet1.xml`).
+    /// ODS: byte span of the sheet's `<table:table>` element inside `content.xml`.
+    pub xml_size_bytes: u64,
     /// Number of conditional formatting rules in this sheet
     pub conditional_formatting_count: usize,
     /// Ranges where conditional formatting rules are applied
@@ -112,6 +117,7 @@ impl Sheet {
             merged_cells: Vec::new(),
             formula_parsing_error: None,
             sheet_path: None,
+            xml_size_bytes: 0,
             conditional_formatting_count: 0,
             conditional_formatting_ranges: Vec::new(),
             visible: true,
