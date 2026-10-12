@@ -84,27 +84,13 @@ mod tests {
     use super::*;
     use crate::reader::workbook::Sheet;
     use crate::rules::walker::WorkbookWalker;
-    use std::collections::HashMap;
     use std::path::PathBuf;
 
     #[test]
     fn test_excessive_sheet_counts() {
         let mut sheets = Vec::new();
         for i in 0..60 {
-            sheets.push(Sheet {
-                name: format!("Sheet{i}"),
-                sheet_index: i as u16,
-                cells: HashMap::new(),
-                used_range: None,
-                hidden_columns: Vec::new(),
-                hidden_rows: Vec::new(),
-                merged_cells: Vec::new(),
-                sheet_path: None,
-                formula_parsing_error: None,
-                conditional_formatting_count: 0,
-                conditional_formatting_ranges: Vec::new(),
-                visible: true,
-            });
+            sheets.push(Sheet::new(format!("Sheet{i}"), i as u16));
         }
 
         let workbook = Workbook {
