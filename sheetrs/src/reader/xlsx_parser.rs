@@ -764,16 +764,22 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                         }
                     }
                     b"row" => {
+                        let mut hidden = false;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"r" {
-                                current_row =
-                                    attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                            match attr.key.as_ref() {
+                                b"r" => {
+                                    current_row =
+                                        attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                }
+                                b"hidden" => {
+                                    hidden = attr.value.as_ref() == b"1"
+                                        || attr.value.as_ref() == b"true";
+                                }
+                                _ => {}
                             }
-                            if attr.key.as_ref() == b"hidden"
-                                && (attr.value.as_ref() == b"1" || attr.value.as_ref() == b"true")
-                            {
-                                hidden_rows.push((current_row, current_row));
-                            }
+                        }
+                        if hidden {
+                            hidden_rows.push((current_row, current_row));
                         }
                         current_col = 0;
                     }
@@ -966,16 +972,22 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                     }
                     b"row" => {
                         // Empty row tag
+                        let mut hidden = false;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"r" {
-                                current_row =
-                                    attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                            match attr.key.as_ref() {
+                                b"r" => {
+                                    current_row =
+                                        attr.unescape_value()?.parse::<u32>()?.saturating_sub(1);
+                                }
+                                b"hidden" => {
+                                    hidden = attr.value.as_ref() == b"1"
+                                        || attr.value.as_ref() == b"true";
+                                }
+                                _ => {}
                             }
-                            if attr.key.as_ref() == b"hidden"
-                                && (attr.value.as_ref() == b"1" || attr.value.as_ref() == b"true")
-                            {
-                                hidden_rows.push((current_row, current_row));
-                            }
+                        }
+                        if hidden {
+                            hidden_rows.push((current_row, current_row));
                         }
                         current_col = 0;
                     }
@@ -2017,8 +2029,8 @@ mod tests {
     <sheetData>
         <row r="1"><c r="A1"><v>1</v></c></row>
         <row r="2" hidden="1"/>
-        <row r="3" hidden="1"></row>
-        <row r="1048576" hidden="1"></row>
+        <row hidden="1" r="3"></row>
+        <row hidden="1" r="1048576"/>
     </sheetData>
 </worksheet>"#,
             )
