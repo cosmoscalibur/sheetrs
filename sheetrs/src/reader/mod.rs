@@ -451,3 +451,36 @@ mod external_workbook_parity_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod escaped_text_parity_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn sheet7(bytes: &[u8], extension: &str) -> Sheet {
+        read_workbook_from_reader(Cursor::new(bytes), Some(extension))
+            .unwrap()
+            .sheets
+            .into_iter()
+            .find(|s| s.name == "Sheet7")
+            .unwrap()
+    }
+
+    #[test]
+    fn test_formulas_keep_escaped_characters() {
+        let xlsx = sheet7(include_bytes!("../../../tests/minimal_test.xlsx"), "xlsx");
+        let ods = sheet7(include_bytes!("../../../tests/minimal_test.ods"), "ods");
+
+        // H7, L7 and I8 hold `&quot;` and `&lt;` in the XLSX markup
+        for (pos, expected) in [
+            ((6, 7), r#"IF(I7="", "Y","N")"#),
+            ((6, 11), r#"IF(H7="Y", 1,IF(H8="Y",2,IF(C4<0,3,4)))"#),
+            ((7, 8), r#""""#),
+        ] {
+            for (format, sheet) in [("xlsx", &xlsx), ("ods", &ods)] {
+                let formula = sheet.get_cell(pos.0, pos.1).and_then(Cell::as_formula);
+                assert_eq!(formula, Some(expected), "{format} cell {pos:?}");
+            }
+        }
+    }
+}

@@ -12,7 +12,7 @@ use zip::ZipArchive;
 
 use super::parser_utils::{
     attr_value, column_index_to_letters, column_letters_to_index, parse_cell_range, parse_cell_ref,
-    read_text_node,
+    push_general_ref, read_text_node,
 };
 use super::{Cell, CellValue, Sheet, WorkbookReader};
 use crate::violation::ExcelError;
@@ -123,7 +123,7 @@ pub fn extract_defined_names_from_xlsx(
 
     let buf_reader = BufReader::new(workbook_xml);
     let mut reader = Reader::from_reader(buf_reader);
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
 
     let mut buf = Vec::new();
     let mut in_defined_names = false;
@@ -149,7 +149,10 @@ pub fn extract_defined_names_from_xlsx(
                 }
             }
             Ok(Event::Text(e)) if in_defined_names && !current_name.is_empty() => {
-                current_ref = e.into_inner().into_owned();
+                current_ref.push_str(&e);
+            }
+            Ok(Event::GeneralRef(e)) if in_defined_names && !current_name.is_empty() => {
+                push_general_ref(&mut current_ref, &e)?;
             }
             Ok(Event::End(e)) => match e.name().as_ref() {
                 "definedName" if !current_name.is_empty() => {
@@ -728,7 +731,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
 
         let sheet_xml = self.archive.by_name(path)?;
         let mut reader = Reader::from_reader(BufReader::new(sheet_xml));
-        reader.config_mut().trim_text(true);
+        reader.config_mut().trim_text(false);
 
         let mut buf = Vec::new();
         let mut current_row = 0u32;
@@ -1220,7 +1223,7 @@ pub fn extract_shared_strings(
     };
 
     let mut reader = Reader::from_reader(BufReader::new(ss_xml));
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
     let mut current_string = String::new();
 
@@ -1721,11 +1724,12 @@ pub fn extract_formulas_from_xlsx(
 
     let sheet_xml = archive.by_name(&sheet_path)?;
     let mut reader = Reader::from_reader(BufReader::new(sheet_xml));
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
 
     let mut buf = Vec::new();
     let mut current_cell_ref = String::new();
     let mut in_formula = false;
+    let mut formula_text = String::new();
 
     loop {
         match reader.read_event_into(&mut buf)? {
@@ -1772,8 +1776,11 @@ pub fn extract_formulas_from_xlsx(
                 }
                 _ => {}
             },
-            Event::Text(e) if in_formula => {
-                let formula_text = e.into_inner().into_owned();
+            Event::Text(e) if in_formula => formula_text.push_str(&e),
+            Event::GeneralRef(e) if in_formula => push_general_ref(&mut formula_text, &e)?,
+            Event::End(e) if e.name().as_ref() == "f" => {
+                in_formula = false;
+                let formula_text = std::mem::take(&mut formula_text);
                 if let Some((r, c)) = parse_cell_ref(&current_cell_ref) {
                     // Check if this cell was marked as shared
                     if let Some(marker) = formulas.get(&(r, c))
@@ -1784,9 +1791,6 @@ pub fn extract_formulas_from_xlsx(
                     }
                     formulas.insert((r, c), formula_text);
                 }
-            }
-            Event::End(e) if e.name().as_ref() == "f" => {
-                in_formula = false;
             }
             Event::Eof => break,
             _ => {}

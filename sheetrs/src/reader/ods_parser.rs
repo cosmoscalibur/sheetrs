@@ -1,7 +1,7 @@
 //! ODS (OpenDocument Spreadsheet) parser implementation
 
 use super::WorkbookReader;
-use super::parser_utils::attr_value;
+use super::parser_utils::{attr_value, push_general_ref};
 use super::workbook::{Cell, CellValue, ExternalWorkbook, Sheet};
 use crate::violation::ExcelError;
 use anyhow::Result;
@@ -790,6 +790,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     Event::Text(e) if in_date_style => {
                         current_format.push_str(&e);
                     }
+                    Event::GeneralRef(e) if in_date_style => {
+                        push_general_ref(&mut current_format, &e)?;
+                    }
                     Event::End(e) if e.name().as_ref() == "number:date-style" => {
                         if !current_data_style_name.is_empty() {
                             data_styles.insert(
@@ -1038,6 +1041,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                     // DATE STYLES: text content within date style
                     Event::Text(e) if in_date_style => {
                         current_format.push_str(&e);
+                    }
+                    Event::GeneralRef(e) if in_date_style => {
+                        push_general_ref(&mut current_format, &e)?;
                     }
                     // DATE STYLES: end of date-style
                     Event::End(e) if e.name().as_ref() == "number:date-style" => {
@@ -1380,6 +1386,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                         match reader.read_event_into(&mut p_buf)? {
                                             Event::Text(ref t) => {
                                                 text_content.push_str(t);
+                                            }
+                                            Event::GeneralRef(ref r) => {
+                                                push_general_ref(&mut text_content, r)?;
                                             }
                                             Event::End(ref pe)
                                                 if pe.name().as_ref() == "text:p" =>
