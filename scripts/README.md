@@ -6,20 +6,49 @@ This directory contains scripts for measuring the performance of `sheetlint`.
 
 ### `benchmark.sh`
 
-The main benchmark script. Uses `/usr/bin/time -v` for comprehensive metrics:
+The main benchmark script. Uses `/usr/bin/time -v` and `perf stat` for
+comprehensive metrics:
 
 - User time, System time, Elapsed time
 - CPU usage %
 - Peak RAM (Maximum resident set size)
+- User-space instructions (`perf stat`), stable across sessions where time and
+  RAM shift
 - Binary size
 
-**Requirements:** `time` package (provides `/usr/bin/time`)
+The script builds `sheetlint` with the `profiling` Cargo profile (release with
+fat LTO and one codegen unit), so binary size and timings refer to that build.
+Each production file runs twice, with both runs' metrics reported; the
+violations report comes from the first run.
+
+**Requirements:** `time` package (provides `/usr/bin/time`) and `perf`
 
 **Usage:**
 
 ```bash
 ./scripts/benchmark.sh
 ```
+
+### Interpreting results
+
+Compare the metrics against the latest entry in [Comparisons](#comparisons).
+When the two runs of one build disagree, or a metric moves against the latest
+entry without an explanation in the change, investigate before accepting the
+result: debug the suspected code path, or profile it (requires `perf`):
+
+```bash
+cargo flamegraph --profile profiling -p sheetlint -- <file>
+```
+
+[PROFILING.md](../sheetlint/docs/PROFILING.md) holds the phase and per-rule
+profile and the commands that produce it.
+
+Time and RAM shift between sessions on the same machine: the same binary has
+measured 1943 MB and 1990 MB peak RAM, and 37.5 s and 42.2 s user time, on the
+XLSX file. When the latest entry was measured under different conditions,
+rebuild it at its commit in the same session as the new measurement.
+
+A change gets a new Comparisons entry only when it moves a metric.
 
 ## Production Output
 
@@ -39,17 +68,30 @@ expected.
 
 ## Comparisons
 
-Benchmarks use production files in `tests/production/`.
+Benchmarks use production files in `tests/production/`. Each entry measures
+the state after its change, so the previous entry is its baseline. Entries
+from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
+runs, measured in one session; older entries are release builds.
 
-### Rust 1.99 lints and cleanups (#30)
-
-Mean of 3 runs.
+### Per-cell formula allocations (#31)
 
 | Metric | XLSX | ODS |
 |--------|------|-----|
-| User time | 37.8s | 36.0s |
-| Peak RAM | 1944 MB | 1959 MB |
-| Binary size | 12.2M | - |
+| User time | 39.5s | 38.3s |
+| Peak RAM | 1943 MB | 1958 MB |
+| User instructions | 364.7 G | 347.1 G |
+| Binary size | 9.0M | - |
+
+### Rust 1.99 lints and cleanups (#30)
+
+Rebuilt at 9750d31 with the current `benchmark.sh`.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 39.9s | 38.5s |
+| Peak RAM | 1942 MB | 1958 MB |
+| User instructions | 385.6 G | 367.2 G |
+| Binary size | 9.0M | - |
 
 ### Arc+Box+dedup+shrink+ods-no-clone (4172267)
 

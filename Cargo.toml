@@ -40,3 +40,10 @@ collection_is_never_read = "warn"
 significant_drop_tightening = "warn"
 cast_possible_wrap = "warn"
 format_push_string = "warn"
+
+# Benchmarks and profiling: fat LTO measures the fully optimized build, at a
+# build cost not paid by everyday release builds.
+[profile.profiling]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
