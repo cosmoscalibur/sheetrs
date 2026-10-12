@@ -79,7 +79,7 @@ runs, measured in one session; older entries are release builds.
 
 ### Deterministic output and REF310 boundary matching (#33, #34)
 
-REF310 reports 118,501 (XLSX) and 118,685 (ODS) violations; 82f57f2 reports
+REF310 reports 118,501 (XLSX) and 119,735 (ODS) violations; 82f57f2 reports
 102,182 on the XLSX file.
 
 | Metric | XLSX | ODS |

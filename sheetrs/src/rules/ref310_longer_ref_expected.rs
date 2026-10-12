@@ -7,8 +7,9 @@
 //! row (vertical) or last column (horizontal) has the same value category as
 //! the cell next to it on the first adjacent line. A mismatch, such as a text
 //! header below numbers, suggests a different block. An empty cell is its own
-//! category. Every distinct range in a formula is evaluated, one violation per
-//! qualifying range.
+//! category; a formula without a cached value matches any category. Every
+//! distinct range in a formula is evaluated, one violation per qualifying
+//! range.
 //!
 //! **Dependency:** requires CALC202 (Circular References) to be active,
 //! as this rule re-uses the same `CELL_REF_PATTERN` regex to extract range
@@ -91,7 +92,8 @@ fn categorize_value(value: &CellValue) -> Option<ValueCategory> {
 }
 
 /// Checks that each `(last, adjacent)` cell pair has the same value category,
-/// treating an empty cell as its own category.
+/// treating an empty cell as its own category. A formula without a cached
+/// value has an unknown type and matches any category.
 fn boundary_types_match(
     sheet: &crate::reader::Sheet,
     mut pairs: impl Iterator<Item = ((u32, u32), (u32, u32))>,
@@ -101,7 +103,16 @@ fn boundary_types_match(
             .get_cell(row, col)
             .and_then(|c| categorize_value(&c.value))
     };
-    pairs.all(|(last, adjacent)| category(last) == category(adjacent))
+    let is_uncached_formula = |(row, col)| {
+        sheet
+            .get_cell(row, col)
+            .is_some_and(|c| c.is_formula() && c.value.is_empty())
+    };
+    pairs.all(|(last, adjacent)| {
+        is_uncached_formula(last)
+            || is_uncached_formula(adjacent)
+            || category(last) == category(adjacent)
+    })
 }
 
 /// A range reference extracted from a formula.
@@ -553,6 +564,26 @@ mod tests {
             make_formula_cell(0, 1, "SUM(A1:A3)"),
         ];
         assert!(lint_formula(cells, (0, 1)).is_empty());
+    }
+
+    #[test]
+    fn test_uncached_formula_matches_any_type() {
+        // A3 and A4 hold formulas without a cached value.
+        let base = vec![
+            make_number_cell(0, 0, 1.0),
+            make_number_cell(1, 0, 2.0),
+            make_formula_cell(0, 1, "SUM(A1:A3)"),
+        ];
+
+        let mut last_uncached = base.clone();
+        last_uncached.push(make_formula_cell(2, 0, "A2*2"));
+        last_uncached.push(make_number_cell(3, 0, 4.0));
+        assert_eq!(lint_formula(last_uncached, (0, 1)).len(), 1);
+
+        let mut adjacent_uncached = base;
+        adjacent_uncached.push(make_number_cell(2, 0, 3.0));
+        adjacent_uncached.push(make_formula_cell(3, 0, "A3*2"));
+        assert_eq!(lint_formula(adjacent_uncached, (0, 1)).len(), 1);
     }
 
     #[test]
