@@ -1,4 +1,7 @@
 # sheetlint Configuration Example
+#
+# Lists every configuration key with its default value. Rule IDs and the
+# parameters each rule reads are documented in sheetlint/README.md.
 
 # Global configuration
 [global]
@@ -8,26 +11,61 @@ enabled_rules = []
 # List of disabled rules
 disabled_rules = []
 
-# Global parameter defaults
-# All parameters are set here and can be overridden per sheet
-max_conditional_formatting = 0
-url_timeout_seconds = 2
-max_sheets = 5
-max_formula_length = 255
-max_text_length = 255
-avoid_sheet_names = ["sheet", "copy"]
-date_format = "mm-dd-yyyy"
-# Formula nesting limits
-max_formula_nesting = 2
-max_if_nesting = 2
+# Global parameter defaults.
+# Parameters marked (per sheet) can be overridden in a [sheets."<name>"] table.
 
-# FORM008: Hardcoded values config
-ignore_hardcoded_num_values = []
+# CALC201: Hardcoded numbers in formulas (per sheet)
+ignore_hardcoded_num_values = [
+    0, 0.25, 0.5, 0.75, 1, 2, 3, 4, 5, 7, 12, 24, 30, 31, 52, 53, 60, 365, 366, 3600,
+]
 ignore_hardcoded_int_values = false
-ignore_hardcoded_power_of_ten = false
+ignore_hardcoded_power_of_ten = true
+
+# CALC203: Double operator. If true, `--` (coercion to number) is not flagged.
+calc203_allow_double_negative = false
+
+# REF310: Minimum contiguous adjacent data cells beyond a range boundary
+ref310_min_adjacent_data = 1
+
+# INT401-INT403: Minimum formula run length to consider a sequence
+int_min_formula_sequence = 3
+
+# CPX501: Maximum number of sheets
+max_sheets = 50
+# CPX503: Maximum conditional formatting rules per sheet (per sheet)
+max_conditional_formatting = 5
+# CPX504: Maximum IF nesting depth
+max_if_nesting = 5
+# CPX505: Maximum function nesting depth
+max_formula_nesting = 5
+# CPX506: Maximum operators per formula
+max_operations = 8
+# CPX507: Maximum distinct sheets referenced by a formula
+max_sheet_refs = 3
+# CPX508: Maximum cell references per formula
+max_references = 10
+# CPX509: Maximum formula length in characters
+max_formula_length = 255
+
+# DATA701: Sheet name substrings to avoid (per sheet)
+avoid_sheet_names = ["sheet", "copy"]
+# DATA703: Expected date format (per sheet)
+date_format = "mm/dd/yyyy"
+# DATA704: Maximum text length in characters (per sheet)
+max_text_length = 255
+
+# EXT802: Web URLs. "ALL" reports every URL; "INVALID" only unreachable ones.
+url_links_status = "ALL"
+# EXT802: Timeout in seconds for each URL check
+url_timeout_seconds = 5
+
+# FILE1001: Maximum file size in MB
+max_file_size_mb = 10
+# FILE1002: Maximum file age in days
+max_age_days = 365
 
 # Sheet-specific configuration
-# Override global parameters or disable rules for specific sheets
+# Override per-sheet parameters or disable rules for specific sheets
 
 [sheets."Auxiliar"]
 disabled_rules = []
