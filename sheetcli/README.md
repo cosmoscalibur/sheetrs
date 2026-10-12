@@ -23,6 +23,34 @@ sheetcli <FILE> --remove-ranges "MyRange" "OldData" --output <OUT_FILE>
 
 # Combined operations
 sheetcli <FILE> --remove-sheets "Temp" --remove-ranges "TempRange" -o cleaned.xlsx
+```
+
+#### Convert formulas to values
+
+`--convert-to-values` replaces formulas by their cached values, e.g. to turn a
+master workbook into a production run model where argument cells hold fixed
+values and need no computation. Each scope selects a whole sheet, columns or
+rows:
+
+```bash
+# Whole sheet, columns B to D, and rows 3 to 10
+sheetcli master.xlsx --convert-to-values "Inputs" "Model!B:D" "Model!3:10" -o run.xlsx
+
+# Single column or row; quote sheet names containing '!' as in formulas
+sheetcli master.xlsx --convert-to-values "Model!F" "'R!D'!2" -o run.xlsx
+```
+
+- Values are the results the spreadsheet application stored when it last
+  saved the file; the file is not recalculated. A formula without a stored
+  value keeps its formula.
+- Formulas that return text become text cells. Error results become error
+  constants.
+- A shared formula group whose first cell is converted gives each remaining
+  cell outside the scope its own formula, so they keep calculating.
+- Array formulas and data tables are converted only when one scope covers
+  their whole range.
+- The calculation chain (`xl/calcChain.xml`) is removed; Excel rebuilds it.
+- An unknown sheet name is an error.
 
 ### 2. Inspection
 

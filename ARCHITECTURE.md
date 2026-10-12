@@ -36,7 +36,8 @@ The heart of the suite. It encapsulates all domain logic, file parsing, rule enf
 
 - **`writer`**: Handles file modification.
   - Currently optimized for XLSX.
-  - Uses `zip` and `quick-xml` to stream-edit the archive structure (e.g., removing sheets) without fully rewriting the file, ensuring speed and preserving metadata.
+  - Uses `zip` and `quick-xml` to stream-edit the archive structure (e.g., removing sheets, converting formulas to values) without fully rewriting the file, ensuring speed and preserving metadata.
+  - `ValueScope` selects the cells to convert (a sheet, columns or rows) independently of the file format.
 
 ## 2. CLI Tools
 

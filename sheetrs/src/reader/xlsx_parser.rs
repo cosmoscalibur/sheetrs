@@ -102,8 +102,11 @@ pub fn get_xlsx_sheet_path(
         ));
     }
 
-    // Target is usually "worksheets/sheet1.xml", we need to prepend "xl/" if it's relative
-    if target.starts_with("worksheets/") {
+    // Target is usually "worksheets/sheet1.xml", relative to "xl/", but may
+    // also be an absolute part name such as "/xl/worksheets/sheet1.xml"
+    if let Some(part) = target.strip_prefix('/') {
+        Ok(part.to_string())
+    } else if target.starts_with("worksheets/") {
         Ok(format!("xl/{target}"))
     } else {
         Ok(target)
@@ -658,7 +661,7 @@ impl Replacer for SharedRefShifter {
     }
 }
 
-fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> String {
+pub(crate) fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> String {
     SHARED_FORMULA_REF_RE
         .replace_all(
             formula,
@@ -1180,25 +1183,21 @@ fn parse_cell_contents<R: std::io::BufRead>(
     }
 
     // Post-processing: handle potential_error
-    // Excel uses t="e" for TWO different purposes:
+    // Excel uses t="e" for THREE different purposes:
     // 1. Real error cells (formula evaluated to error) - e.g., =car() -> #NAME?
     // 2. Array formulas (returns array, not error) - e.g., =Sheet!A1:B10 or =A1:A10
+    // 3. Error constants, typed in or left by converting formulas to values
     //
     // The key distinction: array formulas contain range references (with ':')
     // Real errors are formulas without ranges that failed evaluation
-    //
-    // Note: In valid spreadsheet files, t="e" ALWAYS has a formula. Errors without
-    // formulas don't exist in Excel/ODS files.
-    if let Some(err) = potential_error
-        && let Some(ref f) = formula
-    {
-        // If t="e" is present with a formula, it's a formula that evaluated to an error.
+    if let Some(err) = potential_error {
         // HEURISTIC: Legacy array formulas (CSE) often have t="e" and #VALUE! cached value
         // as a placeholder even if they aren't real errors. We ignore #VALUE! if it's an array.
-        let looks_like_array = is_array_formula || f.contains(':');
-        if looks_like_array && err == "#VALUE!" {
-            // Array formula — keep value as-is (already set), formula will be set later
-        } else {
+        let array_placeholder = err == "#VALUE!"
+            && formula
+                .as_ref()
+                .is_some_and(|f| is_array_formula || f.contains(':'));
+        if !array_placeholder {
             value = CellValue::Error(ExcelError::from_cell_str(&err).unwrap_or(ExcelError::Value));
         }
     }
@@ -1882,6 +1881,27 @@ mod tests {
         assert_eq!(
             parse_cell_value("<c><v> a b </v></c>", "str", None),
             CellValue::Text(Arc::from(" a b "))
+        );
+    }
+
+    #[test]
+    fn test_parse_cell_contents_reads_error_constants() {
+        assert_eq!(
+            parse_cell_value("<c><v>#DIV/0!</v></c>", "e", None),
+            CellValue::Error(ExcelError::DivZero)
+        );
+        // Legacy array formulas store #VALUE! as a placeholder result.
+        assert_eq!(
+            parse_cell_value(
+                r#"<c><f t="array" ref="A1:A2">B1:B2</f><v>#VALUE!</v></c>"#,
+                "e",
+                None
+            ),
+            CellValue::Empty
+        );
+        assert_eq!(
+            parse_cell_value("<c><f>1/0</f><v>#DIV/0!</v></c>", "e", None),
+            CellValue::Error(ExcelError::DivZero)
         );
     }
 
