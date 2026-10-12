@@ -5,10 +5,11 @@
 //! then computes blanks as `used_range - occupied` in `on_sheet_end`.
 
 use super::{LinterContext, RuleCategory, WalkerRule};
-use crate::reader::parser_utils::column_index_to_letters;
+use crate::reader::parser_utils::column_letters;
 use crate::reader::{Cell, Sheet};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Write};
 
 /// Threshold for contiguous blank rows to trigger a violation.
 const MAX_BLANK_ROW: u32 = 2;
@@ -274,48 +275,50 @@ fn group_contiguous_indices(indices: &[u32]) -> Vec<Vec<u32>> {
 
 /// Format row ranges (e.g., "2, 4-6, 10").
 fn format_row_ranges(rows: &[u32]) -> String {
-    format_ranges(rows, |r| (r + 1).to_string()) // Convert to 1-based
+    format_ranges(rows, |r| r + 1) // Convert to 1-based
 }
 
 /// Format column ranges (e.g., "C, E-G, J").
 fn format_column_ranges(cols: &[u32]) -> String {
-    format_ranges(cols, column_index_to_letters)
+    format_ranges(cols, column_letters)
 }
 
 /// Generic range formatter.
-fn format_ranges<F>(indices: &[u32], formatter: F) -> String
+fn format_ranges<D, F>(indices: &[u32], formatter: F) -> String
 where
-    F: Fn(u32) -> String,
+    D: Display,
+    F: Fn(u32) -> D,
 {
-    if indices.is_empty() {
-        return String::new();
-    }
+    let mut out = String::new();
+    let Some((&first, rest)) = indices.split_first() else {
+        return out;
+    };
 
-    let mut ranges = Vec::new();
-    let mut start = indices[0];
-    let mut end = indices[0];
+    let mut push_range = |start: u32, end: u32| {
+        if !out.is_empty() {
+            out.push_str(", ");
+        }
+        let _ = if start == end {
+            write!(out, "{}", formatter(start))
+        } else {
+            write!(out, "{}-{}", formatter(start), formatter(end))
+        };
+    };
 
-    for &idx in &indices[1..] {
+    let mut start = first;
+    let mut end = first;
+    for &idx in rest {
         if idx == end + 1 {
             end = idx;
         } else {
-            if start == end {
-                ranges.push(formatter(start));
-            } else {
-                ranges.push(format!("{}-{}", formatter(start), formatter(end)));
-            }
+            push_range(start, end);
             start = idx;
             end = idx;
         }
     }
+    push_range(start, end);
 
-    if start == end {
-        ranges.push(formatter(start));
-    } else {
-        ranges.push(format!("{}-{}", formatter(start), formatter(end)));
-    }
-
-    ranges.join(", ")
+    out
 }
 
 #[cfg(test)]
