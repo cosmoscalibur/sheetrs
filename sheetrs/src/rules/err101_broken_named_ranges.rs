@@ -52,8 +52,10 @@ impl WalkerRule for BrokenNamedRangesRule {
         _ctx: &mut LinterContext,
     ) -> Vec<Violation> {
         let mut violations = Vec::new();
+        let mut defined_names: Vec<_> = workbook.defined_names.iter().collect();
+        defined_names.sort_unstable();
 
-        for (name, reference) in &workbook.defined_names {
+        for (name, reference) in defined_names {
             if is_broken_reference(reference) {
                 violations.push(Violation::with_data(
                     RuleId::Err101,
@@ -114,5 +116,27 @@ mod tests {
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Err101);
         assert!(violations[0].message().contains("BrokenRange"));
+    }
+
+    #[test]
+    fn test_violations_ordered_by_name() {
+        let defined_names = (0..16)
+            .map(|i| (format!("Broken{i:02}"), "Sheet1!#REF!".to_string()))
+            .collect();
+        let workbook = Workbook {
+            defined_names,
+            ..Default::default()
+        };
+
+        let violations =
+            BrokenNamedRangesRule.on_workbook_start(&workbook, &mut LinterContext::default());
+        let names: Vec<_> = violations
+            .iter()
+            .map(|v| v.data::<BrokenNamedRangeData>().unwrap().name.clone())
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names.len(), 16);
+        assert_eq!(names, sorted);
     }
 }

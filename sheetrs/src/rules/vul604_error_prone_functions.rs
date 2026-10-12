@@ -11,7 +11,7 @@ use crate::reader::{Cell, Sheet};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
 /// Error-prone function entries: (function_name, recommended_alternative).
@@ -130,14 +130,15 @@ impl WalkerRule for ErrorProneFunctionsRule {
     }
 
     fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
+        let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
+        cells.sort_unstable();
 
         let mut violations = Vec::new();
 
         // Group by function index
-        let mut by_func: HashMap<u8, Vec<(u32, u32)>> = HashMap::new();
+        let mut by_func: BTreeMap<u8, Vec<(u32, u32)>> = BTreeMap::new();
         for (func_idx, row, col) in cells {
             by_func.entry(func_idx).or_default().push((row, col));
         }

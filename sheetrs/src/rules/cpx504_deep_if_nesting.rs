@@ -37,6 +37,9 @@ pub struct DeepIfNestingRule {
     max_references: usize,
     /// Maximum allowed formula length in characters (CPX509).
     max_formula_length: usize,
+    /// Violations of the current sheet with their `(row, col)`, emitted in
+    /// cell order at sheet end because the walker visits cells in hash order.
+    pending: Vec<((u32, u32), Violation)>,
 }
 
 impl DeepIfNestingRule {
@@ -52,6 +55,7 @@ impl DeepIfNestingRule {
             max_formula_length: config
                 .get_param_int("max_formula_length", None)
                 .unwrap_or(255) as usize,
+            pending: Vec::new(),
         }
     }
 }
@@ -64,6 +68,7 @@ impl Default for DeepIfNestingRule {
             max_operations: 8,
             max_references: 10,
             max_formula_length: 255,
+            pending: Vec::new(),
         }
     }
 }
@@ -356,6 +361,26 @@ impl WalkerRule for DeepIfNestingRule {
     }
 
     fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+        let violations = self.cell_violations(sheet, cell, ctx);
+        self.pending
+            .extend(violations.into_iter().map(|v| ((cell.row, cell.col), v)));
+        Vec::new()
+    }
+
+    fn on_sheet_end(&mut self, _sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+        self.pending.sort_unstable_by_key(|(cell, _)| *cell);
+        self.pending.drain(..).map(|(_, v)| v).collect()
+    }
+}
+
+impl DeepIfNestingRule {
+    /// Evaluates the CPX5xx dependency chain for one formula cell.
+    fn cell_violations(
+        &self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+    ) -> Vec<Violation> {
         let Some(formula) = cell.as_formula() else {
             return Vec::new();
         };
@@ -470,10 +495,42 @@ mod tests {
 
     fn run_violations(sheet: &Sheet, rule: &mut DeepIfNestingRule) -> Vec<Violation> {
         let mut ctx = LinterContext::default();
-        sheet
+        let mut violations: Vec<_> = sheet
             .all_cells()
             .flat_map(|c| rule.on_cell(sheet, c, &mut ctx))
-            .collect()
+            .collect();
+        violations.extend(rule.on_sheet_end(sheet, &mut ctx));
+        violations
+    }
+
+    #[test]
+    fn test_violations_ordered_by_cell() {
+        let formula = "=A1+B1*C1-D1/E1^F1&G1+H1+I1+J1";
+        let mut sheet = make_sheet(formula);
+        for row in 0..4 {
+            for col in 0..4 {
+                sheet.cells.insert(
+                    (row, col),
+                    Cell {
+                        formula: Some(<Box<str>>::from(formula)),
+                        is_array: false,
+                        num_fmt: None,
+                        row,
+                        col,
+                        value: CellValue::Empty,
+                    },
+                );
+            }
+        }
+        let violations = run_violations(&sheet, &mut DeepIfNestingRule::default());
+        let cells: Vec<_> = violations
+            .iter()
+            .map(|v| v.data::<ManyOperationsData>().unwrap().cell.clone())
+            .collect();
+        let mut sorted = cells.clone();
+        sorted.sort();
+        assert_eq!(cells.len(), 16);
+        assert_eq!(cells, sorted);
     }
 
     #[test]

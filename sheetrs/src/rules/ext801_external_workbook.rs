@@ -9,7 +9,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
 /// Per-sheet cell collection: sheet_index → Vec<(row, col, wb_index)>.
@@ -116,13 +116,14 @@ impl WalkerRule for ExternalWorkbooksRule {
     }
 
     fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
+        let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
+        cells.sort_unstable();
 
         let mut violations = Vec::new();
         // Group cells by workbook index
-        let mut grouped: HashMap<usize, Vec<(u32, u32)>> = HashMap::new();
+        let mut grouped: BTreeMap<usize, Vec<(u32, u32)>> = BTreeMap::new();
         for (row, col, idx) in cells {
             grouped.entry(idx).or_default().push((row, col));
         }

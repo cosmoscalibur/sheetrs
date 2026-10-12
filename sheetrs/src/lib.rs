@@ -87,8 +87,9 @@ impl Linter {
             }
         }
 
-        // Sort violations by scope for hierarchical reporting
-        violations.sort_by(|a, b| a.scope.cmp(&b.scope));
+        // Hierarchical order by scope, then rule. Stable sort: ties keep each
+        // rule's emission order.
+        violations.sort();
 
         Ok(violations)
     }

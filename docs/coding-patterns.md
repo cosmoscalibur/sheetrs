@@ -57,6 +57,12 @@ lint run (`registry::create_walker_rules`), so each run starts from empty state.
 The trait requires `Send` so that a future per-sheet parallel walk can move
 rule instances between threads and merge their state.
 
+`Linter::lint_workbook` sorts violations by scope, then rule ID, with a stable
+sort, so a rule that emits several violations with the same scope sets their
+order. The walker visits cells in `HashMap` order, so such a rule sorts what it
+collected (cells, grouping keys, defined names) before emitting, which keeps
+the cost proportional to the findings rather than to the cells walked.
+
 ### Hierarchical Violations
 
 Violations are reported with full context: File → Sheet → Cell. Use

@@ -9,7 +9,7 @@ use crate::reader::{Cell, Sheet};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
 /// Fixed list of volatile functions as internal constants.
@@ -120,14 +120,15 @@ impl WalkerRule for VolatileFunctionsRule {
     }
 
     fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let Some(cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
+        let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
             return Vec::new();
         };
+        cells.sort_unstable();
 
         let mut violations = Vec::new();
 
         // Group by function index
-        let mut by_func: HashMap<u8, Vec<(u32, u32)>> = HashMap::new();
+        let mut by_func: BTreeMap<u8, Vec<(u32, u32)>> = BTreeMap::new();
         for (func_idx, row, col) in cells {
             by_func.entry(func_idx).or_default().push((row, col));
         }
@@ -264,5 +265,49 @@ mod tests {
         let violations = rule.on_sheet_end(&sheet, &mut ctx);
 
         assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    fn test_violations_ordered_by_function_and_cell() {
+        let formulas = ["=NOW()", "=RAND()", "=TODAY()"];
+        let mut cells = HashMap::new();
+        for i in 0..18u32 {
+            let (row, col) = (i * 2, 0);
+            cells.insert(
+                (row, col),
+                Cell {
+                    formula: Some(<Box<str>>::from(formulas[i as usize % 3])),
+                    is_array: false,
+                    num_fmt: None,
+                    row,
+                    col,
+                    value: CellValue::Empty,
+                },
+            );
+        }
+        let sheet = Sheet {
+            name: "Sheet1".to_string(),
+            sheet_index: 0,
+            cells,
+            ..Default::default()
+        };
+
+        let mut rule = VolatileFunctionsRule::new();
+        let mut ctx = LinterContext::default();
+        for cell in sheet.all_cells() {
+            rule.on_cell(&sheet, cell, &mut ctx);
+        }
+        let keys: Vec<_> = rule
+            .on_sheet_end(&sheet, &mut ctx)
+            .iter()
+            .map(|v| {
+                let data = v.data::<VolatileFunctionData>().unwrap();
+                (data.func_index, data.range)
+            })
+            .collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys.len(), 18);
+        assert_eq!(keys, sorted);
     }
 }

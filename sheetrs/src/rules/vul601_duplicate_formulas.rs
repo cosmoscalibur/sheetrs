@@ -103,32 +103,37 @@ impl WalkerRule for DuplicateFormulasRule {
 
         let mut violations = Vec::new();
 
-        for (formula, cells) in formula_cells {
-            if cells.len() > 1 {
-                let ranges = find_contiguous_ranges(&cells);
+        let mut duplicates: Vec<_> = formula_cells
+            .into_iter()
+            .filter(|(_, cells)| cells.len() > 1)
+            .collect();
+        duplicates.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
-                // Truncate formula for display
-                let display_formula = if formula.chars().count() > 50 {
-                    formula.chars().take(50).collect::<String>() + "..."
-                } else {
-                    formula.clone()
-                };
+        for (formula, mut cells) in duplicates {
+            cells.sort_unstable();
+            let ranges = find_contiguous_ranges(&cells);
 
-                let count = cells.len();
+            // Truncate formula for display
+            let display_formula = if formula.chars().count() > 50 {
+                formula.chars().take(50).collect::<String>() + "..."
+            } else {
+                formula.clone()
+            };
 
-                for range in ranges {
-                    let bbox = bounding_box(&range);
-                    violations.push(Violation::with_data(
-                        RuleId::Vul601,
-                        ViolationScope::Sheet(sheet.sheet_index),
-                        DuplicateFormulaData {
-                            formula: display_formula.clone(),
-                            count,
-                            range: bbox,
-                        },
-                        Severity::Info,
-                    ));
-                }
+            let count = cells.len();
+
+            for range in ranges {
+                let bbox = bounding_box(&range);
+                violations.push(Violation::with_data(
+                    RuleId::Vul601,
+                    ViolationScope::Sheet(sheet.sheet_index),
+                    DuplicateFormulaData {
+                        formula: display_formula.clone(),
+                        count,
+                        range: bbox,
+                    },
+                    Severity::Info,
+                ));
             }
         }
 
