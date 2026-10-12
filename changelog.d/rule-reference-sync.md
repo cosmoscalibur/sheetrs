@@ -1,6 +1,7 @@
 ### Changed
 
-- The `sheetlint` rule reference replaces the Status column with a Parity column that lists the differences from PerfectXL Risk Finder inspections, and from ExceLint for formula interruptions.
+- The `sheetlint` rule reference drops the Status column: every listed rule is implemented and active by default.
+- `sheetlint/comparative_report.md` drops the Support Status and Migrated columns, corrects scopes, examples and rule dependencies against the code, and adds a Parity column with the differences from PerfectXL Risk Finder and ExceLint.
 - `sheetlint.toml` lists every configuration key with its default value from the code, and its comments use current rule IDs.
 
 ### Fixed
