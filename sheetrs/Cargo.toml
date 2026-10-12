@@ -16,10 +16,10 @@ quick-xml.workspace = true
 zip.workspace = true
 reqwest = { workspace = true, optional = true }
 regex.workspace = true
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-chrono = { version = "0.4", default-features = false, features = ["std", "clock", "wasmbind"] }
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "wasmbind"] }
 
 [features]
 default = ["link-validation"]
