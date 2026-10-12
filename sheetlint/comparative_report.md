@@ -76,14 +76,15 @@ far a threshold is exceeded. sheetrs assigns each rule a fixed severity.
 
 | SheetRS Rule | Scope | Example | Dependencies | Parity | Concept / Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **INT401** (Formula Interrupted by Data) | `cell::formula (inter)` | `F`, `F`, `42`, `F` | - | ≈ PerfectXL limits how much of the range the data cells may cover. Here there is no coverage limit. | A value cell inside a run of matching formulas. |
-| **INT402** (Interrupted by Empty) | `cell::formula (inter)` | `F`, `F`, *(blank)*, `F` | - | ≈ PerfectXL ignores gaps at a corner or along a full top or bottom edge. Here a single empty cell between formulas of a run is reported; two or more end the run. | An empty cell inside a run of matching formulas. |
-| **INT403** (Formula Interrupted by Other Formula) | `cell::formula (inter)` | `=A1+B1`, `=A2*B2`, `=A3+B3` | - | ≈ PerfectXL checks only along the formula direction and only when the other formulas cover at most 20% of the range. Here both rows and columns are checked, with no coverage limit. | A formula with a different R1C1 pattern inside a run. |
+| **INT401** (Formula Interrupted by Data) | `cell::formula (inter)` | `F`, `F`, `F`, `42`, `F` | - | ≈ PerfectXL limits how much of the range the data cells may cover. Here there is no coverage limit. | A value cell inside a run of matching formulas. |
+| **INT402** (Interrupted by Empty) | `cell::formula (inter)` | `F`, `F`, `F`, *(blank)*, `F` | - | ≈ PerfectXL ignores gaps at a corner or along a full top or bottom edge. Here a single empty cell between formulas of a run is reported; two or more end the run. | An empty cell inside a run of matching formulas. |
+| **INT403** (Formula Interrupted by Other Formula) | `cell::formula (inter)` | `=A1+B1`, `=A2+B2`, `=A3+B3`, `=A4*B4` | - | ≈ PerfectXL checks only along the formula direction and only when the other formulas cover at most 20% of the range. Here both rows and columns are checked, with no coverage limit. | A formula with a different R1C1 pattern inside a run. |
 
-Runs are sequences of at least `int_min_formula_sequence` formulas with the
-same R1C1 pattern along a row or column. See
-[ExceLint](#12-structural-chapter-excelint) for how this differs from
-region-based outlier detection.
+A run is a sequence of formulas with the same R1C1 pattern along a row or
+column; a single empty cell does not end it. An interruption is reported only
+when at least `int_min_formula_sequence` consecutive matching formulas sit
+directly before or after it. See [ExceLint](#12-structural-chapter-excelint)
+for how this differs from region-based outlier detection.
 
 ## 5. Complexity (CPX5xx)
 
@@ -97,7 +98,7 @@ region-based outlier detection.
 | **CPX506** (Many Operations) | `cell::formula` | 9 operators | `CPX504`, `!CPX504`, `!CPX505` | ≈ PerfectXL counts at least 8 functions and operators. Here only operators are counted, above 8. | More operators than `max_operations`. |
 | **CPX507** (Multiple Sheet Ref) | `cell::formula` | `=S1!A1+S2!A1+S3!A1` | - | ? | Formulas referencing at least `max_sheet_refs` distinct sheets. Independent of the cascade. |
 | **CPX508** (Many References) | `cell::formula` | 11 cell references | `CPX504`, `!CPX504`, `!CPX505`, `!CPX506` | ≈ PerfectXL triggers at 10 references; here above 10. | More cell references than `max_references`. |
-| **CPX509** (Long Formula) | `cell::formula` | 256 characters | `CPX504`, `!CPX504`, `!CPX505`, `!CPX506` | ≈ PerfectXL triggers at 200 characters and not when Many References fires. Here above 255, and it can fire together with CPX508. | Formulas longer than `max_formula_length`. |
+| **CPX509** (Long Formula) | `cell::formula` | 256 bytes | `CPX504`, `!CPX504`, `!CPX505`, `!CPX506` | ≈ PerfectXL triggers at 200 characters and not when Many References fires. Here above 255 UTF-8 bytes, so non-ASCII formulas trigger with fewer characters, and it can fire together with CPX508. | Formulas longer than `max_formula_length` bytes. |
 
 ## 6. Vulnerable Formulas (VUL6xx)
 
@@ -119,7 +120,7 @@ LOOKUP is reported by CALC204, VUL604 and VUL606.
 | **DATA701** (Generic Sheet Name) | `sheet::name` | `Sheet1`, `Copy of Data` | - | ? | Sheet names containing a pattern from `avoid_sheet_names`. |
 | **DATA702** (Number Stored as Text) | `cell::value` | `"123"` stored as text | - | ? | Text cells whose content parses as a number. |
 | **DATA703** (Inconsistent Date Format) | `cell::format` | `dd/mm/yyyy` when `mm/dd/yyyy` is expected | - | ? | Date-formatted cells whose format differs from `date_format`. |
-| **DATA704** (Long Text Cell) | `cell::value` | 300-character text | - | ? | Text longer than `max_text_length`. |
+| **DATA704** (Long Text Cell) | `cell::value` | 300-byte text | - | ? | Text longer than `max_text_length` UTF-8 bytes. |
 | **DATA705** (Unnecessary Space) | `cell::value` | `" Total "` | - | ? | Leading or trailing whitespace in text cells. |
 | **DATA706** (Numeric Text Calculation) | `cell::formula (inter)` | `=A1+1` (A1 is the text `"10"`) | `CALC202` | ≈ PerfectXL also flags text that looks like a date or time. Here only text that parses as a number. | Formulas referencing numeric-looking text cells. |
 
@@ -170,8 +171,8 @@ normalization, but scans one-dimensional runs along rows and columns.
 Rather than checking a list of best practices, ExceLint uses information theory
 (the Minimum Description Length principle) to flag cells that are "highly
 surprising" relative to their neighbors in a rectangle. `sheetrs` reports every
-interruption of a run with at least `int_min_formula_sequence` formulas, with
-no statistical ranking and with separate rule IDs per interruption kind.
+interruption next to at least `int_min_formula_sequence` consecutive matching
+formulas, with no statistical ranking and with separate rule IDs per interruption kind.
 
 ---
 
