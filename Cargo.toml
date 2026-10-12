@@ -32,6 +32,7 @@ zip = { version = "8.3", default-features = false, features = ["deflate"] }
 # HTTP client for link validation
 reqwest = { version = "0.13.5", features = ["blocking"] }
 regex = "1.13.1"
+aho-corasick = "1.1.4"
 
 [workspace.lints.clippy]
 manual_let_else = "warn"

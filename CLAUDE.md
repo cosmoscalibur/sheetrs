@@ -22,6 +22,15 @@ Load on demand:
 - `docs/README.md` — documentation index (profiling, benchmarks, test assets,
   WASM demo).
 
+## Benchmarks
+
+- `tests/production/` is git-ignored, so a git worktree lacks it. Symlink it
+  from the main checkout before benchmarking:
+  `ln -s <main-checkout>/tests/production tests/production`.
+- Read `scripts/README.md` before benchmarking. A benchmarked change updates
+  its Comparisons entry, and `sheetlint/docs/PROFILING.md` when it targets the
+  cost of a rule or phase.
+
 ## Agent readiness
 
 Re-run `agent-harness:agent-readiness` when agent-facing tooling is added or

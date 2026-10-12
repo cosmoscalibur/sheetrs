@@ -6,6 +6,7 @@ set -e
 # - User time, System time, Elapsed time
 # - CPU usage, Peak RAM
 # - User-space instructions
+# - MD5 of each run's output
 # Each file runs twice; the first run's output is the violations report.
 # Results are saved to a timestamped file in scripts/
 #
@@ -15,6 +16,7 @@ set -e
 
 PROD_FILE_XLSX="tests/production/TC2025 2025.12.05 Motor Tributi 1402 - MY- textos sin j.xlsx"
 PROD_FILE_ODS="tests/production/TC2025 2025.12.05 Motor Tributi 1402 - MY- textos sin j.ods"
+CONFIG="scripts/benchmark.toml"
 RUNS=2
 BASELINE_REF=""
 
@@ -52,9 +54,10 @@ benchmark_file() {
     for run in $(seq 1 "$RUNS"); do
         echo "--- Run ${run} ---"
         perf stat -x, -e instructions:u -o perf_output.tmp -- \
-            /usr/bin/time -v "$sheetlint" "$file" > "violations_${run}.tmp" 2> time_output.tmp || true
+            /usr/bin/time -v "$sheetlint" -c "$CONFIG" "$file" > "violations_${run}.tmp" 2> time_output.tmp || true
         grep -E "(User time|System time|Elapsed|Maximum resident|Percent of CPU)" time_output.tmp
         awk -F, '/instructions/ {print "\tInstructions (user): " $1}' perf_output.tmp
+        md5sum < "violations_${run}.tmp" | awk '{print "\tOutput MD5: " $1}'
     done
     rm -f time_output.tmp perf_output.tmp
     echo ""
