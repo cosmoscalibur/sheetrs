@@ -16,7 +16,7 @@ use std::str::FromStr;
 
 use quick_xml::events::BytesStart;
 
-use crate::reader::parser_utils::{attr_value, column_index_to_letters, column_letters_to_index};
+use crate::reader::parser_utils::{attr_value, column_letters, column_letters_to_index};
 
 /// Last 0-based column index of a worksheet (`XFD`).
 const MAX_COL: u32 = 16_383;
@@ -97,12 +97,9 @@ impl fmt::Display for ValueScope {
         }
         match self.target {
             ValueTarget::Sheet => Ok(()),
-            ValueTarget::Columns(first, last) => write!(
-                f,
-                "!{}:{}",
-                column_index_to_letters(first),
-                column_index_to_letters(last)
-            ),
+            ValueTarget::Columns(first, last) => {
+                write!(f, "!{}:{}", column_letters(first), column_letters(last))
+            }
             ValueTarget::Rows(first, last) => write!(f, "!{}:{}", first + 1, last + 1),
         }
     }
