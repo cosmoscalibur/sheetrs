@@ -11,7 +11,7 @@ use std::sync::{Arc, LazyLock};
 use zip::ZipArchive;
 
 use super::parser_utils::{
-    attr_value, column_index_to_letters, column_letters_to_index, parse_cell_range, parse_cell_ref,
+    attr_value, column_letters, column_letters_to_index, parse_cell_range, parse_cell_ref,
     push_general_ref, read_text_node,
 };
 use super::{Cell, CellValue, Sheet, WorkbookReader};
@@ -650,7 +650,7 @@ impl Replacer for SharedRefShifter {
         if col_abs {
             dst.push('$');
         }
-        dst.push_str(&column_index_to_letters(new_col));
+        let _ = write!(dst, "{}", column_letters(new_col));
         if row_abs {
             dst.push('$');
         }

@@ -88,6 +88,22 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
+### Allocation-free column letters (#40)
+
+Output is identical to the previous entry. The previous entry's build, run
+once in the same session, measured 336.0 G (XLSX) and 332.9 G (ODS) user
+instructions and 32.5 s (XLSX) user time; one interleaved XLSX run of each
+build measured 160.6 G (previous entry) and 158.1 G (this entry) user cycles.
+User time ran under external load in this session.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 34.3s | 33.6s |
+| Peak RAM | 1813 MB | 1817 MB |
+| User instructions | 331.8 G | 330.0 G |
+| Output MD5 | `27417019c56695b4857551f630a8ffb1` | `c51c9d7817650f251ff10455b3c548db` |
+| Binary size | 9.2M | - |
+
 ### XML entity references in element text (#48)
 
 XLSX formulas and text keep their entity references and the whitespace next

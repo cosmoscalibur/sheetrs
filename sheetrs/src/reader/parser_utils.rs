@@ -1,6 +1,7 @@
 //! Common parsing utilities shared between XLSX and ODS parsers
 
 use std::borrow::Cow;
+use std::fmt;
 
 use anyhow::Result;
 use quick_xml::escape::resolve_predefined_entity;
@@ -62,17 +63,27 @@ pub fn column_letters_to_index(reference: &str) -> Option<u32> {
         .checked_sub(1)
 }
 
-/// Converts a 0-based column index to column letters (`0` → `A`, `26` → `AA`).
-pub fn column_index_to_letters(mut index: u32) -> String {
-    let mut letters = Vec::new();
-    loop {
-        letters.push(b'A' + (index % 26) as u8);
-        if index < 26 {
-            break;
+/// Maximum number of column letters for a `u32` index (`u32::MAX` → `MWLQKWV`).
+const MAX_COLUMN_LETTERS: usize = 7;
+
+/// Displays a 0-based column index as column letters (`0` → `A`, `26` → `AA`)
+/// without allocating.
+pub fn column_letters(index: u32) -> impl fmt::Display {
+    fmt::from_fn(move |f| {
+        let mut letters = [0u8; MAX_COLUMN_LETTERS];
+        let mut start = MAX_COLUMN_LETTERS;
+        let mut index = index;
+        loop {
+            start -= 1;
+            letters[start] = b'A' + (index % 26) as u8;
+            if index < 26 {
+                break;
+            }
+            index = index / 26 - 1;
         }
-        index = index / 26 - 1;
-    }
-    letters.iter().rev().map(|&b| char::from(b)).collect()
+        let letters = std::str::from_utf8(&letters[start..]).expect("column letters are ASCII");
+        f.write_str(letters)
+    })
 }
 
 /// Returns the value of an XML attribute with entities resolved.
@@ -160,17 +171,26 @@ mod tests {
     }
 
     #[test]
-    fn test_column_index_to_letters() {
-        assert_eq!(column_index_to_letters(0), "A");
-        assert_eq!(column_index_to_letters(25), "Z");
-        assert_eq!(column_index_to_letters(26), "AA");
-        assert_eq!(column_index_to_letters(16383), "XFD");
+    fn test_column_letters() {
+        assert_eq!(column_letters(0).to_string(), "A");
+        assert_eq!(column_letters(25).to_string(), "Z");
+        assert_eq!(column_letters(26).to_string(), "AA");
+        assert_eq!(column_letters(16383).to_string(), "XFD");
+        assert_eq!(column_letters(u32::MAX).to_string(), "MWLQKWV");
     }
 
     #[test]
     fn test_column_conversion_round_trip() {
         for index in 0..=16383 {
-            let letters = column_index_to_letters(index);
+            let letters = column_letters(index).to_string();
+            assert_eq!(column_letters_to_index(&letters), Some(index), "{letters}");
+        }
+    }
+
+    #[test]
+    fn test_column_conversion_round_trip_out_of_range() {
+        for index in [16384, 18277, 18278, 475253, 475254, u32::MAX - 1] {
+            let letters = column_letters(index).to_string();
             assert_eq!(column_letters_to_index(&letters), Some(index), "{letters}");
         }
     }
