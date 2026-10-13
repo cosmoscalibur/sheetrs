@@ -1,3 +1,13 @@
+### Changed
+
+- A disabled provider still runs, and takes its usual time, whenever a rule
+  that depends on it is enabled.
+
+### Removed
+
+- Remove the sheetlint warning that rules depending on a disabled CALC202
+  produce no violations.
+
 ### Fixed
 
 - Disabling CALC202, CPX504 or ERR102 no longer changes the results of the rules
