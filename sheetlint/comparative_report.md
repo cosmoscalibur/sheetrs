@@ -23,10 +23,11 @@ cells or sheets rather than of a single cell.
 
 **Dependencies:**
 
-- `X` — the rule needs rule `X` to be enabled: `X` emits its violations or
-  collects the data it reads. With `X` disabled, the rule reports nothing,
-  except REF306, which then reports every sheet.
-- `!X` — the rule is not reported where rule `X` fires.
+- `X` — rule `X` emits the rule's violations or collects the data it reads.
+  `X` runs whenever the rule is enabled; with `X` disabled, only the
+  violations of `X` are dropped.
+- `!X` — the rule is not reported where rule `X` fires, whether or not `X` is
+  enabled.
 
 **Parity** (with the PerfectXL inspection of the same name unless stated):
 

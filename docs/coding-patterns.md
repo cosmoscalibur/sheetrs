@@ -80,6 +80,19 @@ scan for formula interruptions), a single rule struct reports all of them:
 - `create_walker_rules()` merges the enabled INT IDs into one instance for the
   run, so cells are classified once however many of them are enabled.
 
+### Rule Dependencies
+
+Some rules emit the violations of other rules or collect data that other rules
+read: CALC202 fills `cell_dependencies`, `referenced_sheets` and
+`circular_cells`; ERR102 emits ERR103; CPX504 emits the CPX505/506/508/509
+cascade. `registry::rule_providers(id)` lists the providers of each rule.
+
+Disabling a rule only removes its own violations. `Linter::with_config` runs
+the enabled rules plus their providers (`registry::run_rule_ids`, in execution
+order) and `Linter::lint_workbook` drops the violations of rules that are not
+enabled. A new rule that reads context data collected by another rule, or whose
+violations another rule emits, must be added to `rule_providers`.
+
 ### Formula Normalization
 
 The INT rules normalize formulas to R1C1-style relative offsets so that
