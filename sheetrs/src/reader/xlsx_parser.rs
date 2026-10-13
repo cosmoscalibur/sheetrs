@@ -102,11 +102,18 @@ pub fn get_xlsx_sheet_path(
         ));
     }
 
-    // Target is usually "worksheets/sheet1.xml", we need to prepend "xl/" if it's relative
-    if target.starts_with("worksheets/") {
-        Ok(format!("xl/{target}"))
-    } else {
-        Ok(target)
+    Ok(workbook_part_name(&target))
+}
+
+/// Resolve the `Target` of a `xl/_rels/workbook.xml.rels` relationship into
+/// the name of the part in the archive.
+///
+/// Targets are relative to `xl/` (`worksheets/sheet1.xml`) or absolute part
+/// names (`/xl/worksheets/sheet1.xml`).
+pub(crate) fn workbook_part_name(target: &str) -> String {
+    match target.strip_prefix('/') {
+        Some(part) => part.to_string(),
+        None => format!("xl/{target}"),
     }
 }
 
@@ -658,7 +665,7 @@ impl Replacer for SharedRefShifter {
     }
 }
 
-fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> String {
+pub(crate) fn translate_shared_formula(formula: &str, row_shift: i32, col_shift: i32) -> String {
     SHARED_FORMULA_REF_RE
         .replace_all(
             formula,
@@ -1179,31 +1186,26 @@ fn parse_cell_contents<R: std::io::BufRead>(
         buf.clear();
     }
 
-    // Post-processing: handle potential_error
-    // Excel uses t="e" for TWO different purposes:
-    // 1. Real error cells (formula evaluated to error) - e.g., =car() -> #NAME?
-    // 2. Array formulas (returns array, not error) - e.g., =Sheet!A1:B10 or =A1:A10
-    //
-    // The key distinction: array formulas contain range references (with ':')
-    // Real errors are formulas without ranges that failed evaluation
-    //
-    // Note: In valid spreadsheet files, t="e" ALWAYS has a formula. Errors without
-    // formulas don't exist in Excel/ODS files.
-    if let Some(err) = potential_error
-        && let Some(ref f) = formula
-    {
-        // If t="e" is present with a formula, it's a formula that evaluated to an error.
-        // HEURISTIC: Legacy array formulas (CSE) often have t="e" and #VALUE! cached value
-        // as a placeholder even if they aren't real errors. We ignore #VALUE! if it's an array.
-        let looks_like_array = is_array_formula || f.contains(':');
-        if looks_like_array && err == "#VALUE!" {
-            // Array formula — keep value as-is (already set), formula will be set later
-        } else {
+    // t="e" marks error results, error constants and array error placeholders
+    if let Some(err) = potential_error {
+        let array_placeholder = formula
+            .as_ref()
+            .is_some_and(|f| is_array_error_placeholder(&err, f, is_array_formula));
+        if !array_placeholder {
             value = CellValue::Error(ExcelError::from_cell_str(&err).unwrap_or(ExcelError::Value));
         }
     }
 
     Ok((value, formula, shared_si, shared_ref, is_array_formula))
+}
+
+/// Whether the cached error `err` of a formula cell stands for no value.
+///
+/// Dynamic array formulas (`cm`) cache `#VALUE!` and keep their result in a
+/// rich value (`vm`), such as a spill error. A `#VALUE!` of any formula that
+/// holds `:` is read the same way (#62).
+pub(crate) fn is_array_error_placeholder(err: &str, formula: &str, is_array: bool) -> bool {
+    err == "#VALUE!" && (is_array || formula.contains(':'))
 }
 
 pub fn extract_shared_strings(
@@ -1882,6 +1884,27 @@ mod tests {
         assert_eq!(
             parse_cell_value("<c><v> a b </v></c>", "str", None),
             CellValue::Text(Arc::from(" a b "))
+        );
+    }
+
+    #[test]
+    fn test_parse_cell_contents_reads_error_constants() {
+        assert_eq!(
+            parse_cell_value("<c><v>#DIV/0!</v></c>", "e", None),
+            CellValue::Error(ExcelError::DivZero)
+        );
+        // Legacy array formulas store #VALUE! as a placeholder result.
+        assert_eq!(
+            parse_cell_value(
+                r#"<c><f t="array" ref="A1:A2">B1:B2</f><v>#VALUE!</v></c>"#,
+                "e",
+                None
+            ),
+            CellValue::Empty
+        );
+        assert_eq!(
+            parse_cell_value("<c><f>1/0</f><v>#DIV/0!</v></c>", "e", None),
+            CellValue::Error(ExcelError::DivZero)
         );
     }
 

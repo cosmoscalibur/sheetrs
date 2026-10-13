@@ -124,7 +124,8 @@ A swiss-army knife for spreadsheet manipulation.
 
 **Features:**
 
-- **Modification**: Remove sheets, delete named ranges.
+- **Modification**: Remove sheets, delete named ranges, convert formulas to
+  their values by sheet, column or row, in XLSX and ODS files.
 
 **Usage:**
 
@@ -134,6 +135,9 @@ sheetcli input.xlsx --remove-sheets "Secrets" "Admin" --output cleaned.xlsx
 
 # Remove named ranges
 sheetcli input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
+
+# Freeze the inputs sheet and columns B:D of the model as values
+sheetcli master.xlsx --convert-to-values "Inputs" "Model!B:D" --output run.xlsx
 ```
 
 ## Roadmap

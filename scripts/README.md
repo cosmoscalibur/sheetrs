@@ -1,6 +1,7 @@
 # Sheetlint Profiling & Benchmarking
 
-This directory contains scripts for measuring the performance of `sheetlint`.
+This directory contains scripts for measuring the performance of `sheetlint`
+and `sheetcli`.
 
 ## Scripts
 
@@ -39,6 +40,27 @@ entry states it.
 `--baseline <ref>` builds the ref in a temporary git worktree (target dir
 `target/baseline/`) and times it before the current tree. Its results carry
 metrics only, without the violations report.
+
+### `benchmark_cli.sh`
+
+Times `sheetcli` modifications with the same metrics as `benchmark.sh`, built
+with the `profiling` profile. Each scenario of its `SCENARIOS` list runs twice
+on each production file: removing a sheet, removing a named range, converting
+a whole sheet, converting columns and rows, and all of them in one command.
+
+`sheetcli` modifies a copy of each production file in a temporary directory
+and writes its output there; the script fails if a production file changes.
+ZIP entries carry their write time, so the reported output MD5 hashes the
+extracted parts rather than the archive.
+
+**Usage:**
+
+```bash
+./scripts/benchmark_cli.sh
+```
+
+Its results go to the [CLI Comparisons](#cli-comparisons), apart from the
+`sheetlint` ones.
 
 ### Interpreting results
 
@@ -80,6 +102,43 @@ entry. When the MD5 differs and the change does not explain it, regenerate both
 outputs and compare them with streaming tools (`diff`) to find the difference.
 Tools that load the whole document into memory, such as `jq` on the
 `--format json` output, can exhaust RAM.
+
+## CLI Comparisons
+
+`benchmark_cli.sh` entries, mean of 2 runs, measured in one session. The
+scenario names are those of its `SCENARIOS` list.
+
+### Formula conversion and ODS modifications (#59)
+
+Before streaming, a release build of this change peaked at 366 MB of RAM
+converting every XLSX sheet, and at 1.0 GB to 1.2 GB on every ODS
+modification.
+
+| Scenario | XLSX user time | XLSX peak RAM | ODS user time | ODS peak RAM |
+|----------|----------------|---------------|---------------|--------------|
+| `remove-sheets` | 0.00s | 5 MB | 2.38s | 5 MB |
+| `remove-ranges` | 0.00s | 4 MB | 2.41s | 5 MB |
+| `convert-sheet` | 2.95s | 8 MB | 3.43s | 5 MB |
+| `convert-columns-rows` | 2.95s | 6 MB | 4.01s | 5 MB |
+| `plan` | 2.94s | 8 MB | 3.41s | 5 MB |
+
+| Scenario | XLSX user instructions | ODS user instructions |
+|----------|------------------------|-----------------------|
+| `remove-sheets` | 0.02 G | 34.0 G |
+| `remove-ranges` | 0.02 G | 34.3 G |
+| `convert-sheet` | 40.9 G | 54.7 G |
+| `convert-columns-rows` | 40.5 G | 63.0 G |
+| `plan` | 40.9 G | 54.4 G |
+
+| Scenario | XLSX output MD5 (parts) | ODS output MD5 (parts) |
+|----------|-------------------------|------------------------|
+| `remove-sheets` | `53d901757d6d602ee15d7166be91ce60` | `8ae4b206148c3534b4259867ce24ac52` |
+| `remove-ranges` | `ff21a6bf6b21667823c49410e5d63eb4` | `ef43d9d784bb02504ab2ce0264ca00c5` |
+| `convert-sheet` | `d199f265d201d5532f58c6f89247631a` | `64fab675d59578eed46af1d3dec01475` |
+| `convert-columns-rows` | `d169b5c383777e92e3de1592114b83dc` | `baab6a8d29f11853167551e2167aa803` |
+| `plan` | `489dacde8c6b2adda89d05f3a05527f0` | `5161ae6590b80e127609177939398a8e` |
+
+Binary size: 3.4M.
 
 ## Comparisons
 

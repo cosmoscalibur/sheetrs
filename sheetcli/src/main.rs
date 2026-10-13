@@ -22,6 +22,11 @@ struct Cli {
     #[arg(long, num_args = 1.., value_name = "RANGE")]
     remove_ranges: Vec<String>,
 
+    /// Replace formulas by their cached values in a sheet (`Sheet`), columns
+    /// (`Sheet!B:D`) or rows (`Sheet!3:10`)
+    #[arg(long, num_args = 1.., value_name = "SCOPE")]
+    convert_to_values: Vec<writer::ValueScope>,
+
     /// List all named ranges with their values and status
     #[arg(long)]
     list_ranges: bool,
@@ -38,7 +43,10 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let has_ops = !cli.remove_sheets.is_empty() || !cli.remove_ranges.is_empty() || cli.list_ranges;
+    let has_ops = !cli.remove_sheets.is_empty()
+        || !cli.remove_ranges.is_empty()
+        || !cli.convert_to_values.is_empty()
+        || cli.list_ranges;
 
     if !has_ops {
         println!("No operations specified. Use --help for usage.");
@@ -85,6 +93,7 @@ fn main() -> Result<()> {
     if !cli.remove_ranges.is_empty() {
         mods.remove_named_ranges = Some(cli.remove_ranges.iter().cloned().collect::<HashSet<_>>());
     }
+    mods.convert_to_values = cli.convert_to_values;
 
     if cli.dry_run {
         println!("[DRY RUN] Operations on '{}':", cli.file.display());
@@ -98,6 +107,12 @@ fn main() -> Result<()> {
             println!("  Removing named ranges:");
             for r in ranges {
                 println!("    - {r}");
+            }
+        }
+        if !mods.convert_to_values.is_empty() {
+            println!("  Converting formulas to values:");
+            for scope in &mods.convert_to_values {
+                println!("    - {scope}");
             }
         }
         println!("\nOutput would be: {}", output_path.display());
