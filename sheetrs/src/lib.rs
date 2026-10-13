@@ -24,8 +24,9 @@ pub struct Linter {
     /// Enabled rules and their providers, in execution order; instantiated
     /// afresh for every lint run.
     walker_rule_ids: Vec<RuleId>,
-    /// Enabled rules: only their violations are reported.
-    reported_rule_ids: HashSet<RuleId>,
+    /// Providers that run only for enabled dependents: their violations are
+    /// dropped. Empty unless an enabled rule has a provider that is not enabled.
+    unreported_rule_ids: HashSet<RuleId>,
 }
 
 impl Linter {
@@ -36,16 +37,25 @@ impl Linter {
 
     /// Create a new linter with custom configuration
     pub fn with_config(config: LinterConfig) -> Self {
-        let reported_rule_ids: HashSet<RuleId> =
-            rules::registry::create_enabled_walker_rules(&config)
-                .iter()
-                .map(|rule| rule.id())
-                .collect();
-        let walker_rule_ids = rules::registry::run_rule_ids(&reported_rule_ids, &config);
+        let all_rule_ids: Vec<RuleId> = rules::registry::create_all_walker_rules(&config)
+            .iter()
+            .map(|rule| rule.id())
+            .collect();
+        let reported_rule_ids: HashSet<RuleId> = all_rule_ids
+            .iter()
+            .copied()
+            .filter(|&id| rules::registry::is_rule_active(id, &config))
+            .collect();
+        let walker_rule_ids = rules::registry::run_rule_ids(&all_rule_ids, &reported_rule_ids);
+        let unreported_rule_ids = walker_rule_ids
+            .iter()
+            .copied()
+            .filter(|id| !reported_rule_ids.contains(id))
+            .collect();
         Self {
             config,
             walker_rule_ids,
-            reported_rule_ids,
+            unreported_rule_ids,
         }
     }
 
@@ -80,7 +90,7 @@ impl Linter {
         // Drop violations of providers that are not enabled, then filter by
         // sheet config
         for violation in walker_violations {
-            if !self.reported_rule_ids.contains(&violation.rule_id) {
+            if self.unreported_rule_ids.contains(&violation.rule_id) {
                 continue;
             }
             let enabled = if let Some(sheet_idx) = violation.scope.sheet_index() {
