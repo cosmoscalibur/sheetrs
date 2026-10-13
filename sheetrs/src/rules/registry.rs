@@ -199,23 +199,21 @@ pub fn create_all_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerRule>
 
 /// Create enabled walker rules based on configuration
 pub fn create_enabled_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerRule>> {
-    let all_rules = create_all_walker_rules(config);
-
-    all_rules
+    create_all_walker_rules(config)
         .into_iter()
-        .filter(|rule| {
-            let is_enabled_in_config = config.is_rule_enabled(rule.id().as_str());
-
-            if config.global.enabled_rules.is_empty() {
-                DEFAULT_ACTIVE_RULES.contains(&rule.id()) && is_enabled_in_config
-            } else {
-                is_enabled_in_config
-            }
-        })
+        .filter(|rule| is_rule_active(rule.id(), config))
         .collect()
 }
 
-/// Rules that must run for `id` to report its violations.
+/// Returns whether `config` enables `id`: listed in `enabled_rules`, or in
+/// [`DEFAULT_ACTIVE_RULES`] when that list is empty, and not disabled.
+pub fn is_rule_active(id: RuleId, config: &LinterConfig) -> bool {
+    config.is_rule_enabled(id.as_str())
+        && (!config.global.enabled_rules.is_empty() || DEFAULT_ACTIVE_RULES.contains(&id))
+}
+
+/// Rules that must run for `id` to report its violations, including the
+/// providers of its providers.
 ///
 /// A provider either emits the rule's violations (CPX504 emits CPX505/506/508/509,
 /// ERR102 emits ERR103) or collects context data the rule reads (CALC202 fills
@@ -232,24 +230,17 @@ pub fn rule_providers(id: RuleId) -> &'static [RuleId] {
 }
 
 /// Rules to run so that every rule in `reported` gives the same result whether
-/// or not its providers are enabled: `reported` plus their providers, in
-/// execution order.
-///
-/// The caller drops the violations of the providers that are not in `reported`.
-pub fn run_rule_ids(reported: &HashSet<RuleId>, config: &LinterConfig) -> Vec<RuleId> {
-    let mut run = reported.clone();
-    let mut pending: Vec<RuleId> = reported.iter().copied().collect();
-    while let Some(id) = pending.pop() {
-        for &provider in rule_providers(id) {
-            if run.insert(provider) {
-                pending.push(provider);
-            }
-        }
-    }
-    create_all_walker_rules(config)
+/// or not its providers are enabled: `reported` plus their providers, in the
+/// order of `all`.
+pub fn run_rule_ids(all: &[RuleId], reported: &HashSet<RuleId>) -> Vec<RuleId> {
+    let providers: HashSet<RuleId> = reported
         .iter()
-        .map(|rule| rule.id())
-        .filter(|id| run.contains(id))
+        .flat_map(|&id| rule_providers(id))
+        .copied()
+        .collect();
+    all.iter()
+        .copied()
+        .filter(|id| reported.contains(id) || providers.contains(id))
         .collect()
 }
 
@@ -369,9 +360,13 @@ mod tests {
     #[test]
     fn test_run_rule_ids_adds_providers_in_execution_order() {
         let config = LinterConfig::default();
+        let all: Vec<RuleId> = create_all_walker_rules(&config)
+            .iter()
+            .map(|rule| rule.id())
+            .collect();
         let reported: HashSet<RuleId> = [RuleId::Err103, RuleId::Cpx509].into();
         assert_eq!(
-            run_rule_ids(&reported, &config),
+            run_rule_ids(&all, &reported),
             [
                 RuleId::Calc202,
                 RuleId::Err102,

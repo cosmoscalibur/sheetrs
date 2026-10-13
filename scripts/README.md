@@ -88,6 +88,26 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
+### Providers run for enabled dependents (#53)
+
+Output is identical to the previous entry. The previous entry's build, run in
+the same session, measured 331.8 G (XLSX) and 330.0 G (ODS) user instructions.
+A disabled provider now runs whenever a rule depending on it is enabled. Single
+XLSX runs outside `benchmark.sh`, this entry against the previous one:
+
+| Configuration | User time | Peak RAM |
+|---------------|-----------|----------|
+| `disabled_rules = ["CALC202"]` | 37.6s / 21.6s | 1816 MB / 1580 MB |
+| `enabled_rules` = ERR103, REF310, DATA706, CPX505/506/508/509 | 15.5s / 4.6s | 1186 MB / 637 MB |
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 33.5s | 33.9s |
+| Peak RAM | 1814 MB | 1821 MB |
+| User instructions | 331.8 G | 330.0 G |
+| Output MD5 | `27417019c56695b4857551f630a8ffb1` | `c51c9d7817650f251ff10455b3c548db` |
+| Binary size | 9.2M | - |
+
 ### Allocation-free column letters (#40)
 
 Output is identical to the previous entry. The previous entry's build, run
