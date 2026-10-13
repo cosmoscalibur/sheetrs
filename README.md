@@ -46,6 +46,10 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
+CI (`.github/workflows/ci.yml`) runs these checks with `--workspace` on every
+pull request, plus `cargo check -p sheetrs-wasm --target wasm32-unknown-unknown`
+and `cargo check -p sheetrs --no-default-features`.
+
 No environment variables are required. Configuration is via `sheetlint.toml`.
 
 ## Project Structure

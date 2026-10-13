@@ -49,6 +49,10 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 ```
 
+CI runs `cargo fmt`, `cargo clippy`, `cargo test`, the `sheetrs-wasm` WASM
+build and the `sheetrs` build without default features on every pull request;
+see `.github/workflows/ci.yml`. Fix any red check before requesting review.
+
 See [docs/coding-patterns.md](docs/coding-patterns.md) for architecture
 conventions, naming patterns, and domain-specific guidelines.
 
