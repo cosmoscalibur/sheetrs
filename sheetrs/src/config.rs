@@ -110,32 +110,6 @@ impl LinterConfig {
         Ok(())
     }
 
-    /// Return warnings for rules whose implicit dependencies are disabled.
-    ///
-    /// Some rules rely on shared state populated by other rules (e.g., DAT706,
-    /// REF309, and ERR103 depend on `cell_dependencies` populated by CALC202).
-    /// If the dependency rule is disabled, the dependent rules silently produce
-    /// zero violations. This method surfaces those situations as warnings.
-    pub fn warn_implicit_dependencies(&self) -> Vec<String> {
-        /// (dependent rule, dependency rule, shared resource description)
-        const DEPENDENCY_PAIRS: &[(&str, &str, &str)] = &[
-            ("DATA706", "CALC202", "cell_dependencies"),
-            ("REF309", "CALC202", "cell_dependencies"),
-            ("ERR103", "CALC202", "cell_dependencies"),
-        ];
-
-        let mut warnings = Vec::new();
-        for &(dependent, dependency, resource) in DEPENDENCY_PAIRS {
-            if self.is_rule_enabled(dependent) && !self.is_rule_enabled(dependency) {
-                warnings.push(format!(
-                    "Warning: {dependent} is enabled but {dependency} is disabled. \
-                     {dependent} depends on {dependency} for {resource} and will produce no violations."
-                ));
-            }
-        }
-        warnings
-    }
-
     /// Get a parameter value with fallback chain: sheet -> global
     pub fn get_param_int(&self, key: &str, sheet_name: Option<&str>) -> Option<i64> {
         // Try sheet-specific first
@@ -311,26 +285,6 @@ mod tests {
         sheet_config.disabled_rules.insert("ABC".to_string());
         bad_config.sheets.insert("Sheet1".to_string(), sheet_config);
         assert!(bad_config.validate_rules(&tokens).is_err());
-    }
-
-    #[test]
-    fn test_warn_implicit_dependencies_when_calc202_disabled() {
-        let mut config = LinterConfig::default();
-        config.global.disabled_rules.insert("CALC202".to_string());
-
-        let warnings = config.warn_implicit_dependencies();
-        // DAT706, REF309, ERR103 all depend on CALC202
-        assert_eq!(warnings.len(), 3);
-        assert!(warnings.iter().any(|w| w.contains("DATA706")));
-        assert!(warnings.iter().any(|w| w.contains("REF309")));
-        assert!(warnings.iter().any(|w| w.contains("ERR103")));
-    }
-
-    #[test]
-    fn test_warn_implicit_dependencies_none_when_all_enabled() {
-        let config = LinterConfig::default();
-        let warnings = config.warn_implicit_dependencies();
-        assert!(warnings.is_empty());
     }
 }
 
