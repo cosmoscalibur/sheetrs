@@ -1,4 +1,4 @@
-// ! Writer module for manipulating Excel/ODS files
+//! Writer module for manipulating Excel/ODS files
 
 mod ods_writer;
 mod xlsx_writer;
@@ -8,13 +8,16 @@ pub use xlsx_writer::modify_workbook_xlsx;
 
 use anyhow::{Result, bail};
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::File;
+use std::io::{BufRead, Write};
 use std::path::Path;
 use std::str::FromStr;
 
-use quick_xml::events::BytesStart;
+use quick_xml::events::{BytesStart, Event};
+use quick_xml::{Reader, Writer};
 
 use crate::reader::parser_utils::{attr_value, column_letters, column_letters_to_index};
 
@@ -169,13 +172,58 @@ fn parse_row(part: &str) -> Option<u32> {
 
 /// The unescaped value of the `key` attribute of an XML element.
 fn attribute(element: &BytesStart, key: &str) -> Result<Option<String>> {
-    for attr in element.attributes() {
-        let attr = attr?;
-        if attr.key.as_ref() == key {
-            return Ok(Some(attr_value(&attr)?.into_owned()));
+    Ok(element
+        .try_get_attribute(key)?
+        .map(|attr| attr_value(&attr).map(Cow::into_owned))
+        .transpose()?)
+}
+
+/// Read the events of the element `name` up to its end tag, which is
+/// consumed but not returned.
+fn read_element_body<R: BufRead>(
+    reader: &mut Reader<R>,
+    name: &str,
+) -> Result<Vec<Event<'static>>> {
+    let mut body = Vec::new();
+    let mut buf = Vec::new();
+    let mut depth = 0u32;
+    loop {
+        let event = reader.read_event_into(&mut buf)?.into_owned();
+        buf.clear();
+        match &event {
+            Event::Start(e) if e.name().as_ref() == name => depth += 1,
+            Event::End(e) if e.name().as_ref() == name => {
+                if depth == 0 {
+                    return Ok(body);
+                }
+                depth -= 1;
+            }
+            Event::Eof => bail!("unexpected end of document inside <{name}>"),
+            _ => {}
+        }
+        body.push(event);
+    }
+}
+
+/// Write an element from its start tag and content, or as an empty element
+/// when it has no content.
+fn write_element<W: Write>(
+    writer: &mut Writer<W>,
+    start: BytesStart,
+    content: Option<&[Event]>,
+) -> Result<()> {
+    match content {
+        None => writer.write_event(Event::Empty(start))?,
+        Some(content) => {
+            let end = start.to_end().into_owned();
+            writer.write_event(Event::Start(start))?;
+            for event in content {
+                writer.write_event(event.borrow())?;
+            }
+            writer.write_event(Event::End(end))?;
         }
     }
-    Ok(None)
+    Ok(())
 }
 
 /// Modify a workbook file (supports multiple operations)
@@ -187,6 +235,10 @@ pub fn modify_workbook<P: AsRef<Path>>(
     let input = input_path.as_ref();
     let output = output_path.as_ref();
 
+    // Creating the output truncates it before the input is read.
+    if output.exists() && output.canonicalize()? == input.canonicalize()? {
+        bail!("Output file is the input file: {}", output.display());
+    }
     let input_file = File::open(input)?;
     let output_file = File::create(output)?;
 

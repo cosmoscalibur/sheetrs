@@ -102,14 +102,18 @@ pub fn get_xlsx_sheet_path(
         ));
     }
 
-    // Target is usually "worksheets/sheet1.xml", relative to "xl/", but may
-    // also be an absolute part name such as "/xl/worksheets/sheet1.xml"
-    if let Some(part) = target.strip_prefix('/') {
-        Ok(part.to_string())
-    } else if target.starts_with("worksheets/") {
-        Ok(format!("xl/{target}"))
-    } else {
-        Ok(target)
+    Ok(workbook_part_name(&target))
+}
+
+/// Resolve the `Target` of a `xl/_rels/workbook.xml.rels` relationship into
+/// the name of the part in the archive.
+///
+/// Targets are relative to `xl/` (`worksheets/sheet1.xml`) or absolute part
+/// names (`/xl/worksheets/sheet1.xml`).
+pub(crate) fn workbook_part_name(target: &str) -> String {
+    match target.strip_prefix('/') {
+        Some(part) => part.to_string(),
+        None => format!("xl/{target}"),
     }
 }
 
@@ -1182,27 +1186,26 @@ fn parse_cell_contents<R: std::io::BufRead>(
         buf.clear();
     }
 
-    // Post-processing: handle potential_error
-    // Excel uses t="e" for THREE different purposes:
-    // 1. Real error cells (formula evaluated to error) - e.g., =car() -> #NAME?
-    // 2. Array formulas (returns array, not error) - e.g., =Sheet!A1:B10 or =A1:A10
-    // 3. Error constants, typed in or left by converting formulas to values
-    //
-    // The key distinction: array formulas contain range references (with ':')
-    // Real errors are formulas without ranges that failed evaluation
+    // t="e" marks error results, error constants and array error placeholders
     if let Some(err) = potential_error {
-        // HEURISTIC: Legacy array formulas (CSE) often have t="e" and #VALUE! cached value
-        // as a placeholder even if they aren't real errors. We ignore #VALUE! if it's an array.
-        let array_placeholder = err == "#VALUE!"
-            && formula
-                .as_ref()
-                .is_some_and(|f| is_array_formula || f.contains(':'));
+        let array_placeholder = formula
+            .as_ref()
+            .is_some_and(|f| is_array_error_placeholder(&err, f, is_array_formula));
         if !array_placeholder {
             value = CellValue::Error(ExcelError::from_cell_str(&err).unwrap_or(ExcelError::Value));
         }
     }
 
     Ok((value, formula, shared_si, shared_ref, is_array_formula))
+}
+
+/// Whether the cached error `err` of a formula cell stands for no value.
+///
+/// Dynamic array formulas (`cm`) cache `#VALUE!` and keep their result in a
+/// rich value (`vm`), such as a spill error. A `#VALUE!` of any formula that
+/// holds `:` is read the same way (#62).
+pub(crate) fn is_array_error_placeholder(err: &str, formula: &str, is_array: bool) -> bool {
+    err == "#VALUE!" && (is_array || formula.contains(':'))
 }
 
 pub fn extract_shared_strings(

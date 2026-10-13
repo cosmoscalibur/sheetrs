@@ -235,13 +235,21 @@ const FORMULA_SHEET: &str = r#"<sheetData>
 <row r="4"><c r="A4"><v>4</v></c><c r="C4"><f t="shared" si="0"/><v>5</v></c></row>
 </sheetData></worksheet>"#;
 
+/// Write a ZIP archive holding `files`, as `(name, content)` pairs.
+fn write_zip(path: &Path, files: &[(&str, String)]) -> anyhow::Result<()> {
+    let mut zip = ZipWriter::new(File::create(path)?);
+    for (name, content) in files {
+        zip.start_file(*name, SimpleFileOptions::default())?;
+        zip.write_all(content.as_bytes())?;
+    }
+    zip.finish()?;
+    Ok(())
+}
+
 /// Build an XLSX with one `Data` sheet holding `sheet_data`, a shared string
 /// table and a calculation chain.
 fn create_formula_xlsx(path: &Path, sheet_data: &str) -> anyhow::Result<()> {
-    let file = File::create(path)?;
-    let mut zip = ZipWriter::new(file);
-    let options = SimpleFileOptions::default();
-    let files = [
+    write_zip(path, &[
         (
             "[Content_Types].xml",
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -273,13 +281,7 @@ fn create_formula_xlsx(path: &Path, sheet_data: &str) -> anyhow::Result<()> {
 <calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="B2" i="1"/></calcChain>"#.to_string(),
         ),
         ("xl/worksheets/sheet1.xml", format!("{SHEET_HEADER}{sheet_data}")),
-    ];
-    for (name, content) in files {
-        zip.start_file(name, options)?;
-        zip.write_all(content.as_bytes())?;
-    }
-    zip.finish()?;
-    Ok(())
+    ])
 }
 
 fn read_part(path: &Path, part: &str) -> anyhow::Result<String> {
@@ -291,9 +293,19 @@ fn read_part(path: &Path, part: &str) -> anyhow::Result<String> {
 
 /// Convert the `Data` sheet of a fresh formula workbook within `scopes`.
 fn convert_formula_xlsx(dir: &Path, scopes: &[&str]) -> anyhow::Result<std::path::PathBuf> {
+    convert_sheet_xlsx(dir, FORMULA_SHEET, scopes)
+}
+
+/// Convert, within `scopes`, the `Data` sheet of a workbook holding
+/// `sheet_data`.
+fn convert_sheet_xlsx(
+    dir: &Path,
+    sheet_data: &str,
+    scopes: &[&str],
+) -> anyhow::Result<std::path::PathBuf> {
     let input_path = dir.join("formulas.xlsx");
     let output_path = dir.join("values.xlsx");
-    create_formula_xlsx(&input_path, FORMULA_SHEET)?;
+    create_formula_xlsx(&input_path, sheet_data)?;
     let mods = WorkbookModifications {
         convert_to_values: scopes.iter().map(|s| s.parse()).collect::<Result<_, _>>()?,
         ..Default::default()
@@ -433,6 +445,159 @@ fn test_convert_removed_sheet_is_skipped() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_convert_data_table_only_when_covered() -> anyhow::Result<()> {
+    let sheet_data = r#"<sheetData>
+<row r="1"><c r="A1"><v>1</v></c></row>
+<row r="2"><c r="B2"><f t="dataTable" ref="B2:B3" dt2D="0" dtr="0" r1="A1"/><v>10</v></c></row>
+<row r="3"><c r="B3"><v>20</v></c></row>
+</sheetData></worksheet>"#;
+    let dir = tempfile::tempdir()?;
+
+    let output_path = convert_sheet_xlsx(dir.path(), sheet_data, &["Data!2"])?;
+    let sheet = read_part(&output_path, "xl/worksheets/sheet1.xml")?;
+    assert!(sheet.contains(r#"<f t="dataTable""#), "{sheet}");
+
+    let output_path = convert_sheet_xlsx(dir.path(), sheet_data, &["Data!B"])?;
+    let sheet = read_part(&output_path, "xl/worksheets/sheet1.xml")?;
+    assert!(sheet.contains(r#"<c r="B2"><v>10</v></c>"#), "{sheet}");
+    Ok(())
+}
+
+/// A dynamic array formula whose `#VALUE!` stands for a rich value, which the
+/// reader reads as no value, keeps its formula.
+#[test]
+fn test_convert_keeps_array_error_placeholder() -> anyhow::Result<()> {
+    let sheet_data = r#"<sheetData>
+<row r="1"><c r="A1"><v>1</v></c><c r="B1" t="e" cm="1" vm="1"><f t="array" ref="B1">A1:A2</f><v>#VALUE!</v></c><c r="C1" t="e"><f>A1/0</f><v>#DIV/0!</v></c></row>
+</sheetData></worksheet>"#;
+    let dir = tempfile::tempdir()?;
+    let input_path = dir.path().join("formulas.xlsx");
+    let output_path = convert_sheet_xlsx(dir.path(), sheet_data, &["Data"])?;
+
+    let original = read_workbook(&input_path)?;
+    let converted = read_workbook(&output_path)?;
+    for cell in [(0, 1), (0, 2)] {
+        assert_eq!(
+            converted.sheets[0].cells[&cell].value, original.sheets[0].cells[&cell].value,
+            "{cell:?}"
+        );
+    }
+    assert_eq!(formula_at(&converted, (0, 1)).as_deref(), Some("A1:A2"));
+    assert_eq!(formula_at(&converted, (0, 2)), None);
+    Ok(())
+}
+
+/// A workbook whose sheet order, `sheetId` and part names all differ, as in
+/// files saved by Excel after reordering sheets, with sheet-local names.
+fn create_reordered_xlsx(path: &Path) -> anyhow::Result<()> {
+    let sheet = |value: u32| {
+        format!(
+            r#"{SHEET_HEADER}<sheetData><row r="1"><c r="A1"><v>{value}</v></c></row></sheetData></worksheet>"#
+        )
+    };
+    write_zip(path, &[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#.to_string(),
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#.to_string(),
+        ),
+        (
+            "xl/workbook.xml",
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView firstSheet="1" activeTab="2"/></bookViews><sheets><sheet name="First" sheetId="3" r:id="rId7"/><sheet name="Second" sheetId="1" r:id="rId5"/><sheet name="Third" sheetId="2" r:id="rId6"/></sheets><definedNames><definedName name="Local" localSheetId="0">First!$A$1</definedName><definedName name="Local" localSheetId="2">Third!$A$1</definedName><definedName name="Global">Third!$A$1</definedName></definedNames></workbook>"#.to_string(),
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/><Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/sheet1.xml"/><Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#.to_string(),
+        ),
+        ("xl/worksheets/sheet1.xml", sheet(3)),
+        ("xl/worksheets/sheet2.xml", sheet(1)),
+        ("xl/worksheets/sheet3.xml", sheet(2)),
+    ])
+}
+
+#[test]
+fn test_remove_sheet_resolves_its_part_by_relationship() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input_path = dir.path().join("reordered.xlsx");
+    let output_path = dir.path().join("removed.xlsx");
+    create_reordered_xlsx(&input_path)?;
+
+    let mods = WorkbookModifications {
+        remove_sheets: Some(HashSet::from(["First".to_string()])),
+        ..Default::default()
+    };
+    modify_workbook(&input_path, &output_path, &mods)?;
+
+    let mut zip = zip::ZipArchive::new(File::open(&output_path)?)?;
+    assert!(zip.by_name("xl/worksheets/sheet2.xml").is_err());
+    let rels = read_part(&output_path, "xl/_rels/workbook.xml.rels")?;
+    assert!(!rels.contains("rId7"), "{rels}");
+    let content_types = read_part(&output_path, "[Content_Types].xml")?;
+    assert!(!content_types.contains("sheet2.xml"), "{content_types}");
+
+    let workbook = read_workbook(&output_path)?;
+    let values: Vec<_> = workbook
+        .sheets
+        .iter()
+        .map(|sheet| (sheet.name.as_str(), sheet.cells[&(0, 0)].value.clone()))
+        .collect();
+    assert_eq!(
+        values,
+        [
+            ("Second", CellValue::Number(2.0)),
+            ("Third", CellValue::Number(3.0))
+        ]
+    );
+
+    // Sheet indices move past the removed sheet; its local name goes with it.
+    let workbook_xml = read_part(&output_path, "xl/workbook.xml")?;
+    assert!(
+        workbook_xml.contains(r#"<workbookView firstSheet="0" activeTab="1"/>"#),
+        "{workbook_xml}"
+    );
+    assert!(
+        workbook_xml.contains(
+            r#"<definedName name="Local" localSheetId="1">Third!$A$1</definedName><definedName name="Global">"#
+        ),
+        "{workbook_xml}"
+    );
+    assert!(!workbook_xml.contains("First"), "{workbook_xml}");
+    Ok(())
+}
+
+#[test]
+fn test_remove_every_sheet_fails() -> anyhow::Result<()> {
+    for asset in ["minimal_test.xlsx", "minimal_test.ods"] {
+        let input_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests")
+            .join(asset);
+        let dir = tempfile::tempdir()?;
+        let sheets = read_workbook(&input_path)?
+            .sheets
+            .iter()
+            .map(|sheet| sheet.name.clone())
+            .collect();
+        let mods = WorkbookModifications {
+            remove_sheets: Some(sheets),
+            ..Default::default()
+        };
+        let err = modify_workbook(&input_path, &dir.path().join(asset), &mods).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("every sheet"),
+            "{asset}: {err:#}"
+        );
+    }
+    Ok(())
+}
+
 /// Convert `scopes` of a shared test asset and check, cell by cell, that
 /// every value is kept, formulas inside the scopes are gone and formulas
 /// outside them are untouched. Returns how many formulas were converted.
@@ -528,6 +693,61 @@ fn test_convert_ods_keeps_mimetype_first_and_stored() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Remove sheets and convert formulas of another sheet, in one plan, on a
+/// shared test asset: the kept sheets keep their order, values, names and
+/// out-of-scope formulas. Returns the names of the kept sheets.
+fn check_asset_plan(asset: &str) -> anyhow::Result<Vec<String>> {
+    let input_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests")
+        .join(asset);
+    let dir = tempfile::tempdir()?;
+    let output_path = dir.path().join(asset);
+    let removed = HashSet::from(["Summary".to_string(), "empty".to_string()]);
+    let scope: ValueScope = "Indexing tests!J:K".parse()?;
+    let mods = WorkbookModifications {
+        remove_sheets: Some(removed.clone()),
+        convert_to_values: vec![scope.clone()],
+        ..Default::default()
+    };
+    modify_workbook(&input_path, &output_path, &mods)?;
+    let original = read_workbook(&input_path)?;
+    let modified = read_workbook(&output_path)?;
+
+    let kept: Vec<_> = original
+        .sheets
+        .iter()
+        .filter(|sheet| !removed.contains(&sheet.name))
+        .collect();
+    assert_eq!(kept.len(), modified.sheets.len(), "{asset}");
+    for (before, after) in kept.iter().zip(&modified.sheets) {
+        assert_eq!(before.name, after.name, "{asset}");
+        for (&(row, col), cell) in &before.cells {
+            let at = format!("{asset} {}!{row}:{col}", before.name);
+            let new_cell = &after.cells[&(row, col)];
+            assert_eq!(new_cell.value, cell.value, "{at}");
+            if !(scope.sheet == before.name && scope.contains(row, col)) {
+                assert_eq!(new_cell.formula, cell.formula, "{at}");
+            }
+        }
+    }
+    assert_eq!(modified.defined_names, original.defined_names, "{asset}");
+    Ok(modified
+        .sheets
+        .iter()
+        .map(|sheet| sheet.name.clone())
+        .collect())
+}
+
+/// Removing sheets and converting formulas in one plan keeps the same sheets
+/// in XLSX and ODS.
+#[test]
+fn test_minimal_assets_plan_parity() -> anyhow::Result<()> {
+    let xlsx = check_asset_plan("minimal_test.xlsx")?;
+    let ods = check_asset_plan("minimal_test.ods")?;
+    assert_eq!(xlsx, ods);
+    Ok(())
+}
+
 #[test]
 fn test_remove_sheets_and_ranges_ods() -> anyhow::Result<()> {
     let input_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/minimal_test.ods");
@@ -556,5 +776,26 @@ fn test_remove_sheets_and_ranges_ods() -> anyhow::Result<()> {
         modified.defined_names.len(),
         original.defined_names.len() - 1
     );
+    Ok(())
+}
+
+#[test]
+fn test_output_on_input_fails_and_keeps_input() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("book.xlsx");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/minimal_test.xlsx"),
+        &path,
+    )?;
+    let original = std::fs::read(&path)?;
+    let mods = WorkbookModifications {
+        convert_to_values: vec!["Summary".parse()?],
+        ..Default::default()
+    };
+
+    let same_file = dir.path().join(".").join("book.xlsx");
+    let err = modify_workbook(&path, &same_file, &mods).unwrap_err();
+    assert!(err.to_string().contains("is the input file"), "{err}");
+    assert_eq!(std::fs::read(&path)?, original);
     Ok(())
 }

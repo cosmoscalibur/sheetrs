@@ -1,12 +1,14 @@
-// ! ODS writer functionality for removing sheets and named ranges, and for
-// ! converting formulas to values
+//! ODS writer functionality for removing sheets and named ranges, and for
+//! converting formulas to values
 
-use super::{ValueScope, ValueTarget, WorkbookModifications, attribute};
+use super::{
+    ValueScope, ValueTarget, WorkbookModifications, attribute, read_element_body, write_element,
+};
 use anyhow::{Context, Result, bail};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, Writer};
 use std::collections::HashSet;
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, Write};
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 /// Part holding the sheets and named ranges of an ODS document.
@@ -35,12 +37,13 @@ pub fn modify_workbook_ods<R: Read + Seek, W: Write + Seek>(
             zip_writer.raw_copy_file(archive.by_index_raw(i)?)?;
             continue;
         }
-        let mut content = String::new();
-        archive.by_index(i)?.read_to_string(&mut content)?;
-        let modified_content = modify_content_xml(&content, modifications)
-            .with_context(|| format!("Failed to modify {CONTENT_PART}"))?;
         zip_writer.start_file(CONTENT_PART, SimpleFileOptions::default())?;
-        zip_writer.write_all(modified_content.as_bytes())?;
+        modify_content_xml(
+            BufReader::new(archive.by_index(i)?),
+            &mut zip_writer,
+            modifications,
+        )
+        .with_context(|| format!("Failed to modify {CONTENT_PART}"))?;
     }
 
     zip_writer.finish()?;
@@ -68,7 +71,11 @@ fn repeat_count(element: &BytesStart, key: &str) -> Result<u32> {
 
 /// Apply the modifications to `content.xml`: drop removed sheets and named
 /// ranges, and convert formulas to values in the sheets of `convert_to_values`.
-fn modify_content_xml(xml: &str, modifications: &WorkbookModifications) -> Result<String> {
+fn modify_content_xml<R: BufRead, W: Write>(
+    input: R,
+    output: W,
+    modifications: &WorkbookModifications,
+) -> Result<()> {
     let removes_sheet = |name: &str| {
         modifications
             .remove_sheets
@@ -82,23 +89,30 @@ fn modify_content_xml(xml: &str, modifications: &WorkbookModifications) -> Resul
             .is_some_and(|ranges| ranges.contains(name))
     };
 
-    let mut reader = Reader::from_str(xml);
-    let mut writer = Writer::new(Cursor::new(Vec::with_capacity(xml.len())));
-    let mut sheets = HashSet::new();
+    let mut reader = Reader::from_reader(input);
+    let mut writer = Writer::new(BufWriter::new(output));
+    let mut kept_sheets = HashSet::new();
+    let mut removed_sheets = 0usize;
     // Nesting of `table:table`: cells may hold tables of their own.
     let mut table_depth = 0u32;
     let mut scopes: Vec<&ValueScope> = Vec::new();
+    let mut sheet = String::new();
     let mut row = 0u32;
+    let mut buf = Vec::new();
+    let mut skip_buf = Vec::new();
 
     loop {
-        match reader.read_event()? {
+        buf.clear();
+        match reader.read_event_into(&mut buf)? {
             Event::Start(e) if e.name().as_ref() == "table:table" => {
                 table_depth += 1;
                 if table_depth == 1 {
                     let name = attribute(&e, "table:name")?.unwrap_or_default();
                     if removes_sheet(&name) {
-                        read_element_body(&mut reader, "table:table")?;
+                        let end = e.to_end().into_owned();
+                        reader.read_to_end_into(end.name(), &mut skip_buf)?;
                         table_depth -= 1;
+                        removed_sheets += 1;
                         continue;
                     }
                     scopes = modifications
@@ -106,7 +120,8 @@ fn modify_content_xml(xml: &str, modifications: &WorkbookModifications) -> Resul
                         .iter()
                         .filter(|scope| scope.sheet == name)
                         .collect();
-                    sheets.insert(name);
+                    kept_sheets.insert(name.clone());
+                    sheet = name;
                     row = 0;
                 }
                 writer.write_event(Event::Start(e))?;
@@ -119,9 +134,10 @@ fn modify_content_xml(xml: &str, modifications: &WorkbookModifications) -> Resul
                 if table_depth == 0 {
                     let name = attribute(&e, "table:name")?.unwrap_or_default();
                     if removes_sheet(&name) {
+                        removed_sheets += 1;
                         continue;
                     }
-                    sheets.insert(name);
+                    kept_sheets.insert(name);
                 }
                 writer.write_event(Event::Empty(e))?;
             }
@@ -141,7 +157,8 @@ fn modify_content_xml(xml: &str, modifications: &WorkbookModifications) -> Resul
             }
             Event::Start(e) if is_named_range(e.name().as_ref()) => {
                 if removes_range(&attribute(&e, "table:name")?.unwrap_or_default()) {
-                    read_element_body(&mut reader, e.name().as_ref())?;
+                    let end = e.to_end().into_owned();
+                    reader.read_to_end_into(end.name(), &mut skip_buf)?;
                 } else {
                     writer.write_event(Event::Start(e))?;
                 }
@@ -152,38 +169,31 @@ fn modify_content_xml(xml: &str, modifications: &WorkbookModifications) -> Resul
                 }
             }
             Event::Eof => break,
-            event => writer.write_event(event)?,
+            event => {
+                // A table with a source is the cache of an external link,
+                // which the reader does not list as a sheet.
+                if let Event::Start(e) | Event::Empty(e) = &event
+                    && table_depth == 1
+                    && e.name().as_ref() == "table:table-source"
+                {
+                    kept_sheets.remove(&sheet);
+                }
+                writer.write_event(event)?;
+            }
         }
     }
 
+    if removed_sheets > 0 && kept_sheets.is_empty() {
+        bail!("Cannot remove every sheet of the workbook");
+    }
     for scope in &modifications.convert_to_values {
-        if !sheets.contains(&scope.sheet) && !removes_sheet(&scope.sheet) {
+        if !kept_sheets.contains(&scope.sheet) && !removes_sheet(&scope.sheet) {
             bail!("Sheet '{}' not found in {CONTENT_PART}", scope.sheet);
         }
     }
 
-    Ok(String::from_utf8(writer.into_inner().into_inner())?)
-}
-
-/// Read the events of an element up to, not including, its end tag.
-fn read_element_body<'a>(reader: &mut Reader<&'a [u8]>, name: &str) -> Result<Vec<Event<'a>>> {
-    let mut body = Vec::new();
-    let mut depth = 0u32;
-    loop {
-        let event = reader.read_event()?;
-        match &event {
-            Event::Start(e) if e.name().as_ref() == name => depth += 1,
-            Event::End(e) if e.name().as_ref() == name => {
-                if depth == 0 {
-                    return Ok(body);
-                }
-                depth -= 1;
-            }
-            Event::Eof => bail!("unexpected end of document inside <{name}>"),
-            _ => {}
-        }
-        body.push(event);
-    }
+    writer.into_inner().flush()?;
+    Ok(())
 }
 
 /// Split `first..first + count` where a band of `bands` starts or ends, so
@@ -296,10 +306,15 @@ fn write_rows<W: Write>(
     scopes: &[&ValueScope],
 ) -> Result<()> {
     let items = row_items(body);
-    let has_formula = items.iter().any(|item| match item {
-        RowItem::Cell { start, .. } => attribute(start, FORMULA).is_ok_and(|f| f.is_some()),
-        RowItem::Other(_) => false,
-    });
+    let mut has_formula = false;
+    for item in &items {
+        if let RowItem::Cell { start, .. } = item
+            && start.try_get_attribute(FORMULA)?.is_some()
+        {
+            has_formula = true;
+            break;
+        }
+    }
     if !has_formula {
         writer.write_event(Event::Start(start.borrow()))?;
         for event in body {
@@ -356,7 +371,7 @@ fn write_cells<W: Write>(
         })
     });
     if !has_formula || (value_type.is_none() && !has_paragraph) {
-        return write_cell(writer, start.clone(), content);
+        return write_element(writer, start.clone(), content);
     }
 
     let is_error = attribute(start, "calcext:value-type")?.as_deref() == Some("error");
@@ -387,26 +402,7 @@ fn write_cells<W: Write>(
         } else {
             rebuild_start(start, COLUMNS_REPEATED, count, |_| false)?
         };
-        write_cell(writer, cell, content)?;
-    }
-    Ok(())
-}
-
-fn write_cell<W: Write>(
-    writer: &mut Writer<W>,
-    start: BytesStart,
-    content: Option<&[Event]>,
-) -> Result<()> {
-    match content {
-        None => writer.write_event(Event::Empty(start))?,
-        Some(content) => {
-            let end = start.to_end().into_owned();
-            writer.write_event(Event::Start(start))?;
-            for event in content {
-                writer.write_event(event.borrow())?;
-            }
-            writer.write_event(Event::End(end))?;
-        }
+        write_element(writer, cell, content)?;
     }
     Ok(())
 }
@@ -424,7 +420,13 @@ mod tests {
             convert_to_values: scopes(specs),
             ..Default::default()
         };
-        modify_content_xml(xml, &modifications).unwrap()
+        modify_xml(xml, &modifications).unwrap()
+    }
+
+    fn modify_xml(xml: &str, modifications: &WorkbookModifications) -> Result<String> {
+        let mut output = Vec::new();
+        modify_content_xml(xml.as_bytes(), &mut output, modifications)?;
+        Ok(String::from_utf8(output)?)
     }
 
     #[test]
@@ -504,7 +506,7 @@ mod tests {
             convert_to_values: scopes(&["Missing"]),
             ..Default::default()
         };
-        let err = modify_content_xml(SHEET, &modifications).unwrap_err();
+        let err = modify_xml(SHEET, &modifications).unwrap_err();
         assert!(err.to_string().contains("Missing"), "{err}");
     }
 
@@ -518,7 +520,7 @@ mod tests {
             remove_named_ranges: Some(HashSet::from(["Drop".to_string(), "DropDb".to_string()])),
             ..Default::default()
         };
-        let modified = modify_content_xml(&xml, &modifications).unwrap();
+        let modified = modify_xml(&xml, &modifications).unwrap();
         assert!(!modified.contains("Old"), "{modified}");
         assert!(!modified.contains("Drop"), "{modified}");
         assert!(modified.contains(SHEET), "{modified}");
