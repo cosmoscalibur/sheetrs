@@ -11,7 +11,7 @@
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::config::LinterConfig;
-use crate::reader::parser_utils::column_letters_to_index;
+use crate::reader::parser_utils::{column_letters, column_letters_to_index};
 use crate::reader::{Cell, Sheet};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
@@ -349,7 +349,7 @@ impl ViolationData for InterruptionData {
             InterruptionKind::Other => "Different formula",
         };
         let axis_label = if self.is_column {
-            format!("column {}", CellReference::col_to_letter(self.axis_index))
+            format!("column {}", column_letters(self.axis_index))
         } else {
             format!("row {}", self.axis_index + 1)
         };
