@@ -2,7 +2,7 @@
 
 Claude Code entry file (hot memory) carrying **SheetRS-specific context only**.
 General methodology — planning, implementation, review, commit, PR — comes from
-the `tributi-hardness` skills and global configuration. Project constraints,
+the global skills and configuration. Project constraints,
 conventions, and the contribution process live in the docs referenced below;
 this file only points to them.
 
@@ -33,7 +33,7 @@ Load on demand:
 
 ## Agent readiness
 
-Re-run `agent-harness:agent-readiness` when agent-facing tooling is added or
+Re-run the `agent-readiness` skill when agent-facing tooling is added or
 removed (CI/workflows, a linter/formatter/type-checker, test infrastructure,
 documentation structure, build/devcontainer setup, tooling dependencies).
 Persist reports under `docs/agent-readiness/`.

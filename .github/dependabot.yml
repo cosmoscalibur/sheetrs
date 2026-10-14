@@ -22,3 +22,11 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    # Workflows pin actions to major tags, so updates are major bumps.
+    cooldown:
+      default-days: 45

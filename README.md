@@ -46,6 +46,8 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
+CI checks are defined in `.github/workflows/ci.yml`.
+
 No environment variables are required. Configuration is via `sheetlint.toml`.
 
 ## Project Structure
@@ -146,8 +148,6 @@ sheetcli master.xlsx --convert-to-values "Inputs" "Model!B:D" --output run.xlsx
   error cell rather than reporting all affected cells.
 - **Python Bindings**: PyO3 bindings for direct integration with Python data
   workflows.
-- **Windows & WASM**: Windows support is likely functional but untested. WASM
-  target for browser-based linting is planned.
 - **Performance Review**: Continuous optimization for large workbooks (>1M
   cells).
 
