@@ -213,7 +213,7 @@ restrictions are misplaced.
 | --- | --- | --- |
 | X1 CODEOWNERS | ✅ | `.github/CODEOWNERS`: `* @cosmoscalibur` |
 | X2 Security linting | ⚠️ | `just audit` (`cargo audit`), local and optional; not in CI |
-| X3 Dependency scanning | ✅ | Dependabot for `cargo` and `github-actions`, grouped, native cooldown 15–45 days |
+| X3 Dependency scanning | ✅ | Dependabot for `cargo` (grouped, cooldown 15–45 days) and `github-actions` (cooldown 45 days) |
 | X4 Secret scanning | ✅ | GitHub secret scanning and push protection enabled (repository settings) |
 | X5 Branch protection | ⚠️ | Ruleset `develop`: PR required, the four CI jobs required, no deletion or force-push. Ruleset `main`: no deletion or force-push only. No approving review required (single maintainer) |
 
@@ -371,7 +371,7 @@ Report: **Actual level after Phase 3: L? (??%)**
 | Pros | Cons |
 | --- | --- |
 | CI enforces fmt, clippy, tests, the WASM build and the no-default-features build on every PR, required to merge into `develop` | `main` does not require the CI checks |
-| Dependabot covers Cargo and GitHub Actions with grouping and cooldown | Agent skills no longer versioned in the repo |
+| Dependabot covers Cargo and GitHub Actions with cooldown | Agent skills no longer versioned in the repo |
 | `CLAUDE.md` references shared docs instead of duplicating them | API docs not published |
 | Documentation suite complete, indexed and accurate | |
 | TDD with positive and negative cases | No coverage in CI, no logging, no devcontainer |
@@ -393,5 +393,5 @@ pre-commit run --all-files
 
 - A PR shows the CI check runs (GitHub UI → PR → Checks).
 - A failing check blocks merging into `develop` (ruleset `develop`).
-- Dependabot opens a grouped `github-actions` PR on the monthly schedule.
+- Dependabot opens `github-actions` PRs on the monthly schedule.
 - Every file referenced in `CLAUDE.md` exists.

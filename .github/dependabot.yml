@@ -27,15 +27,6 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    # Workflows pin actions to major tags, so updates are major bumps.
     cooldown:
-      default-days: 30
-      semver-major-days: 45
-      semver-minor-days: 30
-      semver-patch-days: 15
-    groups:
-      actions:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+      default-days: 45
