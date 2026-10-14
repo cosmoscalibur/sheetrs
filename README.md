@@ -46,9 +46,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-CI (`.github/workflows/ci.yml`) runs these checks with `--workspace` on every
-pull request, plus `cargo check -p sheetrs-wasm --target wasm32-unknown-unknown`
-and `cargo check -p sheetrs --no-default-features`.
+CI checks are defined in `.github/workflows/ci.yml`.
 
 No environment variables are required. Configuration is via `sheetlint.toml`.
 
@@ -146,8 +144,6 @@ sheetcli input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
   error cell rather than reporting all affected cells.
 - **Python Bindings**: PyO3 bindings for direct integration with Python data
   workflows.
-- **Windows & WASM**: Windows support is likely functional but untested. WASM
-  target for browser-based linting is planned.
 - **Performance Review**: Continuous optimization for large workbooks (>1M
   cells).
 
