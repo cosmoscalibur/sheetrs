@@ -5,7 +5,7 @@
 ### Changed
 
 - REF310 compares value types cell by cell between the range's last row (or column) and the first adjacent line, an empty cell being its own type and a formula without a cached value matching any type, instead of using the range's dominant type. Every distinct range in a formula is evaluated and reported once.
-- Violations sort by scope, then rule ID. CPX504–509 and CPX507 emit their violations at sheet end, in cell order. Production benchmark, with these REF310 changes: about 0.5% fewer user-space instructions, peak RAM up to 0.6% higher.
+- Violations sort by scope, then rule ID. Production benchmark, with these REF310 changes: about 0.5% fewer user-space instructions, peak RAM up to 0.6% higher.
 
 ### Fixed
 
