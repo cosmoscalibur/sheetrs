@@ -99,7 +99,7 @@ for how this differs from region-based outlier detection.
 | **CPX506** (Many Operations) | `cell::formula` | 9 operators | `CPX504`, `!CPX504`, `!CPX505` | ≈ PerfectXL counts at least 8 functions and operators. Here only operators are counted, above 8. | More operators than `max_operations`. |
 | **CPX507** (Multiple Sheet Ref) | `cell::formula` | `=S1!A1+S2!A1+S3!A1` | - | ? | Formulas referencing at least `max_sheet_refs` distinct sheets. Independent of the cascade. |
 | **CPX508** (Many References) | `cell::formula` | 11 cell references | `CPX504`, `!CPX504`, `!CPX505`, `!CPX506` | ≈ PerfectXL triggers at 10 references; here above 10. | More cell references than `max_references`. |
-| **CPX509** (Long Formula) | `cell::formula` | 256 bytes | `CPX504`, `!CPX504`, `!CPX505`, `!CPX506` | ≈ PerfectXL triggers at 200 characters and not when Many References fires. Here above 255 UTF-8 bytes, so non-ASCII formulas trigger with fewer characters, and it can fire together with CPX508. | Formulas longer than `max_formula_length` bytes. |
+| **CPX509** (Long Formula) | `cell::formula` | 256 characters | `CPX504`, `!CPX504`, `!CPX505`, `!CPX506` | ≈ PerfectXL triggers at 200 characters and not when Many References fires. Here above 255 characters, and it can fire together with CPX508. | Formulas longer than `max_formula_length` characters. |
 
 ## 6. Vulnerable Formulas (VUL6xx)
 

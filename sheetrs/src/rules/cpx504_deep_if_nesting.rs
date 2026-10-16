@@ -149,7 +149,7 @@ impl ViolationData for ManyReferencesData {
 /// Incident data for CPX509 (long formula).
 #[derive(Debug)]
 pub struct LongFormulaData {
-    /// Detected formula length.
+    /// Detected formula length in characters.
     pub length: usize,
 }
 
@@ -336,19 +336,8 @@ impl WalkerRule for DeepIfNestingRule {
         RuleCategory::Complexity
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
-        self.cell_violations(sheet, cell, ctx)
-    }
-}
-
-impl DeepIfNestingRule {
     /// Evaluates the CPX5xx dependency chain for one formula cell.
-    fn cell_violations(
-        &self,
-        sheet: &Sheet,
-        cell: &Cell,
-        ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         let Some(formula) = cell.as_formula() else {
             return Vec::new();
         };
@@ -404,13 +393,12 @@ impl DeepIfNestingRule {
         }
 
         // CPX509 — only if CPX505 did not fire
-        if formula.len() > self.max_formula_length {
+        let length = formula.chars().count();
+        if length > self.max_formula_length {
             violations.push(Violation::with_data(
                 RuleId::Cpx509,
                 scope,
-                LongFormulaData {
-                    length: formula.len(),
-                },
+                LongFormulaData { length },
                 Severity::Warning,
             ));
         }
@@ -523,6 +511,17 @@ mod tests {
         };
         let violations = run_violations(&sheet, &mut rule);
         assert!(violations.iter().any(|v| v.rule_id == RuleId::Cpx509));
+    }
+
+    #[test]
+    fn test_cpx509_counts_characters() {
+        let within = format!("=\"{}\"", "ñ".repeat(200));
+        assert!(run_violations(&make_sheet(&within), &mut DeepIfNestingRule::default()).is_empty());
+
+        let over = format!("=\"{}\"", "ñ".repeat(254));
+        let violations = run_violations(&make_sheet(&over), &mut DeepIfNestingRule::default());
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].data::<LongFormulaData>().unwrap().length, 257);
     }
 
     #[test]

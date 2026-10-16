@@ -19,7 +19,7 @@ max_conditional_formatting = 0
 max_if_nesting = 2
 # CPX505: Maximum function nesting depth
 max_formula_nesting = 2
-# CPX509: Maximum formula length in bytes (UTF-8)
+# CPX509: Maximum formula length in characters
 max_formula_length = 255
 
 # DATA701: Sheet name substrings to avoid
