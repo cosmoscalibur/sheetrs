@@ -123,20 +123,26 @@ impl WalkerRule for MultipleSheetRefRule {
         RuleCategory::Complexity
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         let Some(formula) = cell.as_formula() else {
-            return Vec::new();
+            return;
         };
         let count = count_sheet_refs(formula);
         if count < self.max_sheet_refs {
-            return Vec::new();
+            return;
         }
-        vec![Violation::with_data(
+        out.push(Violation::with_data(
             RuleId::Cpx507,
             ViolationScope::Cell(sheet.sheet_index, CellReference::new(cell.row, cell.col)),
             MultipleSheetRefData { count },
             Severity::Warning,
-        )]
+        ));
     }
 }
 
@@ -144,6 +150,7 @@ impl WalkerRule for MultipleSheetRefRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     fn run_violations(sheet: &Sheet) -> Vec<Violation> {
@@ -151,7 +158,7 @@ mod tests {
         let mut ctx = LinterContext::default();
         sheet
             .all_cells()
-            .flat_map(|c| rule.on_cell(sheet, c, &mut ctx))
+            .flat_map(|c| collect_violations(|out| rule.on_cell(sheet, c, &mut ctx, out)))
             .collect()
     }
 

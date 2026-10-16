@@ -156,7 +156,13 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
         super::RuleCategory::Calculations
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         if let Some(formula) = cell.as_formula() {
             let ignored_values = self
                 .config
@@ -182,7 +188,7 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
                 self.extract_hardcoded_values(formula, &ignored_values, ignore_ints, ignore_pow10);
 
             if !values.is_empty() {
-                return vec![Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Calc201,
                     ViolationScope::Cell(
                         sheet.sheet_index,
@@ -195,11 +201,9 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
                         values: values.into_boxed_slice(),
                     },
                     Severity::Warning,
-                )];
+                ));
             }
         }
-
-        Vec::new()
     }
 }
 

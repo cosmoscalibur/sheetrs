@@ -62,20 +62,18 @@ impl WalkerRule for ExcessiveSheetCountsRule {
         &mut self,
         workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        let mut violations = Vec::new();
+        out: &mut Vec<Violation>,
+    ) {
         let sheet_count = workbook.sheets.len() as u32;
 
         if sheet_count > self.threshold {
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Cpx501,
                 ViolationScope::Book,
                 ExcessiveSheetCountsData { count: sheet_count },
                 Severity::Warning,
             ));
         }
-
-        violations
     }
 }
 

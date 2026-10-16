@@ -57,7 +57,8 @@ impl WalkerRule for DuplicateSheetNamesRule {
         &mut self,
         workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
+        out: &mut Vec<Violation>,
+    ) {
         let mut name_map: HashMap<String, Vec<u16>> = HashMap::new();
 
         // Group sheet indices by their normalized name
@@ -75,19 +76,16 @@ impl WalkerRule for DuplicateSheetNamesRule {
             .collect();
         duplicates.sort_unstable();
 
-        duplicates
-            .into_iter()
-            .map(|indices| {
-                Violation::with_data(
-                    RuleId::Ref302,
-                    ViolationScope::Book,
-                    DuplicateSheetNameData {
-                        sheet_indices: indices,
-                    },
-                    Severity::Warning,
-                )
-            })
-            .collect()
+        out.extend(duplicates.into_iter().map(|indices| {
+            Violation::with_data(
+                RuleId::Ref302,
+                ViolationScope::Book,
+                DuplicateSheetNameData {
+                    sheet_indices: indices,
+                },
+                Severity::Warning,
+            )
+        }));
     }
 }
 
@@ -96,6 +94,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::Sheet;
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -133,7 +132,7 @@ mod tests {
 
         let mut rule = DuplicateSheetNamesRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_workbook_start(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_start(&workbook, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ref302);
@@ -187,7 +186,7 @@ mod tests {
 
         let mut rule = DuplicateSheetNamesRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_workbook_start(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_start(&workbook, &mut ctx, out));
 
         // Should detect 2 groups of duplicates:
         // 1. "Sheet1", "sheet 1", "Sheet-1" (all normalize to "sheet1")
@@ -209,8 +208,9 @@ mod tests {
             ..Default::default()
         };
 
-        let violations =
-            DuplicateSheetNamesRule.on_workbook_start(&workbook, &mut LinterContext::default());
+        let violations = collect_violations(|out| {
+            DuplicateSheetNamesRule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         let groups: Vec<_> = violations
             .iter()
             .map(|v| {

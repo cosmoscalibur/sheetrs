@@ -70,15 +70,19 @@ impl WalkerRule for DoubleOperatorRule {
         RuleCategory::Calculations
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         let Some(formula) = cell.as_formula() else {
-            return Vec::new();
+            return;
         };
 
         // Strip string literals to avoid false positives in text constants
         let cleaned = STRING_LITERAL_RE.replace_all(formula, "");
-
-        let mut violations = Vec::new();
 
         for m in DOUBLE_OP_RE.find_iter(&cleaned) {
             let matched = m.as_str();
@@ -90,7 +94,7 @@ impl WalkerRule for DoubleOperatorRule {
                 continue;
             }
 
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Calc203,
                 ViolationScope::Cell(sheet.sheet_index, CellReference::new(cell.row, cell.col)),
                 DoubleOperatorData { matched_ops: ops },
@@ -99,8 +103,6 @@ impl WalkerRule for DoubleOperatorRule {
             // One violation per cell is sufficient
             break;
         }
-
-        violations
     }
 }
 
@@ -138,7 +140,7 @@ mod tests {
         let mut ctx = LinterContext::default();
         let mut violations = Vec::new();
         for cell in sheet.all_cells() {
-            violations.extend(rule.on_cell(sheet, cell, &mut ctx));
+            rule.on_cell(sheet, cell, &mut ctx, &mut violations);
         }
         violations
     }

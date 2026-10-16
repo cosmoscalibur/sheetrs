@@ -78,12 +78,17 @@ impl WalkerRule for DoubleCountRule {
         RuleCategory::Calculations
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         let Some(formula_upper) = ctx.formula_upper(sheet, cell) else {
-            return Vec::new();
+            return;
         };
         let formula_bytes = formula_upper.as_bytes();
-        let mut violations = Vec::new();
 
         for (i, pattern) in SEARCH_PATTERNS.iter().enumerate() {
             let pat_bytes = pattern.as_bytes();
@@ -101,7 +106,7 @@ impl WalkerRule for DoubleCountRule {
                     if let Some(overlap) =
                         find_overlapping_args(formula_upper, paren_pos, SUM_FAMILY[i])
                     {
-                        violations.push(Violation::with_data(
+                        out.push(Violation::with_data(
                             RuleId::Calc205,
                             ViolationScope::Cell(
                                 sheet.sheet_index,
@@ -110,15 +115,13 @@ impl WalkerRule for DoubleCountRule {
                             overlap,
                             Severity::Warning,
                         ));
-                        return violations; // One violation per cell
+                        return; // One violation per cell
                     }
                 }
 
                 search_from = abs_pos + pat_bytes.len();
             }
         }
-
-        violations
     }
 }
 
@@ -211,7 +214,7 @@ mod tests {
         let mut ctx = LinterContext::default();
         let mut violations = Vec::new();
         for cell in sheet.all_cells() {
-            violations.extend(rule.on_cell(sheet, cell, &mut ctx));
+            rule.on_cell(sheet, cell, &mut ctx, &mut violations);
         }
         violations
     }

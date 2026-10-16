@@ -167,7 +167,13 @@ impl WalkerRule for WebUrlsRule {
         RuleCategory::External
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if let crate::reader::workbook::CellValue::Text(text) = &cell.value {
             let urls = extract_urls(text);
             if !urls.is_empty() {
@@ -177,16 +183,13 @@ impl WalkerRule for WebUrlsRule {
                     .extend(urls.into_iter().map(|url| (cell.row, cell.col, url)));
             }
         }
-        Vec::new()
     }
 
-    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
         let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
-            return Vec::new();
+            return;
         };
         cells.sort_unstable();
-
-        let mut violations = Vec::new();
         // Group cells by URL
         let mut grouped: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
         for (row, col, url) in cells {
@@ -205,7 +208,7 @@ impl WalkerRule for WebUrlsRule {
 
             let ranges = find_contiguous_ranges(&group_cells);
             for range in ranges {
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Ext802,
                     ViolationScope::Sheet(sheet.sheet_index),
                     WebUrlData {
@@ -217,8 +220,6 @@ impl WalkerRule for WebUrlsRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -227,6 +228,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -257,10 +259,10 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
 
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ext802);
@@ -293,10 +295,10 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
 
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         // Should detect both URLs
         assert_eq!(violations.len(), 2);

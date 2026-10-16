@@ -56,6 +56,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Workbook};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use crate::rules::err102_error_cells::ErrorCellsRule;
     use crate::violation::ExcelError;
     use std::collections::HashMap;
@@ -137,7 +138,7 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
 
         // B1 depends on A1 and C1 (A1 listed first)
@@ -145,7 +146,7 @@ mod tests {
             .insert((0, 0, 1), vec![(0, 0, 0), (0, 0, 2)]);
 
         let workbook = Workbook::default();
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
 
         // ERR103 on B1, ERR102 on C1 (A1 consumed by err103), possibly ERR102 on C1 too
         let err103_violations: Vec<_> = violations

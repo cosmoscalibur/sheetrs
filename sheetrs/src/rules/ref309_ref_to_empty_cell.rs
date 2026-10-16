@@ -58,9 +58,14 @@ impl WalkerRule for RefToEmptyCellRule {
         RuleCategory::Reference
     }
 
-    fn on_workbook_end(&mut self, workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(
+        &mut self,
+        workbook: &Workbook,
+        ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         if ctx.cell_dependencies.is_empty() {
-            return Vec::new();
+            return;
         }
 
         // Build set of non-empty cell positions per sheet.
@@ -78,8 +83,6 @@ impl WalkerRule for RefToEmptyCellRule {
             }
         }
 
-        let mut violations = Vec::new();
-
         for (formula_loc, deps) in &ctx.cell_dependencies {
             // Suppress on sheets with no content at all (REF303 territory)
             if !sheets_with_content.contains(&formula_loc.0) {
@@ -88,7 +91,7 @@ impl WalkerRule for RefToEmptyCellRule {
 
             // Find first empty dependency
             if let Some(empty_dep) = deps.iter().find(|dep| !non_empty.contains(dep)) {
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Ref309,
                     ViolationScope::Cell(
                         formula_loc.0,
@@ -101,8 +104,6 @@ impl WalkerRule for RefToEmptyCellRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -111,6 +112,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet, Workbook};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     fn make_number_cell(row: u32, col: u32, n: f64) -> Cell {
@@ -166,7 +168,7 @@ mod tests {
         // B1(0,1) depends on A1(0,0) which is not in the sheet
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 1);
     }
 
@@ -183,7 +185,7 @@ mod tests {
         let mut ctx = LinterContext::default();
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 0);
     }
 
@@ -197,7 +199,7 @@ mod tests {
         let mut ctx = LinterContext::default();
         ctx.cell_dependencies.insert((0, 0, 1), vec![(1, 0, 0)]); // Sheet1!B1 → Sheet2!A1
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 1);
     }
 
@@ -212,7 +214,7 @@ mod tests {
         // Formula at A1 depends on B1 — but A1 isn't even in the sheet
         ctx.cell_dependencies.insert((0, 0, 0), vec![(0, 0, 1)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 0, "Should suppress on empty sheets");
     }
 
@@ -226,7 +228,7 @@ mod tests {
         ctx.cell_dependencies
             .insert((0, 0, 2), vec![(0, 0, 0), (0, 1, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 1, "First empty dep only");
     }
 
@@ -246,7 +248,7 @@ mod tests {
         let mut ctx = LinterContext::default();
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 0, "A cell with a formula is not empty");
     }
 }

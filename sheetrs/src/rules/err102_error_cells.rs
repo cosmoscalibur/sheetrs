@@ -52,7 +52,13 @@ impl WalkerRule for ErrorCellsRule {
         super::RuleCategory::ExcelErrors
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         let loc = (sheet.sheet_index, cell.row, cell.col);
 
         if let Some(error) = cell.value.as_error() {
@@ -68,13 +74,14 @@ impl WalkerRule for ErrorCellsRule {
                 }
             }
         }
-
-        Vec::new()
     }
 
-    fn on_workbook_end(&mut self, _workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut violations = Vec::new();
-
+    fn on_workbook_end(
+        &mut self,
+        _workbook: &Workbook,
+        ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         // Collect error cells NOT on a circular reference path (CALC202 dominance).
         let non_circular_errors: Vec<_> = ctx
             .error_cells
@@ -103,7 +110,7 @@ impl WalkerRule for ErrorCellsRule {
 
             if let Some(error_source) = first_error_dep {
                 let (sheet_index, row, col) = formula_loc;
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Err103,
                     ViolationScope::Cell(*sheet_index, CellReference::new(*row, *col)),
                     RefToErrorData {
@@ -121,15 +128,13 @@ impl WalkerRule for ErrorCellsRule {
                 continue;
             }
             let (sheet_index, row, col) = loc;
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Err102,
                 ViolationScope::Cell(*sheet_index, CellReference::new(*row, *col)),
                 ErrorCellData { error: *error },
                 Severity::Error,
             ));
         }
-
-        violations
     }
 }
 
@@ -138,6 +143,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     fn make_cell(row: u32, col: u32, value: CellValue, formula: Option<&str>) -> Cell {
@@ -180,12 +186,12 @@ mod tests {
 
         // Walk cells
         for cell in sheet.cells.values() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
 
         // Workbook end — no circular cells, no deps
         let workbook = Workbook::default();
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Err102);
@@ -204,11 +210,11 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
 
         let workbook = Workbook::default();
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Err102);
@@ -231,14 +237,14 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
 
         // Simulate dependency: B1 -> A1
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 
         let workbook = Workbook::default();
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
 
         // Should have ERR103 on B1 (not ERR102 on A1, since A1 is consumed)
         assert_eq!(violations.len(), 1);
@@ -263,14 +269,14 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.cells.values() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
 
         // Mark as circular (populated by CALC202)
         ctx.circular_cells.insert((0, 0, 0));
 
         let workbook = Workbook::default();
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
 
         assert!(
             violations.is_empty(),

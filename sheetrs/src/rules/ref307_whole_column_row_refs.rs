@@ -95,7 +95,13 @@ impl WalkerRule for WholeColumnRowRefsRule {
         RuleCategory::Reference
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
             let has_column = COLUMN_PATTERN.is_match(formula_upper);
             let has_row = !has_column && ROW_PATTERN.is_match(formula_upper);
@@ -107,16 +113,13 @@ impl WalkerRule for WholeColumnRowRefsRule {
                     .push((cell.row, cell.col, has_column));
             }
         }
-        Vec::new()
     }
 
-    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
         let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
-            return Vec::new();
+            return;
         };
         cells.sort_unstable();
-
-        let mut violations = Vec::new();
 
         // Split by type
         let column_cells: Vec<(u32, u32)> =
@@ -131,7 +134,7 @@ impl WalkerRule for WholeColumnRowRefsRule {
             let ranges = find_contiguous_ranges(group);
             for range in ranges {
                 let bbox = bounding_box(&range);
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Ref307,
                     ViolationScope::Sheet(sheet.sheet_index),
                     WholeRefData {
@@ -142,8 +145,6 @@ impl WalkerRule for WholeColumnRowRefsRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -151,6 +152,7 @@ impl WalkerRule for WholeColumnRowRefsRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     #[test]
@@ -178,9 +180,9 @@ mod tests {
         let mut rule = WholeColumnRowRefsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ref307);
@@ -211,9 +213,9 @@ mod tests {
         let mut rule = WholeColumnRowRefsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ref307);
@@ -244,9 +246,9 @@ mod tests {
         let mut rule = WholeColumnRowRefsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }

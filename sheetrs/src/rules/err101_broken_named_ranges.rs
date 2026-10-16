@@ -50,14 +50,14 @@ impl WalkerRule for BrokenNamedRangesRule {
         &mut self,
         workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        let mut violations = Vec::new();
+        out: &mut Vec<Violation>,
+    ) {
         let mut defined_names: Vec<_> = workbook.defined_names.iter().collect();
         defined_names.sort_unstable();
 
         for (name, reference) in defined_names {
             if is_broken_reference(reference) {
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Err101,
                     ViolationScope::Book,
                     BrokenNamedRangeData {
@@ -68,8 +68,6 @@ impl WalkerRule for BrokenNamedRangesRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -84,6 +82,7 @@ fn is_broken_reference(reference: &str) -> bool {
 mod tests {
     use super::*;
     use crate::reader::workbook::Sheet;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -111,7 +110,7 @@ mod tests {
 
         let mut rule = BrokenNamedRangesRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_workbook_start(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_start(&workbook, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Err101);
@@ -128,8 +127,9 @@ mod tests {
             ..Default::default()
         };
 
-        let violations =
-            BrokenNamedRangesRule.on_workbook_start(&workbook, &mut LinterContext::default());
+        let violations = collect_violations(|out| {
+            BrokenNamedRangesRule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         let names: Vec<_> = violations
             .iter()
             .map(|v| v.data::<BrokenNamedRangeData>().unwrap().name.clone())

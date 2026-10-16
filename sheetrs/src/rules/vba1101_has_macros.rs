@@ -40,25 +40,23 @@ impl WalkerRule for HasMacrosRule {
         &mut self,
         workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        let mut violations = Vec::new();
-
+        out: &mut Vec<Violation>,
+    ) {
         if workbook.has_macros {
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Vba1101,
                 ViolationScope::Book,
                 HasMacrosData,
                 Severity::Warning,
             ));
         }
-
-        violations
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::collect_violations;
 
     use std::path::PathBuf;
 
@@ -72,7 +70,7 @@ mod tests {
 
         let mut rule = HasMacrosRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_workbook_start(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_start(&workbook, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Vba1101);
@@ -88,7 +86,7 @@ mod tests {
 
         let mut rule = HasMacrosRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_workbook_start(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_start(&workbook, &mut ctx, out));
 
         assert_eq!(violations.len(), 0);
     }

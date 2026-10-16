@@ -126,24 +126,29 @@ impl WalkerRule for BlankRowsColumnsRule {
         RuleCategory::Reference
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if !cell.value.is_empty() {
             self.sheet_data
                 .entry(sheet.sheet_index)
                 .or_default()
                 .record(cell);
         }
-        Vec::new()
     }
 
-    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
         let Some(data) = self.sheet_data.remove(&sheet.sheet_index) else {
-            return Vec::new(); // No non-empty cells → skip
+            return; // No non-empty cells → skip
         };
 
         let (max_row, max_col) = match sheet.used_range {
             Some((ur, uc)) => (ur.saturating_sub(1), uc.saturating_sub(1)),
-            None => return Vec::new(),
+            None => return,
         };
 
         let min_row = data.min_row;
@@ -165,12 +170,10 @@ impl WalkerRule for BlankRowsColumnsRule {
             }
         }
 
-        let mut violations = Vec::new();
-
         // Blank rows BEFORE data starts (from row 0)
         if min_row > MAX_BLANK_ROW {
             let blank_before: Vec<u32> = (0..min_row).collect();
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Ref305,
                 ViolationScope::Sheet(sheet.sheet_index),
                 BlankRowsData {
@@ -183,7 +186,7 @@ impl WalkerRule for BlankRowsColumnsRule {
         // Blank columns BEFORE data starts (from col 0)
         if min_col > MAX_BLANK_COLUMN {
             let blank_before: Vec<u32> = (0..min_col).collect();
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Ref305,
                 ViolationScope::Sheet(sheet.sheet_index),
                 BlankColumnsData {
@@ -207,7 +210,7 @@ impl WalkerRule for BlankRowsColumnsRule {
                 .collect();
 
             if !filtered.is_empty() {
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Ref305,
                     ViolationScope::Sheet(sheet.sheet_index),
                     BlankRowsData {
@@ -232,7 +235,7 @@ impl WalkerRule for BlankRowsColumnsRule {
                 .collect();
 
             if !filtered.is_empty() {
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Ref305,
                     ViolationScope::Sheet(sheet.sheet_index),
                     BlankColumnsData {
@@ -242,8 +245,6 @@ impl WalkerRule for BlankRowsColumnsRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -325,6 +326,7 @@ where
 mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -390,9 +392,9 @@ mod tests {
         let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         // With threshold of 2, should catch 3 blank rows
         assert_eq!(violations.len(), 1);
@@ -464,9 +466,9 @@ mod tests {
         let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         // With threshold of 2, should catch 3 blank columns
         assert_eq!(violations.len(), 1);
@@ -535,9 +537,9 @@ mod tests {
         let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }
@@ -602,9 +604,9 @@ mod tests {
         let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }
@@ -669,9 +671,9 @@ mod tests {
         let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         // Threshold is >, not >=, so exactly 2 should NOT trigger
         assert!(violations.is_empty());
@@ -737,9 +739,9 @@ mod tests {
         let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }
@@ -804,9 +806,9 @@ mod tests {
         let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }
@@ -852,9 +854,9 @@ mod tests {
         let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         // Rows 1-3 are covered by merged cell, should NOT be blank
         assert!(violations.is_empty());
@@ -872,7 +874,7 @@ mod tests {
 
         let mut rule = BlankRowsColumnsRule::new();
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }

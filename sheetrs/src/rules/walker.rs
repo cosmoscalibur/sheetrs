@@ -35,32 +35,32 @@ impl<'a> WorkbookWalker<'a> {
 
         // 1. Workbook Start
         for rule in &mut self.rules {
-            violations.extend(rule.on_workbook_start(self.workbook, &mut self.context));
+            rule.on_workbook_start(self.workbook, &mut self.context, &mut violations);
         }
 
         // 2. Iterate Sheets
         for sheet in &self.workbook.sheets {
             // Sheet Start
             for rule in &mut self.rules {
-                violations.extend(rule.on_sheet_start(sheet, &mut self.context));
+                rule.on_sheet_start(sheet, &mut self.context, &mut violations);
             }
 
             // Iterate Cells
             for cell in sheet.cells.values() {
                 for rule in &mut self.rules {
-                    violations.extend(rule.on_cell(sheet, cell, &mut self.context));
+                    rule.on_cell(sheet, cell, &mut self.context, &mut violations);
                 }
             }
 
             // Sheet End
             for rule in &mut self.rules {
-                violations.extend(rule.on_sheet_end(sheet, &mut self.context));
+                rule.on_sheet_end(sheet, &mut self.context, &mut violations);
             }
         }
 
         // 3. Workbook End
         for rule in &mut self.rules {
-            violations.extend(rule.on_workbook_end(self.workbook, &mut self.context));
+            rule.on_workbook_end(self.workbook, &mut self.context, &mut violations);
         }
 
         violations

@@ -384,7 +384,13 @@ impl WalkerRule for InterruptionRule {
         RuleCategory::Interruptions
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         let cell_type = if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
             CellType::Formula(Self::normalize_formula(formula_upper, cell.row, cell.col))
         } else if cell.value.is_empty() {
@@ -397,16 +403,12 @@ impl WalkerRule for InterruptionRule {
             .entry(sheet.sheet_index)
             .or_default()
             .push((cell.row, cell.col, cell_type));
-
-        Vec::new()
     }
 
-    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
         let Some(cells) = self.sheet_data.remove(&sheet.sheet_index) else {
-            return Vec::new();
+            return;
         };
-
-        let mut violations = Vec::new();
 
         // Group by column → scan vertically
         let mut by_col: HashMap<u32, Vec<(u32, CellType)>> = HashMap::new();
@@ -420,7 +422,7 @@ impl WalkerRule for InterruptionRule {
                 if !self.kinds.contains(&int.kind) {
                     continue;
                 }
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     int.kind.rule_id(),
                     ViolationScope::Cell(sheet.sheet_index, CellReference::new(int.row, int.col)),
                     InterruptionData {
@@ -447,7 +449,7 @@ impl WalkerRule for InterruptionRule {
                 if !self.kinds.contains(&int.kind) {
                     continue;
                 }
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     int.kind.rule_id(),
                     ViolationScope::Cell(sheet.sheet_index, CellReference::new(int.row, int.col)),
                     InterruptionData {
@@ -461,8 +463,6 @@ impl WalkerRule for InterruptionRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -470,6 +470,7 @@ impl WalkerRule for InterruptionRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     fn make_formula_cell(row: u32, col: u32, formula: &str) -> Cell {
@@ -512,9 +513,9 @@ mod tests {
         let mut rule = InterruptionRule::new(vec![kind], &config);
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(sheet, cell, &mut ctx);
+            rule.on_cell(sheet, cell, &mut ctx, &mut Vec::new());
         }
-        rule.on_sheet_end(sheet, &mut ctx)
+        collect_violations(|out| rule.on_sheet_end(sheet, &mut ctx, out))
     }
 
     // --- INT401: Interrupted by Data ---
@@ -701,13 +702,13 @@ mod tests {
         let mut rule = InterruptionRule::new(kinds, &LinterConfig::default());
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(sheet, cell, &mut ctx);
+            rule.on_cell(sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let mut ids: Vec<RuleId> = rule
-            .on_sheet_end(sheet, &mut ctx)
-            .iter()
-            .map(|v| v.rule_id)
-            .collect();
+        let mut ids: Vec<RuleId> =
+            collect_violations(|out| rule.on_sheet_end(sheet, &mut ctx, out))
+                .iter()
+                .map(|v| v.rule_id)
+                .collect();
         ids.sort();
         ids
     }
@@ -773,9 +774,9 @@ mod tests {
         ]);
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         // With min=5, each side has 5 formulas → interruption is valid
         assert_eq!(violations.len(), 1);
@@ -802,9 +803,9 @@ mod tests {
         ]);
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         // With min=5, neither side has ≥5 → no violation
         assert_eq!(violations.len(), 0);

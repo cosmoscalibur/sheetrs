@@ -71,7 +71,8 @@ impl WalkerRule for UnusedNamedRangesRule {
         &mut self,
         workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
+        _out: &mut Vec<Violation>,
+    ) {
         self.names = workbook
             .defined_names
             .keys()
@@ -84,10 +85,15 @@ impl WalkerRule for UnusedNamedRangesRule {
         self.matcher = Some(
             AhoCorasick::new(&self.names).expect("defined names fit an Aho-Corasick automaton"),
         );
-        Vec::new()
     }
 
-    fn on_cell(&mut self, _sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        _sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if self.unused_count > 0
             && let Some(formula) = cell.as_formula()
         {
@@ -105,27 +111,28 @@ impl WalkerRule for UnusedNamedRangesRule {
                 }
             }
         }
-        Vec::new()
     }
 
     fn on_workbook_end(
         &mut self,
         _workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        self.names
-            .iter()
-            .zip(&self.used)
-            .filter(|(_, used)| !**used)
-            .map(|(name, _)| {
-                Violation::with_data(
-                    RuleId::Ref301,
-                    ViolationScope::Book,
-                    UnusedNamedRangeData { name: name.clone() },
-                    Severity::Warning,
-                )
-            })
-            .collect()
+        out: &mut Vec<Violation>,
+    ) {
+        out.extend(
+            self.names
+                .iter()
+                .zip(&self.used)
+                .filter(|(_, used)| !**used)
+                .map(|(name, _)| {
+                    Violation::with_data(
+                        RuleId::Ref301,
+                        ViolationScope::Book,
+                        UnusedNamedRangeData { name: name.clone() },
+                        Severity::Warning,
+                    )
+                }),
+        );
     }
 }
 
@@ -135,6 +142,7 @@ mod tests {
     use crate::reader::read_workbook_from_reader;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use crate::rules::walker::WorkbookWalker;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -176,12 +184,12 @@ mod tests {
         let mut rule = UnusedNamedRangesRule::new();
         let mut ctx = LinterContext::default();
 
-        rule.on_workbook_start(&workbook, &mut ctx);
+        rule.on_workbook_start(&workbook, &mut ctx, &mut Vec::new());
         for cell in workbook.sheets[0].cells.values() {
-            rule.on_cell(&workbook.sheets[0], cell, &mut ctx);
+            rule.on_cell(&workbook.sheets[0], cell, &mut ctx, &mut Vec::new());
         }
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ref301);
@@ -200,8 +208,8 @@ mod tests {
 
         let mut rule = UnusedNamedRangesRule::new();
         let mut ctx = LinterContext::default();
-        rule.on_workbook_start(&workbook, &mut ctx);
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        rule.on_workbook_start(&workbook, &mut ctx, &mut Vec::new());
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         let names: Vec<_> = violations
             .iter()
             .map(|v| v.data::<UnusedNamedRangeData>().unwrap().name.clone())

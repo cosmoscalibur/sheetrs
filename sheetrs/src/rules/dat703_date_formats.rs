@@ -77,7 +77,13 @@ impl WalkerRule for InconsistentDateFormatRule {
         RuleCategory::Data
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         let is_candidate = matches!(cell.value, CellValue::Number(_) | CellValue::Text(_));
 
         if is_candidate && let Some(fmt) = &cell.num_fmt {
@@ -90,7 +96,7 @@ impl WalkerRule for InconsistentDateFormatRule {
             if Self::is_date_format(&normalized_fmt)
                 && normalized_fmt != required_format.replace('\\', "")
             {
-                return vec![Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Data703,
                     ViolationScope::Cell(
                         sheet.sheet_index,
@@ -103,11 +109,9 @@ impl WalkerRule for InconsistentDateFormatRule {
                         num_fmt: Arc::clone(fmt),
                     },
                     Severity::Warning,
-                )];
+                ));
             }
         }
-
-        Vec::new()
     }
 }
 
@@ -170,7 +174,7 @@ mod tests {
 
         let mut violations = Vec::new();
         for cell in sheet.all_cells() {
-            violations.extend(rule.on_cell(&sheet, cell, &mut ctx));
+            rule.on_cell(&sheet, cell, &mut ctx, &mut violations);
         }
 
         assert_eq!(violations.len(), 1);

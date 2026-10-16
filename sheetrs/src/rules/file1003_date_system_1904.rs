@@ -38,22 +38,6 @@ impl DateSystem1904Rule {
     pub fn new() -> Self {
         Self
     }
-
-    /// Check for 1904 date system and return violation if found.
-    fn check_date_system(&self, workbook: &Workbook) -> Vec<Violation> {
-        let mut violations = Vec::new();
-
-        if workbook.date1904 {
-            violations.push(Violation::with_data(
-                RuleId::File1003,
-                ViolationScope::Book,
-                DateSystem1904Data,
-                Severity::Warning,
-            ));
-        }
-
-        violations
-    }
 }
 
 impl Default for DateSystem1904Rule {
@@ -79,14 +63,23 @@ impl WalkerRule for DateSystem1904Rule {
         &mut self,
         workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        self.check_date_system(workbook)
+        out: &mut Vec<Violation>,
+    ) {
+        if workbook.date1904 {
+            out.push(Violation::with_data(
+                RuleId::File1003,
+                ViolationScope::Book,
+                DateSystem1904Data,
+                Severity::Warning,
+            ));
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::collect_violations;
 
     #[test]
     fn test_default_date_system_no_violation() {
@@ -95,8 +88,10 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = DateSystem1904Rule::new();
-        let violations = rule.check_date_system(&workbook);
+        let mut rule = DateSystem1904Rule::new();
+        let violations = collect_violations(|out| {
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         assert!(violations.is_empty());
     }
 
@@ -107,8 +102,10 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = DateSystem1904Rule::new();
-        let violations = rule.check_date_system(&workbook);
+        let mut rule = DateSystem1904Rule::new();
+        let violations = collect_violations(|out| {
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::File1003);
         assert!(violations[0].message().contains("1904 date system"));
@@ -117,8 +114,10 @@ mod tests {
     #[test]
     fn test_default_workbook_no_violation() {
         let workbook = Workbook::default();
-        let rule = DateSystem1904Rule::new();
-        let violations = rule.check_date_system(&workbook);
+        let mut rule = DateSystem1904Rule::new();
+        let violations = collect_violations(|out| {
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         assert!(violations.is_empty());
     }
 }

@@ -56,8 +56,12 @@ impl WalkerRule for NonDescriptiveSheetNameRule {
         super::RuleCategory::Data
     }
 
-    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut violations = Vec::new();
+    fn on_sheet_start(
+        &mut self,
+        sheet: &Sheet,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         let normalized_name = sheet.name.to_lowercase();
         let patterns = self
             .config
@@ -66,7 +70,7 @@ impl WalkerRule for NonDescriptiveSheetNameRule {
 
         for pattern in &patterns {
             if normalized_name.contains(pattern) {
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Data701,
                     ViolationScope::Sheet(sheet.sheet_index),
                     NonDescriptiveSheetNameData {
@@ -77,14 +81,13 @@ impl WalkerRule for NonDescriptiveSheetNameRule {
                 break; // Only report once per sheet
             }
         }
-
-        violations
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::collect_violations;
 
     #[test]
     fn test_non_descriptive_sheet_name() {
@@ -96,7 +99,7 @@ mod tests {
 
         let mut rule = NonDescriptiveSheetNameRule::default();
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_start(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Data701);
@@ -114,7 +117,7 @@ mod tests {
 
         let mut rule = NonDescriptiveSheetNameRule::default();
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_start(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].scope, ViolationScope::Sheet(1));
@@ -131,7 +134,7 @@ mod tests {
 
         let mut rule = NonDescriptiveSheetNameRule::default();
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_start(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 0);
     }

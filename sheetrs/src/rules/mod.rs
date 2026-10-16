@@ -139,13 +139,17 @@ pub trait WalkerRule: Send {
         &mut self,
         _workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        Vec::new()
+        _out: &mut Vec<Violation>,
+    ) {
     }
 
     /// Called at the start of each sheet
-    fn on_sheet_start(&mut self, _sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        Vec::new()
+    fn on_sheet_start(
+        &mut self,
+        _sheet: &Sheet,
+        _ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
     }
 
     /// Called for each cell in the workbook
@@ -154,13 +158,17 @@ pub trait WalkerRule: Send {
         _sheet: &Sheet,
         _cell: &Cell,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        Vec::new()
+        _out: &mut Vec<Violation>,
+    ) {
     }
 
     /// Called at the end of each sheet
-    fn on_sheet_end(&mut self, _sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        Vec::new()
+    fn on_sheet_end(
+        &mut self,
+        _sheet: &Sheet,
+        _ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
     }
 
     /// Called once after all sheets have been processed
@@ -168,9 +176,17 @@ pub trait WalkerRule: Send {
         &mut self,
         _workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        Vec::new()
+        _out: &mut Vec<Violation>,
+    ) {
     }
+}
+
+/// Runs one `WalkerRule` hook against a fresh sink and returns what it emitted.
+#[cfg(test)]
+pub(crate) fn collect_violations(hook: impl FnOnce(&mut Vec<Violation>)) -> Vec<Violation> {
+    let mut out = Vec::new();
+    hook(&mut out);
+    out
 }
 
 /// Rule categories matching the comparative report sections

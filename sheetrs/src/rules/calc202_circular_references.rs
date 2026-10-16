@@ -81,7 +81,13 @@ impl WalkerRule for CircularReferenceRule {
         RuleCategory::Calculations
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if let Some(formula) = cell.as_formula() {
             let refs = extract_cell_references(
                 formula,
@@ -98,13 +104,15 @@ impl WalkerRule for CircularReferenceRule {
             ctx.cell_dependencies
                 .insert((sheet.sheet_index, cell.row, cell.col), refs);
         }
-        Vec::new()
     }
 
-    fn on_workbook_end(&mut self, _workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(
+        &mut self,
+        _workbook: &Workbook,
+        ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         let cycles = find_cycles(&ctx.cell_dependencies);
-
-        let mut violations = Vec::new();
         let mut reported_cells = HashSet::new();
 
         for cycle in cycles {
@@ -121,7 +129,7 @@ impl WalkerRule for CircularReferenceRule {
                 let (sheet_index, r, c) = &cycle[0];
                 let cell_ref = CellReference::new(*r, *c);
 
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Calc202,
                     ViolationScope::Cell(*sheet_index, cell_ref),
                     CircularReferenceData {
@@ -131,8 +139,6 @@ impl WalkerRule for CircularReferenceRule {
                 ));
             }
         }
-
-        violations
     }
 }
 

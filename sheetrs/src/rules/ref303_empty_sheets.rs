@@ -43,18 +43,21 @@ impl WalkerRule for EmptySheetsRule {
         RuleCategory::Reference
     }
 
-    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_start(
+        &mut self,
+        sheet: &Sheet,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         if sheet.cells.is_empty() {
-            vec![Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Ref303,
                 ViolationScope::Sheet(sheet.sheet_index),
                 EmptySheetData {
                     sheet_index: sheet.sheet_index,
                 },
                 Severity::Warning,
-            )]
-        } else {
-            Vec::new()
+            ));
         }
     }
 }
@@ -64,6 +67,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -79,7 +83,7 @@ mod tests {
 
         let mut rule = EmptySheetsRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&empty_sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_start(&empty_sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ref303);
@@ -110,7 +114,7 @@ mod tests {
 
         let mut rule = EmptySheetsRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_start(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }
