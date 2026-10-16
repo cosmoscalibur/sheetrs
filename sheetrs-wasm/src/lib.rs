@@ -1,6 +1,7 @@
 use serde::Serialize;
 use sheetrs::reader::read_workbook_from_reader;
 use sheetrs::rules::registry;
+use sheetrs::violation::CellReference;
 use sheetrs::{FormatContext, Linter, LinterConfig, violation::Violation};
 use sheetrs::{Severity, ViolationScope};
 use std::collections::{BTreeMap, HashMap};
@@ -87,7 +88,8 @@ fn format_violations_human(
     // Group violations by scope for hierarchical display
     let mut book_violations = Vec::new();
     let mut sheet_violations: BTreeMap<String, Vec<&Violation>> = BTreeMap::new();
-    let mut cell_violations: BTreeMap<String, BTreeMap<String, Vec<&Violation>>> = BTreeMap::new();
+    let mut cell_violations: BTreeMap<String, BTreeMap<CellReference, Vec<&Violation>>> =
+        BTreeMap::new();
 
     for violation in violations {
         match &violation.scope {
@@ -112,7 +114,7 @@ fn format_violations_human(
                 cell_violations
                     .entry(sheet_name)
                     .or_default()
-                    .entry(cell_ref.to_string())
+                    .entry(cell_ref.clone())
                     .or_default()
                     .push(violation);
             }
@@ -245,4 +247,38 @@ pub fn get_workbook_stats(file_data: &[u8], extension: &str) -> Result<String, J
     );
 
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sheetrs::reader::{Sheet, Workbook};
+
+    #[test]
+    fn test_human_format_orders_cells_numerically() {
+        let workbook = Workbook {
+            sheets: vec![Sheet::new("S0".to_string(), 0)],
+            ..Default::default()
+        };
+        let violations: Vec<Violation> = [(9, 0), (1, 0), (0, 1), (0, 26)]
+            .iter()
+            .map(|&(row, col)| {
+                Violation::new(
+                    sheetrs::RuleId::Cpx509,
+                    ViolationScope::Cell(0, CellReference::new(row, col)),
+                    "Long formula",
+                    Severity::Warning,
+                )
+            })
+            .collect();
+        let output = format_violations_human(&violations, &HashMap::new(), &workbook);
+        let positions: Vec<_> = ["Cell: B1", "Cell: A2", "Cell: A10", "Cell: AA1"]
+            .iter()
+            .map(|label| output.find(label).unwrap_or_else(|| panic!("{label}")))
+            .collect();
+        // Numeric order is by row, then column: B1, AA1 (row 0), A2, A10.
+        assert!(positions[0] < positions[3]);
+        assert!(positions[3] < positions[1]);
+        assert!(positions[1] < positions[2]);
+    }
 }
