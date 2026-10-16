@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use colored::*;
+use sheetrs::violation::CellReference;
 use sheetrs::{FormatContext, Severity, Violation, ViolationScope, reader::Workbook};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -22,8 +23,10 @@ pub fn print_human(file_path: &Path, violations: &[Violation], workbook: &Workbo
     let mut book_violations = Vec::new();
     // BTreeMap<SheetName, (SheetLevelViolations, BTreeMap<CellRef, CellLevelViolations>)>
     #[allow(clippy::type_complexity)]
-    let mut sheet_data: BTreeMap<String, (Vec<&Violation>, BTreeMap<String, Vec<&Violation>>)> =
-        BTreeMap::new();
+    let mut sheet_data: BTreeMap<
+        String,
+        (Vec<&Violation>, BTreeMap<CellReference, Vec<&Violation>>),
+    > = BTreeMap::new();
 
     for violation in violations {
         match &violation.scope {
@@ -44,10 +47,7 @@ pub fn print_human(file_path: &Path, violations: &[Violation], workbook: &Workbo
                     .unwrap_or("Unknown Sheet")
                     .to_string();
                 let (_, cell_v) = sheet_data.entry(sheet_name).or_default();
-                cell_v
-                    .entry(cell_ref.to_string())
-                    .or_default()
-                    .push(violation);
+                cell_v.entry(cell_ref.clone()).or_default().push(violation);
             }
         }
     }
@@ -72,7 +72,7 @@ pub fn print_human(file_path: &Path, violations: &[Violation], workbook: &Workbo
 
         // Print cell-level violations
         for (cell_ref, violations) in cell_violations {
-            println!("  {} {}", "Cell:".bold(), cell_ref.yellow());
+            println!("  {} {}", "Cell:".bold(), cell_ref.to_string().yellow());
             for violation in violations {
                 print_violation(violation, 2, &ctx);
             }

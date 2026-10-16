@@ -147,6 +147,26 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
+### CPX504–CPX509 cell scope and CPX509 character length (#67)
+
+CPX504–CPX509 report with cell scope, so the text output lists them under
+their formula cell in row and column order and their messages drop the
+`at <cell>` suffix. CPX509 measures characters instead of UTF-8 bytes: 187
+(XLSX) and 186 (ODS) of its messages report a shorter length, and five
+formulas of 256–257 bytes (`INPUTS!AQ2909`, `AN2331`, `AN2223`, `AO21998`,
+`AN2281`) no longer trigger it in either format. Every other violation matches
+the previous entry's output, compared by sheet, scope, cell, rule and message.
+The previous entry's build, run once in the same session, measured 331.8 G user
+instructions and 1817 MB peak RAM on XLSX.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 33.4s | 34.3s |
+| Peak RAM | 1802 MB | 1802 MB |
+| User instructions | 328.8 G | 327.4 G |
+| Output MD5 | `c50fafb3ffda7c95de2ed74cf9dc32fc` | `de1b6bd593326feb06f7566a970406ac` |
+| Binary size | 9.1M | - |
+
 ### Providers run for enabled dependents (#53)
 
 Output is identical to the previous entry. The previous entry's build, run in

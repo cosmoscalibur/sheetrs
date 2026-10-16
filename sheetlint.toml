@@ -44,7 +44,7 @@ max_operations = 8
 max_sheet_refs = 3
 # CPX508: Maximum cell references per formula
 max_references = 10
-# CPX509: Maximum formula length in bytes (UTF-8)
+# CPX509: Maximum formula length in characters
 max_formula_length = 255
 
 # DATA701: Sheet name substrings to avoid (per sheet)

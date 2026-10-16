@@ -37,9 +37,6 @@ pub struct DeepIfNestingRule {
     max_references: usize,
     /// Maximum allowed formula length in characters (CPX509).
     max_formula_length: usize,
-    /// Violations of the current sheet with their `(row, col)`, emitted in
-    /// cell order at sheet end because the walker visits cells in hash order.
-    pending: Vec<((u32, u32), Violation)>,
 }
 
 impl DeepIfNestingRule {
@@ -55,7 +52,6 @@ impl DeepIfNestingRule {
             max_formula_length: config
                 .get_param_int("max_formula_length", None)
                 .unwrap_or(255) as usize,
-            pending: Vec::new(),
         }
     }
 }
@@ -68,7 +64,6 @@ impl Default for DeepIfNestingRule {
             max_operations: 8,
             max_references: 10,
             max_formula_length: 255,
-            pending: Vec::new(),
         }
     }
 }
@@ -82,15 +77,13 @@ impl Default for DeepIfNestingRule {
 pub struct DeepIfNestingData {
     /// Detected IF nesting depth.
     pub depth: usize,
-    /// Cell where the formula resides.
-    pub cell: CellReference,
 }
 
 impl ViolationData for DeepIfNestingData {
     fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
         format!(
-            "Deeply nested IF statements ({} levels) at {}. Consider lookup tables or IFS.",
-            self.depth, self.cell
+            "Deeply nested IF statements ({} levels). Consider lookup tables or IFS.",
+            self.depth
         )
     }
 
@@ -104,15 +97,13 @@ impl ViolationData for DeepIfNestingData {
 pub struct DeepFormulaNestingData {
     /// Detected parenthesis nesting depth.
     pub depth: usize,
-    /// Cell where the formula resides.
-    pub cell: CellReference,
 }
 
 impl ViolationData for DeepFormulaNestingData {
     fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
         format!(
-            "Formula with deep nesting ({} levels) at {}. Consider simplifying.",
-            self.depth, self.cell
+            "Formula with deep nesting ({} levels). Consider simplifying.",
+            self.depth
         )
     }
 
@@ -126,16 +117,11 @@ impl ViolationData for DeepFormulaNestingData {
 pub struct ManyOperationsData {
     /// Detected operator count.
     pub count: usize,
-    /// Cell where the formula resides.
-    pub cell: CellReference,
 }
 
 impl ViolationData for ManyOperationsData {
     fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
-        format!(
-            "Formula with many operations ({}) at {}.",
-            self.count, self.cell
-        )
+        format!("Formula with many operations ({}).", self.count)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -148,16 +134,11 @@ impl ViolationData for ManyOperationsData {
 pub struct ManyReferencesData {
     /// Detected reference count.
     pub count: usize,
-    /// Cell where the formula resides.
-    pub cell: CellReference,
 }
 
 impl ViolationData for ManyReferencesData {
     fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
-        format!(
-            "Formula with many references ({}) at {}.",
-            self.count, self.cell
-        )
+        format!("Formula with many references ({}).", self.count)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -168,18 +149,13 @@ impl ViolationData for ManyReferencesData {
 /// Incident data for CPX509 (long formula).
 #[derive(Debug)]
 pub struct LongFormulaData {
-    /// Detected formula length.
+    /// Detected formula length in characters.
     pub length: usize,
-    /// Cell where the formula resides.
-    pub cell: CellReference,
 }
 
 impl ViolationData for LongFormulaData {
     fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
-        format!(
-            "Long formula ({} characters) at {}.",
-            self.length, self.cell
-        )
+        format!("Long formula ({} characters).", self.length)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -360,33 +336,13 @@ impl WalkerRule for DeepIfNestingRule {
         RuleCategory::Complexity
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
-        let violations = self.cell_violations(sheet, cell, ctx);
-        self.pending
-            .extend(violations.into_iter().map(|v| ((cell.row, cell.col), v)));
-        Vec::new()
-    }
-
-    fn on_sheet_end(&mut self, _sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        self.pending.sort_unstable_by_key(|(cell, _)| *cell);
-        self.pending.drain(..).map(|(_, v)| v).collect()
-    }
-}
-
-impl DeepIfNestingRule {
     /// Evaluates the CPX5xx dependency chain for one formula cell.
-    fn cell_violations(
-        &self,
-        sheet: &Sheet,
-        cell: &Cell,
-        ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
+    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
         let Some(formula) = cell.as_formula() else {
             return Vec::new();
         };
 
-        let cell_ref = CellReference::new(cell.row, cell.col);
-        let scope = ViolationScope::Sheet(sheet.sheet_index);
+        let scope = ViolationScope::Cell(sheet.sheet_index, CellReference::new(cell.row, cell.col));
 
         // --- Dependency cascade CPX504 → CPX505 → CPX506 → CPX508 / CPX509 ---
 
@@ -398,10 +354,7 @@ impl DeepIfNestingRule {
             return vec![Violation::with_data(
                 RuleId::Cpx504,
                 scope,
-                DeepIfNestingData {
-                    depth: if_depth,
-                    cell: cell_ref,
-                },
+                DeepIfNestingData { depth: if_depth },
                 Severity::Warning,
             )];
         }
@@ -411,10 +364,7 @@ impl DeepIfNestingRule {
             return vec![Violation::with_data(
                 RuleId::Cpx505,
                 scope,
-                DeepFormulaNestingData {
-                    depth: nesting,
-                    cell: cell_ref,
-                },
+                DeepFormulaNestingData { depth: nesting },
                 Severity::Warning,
             )];
         }
@@ -424,10 +374,7 @@ impl DeepIfNestingRule {
             return vec![Violation::with_data(
                 RuleId::Cpx506,
                 scope,
-                ManyOperationsData {
-                    count: ops,
-                    cell: cell_ref,
-                },
+                ManyOperationsData { count: ops },
                 Severity::Warning,
             )];
         }
@@ -440,23 +387,18 @@ impl DeepIfNestingRule {
             violations.push(Violation::with_data(
                 RuleId::Cpx508,
                 scope.clone(),
-                ManyReferencesData {
-                    count: refs,
-                    cell: cell_ref.clone(),
-                },
+                ManyReferencesData { count: refs },
                 Severity::Warning,
             ));
         }
 
         // CPX509 — only if CPX505 did not fire
-        if formula.len() > self.max_formula_length {
+        let length = formula.chars().count();
+        if length > self.max_formula_length {
             violations.push(Violation::with_data(
                 RuleId::Cpx509,
                 scope,
-                LongFormulaData {
-                    length: formula.len(),
-                    cell: cell_ref,
-                },
+                LongFormulaData { length },
                 Severity::Warning,
             ));
         }
@@ -495,42 +437,27 @@ mod tests {
 
     fn run_violations(sheet: &Sheet, rule: &mut DeepIfNestingRule) -> Vec<Violation> {
         let mut ctx = LinterContext::default();
-        let mut violations: Vec<_> = sheet
+        sheet
             .all_cells()
             .flat_map(|c| rule.on_cell(sheet, c, &mut ctx))
-            .collect();
-        violations.extend(rule.on_sheet_end(sheet, &mut ctx));
-        violations
+            .collect()
     }
 
     #[test]
-    fn test_violations_ordered_by_cell() {
-        let formula = "=A1+B1*C1-D1/E1^F1&G1+H1+I1+J1";
-        let mut sheet = make_sheet(formula);
-        for row in 0..4 {
-            for col in 0..4 {
-                sheet.cells.insert(
-                    (row, col),
-                    Cell {
-                        formula: Some(<Box<str>>::from(formula)),
-                        is_array: false,
-                        num_fmt: None,
-                        row,
-                        col,
-                        value: CellValue::Empty,
-                    },
-                );
-            }
+    fn test_violations_have_cell_scope() {
+        let long = "=".to_string() + &"A1+".repeat(100);
+        let mut sheet = make_sheet(&long);
+        sheet.sheet_index = 2;
+        let mut rule = DeepIfNestingRule {
+            max_operations: 999,
+            ..Default::default()
+        };
+        let violations = run_violations(&sheet, &mut rule);
+        let ids: Vec<_> = violations.iter().map(|v| v.rule_id).collect();
+        assert_eq!(ids, [RuleId::Cpx508, RuleId::Cpx509]);
+        for v in &violations {
+            assert_eq!(v.scope, ViolationScope::Cell(2, CellReference::new(0, 0)));
         }
-        let violations = run_violations(&sheet, &mut DeepIfNestingRule::default());
-        let cells: Vec<_> = violations
-            .iter()
-            .map(|v| v.data::<ManyOperationsData>().unwrap().cell.clone())
-            .collect();
-        let mut sorted = cells.clone();
-        sorted.sort();
-        assert_eq!(cells.len(), 16);
-        assert_eq!(cells, sorted);
     }
 
     #[test]
@@ -584,6 +511,17 @@ mod tests {
         };
         let violations = run_violations(&sheet, &mut rule);
         assert!(violations.iter().any(|v| v.rule_id == RuleId::Cpx509));
+    }
+
+    #[test]
+    fn test_cpx509_counts_characters() {
+        let within = format!("=\"{}\"", "ñ".repeat(200));
+        assert!(run_violations(&make_sheet(&within), &mut DeepIfNestingRule::default()).is_empty());
+
+        let over = format!("=\"{}\"", "ñ".repeat(254));
+        let violations = run_violations(&make_sheet(&over), &mut DeepIfNestingRule::default());
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].data::<LongFormulaData>().unwrap().length, 257);
     }
 
     #[test]
