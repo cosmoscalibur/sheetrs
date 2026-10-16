@@ -41,31 +41,33 @@ fn lint(workbook: &Workbook) -> Vec<(RuleId, ViolationScope)> {
 fn test_cpx_violations_sorted_by_sheet_then_cell() {
     let long = long_formula();
     let positions = [(9, 0), (0, 1), (1, 0), (2, 0), (9, 5)];
-    let workbook = Workbook {
-        sheets: vec![
-            sheet_with(
-                "S0",
-                0,
-                positions
-                    .iter()
-                    .map(|&(r, c)| formula_cell(r, c, &long))
-                    .collect(),
-            ),
-            sheet_with("S1", 1, vec![formula_cell(1, 0, &long)]),
-        ],
-        ..Default::default()
-    };
+    let expected: Vec<_> = [(0, 1), (1, 0), (2, 0), (9, 0), (9, 5)]
+        .iter()
+        .map(|&(r, c)| ViolationScope::Cell(0, CellReference::new(r, c)))
+        .chain([ViolationScope::Cell(1, CellReference::new(1, 0))])
+        .collect();
 
+    // Each workbook's `HashMap`s get their own hash seed, so the walker's
+    // cell order can differ between iterations.
     for _ in 0..20 {
+        let workbook = Workbook {
+            sheets: vec![
+                sheet_with(
+                    "S0",
+                    0,
+                    positions
+                        .iter()
+                        .map(|&(r, c)| formula_cell(r, c, &long))
+                        .collect(),
+                ),
+                sheet_with("S1", 1, vec![formula_cell(1, 0, &long)]),
+            ],
+            ..Default::default()
+        };
         let got: Vec<_> = lint(&workbook)
             .into_iter()
             .filter(|(id, _)| *id == RuleId::Cpx509)
             .map(|(_, scope)| scope)
-            .collect();
-        let expected: Vec<_> = [(0, 1), (1, 0), (2, 0), (9, 0), (9, 5)]
-            .iter()
-            .map(|&(r, c)| ViolationScope::Cell(0, CellReference::new(r, c)))
-            .chain([ViolationScope::Cell(1, CellReference::new(1, 0))])
             .collect();
         assert_eq!(got, expected);
     }
