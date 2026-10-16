@@ -38,22 +38,27 @@ impl WalkerRule for UnnecessarySpaceRule {
         RuleCategory::Data
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         if let crate::reader::CellValue::Text(text) = &cell.value {
             let bytes = text.as_bytes();
             let has_whitespace = bytes.first().is_some_and(|b| b.is_ascii_whitespace())
                 || bytes.last().is_some_and(|b| b.is_ascii_whitespace());
 
             if has_whitespace {
-                return vec![Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Data705,
                     ViolationScope::Cell(sheet.sheet_index, CellReference::new(cell.row, cell.col)),
                     UnnecessarySpaceData,
                     Severity::Info,
-                )];
+                ));
             }
         }
-        Vec::new()
     }
 }
 
@@ -62,6 +67,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -97,7 +103,7 @@ mod tests {
 
         let violations: Vec<_> = sheet
             .all_cells()
-            .flat_map(|cell| rule.on_cell(&sheet, cell, &mut ctx))
+            .flat_map(|cell| collect_violations(|out| rule.on_cell(&sheet, cell, &mut ctx, out)))
             .collect();
 
         assert_eq!(violations.len(), 1);
@@ -112,7 +118,7 @@ mod tests {
 
         let violations: Vec<_> = sheet
             .all_cells()
-            .flat_map(|cell| rule.on_cell(&sheet, cell, &mut ctx))
+            .flat_map(|cell| collect_violations(|out| rule.on_cell(&sheet, cell, &mut ctx, out)))
             .collect();
 
         assert_eq!(violations.len(), 1);
@@ -127,7 +133,7 @@ mod tests {
 
         let violations: Vec<_> = sheet
             .all_cells()
-            .flat_map(|cell| rule.on_cell(&sheet, cell, &mut ctx))
+            .flat_map(|cell| collect_violations(|out| rule.on_cell(&sheet, cell, &mut ctx, out)))
             .collect();
 
         assert_eq!(violations.len(), 1);
@@ -141,7 +147,7 @@ mod tests {
 
         let violations: Vec<_> = sheet
             .all_cells()
-            .flat_map(|cell| rule.on_cell(&sheet, cell, &mut ctx))
+            .flat_map(|cell| collect_violations(|out| rule.on_cell(&sheet, cell, &mut ctx, out)))
             .collect();
 
         assert!(violations.is_empty());
@@ -172,7 +178,7 @@ mod tests {
 
         let violations: Vec<_> = sheet
             .all_cells()
-            .flat_map(|cell| rule.on_cell(&sheet, cell, &mut ctx))
+            .flat_map(|cell| collect_violations(|out| rule.on_cell(&sheet, cell, &mut ctx, out)))
             .collect();
 
         assert!(violations.is_empty());
@@ -186,7 +192,7 @@ mod tests {
 
         let violations: Vec<_> = sheet
             .all_cells()
-            .flat_map(|cell| rule.on_cell(&sheet, cell, &mut ctx))
+            .flat_map(|cell| collect_violations(|out| rule.on_cell(&sheet, cell, &mut ctx, out)))
             .collect();
 
         assert!(violations.is_empty());

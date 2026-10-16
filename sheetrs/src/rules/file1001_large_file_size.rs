@@ -52,26 +52,6 @@ impl LargeFileSizeRule {
             max_file_size_bytes: (max_mb * 1024 * 1024) as u64,
         }
     }
-
-    /// Check file size and return violation if exceeded.
-    /// Uses file_size_bytes from Workbook metadata (pre-extracted by parser).
-    fn check_size(&self, workbook: &Workbook) -> Vec<Violation> {
-        let mut violations = Vec::new();
-
-        let file_size = workbook.file_size_bytes;
-        if file_size > self.max_file_size_bytes {
-            violations.push(Violation::with_data(
-                RuleId::File1001,
-                ViolationScope::Book,
-                LargeFileSizeData {
-                    size_bytes: file_size,
-                },
-                Severity::Warning,
-            ));
-        }
-
-        violations
-    }
 }
 
 impl Default for LargeFileSizeRule {
@@ -99,14 +79,26 @@ impl WalkerRule for LargeFileSizeRule {
         &mut self,
         workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        self.check_size(workbook)
+        out: &mut Vec<Violation>,
+    ) {
+        let file_size = workbook.file_size_bytes;
+        if file_size > self.max_file_size_bytes {
+            out.push(Violation::with_data(
+                RuleId::File1001,
+                ViolationScope::Book,
+                LargeFileSizeData {
+                    size_bytes: file_size,
+                },
+                Severity::Warning,
+            ));
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::collect_violations;
 
     #[test]
     fn test_small_file_no_violation() {
@@ -115,14 +107,16 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = LargeFileSizeRule::default();
-        let violations = rule.check_size(&workbook);
+        let mut rule = LargeFileSizeRule::default();
+        let violations = collect_violations(|out| {
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         assert!(violations.is_empty());
     }
 
     #[test]
     fn test_large_file_violation() {
-        let rule = LargeFileSizeRule {
+        let mut rule = LargeFileSizeRule {
             max_file_size_bytes: 1024, // 1 KB threshold
         };
 
@@ -131,7 +125,9 @@ mod tests {
             ..Default::default()
         };
 
-        let violations = rule.check_size(&workbook);
+        let violations = collect_violations(|out| {
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::File1001);
         assert!(violations[0].message().contains("exceeds limit"));
@@ -140,8 +136,10 @@ mod tests {
     #[test]
     fn test_zero_size_no_violation() {
         let workbook = Workbook::default();
-        let rule = LargeFileSizeRule::default();
-        let violations = rule.check_size(&workbook);
+        let mut rule = LargeFileSizeRule::default();
+        let violations = collect_violations(|out| {
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         assert!(violations.is_empty());
     }
 }

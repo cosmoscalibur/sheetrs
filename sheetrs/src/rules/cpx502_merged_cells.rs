@@ -44,11 +44,14 @@ impl WalkerRule for MergedCellsRule {
         RuleCategory::Complexity
     }
 
-    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut violations = Vec::new();
-
+    fn on_sheet_start(
+        &mut self,
+        sheet: &Sheet,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         for &(start_row, start_col, end_row, end_col) in &sheet.merged_cells {
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Cpx502,
                 ViolationScope::Sheet(sheet.sheet_index),
                 MergedCellsData {
@@ -57,8 +60,6 @@ impl WalkerRule for MergedCellsRule {
                 Severity::Warning,
             ));
         }
-
-        violations
     }
 }
 

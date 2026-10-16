@@ -72,36 +72,37 @@ impl WalkerRule for LegacyArrayRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if cell.is_array && cell.is_formula() {
             self.sheet_cells
                 .entry(sheet.sheet_index)
                 .or_default()
                 .push((cell.row, cell.col));
         }
-        Vec::new()
     }
 
-    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
         let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
-            return Vec::new();
+            return;
         };
         cells.sort_unstable();
-
-        let mut violations = Vec::new();
         let ranges = find_contiguous_ranges(&cells);
 
         for range in ranges {
             let bbox = bounding_box(&range);
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Vul605,
                 ViolationScope::Sheet(sheet.sheet_index),
                 LegacyArrayData { range: bbox },
                 Severity::Warning,
             ));
         }
-
-        violations
     }
 }
 
@@ -110,6 +111,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     fn make_cell(row: u32, col: u32, formula: Option<&str>, is_array: bool) -> Cell {
@@ -139,9 +141,9 @@ mod tests {
     fn run_rule(rule: &mut LegacyArrayRule, sheet: &Sheet) -> Vec<Violation> {
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(sheet, cell, &mut ctx);
+            rule.on_cell(sheet, cell, &mut ctx, &mut Vec::new());
         }
-        rule.on_sheet_end(sheet, &mut ctx)
+        collect_violations(|out| rule.on_sheet_end(sheet, &mut ctx, out))
     }
 
     #[test]

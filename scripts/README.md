@@ -147,6 +147,21 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
+### Violation sink for walker hooks (#39)
+
+`WalkerRule` hooks push into the walker's `Vec<Violation>` instead of returning
+one. The output MD5 matches the previous entry on both formats. The previous
+entry's build, run in the same session on XLSX, measured 328.8 G user
+instructions, 32.5s user time and 1800 MB peak RAM.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 32.5s | 32.9s |
+| Peak RAM | 1805 MB | 1806 MB |
+| User instructions | 323.0 G | 321.9 G |
+| Output MD5 | `c50fafb3ffda7c95de2ed74cf9dc32fc` | `de1b6bd593326feb06f7566a970406ac` |
+| Binary size | 9.1M | - |
+
 ### CPX504–CPX509 cell scope and CPX509 character length (#67)
 
 CPX504–CPX509 report with cell scope, so the text output lists them under

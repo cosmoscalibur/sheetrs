@@ -337,9 +337,15 @@ impl WalkerRule for DeepIfNestingRule {
     }
 
     /// Evaluates the CPX5xx dependency chain for one formula cell.
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         let Some(formula) = cell.as_formula() else {
-            return Vec::new();
+            return;
         };
 
         let scope = ViolationScope::Cell(sheet.sheet_index, CellReference::new(cell.row, cell.col));
@@ -351,40 +357,41 @@ impl WalkerRule for DeepIfNestingRule {
                 .expect("formula cell has an uppercased formula"),
         );
         if if_depth > self.max_if_nesting {
-            return vec![Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Cpx504,
                 scope,
                 DeepIfNestingData { depth: if_depth },
                 Severity::Warning,
-            )];
+            ));
+            return;
         }
 
         let nesting = calculate_nesting_depth(formula);
         if nesting > self.max_nesting {
-            return vec![Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Cpx505,
                 scope,
                 DeepFormulaNestingData { depth: nesting },
                 Severity::Warning,
-            )];
+            ));
+            return;
         }
 
         let ops = count_operators(formula);
         if ops > self.max_operations {
-            return vec![Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Cpx506,
                 scope,
                 ManyOperationsData { count: ops },
                 Severity::Warning,
-            )];
+            ));
+            return;
         }
-
-        let mut violations = Vec::new();
 
         // CPX508 — only if CPX506 did not fire
         let refs = count_references(formula);
         if refs > self.max_references {
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Cpx508,
                 scope.clone(),
                 ManyReferencesData { count: refs },
@@ -395,15 +402,13 @@ impl WalkerRule for DeepIfNestingRule {
         // CPX509 — only if CPX505 did not fire
         let length = formula.chars().count();
         if length > self.max_formula_length {
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Cpx509,
                 scope,
                 LongFormulaData { length },
                 Severity::Warning,
             ));
         }
-
-        violations
     }
 }
 
@@ -411,6 +416,7 @@ impl WalkerRule for DeepIfNestingRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     fn make_sheet(formula: &str) -> Sheet {
@@ -439,7 +445,7 @@ mod tests {
         let mut ctx = LinterContext::default();
         sheet
             .all_cells()
-            .flat_map(|c| rule.on_cell(sheet, c, &mut ctx))
+            .flat_map(|c| collect_violations(|out| rule.on_cell(sheet, c, &mut ctx, out)))
             .collect()
     }
 

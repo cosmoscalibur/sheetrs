@@ -89,7 +89,13 @@ impl WalkerRule for EmptyStringTestRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if let Some(formula_upper) = ctx.formula_upper(sheet, cell)
             && (EMPTY_STRING_EQ_RE.is_match(formula_upper) || LEN_ZERO_RE.is_match(formula_upper))
         {
@@ -98,29 +104,25 @@ impl WalkerRule for EmptyStringTestRule {
                 .or_default()
                 .push((cell.row, cell.col));
         }
-        Vec::new()
     }
 
-    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
         let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
-            return Vec::new();
+            return;
         };
         cells.sort_unstable();
 
         let ranges = find_contiguous_ranges(&cells);
-        let mut violations = Vec::new();
 
         for range in ranges {
             let bbox = bounding_box(&range);
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Vul603,
                 ViolationScope::Sheet(sheet.sheet_index),
                 EmptyStringTestData { range: bbox },
                 Severity::Info,
             ));
         }
-
-        violations
     }
 }
 
@@ -128,6 +130,7 @@ impl WalkerRule for EmptyStringTestRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     #[test]
@@ -155,9 +158,9 @@ mod tests {
         let mut rule = EmptyStringTestRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Vul603);
@@ -188,9 +191,9 @@ mod tests {
         let mut rule = EmptyStringTestRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Vul603);
@@ -221,9 +224,9 @@ mod tests {
         let mut rule = EmptyStringTestRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }

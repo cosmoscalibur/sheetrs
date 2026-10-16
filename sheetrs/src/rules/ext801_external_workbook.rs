@@ -102,7 +102,13 @@ impl WalkerRule for ExternalWorkbooksRule {
         RuleCategory::External
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if let Some(formula) = cell.as_formula() {
             let indices = extract_external_workbook_indices(formula);
             if !indices.is_empty() {
@@ -112,16 +118,13 @@ impl WalkerRule for ExternalWorkbooksRule {
                     .extend(indices.into_iter().map(|idx| (cell.row, cell.col, idx)));
             }
         }
-        Vec::new()
     }
 
-    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
         let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
-            return Vec::new();
+            return;
         };
         cells.sort_unstable();
-
-        let mut violations = Vec::new();
         // Group cells by workbook index
         let mut grouped: BTreeMap<usize, Vec<(u32, u32)>> = BTreeMap::new();
         for (row, col, idx) in cells {
@@ -131,7 +134,7 @@ impl WalkerRule for ExternalWorkbooksRule {
         for (idx, group_cells) in grouped {
             let ranges = find_contiguous_ranges(&group_cells);
             for range in ranges {
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Ext801,
                     ViolationScope::Sheet(sheet.sheet_index),
                     ExternalWorkbookData {
@@ -142,8 +145,6 @@ impl WalkerRule for ExternalWorkbooksRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -152,6 +153,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     #[test]
@@ -182,10 +184,10 @@ mod tests {
 
         // Walk cells
         for cell in sheet.cells.values() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
 
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ext801);

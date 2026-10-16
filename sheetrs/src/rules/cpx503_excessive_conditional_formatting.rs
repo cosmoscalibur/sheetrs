@@ -61,7 +61,12 @@ impl WalkerRule for ExcessiveConditionalFormattingRule {
         RuleCategory::Complexity
     }
 
-    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_start(
+        &mut self,
+        sheet: &Sheet,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         let threshold = self
             .config
             .get_param_int("max_conditional_formatting", Some(&sheet.name))
@@ -74,7 +79,7 @@ impl WalkerRule for ExcessiveConditionalFormattingRule {
             ranges.sort();
             ranges.dedup();
 
-            vec![Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Cpx503,
                 ViolationScope::Sheet(sheet.sheet_index),
                 ExcessiveConditionalFormattingData {
@@ -82,9 +87,7 @@ impl WalkerRule for ExcessiveConditionalFormattingRule {
                     ranges,
                 },
                 Severity::Warning,
-            )]
-        } else {
-            Vec::new()
+            ));
         }
     }
 }
@@ -93,6 +96,7 @@ impl WalkerRule for ExcessiveConditionalFormattingRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::Sheet;
+    use crate::rules::collect_violations;
 
     #[test]
     fn test_no_violations() {
@@ -103,7 +107,7 @@ mod tests {
 
         let mut rule = ExcessiveConditionalFormattingRule::new(&LinterConfig::default());
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_start(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }
@@ -123,7 +127,7 @@ mod tests {
 
         let mut rule = ExcessiveConditionalFormattingRule::new(&LinterConfig::default());
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_start(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Cpx503);

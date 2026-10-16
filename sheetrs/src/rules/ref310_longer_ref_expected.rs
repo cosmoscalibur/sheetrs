@@ -219,16 +219,19 @@ impl WalkerRule for LongerRefExpectedRule {
         RuleCategory::Reference
     }
 
-    fn on_workbook_end(&mut self, workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(
+        &mut self,
+        workbook: &Workbook,
+        ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         if ctx.cell_dependencies.is_empty() {
-            return Vec::new();
+            return;
         }
 
         // Build sheet lookup
         let sheets_by_index: HashMap<u16, &crate::reader::Sheet> =
             workbook.sheets.iter().map(|s| (s.sheet_index, s)).collect();
-
-        let mut violations = Vec::new();
 
         // Iterate through all formula cells (keys of cell_dependencies)
         for formula_loc in ctx.cell_dependencies.keys() {
@@ -290,7 +293,7 @@ impl WalkerRule for LongerRefExpectedRule {
                                 .map(|col| ((range_ref.end_row, col), (adjacent_row, col))),
                         )
                     {
-                        violations.push(Violation::with_data(
+                        out.push(Violation::with_data(
                             RuleId::Ref310,
                             ViolationScope::Cell(
                                 formula_sheet_idx,
@@ -342,7 +345,7 @@ impl WalkerRule for LongerRefExpectedRule {
                                 .map(|row| ((row, range_ref.end_col), (row, adjacent_col))),
                         )
                     {
-                        violations.push(Violation::with_data(
+                        out.push(Violation::with_data(
                             RuleId::Ref310,
                             ViolationScope::Cell(
                                 formula_sheet_idx,
@@ -362,8 +365,6 @@ impl WalkerRule for LongerRefExpectedRule {
                 }
             }
         }
-
-        violations
     }
 }
 
@@ -372,6 +373,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet, Workbook};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -449,7 +451,7 @@ mod tests {
         ctx.cell_dependencies
             .insert((0, 0, 1), vec![(0, 0, 0), (0, 4, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ref310);
     }
@@ -473,7 +475,7 @@ mod tests {
         ctx.cell_dependencies
             .insert((0, 0, 1), vec![(0, 0, 0), (0, 4, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 0);
     }
 
@@ -497,7 +499,7 @@ mod tests {
         ctx.cell_dependencies
             .insert((0, 0, 1), vec![(0, 0, 0), (0, 4, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(
             violations.len(),
             0,
@@ -513,7 +515,7 @@ mod tests {
         ctx.name_to_index.insert("Sheet1".to_string(), 0);
         ctx.cell_dependencies
             .insert((0, formula_loc.0, formula_loc.1), Vec::new());
-        rule.on_workbook_end(&workbook, &mut ctx)
+        collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out))
     }
 
     #[test]
@@ -641,7 +643,7 @@ mod tests {
         ctx.cell_dependencies
             .insert((0, 0, 0), vec![(0, 0, 1), (0, 0, 4)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 1);
     }
 
@@ -654,7 +656,7 @@ mod tests {
         let mut rule = LongerRefExpectedRule::new(&config);
         let ctx = &mut LinterContext::default();
 
-        let violations = rule.on_workbook_end(&workbook, ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, ctx, out));
         assert_eq!(violations.len(), 0);
     }
 
@@ -681,7 +683,7 @@ mod tests {
         ctx.cell_dependencies
             .insert((0, 0, 1), vec![(0, 0, 0), (0, 4, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(
             violations.len(),
             0,

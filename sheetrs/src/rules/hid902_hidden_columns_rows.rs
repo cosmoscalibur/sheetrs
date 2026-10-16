@@ -48,11 +48,14 @@ impl WalkerRule for HiddenColumnsRowsRule {
         RuleCategory::Hidden
     }
 
-    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut violations = Vec::new();
-
+    fn on_sheet_start(
+        &mut self,
+        sheet: &Sheet,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         for range in merge_ranges(&sheet.hidden_columns) {
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Hid902,
                 ViolationScope::Sheet(sheet.sheet_index),
                 HiddenColumnsRowsData {
@@ -64,7 +67,7 @@ impl WalkerRule for HiddenColumnsRowsRule {
         }
 
         for range in merge_ranges(&sheet.hidden_rows) {
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Hid902,
                 ViolationScope::Sheet(sheet.sheet_index),
                 HiddenColumnsRowsData {
@@ -74,8 +77,6 @@ impl WalkerRule for HiddenColumnsRowsRule {
                 Severity::Warning,
             ));
         }
-
-        violations
     }
 }
 
@@ -115,6 +116,7 @@ fn format_row_range(&(start, end): &(u32, u32)) -> String {
 mod tests {
     use super::*;
     use crate::reader::workbook::Sheet;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     #[test]
@@ -129,7 +131,7 @@ mod tests {
 
         let mut rule = HiddenColumnsRowsRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_start(&sheet, &mut ctx, out));
 
         let messages: Vec<String> = violations.iter().map(Violation::message).collect();
         assert_eq!(messages, ["Hidden columns: A:C", "Hidden columns: F"]);
@@ -148,7 +150,7 @@ mod tests {
 
         let mut rule = HiddenColumnsRowsRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_start(&sheet, &mut ctx, out));
 
         let messages: Vec<String> = violations.iter().map(Violation::message).collect();
         assert_eq!(messages, ["Hidden rows: 1:3", "Hidden rows: 11:12"]);

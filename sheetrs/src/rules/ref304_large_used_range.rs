@@ -89,7 +89,13 @@ impl WalkerRule for LargeUsedRangeRule {
         RuleCategory::Reference
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if is_data_cell(cell) {
             self.sheet_max
                 .entry(sheet.sheet_index)
@@ -99,23 +105,22 @@ impl WalkerRule for LargeUsedRangeRule {
                 })
                 .or_insert((cell.row, cell.col));
         }
-        Vec::new()
     }
 
-    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
         let Some(&last_data) = self.sheet_max.get(&sheet.sheet_index) else {
-            return Vec::new(); // No data cells → skip
+            return; // No data cells → skip
         };
 
         let Some((used_rows, used_cols)) = sheet.used_range else {
-            return Vec::new();
+            return;
         };
 
         let row_diff = used_rows.saturating_sub(last_data.0 + 1);
         let col_diff = used_cols.saturating_sub(last_data.1 + 1);
 
         if row_diff > THRESHOLD_ROWS || col_diff > THRESHOLD_COLS {
-            vec![Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Ref304,
                 ViolationScope::Sheet(sheet.sheet_index),
                 LargeUsedRangeData {
@@ -123,9 +128,7 @@ impl WalkerRule for LargeUsedRangeRule {
                     last_data,
                 },
                 Severity::Warning,
-            )]
-        } else {
-            Vec::new()
+            ));
         }
     }
 }
@@ -134,6 +137,7 @@ impl WalkerRule for LargeUsedRangeRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     #[test]
@@ -173,9 +177,9 @@ mod tests {
         let mut rule = LargeUsedRangeRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Ref304);
@@ -207,9 +211,9 @@ mod tests {
         let mut rule = LargeUsedRangeRule::new();
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }
@@ -226,7 +230,7 @@ mod tests {
 
         let mut rule = LargeUsedRangeRule::new();
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_end(&sheet, &mut ctx);
+        let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
     }

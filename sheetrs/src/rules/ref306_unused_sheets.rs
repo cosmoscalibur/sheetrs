@@ -43,16 +43,19 @@ impl WalkerRule for UnusedSheetsRule {
         RuleCategory::Reference
     }
 
-    fn on_workbook_end(&mut self, workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut violations = Vec::new();
-
+    fn on_workbook_end(
+        &mut self,
+        workbook: &Workbook,
+        ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         // Use referenced_sheets populated by calc202's on_cell
         for sheet in &workbook.sheets {
             let is_only_sheet = workbook.sheets.len() == 1;
             let is_referenced = ctx.referenced_sheets.contains(&sheet.sheet_index);
 
             if !is_only_sheet && !is_referenced {
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Ref306,
                     ViolationScope::Sheet(sheet.sheet_index),
                     UnusedSheetData {
@@ -62,8 +65,6 @@ impl WalkerRule for UnusedSheetsRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -72,6 +73,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -116,7 +118,7 @@ mod tests {
         // Simulate: Sheet1 (index 0) is referenced by another sheet
         ctx.referenced_sheets.insert(0);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
 
         // Sheet2 (index 1) should be flagged as unreferenced
         assert_eq!(violations.len(), 1);
@@ -140,7 +142,7 @@ mod tests {
 
         let mut rule = UnusedSheetsRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
 
         assert!(violations.is_empty());
     }

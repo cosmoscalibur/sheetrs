@@ -51,6 +51,11 @@ for single-pass cell-by-cell traversal:
 - `on_workbook_end()` — called after all cells are visited. Emit violations
   based on collected data.
 
+Hooks return `()` and push each violation into the `out: &mut Vec<Violation>`
+sink that the walker passes to every rule, so a hook that emits nothing leaves
+`out` untouched. A unit test collects a hook's output with
+`rules::collect_violations(|out| rule.on_cell(&sheet, &cell, &mut ctx, out))`.
+
 Hooks take `&mut self`: rules keep their collected state in plain fields
 (e.g. `HashMap`), without locks. The registry creates fresh instances for every
 lint run (`registry::create_walker_rules`), so each run starts from empty state.

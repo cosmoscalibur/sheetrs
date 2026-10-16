@@ -43,11 +43,14 @@ impl WalkerRule for HiddenWorksheetRule {
         super::RuleCategory::Hidden
     }
 
-    fn on_sheet_start(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
-        let mut violations = Vec::new();
-
+    fn on_sheet_start(
+        &mut self,
+        sheet: &Sheet,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         if !sheet.visible {
-            violations.push(Violation::with_data(
+            out.push(Violation::with_data(
                 RuleId::Hid901,
                 ViolationScope::Sheet(sheet.sheet_index),
                 HiddenWorksheetData {
@@ -56,8 +59,6 @@ impl WalkerRule for HiddenWorksheetRule {
                 Severity::Warning,
             ));
         }
-
-        violations
     }
 }
 
@@ -65,6 +66,7 @@ impl WalkerRule for HiddenWorksheetRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::Sheet;
+    use crate::rules::collect_violations;
 
     #[test]
     fn test_hidden_sheet() {
@@ -77,7 +79,8 @@ mod tests {
 
         let mut rule = HiddenWorksheetRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&hidden_sheet, &mut ctx);
+        let violations =
+            collect_violations(|out| rule.on_sheet_start(&hidden_sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::Hid901);
@@ -91,7 +94,8 @@ mod tests {
 
         let mut rule = HiddenWorksheetRule;
         let mut ctx = LinterContext::default();
-        let violations = rule.on_sheet_start(&visible_sheet, &mut ctx);
+        let violations =
+            collect_violations(|out| rule.on_sheet_start(&visible_sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 0);
     }

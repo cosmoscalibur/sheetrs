@@ -51,28 +51,6 @@ impl OldSpreadsheetRule {
             max_age_days: max_days,
         }
     }
-
-    /// Check file age and return violation if exceeded.
-    fn check_age(&self, workbook: &Workbook) -> Vec<Violation> {
-        let mut violations = Vec::new();
-
-        // modified_date is already parsed by parser (Parse, don't validate)
-        if let Some(modified) = workbook.modified_date {
-            let age = Utc::now().signed_duration_since(modified);
-            let age_days = age.num_days();
-
-            if age_days > self.max_age_days {
-                violations.push(Violation::with_data(
-                    RuleId::File1002,
-                    ViolationScope::Book,
-                    OldSpreadsheetData { age_days },
-                    Severity::Info,
-                ));
-            }
-        }
-
-        violations
-    }
 }
 
 impl Default for OldSpreadsheetRule {
@@ -100,21 +78,38 @@ impl WalkerRule for OldSpreadsheetRule {
         &mut self,
         workbook: &Workbook,
         _ctx: &mut LinterContext,
-    ) -> Vec<Violation> {
-        self.check_age(workbook)
+        out: &mut Vec<Violation>,
+    ) {
+        // modified_date is already parsed by parser (Parse, don't validate)
+        if let Some(modified) = workbook.modified_date {
+            let age = Utc::now().signed_duration_since(modified);
+            let age_days = age.num_days();
+
+            if age_days > self.max_age_days {
+                out.push(Violation::with_data(
+                    RuleId::File1002,
+                    ViolationScope::Book,
+                    OldSpreadsheetData { age_days },
+                    Severity::Info,
+                ));
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::collect_violations;
     use chrono::{DateTime, Utc};
 
     #[test]
     fn test_recent_file_no_violation() {
         let workbook = Workbook::default();
-        let rule = OldSpreadsheetRule::default();
-        let violations = rule.check_age(&workbook);
+        let mut rule = OldSpreadsheetRule::default();
+        let violations = collect_violations(|out| {
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         assert!(violations.is_empty());
     }
 
@@ -127,8 +122,10 @@ mod tests {
             ..Default::default()
         };
 
-        let rule = OldSpreadsheetRule::default();
-        let violations = rule.check_age(&workbook);
+        let mut rule = OldSpreadsheetRule::default();
+        let violations = collect_violations(|out| {
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::File1002);
         assert!(violations[0].message().contains("days old"));
@@ -137,8 +134,10 @@ mod tests {
     #[test]
     fn test_missing_date_no_violation() {
         let workbook = Workbook::default();
-        let rule = OldSpreadsheetRule::default();
-        let violations = rule.check_age(&workbook);
+        let mut rule = OldSpreadsheetRule::default();
+        let violations = collect_violations(|out| {
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+        });
         assert!(violations.is_empty());
     }
 }

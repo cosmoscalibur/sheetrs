@@ -67,12 +67,17 @@ impl WalkerRule for ApproximateLookupRule {
         RuleCategory::Calculations
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         let Some(formula_upper) = ctx.formula_upper(sheet, cell) else {
-            return Vec::new();
+            return;
         };
         let formula_bytes = formula_upper.as_bytes();
-        let mut violations = Vec::new();
 
         for (i, &(func_name, exact_match_arg_idx)) in LOOKUP_FUNCTIONS.iter().enumerate() {
             let pattern = &SEARCH_PATTERNS[i];
@@ -102,7 +107,7 @@ impl WalkerRule for ApproximateLookupRule {
                     };
 
                     if should_flag {
-                        violations.push(Violation::with_data(
+                        out.push(Violation::with_data(
                             RuleId::Calc204,
                             ViolationScope::Cell(
                                 sheet.sheet_index,
@@ -120,8 +125,6 @@ impl WalkerRule for ApproximateLookupRule {
                 search_from = abs_pos + pat_bytes.len();
             }
         }
-
-        violations
     }
 }
 
@@ -178,7 +181,7 @@ mod tests {
         let mut ctx = LinterContext::default();
         let mut violations = Vec::new();
         for cell in sheet.all_cells() {
-            violations.extend(rule.on_cell(sheet, cell, &mut ctx));
+            rule.on_cell(sheet, cell, &mut ctx, &mut violations);
         }
         violations
     }

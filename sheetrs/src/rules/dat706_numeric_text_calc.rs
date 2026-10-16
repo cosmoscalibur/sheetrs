@@ -57,7 +57,13 @@ impl WalkerRule for NumericTextCalcRule {
         RuleCategory::Data
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         // Collect numeric-text cells: text values that parse as f64
         if let CellValue::Text(ref t) = cell.value
             && !cell.is_formula()
@@ -66,20 +72,22 @@ impl WalkerRule for NumericTextCalcRule {
             ctx.numeric_text_cells
                 .insert((sheet.sheet_index, cell.row, cell.col));
         }
-        Vec::new()
     }
 
-    fn on_workbook_end(&mut self, _workbook: &Workbook, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_workbook_end(
+        &mut self,
+        _workbook: &Workbook,
+        ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
         if ctx.numeric_text_cells.is_empty() || ctx.cell_dependencies.is_empty() {
-            return Vec::new();
+            return;
         }
-
-        let mut violations = Vec::new();
 
         for (formula_loc, deps) in &ctx.cell_dependencies {
             // Find the first dependency that is a numeric-text cell
             if let Some(text_dep) = deps.iter().find(|dep| ctx.numeric_text_cells.contains(dep)) {
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Data706,
                     ViolationScope::Cell(
                         formula_loc.0,
@@ -92,8 +100,6 @@ impl WalkerRule for NumericTextCalcRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -102,6 +108,7 @@ mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet, Workbook};
     use crate::rules::LinterContext;
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -172,12 +179,12 @@ mod tests {
 
         // Simulate walk
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
         // Simulate CALC202 populating deps: B1(0,1) depends on A1(0,0)
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 1);
     }
 
@@ -193,11 +200,11 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 0);
     }
 
@@ -213,11 +220,11 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 0);
     }
 
@@ -234,11 +241,11 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
         // No dependencies (no formulas)
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 0);
     }
 
@@ -255,12 +262,12 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
         ctx.cell_dependencies
             .insert((0, 0, 1), vec![(0, 0, 0), (0, 1, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 1, "Only one violation per formula cell");
     }
 
@@ -276,11 +283,11 @@ mod tests {
         let mut ctx = LinterContext::default();
 
         for cell in sheet.all_cells() {
-            rule.on_cell(&sheet, cell, &mut ctx);
+            rule.on_cell(&sheet, cell, &mut ctx, &mut Vec::new());
         }
         ctx.cell_dependencies.insert((0, 0, 1), vec![(0, 0, 0)]);
 
-        let violations = rule.on_workbook_end(&workbook, &mut ctx);
+        let violations = collect_violations(|out| rule.on_workbook_end(&workbook, &mut ctx, out));
         assert_eq!(violations.len(), 0);
     }
 }

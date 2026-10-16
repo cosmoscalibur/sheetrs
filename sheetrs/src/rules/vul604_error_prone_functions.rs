@@ -95,7 +95,13 @@ impl WalkerRule for ErrorProneFunctionsRule {
         RuleCategory::Vulnerability
     }
 
-    fn on_cell(&mut self, sheet: &Sheet, cell: &Cell, ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        cell: &Cell,
+        ctx: &mut LinterContext,
+        _out: &mut Vec<Violation>,
+    ) {
         if let Some(formula_upper) = ctx.formula_upper(sheet, cell) {
             let formula_bytes = formula_upper.as_bytes();
             let mut matches = Vec::new();
@@ -126,16 +132,13 @@ impl WalkerRule for ErrorProneFunctionsRule {
                     .extend(matches);
             }
         }
-        Vec::new()
     }
 
-    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext) -> Vec<Violation> {
+    fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
         let Some(mut cells) = self.sheet_cells.remove(&sheet.sheet_index) else {
-            return Vec::new();
+            return;
         };
         cells.sort_unstable();
-
-        let mut violations = Vec::new();
 
         // Group by function index
         let mut by_func: BTreeMap<u8, Vec<(u32, u32)>> = BTreeMap::new();
@@ -147,7 +150,7 @@ impl WalkerRule for ErrorProneFunctionsRule {
             let ranges = find_contiguous_ranges(&func_cells);
             for range in ranges {
                 let bbox = bounding_box(&range);
-                violations.push(Violation::with_data(
+                out.push(Violation::with_data(
                     RuleId::Vul604,
                     ViolationScope::Sheet(sheet.sheet_index),
                     ErrorProneFuncData {
@@ -158,8 +161,6 @@ impl WalkerRule for ErrorProneFunctionsRule {
                 ));
             }
         }
-
-        violations
     }
 }
 
@@ -167,6 +168,7 @@ impl WalkerRule for ErrorProneFunctionsRule {
 mod tests {
     use super::*;
     use crate::reader::workbook::{Cell, CellValue, Sheet};
+    use crate::rules::collect_violations;
     use std::collections::HashMap;
 
     fn make_formula_cell(row: u32, col: u32, formula: &str) -> Cell {
@@ -196,9 +198,9 @@ mod tests {
     fn run_rule(rule: &mut ErrorProneFunctionsRule, sheet: &Sheet) -> Vec<Violation> {
         let mut ctx = LinterContext::default();
         for cell in sheet.all_cells() {
-            rule.on_cell(sheet, cell, &mut ctx);
+            rule.on_cell(sheet, cell, &mut ctx, &mut Vec::new());
         }
-        rule.on_sheet_end(sheet, &mut ctx)
+        collect_violations(|out| rule.on_sheet_end(sheet, &mut ctx, out))
     }
 
     #[test]
