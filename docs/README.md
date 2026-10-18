@@ -9,6 +9,9 @@ getting-started instructions, see the root [README.md](../README.md).
   design principles (format-agnostic rules, streaming readers).
 - [Coding Patterns](coding-patterns.md) — conventions, naming, SoC principle,
   WalkerRule trait pattern, CLI and library guidelines.
+- [Formula AST Plan](formula-ast-plan.md) — proposal for a shared XLSX/ODS
+  formula AST serving semantic linting, structural transformations and a
+  calculation engine.
 
 ## Analysis & Profiling
 
