@@ -1,5 +1,5 @@
 [workspace]
-members = ["sheetrs", "sheetlint", "sheetstats", "sheetcli", "sheetrs-wasm"]
+members = ["sheetrs", "sheetrs-formula", "xlslang", "sheetlint", "sheetstats", "sheetcli", "sheetrs-wasm"]
 resolver = "2"
 
 [workspace.package]
@@ -32,6 +32,11 @@ zip = { version = "8.3", default-features = false, features = ["deflate"] }
 # HTTP client for link validation
 reqwest = { version = "0.13.5", features = ["blocking"] }
 regex = "1.13.1"
+fancy-regex = "0.19"
+serde_json = { version = "1.0", features = ["preserve_order"] }
+icu_collator = "2"
+icu_locale = "2"
+tempfile = "3.27"
 aho-corasick = "1.1.4"
 
 [workspace.lints.clippy]

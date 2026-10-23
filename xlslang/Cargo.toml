@@ -1,0 +1,39 @@
+[package]
+name = "xlslang"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Compiler from XLSX/ODS spreadsheets to standalone executables, with a format-independent IR and a hybrid compile/runtime calculation engine"
+
+[lib]
+name = "xlslang"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xlslang"
+path = "src/main.rs"
+required-features = ["load"]
+
+[features]
+default = ["load"]
+# Frontend that reads XLSX/ODS files through the sheetrs readers.
+load = ["dep:sheetrs"]
+
+[dependencies]
+sheetrs-formula = { path = "../sheetrs-formula" }
+sheetrs = { path = "../sheetrs", default-features = false, optional = true }
+serde = { workspace = true, features = ["rc"] }
+serde_json.workspace = true
+regex.workspace = true
+fancy-regex.workspace = true
+icu_collator.workspace = true
+icu_locale.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

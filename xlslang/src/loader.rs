@@ -1,0 +1,223 @@
+//! Frontend for XLSX/ODS files, built on the `sheetrs` readers.
+//!
+//! `sheetrs` already resolves the container formats (shared strings, shared
+//! formulas, ODS table repetition) and normalizes ODS references and argument
+//! separators to the Excel syntax, so the only format knowledge left here is
+//! the dialect used to resolve function names.
+
+use crate::addr::CellRef;
+use crate::ir::Ns;
+use crate::model::{Model, ModelCell, ModelSettings};
+use crate::options::{DateSystem, Iteration, Search, SearchMode};
+use crate::value::{ErrorKind, Value};
+use sheetrs::reader::{CellValue, DocumentSettings, Workbook};
+use std::path::Path;
+
+pub fn load(path: &Path) -> Result<Model, String> {
+    let wb =
+        sheetrs::reader::read_workbook(path).map_err(|e| format!("{}: {e:#}", path.display()))?;
+    let ods = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("ods"));
+    Ok(from_workbook_owned(
+        wb,
+        if ods { Ns::Ods } else { Ns::Xlsx },
+    ))
+}
+
+/// Convert a workbook, consuming it: values and formula text move instead of
+/// being copied, and each sheet's cells are released as soon as they are
+/// converted (a large workbook is held once, not twice).
+pub fn from_workbook_owned(mut wb: Workbook, dialect: Ns) -> Model {
+    let sheets = std::mem::take(&mut wb.sheets);
+    let mut m = header(&wb, dialect);
+    m.cells.reserve(sheets.iter().map(|s| s.cells.len()).sum());
+    for (i, sheet) in sheets.into_iter().enumerate() {
+        m.sheets.push(sheet.name);
+        for (_, cell) in sheet.cells {
+            let value = convert(&cell.value);
+            let formula = cell.formula.map(String::from);
+            if formula.is_none() && value == Value::Empty {
+                continue;
+            }
+            m.cells.insert(
+                CellRef::new(i as u16, cell.row, cell.col),
+                ModelCell {
+                    value,
+                    formula,
+                    array: cell.is_array,
+                },
+            );
+        }
+    }
+    m
+}
+
+/// Workbook-level settings: date system, document settings, defined names.
+fn header(wb: &Workbook, dialect: Ns) -> Model {
+    let mut m = Model::new(dialect);
+    m.from_file = true;
+    m.date_system = match (wb.date1904, dialect) {
+        (true, _) => DateSystem::Excel1904,
+        // OpenDocument's default null date is 1899-12-30 on the real calendar.
+        (false, Ns::Ods) => DateSystem::Real1899,
+        (false, _) => DateSystem::Excel1900,
+    };
+    m.settings = settings(&wb.settings, dialect, &mut m.diagnostics);
+    m.names = wb
+        .defined_names
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                if dialect == Ns::Ods {
+                    ods_name(v)
+                } else {
+                    v.clone()
+                },
+            )
+        })
+        .collect();
+    m
+}
+
+pub fn from_workbook(wb: &Workbook, dialect: Ns) -> Model {
+    let mut m = header(wb, dialect);
+    for (i, sheet) in wb.sheets.iter().enumerate() {
+        m.sheets.push(sheet.name.clone());
+        for cell in sheet.cells.values() {
+            let value = convert(&cell.value);
+            let formula = cell.formula.as_deref().map(str::to_string);
+            if formula.is_none() && value == Value::Empty {
+                continue;
+            }
+            m.cells.insert(
+                CellRef::new(i as u16, cell.row, cell.col),
+                ModelCell {
+                    value,
+                    formula,
+                    array: cell.is_array,
+                },
+            );
+        }
+    }
+    m
+}
+
+/// Resolve the settings the document states into engine terms. ODS applies the
+/// ODF defaults to what it leaves out (case sensitive, whole-cell, regular
+/// expressions on, wildcards off); LibreOffice itself omits an attribute that
+/// equals the default. Excel files carry no search settings and use Excel's
+/// behavior.
+fn settings(s: &DocumentSettings, dialect: Ns, diags: &mut Vec<String>) -> ModelSettings {
+    let search = (dialect == Ns::Ods).then(|| Search {
+        mode: if s.use_wildcards == Some(true) {
+            SearchMode::Wildcards
+        } else if s.use_regular_expressions.unwrap_or(true) {
+            SearchMode::Regex
+        } else {
+            SearchMode::Literal
+        },
+        whole_cell: s.search_whole_cell.unwrap_or(true),
+        case_sensitive: s.case_sensitive.unwrap_or(true),
+    });
+    if s.precision_as_shown == Some(true) {
+        diags.push(
+            "the document uses 'precision as shown'; values are not rounded to their displayed precision"
+                .into(),
+        );
+    }
+    ModelSettings {
+        iteration: s
+            .iteration
+            .as_ref()
+            .filter(|i| i.enabled)
+            .map(|i| Iteration {
+                max_iterations: i.max_iterations,
+                max_change: i.max_change,
+            }),
+        search,
+        two_digit_year_start: s.null_year,
+        locale: s.locale.clone(),
+    }
+}
+
+fn convert(v: &CellValue) -> Value {
+    match v {
+        CellValue::Empty => Value::Empty,
+        CellValue::Number(n) => Value::Number(*n),
+        CellValue::Text(t) => Value::Text(t.clone()),
+        CellValue::Boolean(b) => Value::Bool(*b),
+        CellValue::Error(e) => Value::Error(error_kind(&e.to_string())),
+    }
+}
+
+/// Excel error literal or LibreOffice `Err:NNN` code.
+fn error_kind(s: &str) -> ErrorKind {
+    if let Some(k) = ErrorKind::parse(s) {
+        return k;
+    }
+    match s.strip_prefix("Err:").and_then(|c| c.parse::<u16>().ok()) {
+        Some(522 | 523) => ErrorKind::Circ,
+        Some(524) => ErrorKind::Ref,
+        Some(525 | 508 | 509 | 510 | 511) => ErrorKind::Name,
+        Some(502 | 503) => ErrorKind::Num,
+        Some(532) => ErrorKind::DivZero,
+        _ => ErrorKind::Value,
+    }
+}
+
+/// ODS stores a defined range as `Sheet7.C3:Sheet7.C10` or
+/// `$'My Sheet'.$A$1:.$B$2`; rewrite it as `Sheet7!C3:C10`. Anything that is
+/// not a plain reference is returned unchanged.
+fn ods_name(def: &str) -> String {
+    let mut sheet: Option<String> = None;
+    let mut cells = Vec::new();
+    for part in def.split(':') {
+        let part = part.strip_prefix('$').unwrap_or(part);
+        let (name, cell) = if let Some(rest) = part.strip_prefix('\'') {
+            match rest.split_once("'.") {
+                Some((n, c)) => (Some(n.replace("''", "'")), c),
+                None => return def.to_string(),
+            }
+        } else {
+            match part.rsplit_once('.') {
+                Some((n, c)) if !n.is_empty() => (Some(n.to_string()), c),
+                Some((_, c)) => (None, c),
+                None => return def.to_string(),
+            }
+        };
+        if crate::addr::parse_area(cell).is_none() {
+            return def.to_string();
+        }
+        sheet = sheet.or(name);
+        cells.push(cell);
+    }
+    let area = cells.join(":");
+    match sheet {
+        Some(n) if n.chars().all(|c| c.is_alphanumeric() || c == '_') => format!("{n}!{area}"),
+        Some(n) => format!("'{}'!{area}", n.replace('\'', "''")),
+        None => area,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ods_defined_ranges() {
+        assert_eq!(ods_name("Sheet7.C3:Sheet7.C10"), "Sheet7!C3:C10");
+        assert_eq!(ods_name("$'My Sheet'.$A$1:.$B$2"), "'My Sheet'!$A$1:$B$2");
+        assert_eq!(ods_name("$Sheet1.$A$1"), "Sheet1!$A$1");
+        assert_eq!(ods_name("SUM(1;2)"), "SUM(1;2)");
+    }
+
+    #[test]
+    fn libreoffice_error_codes() {
+        assert_eq!(error_kind("Err:522"), ErrorKind::Circ);
+        assert_eq!(error_kind("#N/A"), ErrorKind::Na);
+        assert_eq!(error_kind("Err:999"), ErrorKind::Value);
+    }
+}

@@ -10,6 +10,14 @@ getting-started instructions, see the root [README.md](../README.md).
 - [Coding Patterns](coding-patterns.md) — conventions, naming, SoC principle,
   WalkerRule trait pattern, CLI and library guidelines.
 
+## Engine (xlslang)
+
+- [xlslang README](../xlslang/README.md) — build, run, inputs/outputs, options.
+- [Design](../xlslang/docs/DESIGN.md) — pipeline, IR, hybrid compile/run time,
+  ordering, reader contract, roadmap.
+- [Fidelity](../xlslang/docs/FIDELITY.md) — every difference between Excel and
+  LibreOffice the engine models, with the evidence behind it.
+
 ## Analysis & Profiling
 
 - [Comparative Report](../sheetlint/comparative_report.md) — rule comparison

@@ -4,12 +4,19 @@ The **SheetRS Suite** is a high-performance toolkit for processing, linting,
 and manipulating spreadsheets (XLSX and ODS). Written in Rust, it is designed
 for speed, safety, and ease of integration into CI/CD pipelines.
 
-The suite consists of three specialized CLI tools:
+The suite consists of three specialized CLI tools, a compiler, and two
+libraries:
 
 - **sheetlint**: Advanced spreadsheet linter with hierarchical rule enforcement.
 - **sheetstats**: Detailed statistics and dependency analysis for workbooks.
 - **sheetcli**: General-purpose spreadsheet operations (convert, modify,
   repair).
+- **xlslang**: Compiler from a spreadsheet to a standalone executable (JSON in,
+  JSON out) with a format-independent IR and a calculation engine faithful to
+  Excel and LibreOffice. See [xlslang/README.md](xlslang/README.md).
+- **sheetrs-formula**: Lossless formula AST (parser, printer, reference
+  rewriting for row/column/sheet edits, R1C1 form), shared by the engine and,
+  later, by the linter rules.
 
 ## Prerequisites
 
@@ -55,6 +62,8 @@ No environment variables are required. Configuration is via `sheetlint.toml`.
 ```text
 sheetrs/
 ├── sheetrs/        # Core library (parsers, rules, config, writer)
+├── sheetrs-formula/# Formula AST: parse, print, rewrite references
+├── xlslang/        # Spreadsheet → executable compiler and engine
 ├── sheetlint/      # Linter CLI
 ├── sheetstats/     # Statistics CLI
 ├── sheetcli/       # Manipulation CLI
