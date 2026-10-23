@@ -14,7 +14,9 @@ pub mod xlsx_parser;
 
 use self::ods_parser::OdsReader;
 use self::xlsx_parser::XlsxReader;
-pub use workbook::{Cell, CellValue, ExternalWorkbook, Sheet, Workbook};
+pub use workbook::{
+    Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, Sheet, Workbook,
+};
 
 /// Trait for spreadsheet format readers
 ///
@@ -48,6 +50,9 @@ pub trait WorkbookReader {
 
     /// Check if the workbook uses the 1904 date system
     fn read_date1904(&mut self) -> Result<bool>;
+
+    /// Read the calculation settings stored in the document, as stored.
+    fn read_settings(&mut self) -> Result<DocumentSettings>;
 }
 
 /// Read a workbook from a file path
@@ -120,6 +125,7 @@ pub fn read_workbook_from_reader<R: std::io::Read + std::io::Seek>(
         external_workbooks,
         modified_date,
         date1904,
+        settings,
     ) = if is_xlsx {
         let mut reader = XlsxReader::new(&mut archive)?;
         (
@@ -130,6 +136,7 @@ pub fn read_workbook_from_reader<R: std::io::Read + std::io::Seek>(
             reader.read_external_workbooks()?,
             reader.read_modified_date()?,
             reader.read_date1904()?,
+            reader.read_settings()?,
         )
     } else if is_ods || (!is_xlsx && archive.by_name("content.xml").is_ok()) {
         // Simple heuristic for ODS if no extension: check for content.xml
@@ -144,6 +151,7 @@ pub fn read_workbook_from_reader<R: std::io::Read + std::io::Seek>(
             reader.read_external_workbooks()?,
             reader.read_modified_date()?,
             reader.read_date1904()?,
+            reader.read_settings()?,
         )
     } else if is_xlsx || archive.by_name("[Content_Types].xml").is_ok() {
         // Simple heuristic for XLSX if no extension: check for [Content_Types].xml
@@ -156,6 +164,7 @@ pub fn read_workbook_from_reader<R: std::io::Read + std::io::Seek>(
             reader.read_external_workbooks()?,
             reader.read_modified_date()?,
             reader.read_date1904()?,
+            reader.read_settings()?,
         )
     } else {
         return Err(anyhow::anyhow!("Unsupported or unrecognizable file format"));
@@ -170,6 +179,7 @@ pub fn read_workbook_from_reader<R: std::io::Read + std::io::Seek>(
         external_workbooks,
         modified_date,
         date1904,
+        settings,
         file_size_bytes: 0, // Will be set by read_workbook when path is known
     })
 }

@@ -42,6 +42,50 @@ pub struct Workbook {
     pub date1904: bool,
     /// File size in bytes (extracted from file metadata)
     pub file_size_bytes: u64,
+    /// Calculation and locale settings stored in the document
+    pub settings: DocumentSettings,
+}
+
+/// Iterative calculation settings (circular references).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct IterationSettings {
+    /// Whether iteration is switched on.
+    pub enabled: bool,
+    /// Maximum number of iterations (Excel and LibreOffice default: 100).
+    pub max_iterations: u32,
+    /// Maximum change between iterations (default: 0.001).
+    pub max_change: f64,
+}
+
+/// Calculation settings a document carries, as stored. Every field is `None`
+/// when the file does not state it: the reader applies no defaults, so the
+/// consumer can tell "not stated" from "stated as the default" and decide what
+/// the producing application would have assumed.
+///
+/// XLSX: `calcPr` in `xl/workbook.xml`. ODS: `table:calculation-settings` in
+/// `content.xml` and the default cell style in `styles.xml`.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DocumentSettings {
+    /// Iterative calculation (XLSX `iterate`/`iterateCount`/`iterateDelta`,
+    /// ODS `table:iteration`).
+    pub iteration: Option<IterationSettings>,
+    /// Text comparison is case sensitive (ODS `table:case-sensitive`).
+    pub case_sensitive: Option<bool>,
+    /// Search criteria must match the whole cell (ODS
+    /// `table:search-criteria-must-apply-to-whole-cell`).
+    pub search_whole_cell: Option<bool>,
+    /// Search criteria are regular expressions (ODS `table:use-regular-expressions`).
+    pub use_regular_expressions: Option<bool>,
+    /// Search criteria may use `*`/`?`/`~` wildcards (ODS `table:use-wildcards`).
+    pub use_wildcards: Option<bool>,
+    /// First year of the 100-year window for two-digit years (ODS `table:null-year`).
+    pub null_year: Option<u16>,
+    /// Values are rounded to their displayed precision (XLSX
+    /// `fullPrecision="0"`, ODS `table:precision-as-shown`).
+    pub precision_as_shown: Option<bool>,
+    /// Document language and country as a BCP 47 tag, e.g. `en-US` (ODS: the
+    /// default cell style in `styles.xml`).
+    pub locale: Option<String>,
 }
 
 impl Workbook {

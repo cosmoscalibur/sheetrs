@@ -14,7 +14,7 @@ use super::parser_utils::{
     attr_value, column_letters, column_letters_to_index, parse_cell_range, parse_cell_ref,
     push_general_ref, read_text_node,
 };
-use super::{Cell, CellValue, Sheet, WorkbookReader};
+use super::{Cell, CellValue, DocumentSettings, IterationSettings, Sheet, WorkbookReader};
 use crate::violation::ExcelError;
 
 /// Resolve sheet name to its XML path in the XLSX archive
@@ -364,6 +364,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> 
     fn read_date1904(&mut self) -> Result<bool> {
         extract_date1904_xlsx(self.archive)
     }
+
+    fn read_settings(&mut self) -> Result<DocumentSettings> {
+        extract_settings_xlsx(self.archive)
+    }
 }
 
 /// Extract last modified date from docProps/core.xml
@@ -434,6 +438,53 @@ fn extract_date1904_xlsx(
     }
 
     Ok(false)
+}
+
+/// Read `calcPr` from xl/workbook.xml. Excel writes the element only when the
+/// workbook deviates from or states its calculation options; its absence leaves
+/// every field `None`.
+fn extract_settings_xlsx(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<DocumentSettings> {
+    let mut settings = DocumentSettings::default();
+    let Ok(workbook_xml) = archive.by_name("xl/workbook.xml") else {
+        return Ok(settings);
+    };
+    let mut reader = Reader::from_reader(BufReader::new(workbook_xml));
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "calcPr" => {
+                settings.iteration = Some(IterationSettings {
+                    enabled: false,
+                    max_iterations: 100,
+                    max_change: 0.001,
+                });
+                for attr in e.attributes().flatten() {
+                    let v = attr_value(&attr)?;
+                    let flag = v == "1" || v.eq_ignore_ascii_case("true");
+                    let it = settings.iteration.as_mut();
+                    match (attr.key.as_ref(), it) {
+                        ("iterate", Some(it)) => it.enabled = flag,
+                        ("iterateCount", Some(it)) => {
+                            it.max_iterations = v.parse().unwrap_or(it.max_iterations);
+                        }
+                        ("iterateDelta", Some(it)) => {
+                            it.max_change = v.parse().unwrap_or(it.max_change);
+                        }
+                        ("fullPrecision", _) => settings.precision_as_shown = Some(!flag),
+                        _ => {}
+                    }
+                }
+                break;
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(settings)
 }
 
 pub fn extract_external_links_xlsx(
@@ -1817,6 +1868,50 @@ pub fn extract_formulas_from_xlsx(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn zip_with(body: &str) -> ZipArchive<std::io::Cursor<Vec<u8>>> {
+        use std::io::Write;
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        w.start_file("xl/workbook.xml", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        w.write_all(body.as_bytes()).unwrap();
+        ZipArchive::new(std::io::Cursor::new(w.finish().unwrap().into_inner())).unwrap()
+    }
+
+    #[test]
+    fn test_extract_settings_xlsx() {
+        let mut z = zip_with(
+            r#"<workbook><calcPr calcId="1" iterate="1" iterateCount="30" iterateDelta="0.5" fullPrecision="0"/></workbook>"#,
+        );
+        let s = extract_settings_xlsx(&mut z).unwrap();
+        assert_eq!(
+            s.iteration,
+            Some(IterationSettings {
+                enabled: true,
+                max_iterations: 30,
+                max_change: 0.5
+            })
+        );
+        assert_eq!(s.precision_as_shown, Some(true));
+        // calcPr without iterate: stated, off, defaults for the rest.
+        let mut z = zip_with(r#"<workbook><calcPr calcId="1"/></workbook>"#);
+        let s = extract_settings_xlsx(&mut z).unwrap();
+        assert_eq!(
+            s.iteration,
+            Some(IterationSettings {
+                enabled: false,
+                max_iterations: 100,
+                max_change: 0.001
+            })
+        );
+        assert_eq!(s.precision_as_shown, None);
+        // No calcPr: nothing stated.
+        let mut z = zip_with("<workbook/>");
+        assert_eq!(
+            extract_settings_xlsx(&mut z).unwrap(),
+            DocumentSettings::default()
+        );
+    }
     use std::io::{Cursor, Write};
 
     #[test]

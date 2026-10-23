@@ -2,7 +2,9 @@
 
 use super::WorkbookReader;
 use super::parser_utils::{attr_value, push_general_ref, read_text_node};
-use super::workbook::{Cell, CellValue, ExternalWorkbook, Sheet};
+use super::workbook::{
+    Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, Sheet,
+};
 use crate::violation::ExcelError;
 use anyhow::Result;
 use quick_xml::Reader;
@@ -1982,6 +1984,12 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
     fn read_date1904(&mut self) -> Result<bool> {
         extract_date1904_ods(self.archive)
     }
+
+    fn read_settings(&mut self) -> Result<DocumentSettings> {
+        let mut settings = extract_settings_ods(self.archive)?;
+        settings.locale = extract_locale_ods(self.archive);
+        Ok(settings)
+    }
 }
 
 /// Extract last modified date from meta.xml
@@ -2057,6 +2065,122 @@ fn extract_date1904_ods(
     Ok(false)
 }
 
+fn ods_bool(v: &str) -> bool {
+    v == "true"
+}
+
+/// Read `table:calculation-settings` (and its `table:iteration`) from
+/// content.xml. The element precedes the first table, so reading stops there.
+fn extract_settings_ods(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<DocumentSettings> {
+    let mut settings = DocumentSettings::default();
+    let Ok(content_xml) = archive.by_name("content.xml") else {
+        return Ok(settings);
+    };
+    let mut reader = Reader::from_reader(BufReader::new(content_xml));
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            Event::Start(e) | Event::Empty(e) => match e.name().as_ref() {
+                "table:calculation-settings" => {
+                    for attr in e.attributes().flatten() {
+                        let v = attr_value(&attr)?;
+                        match attr.key.as_ref() {
+                            "table:case-sensitive" => settings.case_sensitive = Some(ods_bool(&v)),
+                            "table:search-criteria-must-apply-to-whole-cell" => {
+                                settings.search_whole_cell = Some(ods_bool(&v));
+                            }
+                            "table:use-regular-expressions" => {
+                                settings.use_regular_expressions = Some(ods_bool(&v));
+                            }
+                            "table:use-wildcards" => settings.use_wildcards = Some(ods_bool(&v)),
+                            "table:precision-as-shown" => {
+                                settings.precision_as_shown = Some(ods_bool(&v));
+                            }
+                            "table:null-year" => settings.null_year = v.parse().ok(),
+                            _ => {}
+                        }
+                    }
+                }
+                "table:iteration" => {
+                    // ODF defaults: disabled, 100 steps, 0.001.
+                    let mut it = IterationSettings {
+                        enabled: false,
+                        max_iterations: 100,
+                        max_change: 0.001,
+                    };
+                    for attr in e.attributes().flatten() {
+                        let v = attr_value(&attr)?;
+                        match attr.key.as_ref() {
+                            "table:status" => it.enabled = v == "enable",
+                            "table:steps" => it.max_iterations = v.parse().unwrap_or(100),
+                            "table:maximum-difference" => {
+                                it.max_change = v.parse().unwrap_or(0.001)
+                            }
+                            _ => {}
+                        }
+                    }
+                    settings.iteration = Some(it);
+                }
+                // Settings come before the first table.
+                "table:table" => break,
+                _ => {}
+            },
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(settings)
+}
+
+/// Document language from the default cell style in styles.xml
+/// (`fo:language` + `fo:country`), as a BCP 47 tag.
+fn extract_locale_ods(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Option<String> {
+    let styles = archive.by_name("styles.xml").ok()?;
+    let mut reader = Reader::from_reader(BufReader::new(styles));
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    let mut in_default = false;
+    loop {
+        match reader.read_event_into(&mut buf).ok()? {
+            Event::Start(e) if e.name().as_ref() == "style:default-style" => {
+                in_default = e
+                    .attributes()
+                    .flatten()
+                    .any(|a| a.key.as_ref() == "style:family" && a.value == "table-cell");
+            }
+            Event::End(e) if e.name().as_ref() == "style:default-style" => in_default = false,
+            Event::Start(e) | Event::Empty(e)
+                if in_default && e.name().as_ref() == "style:text-properties" =>
+            {
+                let (mut lang, mut country) = (None, None);
+                for a in e.attributes().flatten() {
+                    let v = attr_value(&a).ok()?.into_owned();
+                    match a.key.as_ref() {
+                        "fo:language" => lang = Some(v),
+                        "fo:country" => country = Some(v),
+                        _ => {}
+                    }
+                }
+                return lang.filter(|l| l != "zxx").map(|l| {
+                    match country.filter(|c| c != "none") {
+                        Some(c) => format!("{l}-{c}"),
+                        None => l,
+                    }
+                });
+            }
+            Event::Eof => return None,
+            _ => {}
+        }
+        buf.clear();
+    }
+}
+
 // Helper to calculate used range from cells
 fn calculate_used_range(cells: &HashMap<(u32, u32), Cell>) -> Option<(u32, u32)> {
     if cells.is_empty() {
@@ -2082,6 +2206,76 @@ fn calculate_used_range(cells: &HashMap<(u32, u32), Cell>) -> Option<(u32, u32)>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn zip_with(files: &[(&str, &str)]) -> ZipArchive<std::io::Cursor<Vec<u8>>> {
+        use std::io::Write;
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, body) in files {
+            w.start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            w.write_all(body.as_bytes()).unwrap();
+        }
+        ZipArchive::new(std::io::Cursor::new(w.finish().unwrap().into_inner())).unwrap()
+    }
+
+    #[test]
+    fn test_extract_settings_ods() {
+        let content = r#"<office:document-content><office:body><office:spreadsheet>
+            <table:calculation-settings table:case-sensitive="false" table:use-regular-expressions="true"
+              table:use-wildcards="false" table:search-criteria-must-apply-to-whole-cell="false"
+              table:null-year="1950" table:precision-as-shown="true">
+              <table:null-date table:value-type="date" table:date-value="1904-01-01"/>
+              <table:iteration table:status="enable" table:steps="50" table:maximum-difference="0.01"/>
+            </table:calculation-settings>
+            <table:table table:name="S"/></office:spreadsheet></office:body></office:document-content>"#;
+        let styles = r#"<office:document-styles><office:styles>
+            <style:default-style style:family="graphic"><style:text-properties fo:language="de" fo:country="DE"/></style:default-style>
+            <style:default-style style:family="table-cell"><style:text-properties fo:language="es" fo:country="CO"/></style:default-style>
+            </office:styles></office:document-styles>"#;
+        let mut zip = zip_with(&[("content.xml", content), ("styles.xml", styles)]);
+        let mut s = extract_settings_ods(&mut zip).unwrap();
+        s.locale = extract_locale_ods(&mut zip);
+        assert_eq!(s.case_sensitive, Some(false));
+        assert_eq!(s.use_regular_expressions, Some(true));
+        assert_eq!(s.use_wildcards, Some(false));
+        assert_eq!(s.search_whole_cell, Some(false));
+        assert_eq!(s.null_year, Some(1950));
+        assert_eq!(s.precision_as_shown, Some(true));
+        assert_eq!(
+            s.iteration,
+            Some(IterationSettings {
+                enabled: true,
+                max_iterations: 50,
+                max_change: 0.01
+            })
+        );
+        assert_eq!(s.locale.as_deref(), Some("es-CO"));
+    }
+
+    #[test]
+    fn test_extract_settings_ods_absent_and_partial() {
+        let mut zip = zip_with(&[("content.xml", "<a><table:table table:name=\"S\"/></a>")]);
+        assert_eq!(
+            extract_settings_ods(&mut zip).unwrap(),
+            DocumentSettings::default()
+        );
+        assert_eq!(extract_locale_ods(&mut zip), None);
+        // Iteration with only a tolerance: disabled, ODF defaults for the rest.
+        let mut zip = zip_with(&[(
+            "content.xml",
+            r#"<a><table:calculation-settings><table:iteration table:maximum-difference="0.0001"/></table:calculation-settings></a>"#,
+        )]);
+        let s = extract_settings_ods(&mut zip).unwrap();
+        assert_eq!(
+            s.iteration,
+            Some(IterationSettings {
+                enabled: false,
+                max_iterations: 100,
+                max_change: 0.0001
+            })
+        );
+        assert_eq!(s.case_sensitive, None);
+    }
 
     #[test]
     fn test_parse_ods_date_known_serials() {
