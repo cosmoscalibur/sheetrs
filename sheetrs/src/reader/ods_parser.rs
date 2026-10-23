@@ -66,7 +66,7 @@ pub fn has_macros(archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>) 
 
 /// Extract cached error values from an ODS worksheet
 /// ODS error values are often stored in calcext:value-type="error" and calcext:value="#ERROR!"
-fn parse_ods_date(date_str: &str) -> Option<f64> {
+fn parse_ods_date(date_str: &str, null_date_shift: i32) -> Option<f64> {
     // Format: YYYY-MM-DD or YYYY-MM-DDThh:mm:ss
     let parts: Vec<&str> = date_str.split('T').collect();
     let date_part = parts[0];
@@ -85,15 +85,14 @@ fn parse_ods_date(date_str: &str) -> Option<f64> {
         return None;
     }
 
-    // O(1) conversion from (year, month, day) to a serial date using correct
-    // Gregorian counting (no Excel 1900 leap year bug).
+    // O(1) conversion from (year, month, day) to the number of days since the
+    // document's null date, which is how a spreadsheet numbers dates (the
+    // value a formula such as `=A1+1` sees). LibreOffice's default null date is
+    // 1899-12-30; `null_date_shift` is the offset of the file's own
+    // `table:null-date` from it (0 by default, 1462 for 1904-01-01).
     //
-    // ODS stores dates as ISO 8601 strings and LibreOffice uses correct
-    // calendar arithmetic. Unlike XLSX (which inherits Excel's bug treating
-    // 1900 as a leap year), ODS serial numbers reflect the real calendar.
-    //
-    // Strategy: compute total days from a reference point using closed-form
-    // arithmetic. 1900-01-01 = serial 1.
+    // The calendar is the real one: nothing is adjusted for the Excel 1900
+    // leap-year quirk, since ODS does not have it.
 
     // Cumulative days before each month in a non-leap year (index 1 = Jan).
     const CUMULATIVE_DAYS: [i32; 13] = [0, 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
@@ -109,9 +108,8 @@ fn parse_ods_date(date_str: &str) -> Option<f64> {
     let leap_feb = if month > 2 && is_leap(year) { 1 } else { 0 };
     let absolute_days = days_before_year(year) + CUMULATIVE_DAYS[month as usize] + leap_feb + day;
 
-    // serial = absolute_days - days_before_year(1900).
-    // This gives 1900-01-01 = 1.
-    let total_days = absolute_days - days_before_year(1900);
+    // 1899-12-30 is day 0 (1900-01-01 is therefore 2).
+    let total_days = absolute_days - days_before_year(1900) + 1 - null_date_shift;
 
     // Time fraction
     let mut time_fraction = 0.0;
@@ -132,6 +130,36 @@ fn parse_ods_date(date_str: &str) -> Option<f64> {
     }
 
     Some(total_days as f64 + time_fraction)
+}
+
+/// Days between LibreOffice's default null date (1899-12-30) and the
+/// `table:null-date` declared by the document (`YYYY-MM-DD`).
+fn null_date_shift(null_date: &str) -> Option<i32> {
+    // parse_ods_date numbers days from 1899-12-30, so the date itself gives the shift.
+    parse_ods_date(null_date, 0).map(|d| d as i32)
+}
+
+/// Parse an `office:time-value` duration (`PT13H30M00S`, fractional seconds
+/// allowed) as a fraction of a day.
+fn parse_ods_time(s: &str) -> Option<f64> {
+    let rest = s.strip_prefix("PT")?;
+    let (mut total, mut num) = (0.0f64, String::new());
+    for c in rest.chars() {
+        match c {
+            '0'..='9' | '.' => num.push(c),
+            'H' | 'M' | 'S' => {
+                let v: f64 = num.parse().ok()?;
+                total += v * match c {
+                    'H' => 3600.0,
+                    'M' => 60.0,
+                    _ => 1.0,
+                };
+                num.clear();
+            }
+            _ => return None,
+        }
+    }
+    num.is_empty().then_some(total / 86400.0)
 }
 
 /// Extract formulas from an ODS worksheet
@@ -594,6 +622,9 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
         // ============================================================
         // STATE: Hidden sheets detection
         // ============================================================
+        // Offset of the document's null date from 1899-12-30 (see parse_ods_date).
+        let mut null_shift = 0i32;
+
         let mut hidden_sheets = Vec::new();
         let mut hidden_styles = std::collections::HashSet::new();
         let mut sheet_styles = Vec::new(); // (sheet_name, style_name)
@@ -738,6 +769,15 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                         }
                     }
                     Event::Empty(e) => match e.name().as_ref() {
+                        "table:null-date" => {
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == "table:date-value"
+                                    && let Some(d) = null_date_shift(&attr_value(&attr)?)
+                                {
+                                    null_shift = d;
+                                }
+                            }
+                        }
                         "number:day" if in_date_style => {
                             let mut long = automatic_order;
                             for attr in e.attributes().flatten() {
@@ -1334,6 +1374,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 "office:value"
                                 | "office:string-value"
                                 | "office:boolean-value"
+                                | "office:time-value"
                                 | "office:date-value" => {
                                     let val_str = attr_value(&attr)?.into_owned();
                                     if !has_value {
@@ -1347,7 +1388,17 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                             }
                                             "office:date-value" => {
                                                 // Convert ISO date to Serial Number
-                                                if let Some(n) = parse_ods_date(&val_str) {
+                                                if let Some(n) =
+                                                    parse_ods_date(&val_str, null_shift)
+                                                {
+                                                    CellValue::Number(n)
+                                                } else {
+                                                    CellValue::Text(Arc::from(val_str.as_str()))
+                                                }
+                                            }
+                                            "office:time-value" => {
+                                                // A time of day is a fraction of a day.
+                                                if let Some(n) = parse_ods_time(&val_str) {
                                                     CellValue::Number(n)
                                                 } else {
                                                     CellValue::Text(Arc::from(val_str.as_str()))
@@ -2034,39 +2085,51 @@ mod tests {
 
     #[test]
     fn test_parse_ods_date_known_serials() {
-        // ODS uses correct Gregorian counting (no Excel 1900 leap year bug).
-        // 1900-01-01 → serial 1
-        assert_eq!(parse_ods_date("1900-01-01"), Some(1.0));
-        // 1900-02-28 → serial 59
-        assert_eq!(parse_ods_date("1900-02-28"), Some(59.0));
-        // 1900-03-01 → serial 60 (correct: no phantom Feb 29)
-        assert_eq!(parse_ods_date("1900-03-01"), Some(60.0));
-        // Leap year dates (regression: formula must not double-count year's own leap day)
-        assert_eq!(parse_ods_date("1904-01-01"), Some(1461.0));
-        assert_eq!(parse_ods_date("2000-01-01"), Some(36525.0));
-        assert_eq!(parse_ods_date("2024-01-01"), Some(45291.0));
-        assert_eq!(parse_ods_date("2024-07-04"), Some(45476.0));
-        // Non-leap year dates
-        assert_eq!(parse_ods_date("1999-09-30"), Some(36432.0));
-        assert_eq!(parse_ods_date("2025-05-03"), Some(45779.0));
+        // Days since the null date 1899-12-30, real calendar: these are the
+        // numbers LibreOffice itself shows for the dates.
+        assert_eq!(parse_ods_date("1899-12-30", 0), Some(0.0));
+        assert_eq!(parse_ods_date("1900-01-01", 0), Some(2.0));
+        assert_eq!(parse_ods_date("1900-03-01", 0), Some(61.0));
+        assert_eq!(parse_ods_date("1904-01-01", 0), Some(1462.0));
+        assert_eq!(parse_ods_date("2000-01-01", 0), Some(36526.0));
+        assert_eq!(parse_ods_date("2024-01-01", 0), Some(45292.0));
+        assert_eq!(parse_ods_date("2024-07-04", 0), Some(45477.0));
+        assert_eq!(parse_ods_date("1999-09-30", 0), Some(36433.0));
+        assert_eq!(parse_ods_date("2025-05-03", 0), Some(45780.0));
+    }
+
+    #[test]
+    fn test_parse_ods_date_relative_to_document_null_date() {
+        let shift = null_date_shift("1904-01-01").unwrap();
+        assert_eq!(shift, 1462);
+        assert_eq!(parse_ods_date("1904-01-01", shift), Some(0.0));
+        assert_eq!(parse_ods_date("2024-01-01", shift), Some(43830.0));
+        assert_eq!(null_date_shift("1899-12-30"), Some(0));
+    }
+
+    #[test]
+    fn test_parse_ods_time() {
+        assert_eq!(parse_ods_time("PT12H00M00S"), Some(0.5));
+        assert_eq!(parse_ods_time("PT13H30M00S"), Some(0.5625));
+        assert_eq!(parse_ods_time("PT00H00M30.5S"), Some(30.5 / 86400.0));
+        assert_eq!(parse_ods_time("PT36H00M00S"), Some(1.5));
+        assert_eq!(parse_ods_time("12:00"), None);
     }
 
     #[test]
     fn test_parse_ods_date_with_time() {
-        // 12:00:00 is exactly half a day
-        assert_eq!(parse_ods_date("1900-01-01T12:00:00"), Some(1.5));
-        // 06:00:00 is a quarter
-        assert_eq!(parse_ods_date("1900-01-01T06:00:00"), Some(1.25));
+        assert_eq!(parse_ods_date("1900-01-01T12:00:00", 0), Some(2.5));
+        assert_eq!(parse_ods_date("1900-01-01T06:00:00", 0), Some(2.25));
     }
 
     #[test]
     fn test_parse_ods_date_invalid() {
-        assert_eq!(parse_ods_date("not-a-date"), None);
-        assert_eq!(parse_ods_date("2025-13"), None);
+        assert_eq!(parse_ods_date("not-a-date", 0), None);
+        assert_eq!(parse_ods_date("2025-13", 0), None);
         // Out-of-range month/day must return None, not panic
-        assert_eq!(parse_ods_date("2025-13-01"), None);
-        assert_eq!(parse_ods_date("2025-00-01"), None);
-        assert_eq!(parse_ods_date("2025-01-00"), None);
+        assert_eq!(parse_ods_date("2025-13-01", 0), None);
+        assert_eq!(parse_ods_date("2025-00-01", 0), None);
+        assert_eq!(parse_ods_date("2025-01-00", 0), None);
     }
 
     #[test]

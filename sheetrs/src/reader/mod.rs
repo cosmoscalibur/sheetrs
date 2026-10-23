@@ -179,26 +179,12 @@ mod date_format_parity_tests {
     use super::*;
     use std::io::Cursor;
 
-    /// Normalize a serial date to correct Gregorian counting.
-    ///
-    /// XLSX serial numbers include the Excel 1900 leap year bug: serial 60 is
-    /// the non-existent 1900-02-29, so every date after 1900-02-28 is off by
-    /// +1 compared to correct counting.  ODS serial numbers already use correct
-    /// counting and need no adjustment.
-    fn normalize_serial(serial: f64, has_excel_bug: bool) -> f64 {
-        if has_excel_bug && serial > 60.0 {
-            serial - 1.0
-        } else {
-            serial
-        }
-    }
-
     #[test]
     fn test_date_format_parity_ods_xlsx() {
         // Truth values for verification (2023/08/01)
         const EXPECTED_D7_FORMAT: &str = "m/d/yyyy";
-        const EXPECTED_D7_ODS_VALUE: f64 = 45138.0; // correct Gregorian serial
-        const EXPECTED_D7_XLSX_VALUE: f64 = 45139.0; // Excel serial (bug +1)
+        const EXPECTED_D7_ODS_VALUE: f64 = 45139.0; // days since the null date 1899-12-30
+        const EXPECTED_D7_XLSX_VALUE: f64 = 45139.0; // Excel serial (same from 1900-03-01)
         const EXPECTED_D8_FORMAT: &str = "dd/mm/yy hh:mm";
 
         // Load ODS
@@ -325,8 +311,8 @@ mod date_format_parity_tests {
         );
 
         // Verify each date cell represents the same calendar date.
-        // ODS uses correct Gregorian serials; XLSX includes the Excel 1900 bug.
-        // We normalize both to correct counting before comparing.
+        // ODS counts days from the null date 1899-12-30 and XLSX from Excel's
+        // epoch; they agree from 1900-03-01 on, which holds for the fixture.
         for ((pos_ods, cell_ods), (pos_xlsx, cell_xlsx)) in
             date_cells_ods.iter().zip(date_cells_xlsx.iter())
         {
@@ -344,10 +330,8 @@ mod date_format_parity_tests {
             } else {
                 match (&cell_ods.value, &cell_xlsx.value) {
                     (CellValue::Number(v_ods), CellValue::Number(v_xlsx)) => {
-                        let ods_normalized = normalize_serial(*v_ods, false);
-                        let xlsx_normalized = normalize_serial(*v_xlsx, true);
                         assert!(
-                            (ods_normalized - xlsx_normalized).abs() < 0.0001,
+                            (v_ods - v_xlsx).abs() < 0.0001,
                             "Date cells should represent the same date at {pos_ods:?}: ODS serial={v_ods}, XLSX serial={v_xlsx}"
                         );
                     }
