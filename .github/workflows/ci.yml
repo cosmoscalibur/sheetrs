@@ -55,10 +55,11 @@ jobs:
       - run: cargo check -p sheetrs --no-default-features
 
   engine-only:
-    name: xlslang without the file loader
+    name: engine and compiler without the file loader
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p xlslang --no-default-features --lib --bin xlslang-rt
+      - run: cargo build -p sheetrs-engine
+      - run: cargo build -p sheetrs-compiler --no-default-features --lib

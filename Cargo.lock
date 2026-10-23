@@ -1570,6 +1570,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "sheetrs-compiler"
+version = "0.3.2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sheetrs",
+ "sheetrs-engine",
+ "sheetrs-formula",
+ "tempfile",
+]
+
+[[package]]
+name = "sheetrs-engine"
+version = "0.3.2"
+dependencies = [
+ "fancy-regex",
+ "icu_collator",
+ "icu_locale",
+ "serde",
+ "serde_json",
+ "sheetrs-formula",
+]
+
+[[package]]
 name = "sheetrs-formula"
 version = "0.3.2"
 dependencies = [
@@ -2511,21 +2535,6 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
-
-[[package]]
-name = "xlslang"
-version = "0.3.2"
-dependencies = [
- "fancy-regex",
- "icu_collator",
- "icu_locale",
- "regex",
- "serde",
- "serde_json",
- "sheetrs",
- "sheetrs-formula",
- "tempfile",
-]
 
 [[package]]
 name = "yoke"

@@ -6,7 +6,7 @@
 //! the edit; absolute markers are irrelevant (both kinds move).
 
 use crate::addr::{MAX_COLS, MAX_ROWS, same_name};
-use crate::ast::{CellAddr, ColAddr, Expr, RefArea, Reference, RowAddr};
+use crate::ast::{Expr, RefArea, Reference};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edit<'a> {
@@ -208,9 +208,29 @@ fn replace(e: &mut Expr, r: Reference, s: Shift, rows: bool) -> bool {
     }
 }
 
-// Keep the address types in the public documentation of this module.
-#[allow(dead_code)]
-type _Docs = (CellAddr, ColAddr, RowAddr);
+impl crate::parse::Formula {
+    /// The formula text after `edit`, or `None` when it does not change.
+    ///
+    /// Only the references that change are replaced, so whitespace, letter case,
+    /// function-name spelling and everything else in the source stay exactly as
+    /// written.
+    pub fn rewrite(&self, edit: &Edit<'_>, home_sheet: &str) -> Option<String> {
+        let mut out = String::with_capacity(self.source.len());
+        let mut last = 0;
+        let mut changed = false;
+        for (r, span) in self.expr.references().into_iter().zip(&self.ref_spans) {
+            let mut node = Expr::Ref(r.clone());
+            if apply(&mut node, edit, home_sheet) {
+                out.push_str(&self.source[last..span.start]);
+                out.push_str(&node.to_string());
+                last = span.end;
+                changed = true;
+            }
+        }
+        out.push_str(&self.source[last..]);
+        changed.then_some(out)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -308,6 +328,49 @@ mod tests {
         assert_eq!(run("A5+Data!A5+'Data'!A1", e, "Other"), "A5+Data!A4+#REF!");
         // Unqualified reference on the edited sheet itself moves.
         assert_eq!(run("A5", e, "data"), "A4");
+    }
+
+    #[test]
+    fn rewriting_keeps_the_source_text() {
+        use crate::parse::parse_spanned;
+        let f = parse_spanned("=  sum( A1 : A5 ,  b3 ) + IF( x ,  Data!A9 ,'Q 1'!C3 )").unwrap();
+        // Delete row 3 of `S`, the home sheet: A5 → A4, b3 → #REF!; Data and
+        // 'Q 1' are other sheets and stay.
+        let e = Edit::DeleteRows {
+            sheet: "S",
+            at: 2,
+            count: 1,
+        };
+        assert_eq!(
+            f.rewrite(&e, "S").unwrap(),
+            "=  sum( A1 : A4 ,  #REF! ) + IF( x ,  Data!A9 ,'Q 1'!C3 )"
+        );
+        // Nothing to change: no new text.
+        assert_eq!(
+            f.rewrite(
+                &Edit::DeleteRows {
+                    sheet: "Elsewhere",
+                    at: 0,
+                    count: 1
+                },
+                "S"
+            ),
+            None
+        );
+        // A rename touches the qualifier only.
+        let r = Edit::RenameSheet {
+            from: "data",
+            to: "Data 2",
+        };
+        assert_eq!(
+            f.rewrite(&r, "S").unwrap(),
+            "=  sum( A1 : A5 ,  b3 ) + IF( x ,  'Data 2'!A9 ,'Q 1'!C3 )"
+        );
+        // Spans follow the source, with or without the leading `=`.
+        let g = parse_spanned("A1+B2").unwrap();
+        assert_eq!(&g.source[g.ref_spans[1].clone()], "B2");
+        let h = parse_spanned("=A1+B2").unwrap();
+        assert_eq!(&h.source[h.ref_spans[1].clone()], "B2");
     }
 
     #[test]

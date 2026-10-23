@@ -1,0 +1,36 @@
+[package]
+name = "sheetrs-compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Compiler from XLSX/ODS spreadsheets to standalone executables: loader, dependency analysis, constant folding, input/output pruning"
+
+[lib]
+name = "sheetrs_compiler"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sheetc"
+path = "src/main.rs"
+required-features = ["load"]
+
+[features]
+default = ["load"]
+# Frontend that reads XLSX/ODS files through the sheetrs readers.
+load = ["dep:sheetrs"]
+
+[dependencies]
+sheetrs-engine = { path = "../sheetrs-engine" }
+sheetrs-formula = { path = "../sheetrs-formula" }
+sheetrs = { path = "../sheetrs", default-features = false, optional = true }
+serde = { workspace = true, features = ["rc"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

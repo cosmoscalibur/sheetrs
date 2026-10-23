@@ -1,5 +1,5 @@
 [workspace]
-members = ["sheetrs", "sheetrs-formula", "xlslang", "sheetlint", "sheetstats", "sheetcli", "sheetrs-wasm"]
+members = ["sheetrs", "sheetrs-formula", "sheetrs-engine", "sheetrs-compiler", "sheetlint", "sheetstats", "sheetcli", "sheetrs-wasm"]
 resolver = "2"
 
 [workspace.package]
@@ -53,3 +53,11 @@ format_push_string = "warn"
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+# Distribution build of the compiled-executable runtime (`sheetrs-rt`) and `sheetc`:
+# `cargo build --profile dist -p sheetrs-engine -p sheetrs-compiler`.
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+strip = true

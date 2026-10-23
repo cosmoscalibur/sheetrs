@@ -11,9 +11,10 @@ libraries:
 - **sheetstats**: Detailed statistics and dependency analysis for workbooks.
 - **sheetcli**: General-purpose spreadsheet operations (convert, modify,
   repair).
-- **xlslang**: Compiler from a spreadsheet to a standalone executable (JSON in,
-  JSON out) with a format-independent IR and a calculation engine faithful to
-  Excel and LibreOffice. See [xlslang/README.md](xlslang/README.md).
+- **sheetc** (`sheetrs-compiler`): Compiler from a spreadsheet to a standalone
+  executable (JSON in, JSON out) with a format-independent IR and a calculation
+  engine (`sheetrs-engine`) faithful to Excel and LibreOffice. See
+  [sheetrs-compiler/README.md](sheetrs-compiler/README.md).
 - **sheetrs-formula**: Lossless formula AST (parser, printer, reference
   rewriting for row/column/sheet edits, R1C1 form), shared by the engine and,
   later, by the linter rules.
@@ -63,7 +64,8 @@ No environment variables are required. Configuration is via `sheetlint.toml`.
 sheetrs/
 ├── sheetrs/        # Core library (parsers, rules, config, writer)
 ├── sheetrs-formula/# Formula AST: parse, print, rewrite references
-├── xlslang/        # Spreadsheet → executable compiler and engine
+├── sheetrs-engine/ # IR, functions, run-time evaluation (JSON in/out)
+├── sheetrs-compiler/ # Workbook → program compiler (`sheetc`)
 ├── sheetlint/      # Linter CLI
 ├── sheetstats/     # Statistics CLI
 ├── sheetcli/       # Manipulation CLI

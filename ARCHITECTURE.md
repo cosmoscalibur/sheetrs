@@ -8,7 +8,8 @@ The **SheetRS Suite** is organized as a Cargo workspace containing a shared core
 sheetrs/
 ├── sheetrs/    # Shared library (logic, rules, readers)
 ├── sheetrs-formula/    # Lossless formula AST (parse, print, rewrite references)
-├── xlslang/            # Compiler + calculation engine (IR, functions, CLI)
+├── sheetrs-engine/     # IR, function library, run-time evaluation, `sheetrs-rt`
+├── sheetrs-compiler/   # Loader, dependency analysis, folding, `sheetc`
 ├── sheetlint/          # Linter CLI
 ├── sheetstats/         # Statistics CLI
 ├── sheetcli/           # Manipulation CLI
@@ -49,6 +50,9 @@ numbers, explicit parentheses, omitted arguments) and nothing engine-specific.
 
 - `parse`: single-pass Pratt parser (Excel syntax as the readers normalize it).
 - `print`: canonical spelling; `parse(print(parse(s))) == parse(s)`.
+- `parse_spanned`: keeps the source and the span of every reference, so
+  whitespace and spelling are recoverable and `Formula::rewrite` applies an edit
+  by replacing only the references that change.
 - `edit`: what a formula becomes when rows or columns are inserted or deleted
   or a sheet is renamed or deleted (`#REF!` for what disappears, ranges that
   shrink and grow).
@@ -57,15 +61,24 @@ numbers, explicit parentheses, omitted arguments) and nothing engine-specific.
 Lint rules still use string heuristics (`rules/helpers.rs`); migrating them to
 the AST is incremental and not part of this crate's introduction.
 
-## 1c. xlslang
+## 1c. sheetrs-engine and sheetrs-compiler
 
-Compiles a workbook into a program with declared inputs and outputs and runs it
-on a demand-driven engine. Layers: `loader` (the only code that knows the file
-format, on top of `sheetrs`) → `Model` → lowering of the `sheetrs-formula` AST
-to a format-independent IR → compiler (cone of influence, SCC order, constant
-folding) → `Program` → engine. The date system, iteration, search settings and
-dialect come from the document; see [xlslang/docs/DESIGN.md](xlslang/docs/DESIGN.md)
-and [xlslang/docs/FIDELITY.md](xlslang/docs/FIDELITY.md).
+Two crates, split along the line that matters for reuse and build time:
+
+- **`sheetrs-engine`** executes a compiled `Program` (the format-independent IR)
+  with JSON in and JSON out: values, the function registry (`core`/`xlsx`/`ods`
+  namespaces), dates, text conversion, ICU collation, search patterns and the
+  demand-driven evaluator. It knows nothing about XLSX or ODS and does not
+  depend on the readers; its binary `sheetrs-rt` is the stub a compiled
+  executable is made from.
+- **`sheetrs-compiler`** turns a workbook into a `Program`: `loader` (the only code
+  that knows the file format, on top of `sheetrs`) → `Model` → lowering of the
+  `sheetrs-formula` AST to the IR → cone of influence, SCC order, constant
+  folding. Its binary is `sheetc`.
+
+The date system, iteration, search settings and dialect come from the document;
+see [sheetrs-compiler/docs/DESIGN.md](sheetrs-compiler/docs/DESIGN.md) and
+[sheetrs-compiler/docs/FIDELITY.md](sheetrs-compiler/docs/FIDELITY.md).
 
 ## 2. CLI Tools
 

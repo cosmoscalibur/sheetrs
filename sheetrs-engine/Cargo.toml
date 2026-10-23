@@ -1,0 +1,28 @@
+[package]
+name = "sheetrs-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Calculation engine for compiled spreadsheets: IR, function library, run-time evaluation with JSON in and out"
+
+[lib]
+name = "sheetrs_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sheetrs-rt"
+path = "src/bin/sheetrs-rt.rs"
+
+[dependencies]
+sheetrs-formula = { path = "../sheetrs-formula" }
+serde = { workspace = true, features = ["rc"] }
+serde_json.workspace = true
+fancy-regex.workspace = true
+icu_collator.workspace = true
+icu_locale.workspace = true
+
+[lints]
+workspace = true

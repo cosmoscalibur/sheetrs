@@ -10,12 +10,12 @@ getting-started instructions, see the root [README.md](../README.md).
 - [Coding Patterns](coding-patterns.md) — conventions, naming, SoC principle,
   WalkerRule trait pattern, CLI and library guidelines.
 
-## Engine (xlslang)
+## Compiler and engine (sheetc)
 
-- [xlslang README](../xlslang/README.md) — build, run, inputs/outputs, options.
-- [Design](../xlslang/docs/DESIGN.md) — pipeline, IR, hybrid compile/run time,
+- [sheetrs-compiler README](../sheetrs-compiler/README.md) — build, run, inputs/outputs, options.
+- [Design](../sheetrs-compiler/docs/DESIGN.md) — pipeline, IR, hybrid compile/run time,
   ordering, reader contract, roadmap.
-- [Fidelity](../xlslang/docs/FIDELITY.md) — every difference between Excel and
+- [Fidelity](../sheetrs-compiler/docs/FIDELITY.md) — every difference between Excel and
   LibreOffice the engine models, with the evidence behind it.
 
 ## Analysis & Profiling

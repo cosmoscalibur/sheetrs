@@ -32,26 +32,58 @@ const ERRORS: [&str; 10] = [
     "#N/A",
 ];
 
+/// A formula together with its source text. The AST drops whitespace and
+/// spelling details; the source and the span of every reference let a consumer
+/// get them back: a rule can look at the text between tokens, and an edit can
+/// replace just the references that change ([`Formula::rewrite`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Formula {
+    /// The text as given, including a leading `=` if there was one.
+    pub source: String,
+    pub expr: Expr,
+    /// Byte range in `source` of each reference, in source order (the order of
+    /// [`Expr::references`]).
+    pub ref_spans: Vec<std::ops::Range<usize>>,
+}
+
 /// Parse a formula; a leading `=` is accepted and dropped.
 pub fn parse(src: &str) -> Result<Expr, ParseError> {
-    let src = src.strip_prefix('=').unwrap_or(src);
+    parse_spanned(src).map(|f| f.expr)
+}
+
+/// Parse keeping the source and the span of each reference.
+pub fn parse_spanned(source: &str) -> Result<Formula, ParseError> {
+    let offset = usize::from(source.starts_with('='));
+    let body = &source[offset..];
     let mut p = Parser {
-        s: src.as_bytes(),
-        src,
+        s: body.as_bytes(),
+        src: body,
         i: 0,
+        spans: Vec::new(),
     };
-    let e = p.expr(0)?;
+    let expr = p.expr(0)?;
     p.ws();
     if p.i < p.s.len() {
         return p.fail("unexpected trailing input");
     }
-    Ok(e)
+    let ref_spans = p
+        .spans
+        .iter()
+        .map(|&(a, b)| a + offset..b + offset)
+        .collect();
+    Ok(Formula {
+        source: source.to_string(),
+        expr,
+        ref_spans,
+    })
 }
 
 struct Parser<'a> {
     s: &'a [u8],
     src: &'a str,
     i: usize,
+    /// Spans of the references parsed so far, in source order.
+    spans: Vec<(usize, usize)>,
 }
 
 fn is_ident_start(b: u8) -> bool {
@@ -160,6 +192,15 @@ impl Parser<'_> {
 
     fn primary(&mut self) -> Result<Expr, ParseError> {
         self.ws();
+        let start = self.i;
+        let e = self.primary_at()?;
+        if matches!(e, Expr::Ref(_)) {
+            self.spans.push((start, self.i));
+        }
+        Ok(e)
+    }
+
+    fn primary_at(&mut self) -> Result<Expr, ParseError> {
         let Some(b) = self.peek() else {
             return self.fail("unexpected end of formula");
         };

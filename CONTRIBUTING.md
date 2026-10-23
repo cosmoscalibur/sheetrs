@@ -67,7 +67,7 @@ docs match it:
 | Config format (`sheetlint.toml`) | `docs/coding-patterns.md`; the relevant tool README |
 | Module layout or new crate | `ARCHITECTURE.md`; `docs/README.md`; `README.md` project structure |
 | Dependencies or commands | `README.md`; this guide |
-| Engine behavior that differs between Excel and LibreOffice | `xlslang/docs/FIDELITY.md`; a probe in `xlslang/scripts/probe_dialect.py` |
+| Engine behavior that differs between Excel and LibreOffice | `sheetrs-compiler/docs/FIDELITY.md`; a probe in `sheetrs-compiler/scripts/probe_dialect.py` |
 
 ## Changelog Fragments
 
