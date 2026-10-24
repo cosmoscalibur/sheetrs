@@ -1,38 +1,50 @@
 //! `sheetc`: build, run and inspect spreadsheet programs.
 
 use sheetrs_compiler::cli::{self, Args, parse_overrides};
-use sheetrs_compiler::{BindingSpec, Model, Program, Spec, bundle, compile, loader};
+use sheetrs_compiler::config::{self, Config};
+use sheetrs_compiler::locale::LocaleOverride;
+use sheetrs_compiler::{Model, Program, Spec, bundle, compile, loader};
 use std::path::{Path, PathBuf};
 
 const HELP: &str = "\
 sheetc — compile XLSX/ODS spreadsheets into executables
 
 USAGE
-  sheetc build FILE [-o OUT] [--in [NAME=]RANGE]... [--out [NAME=]RANGE]... [options]
-      Compile FILE into a standalone executable. RANGE is `Sheet1!A1`,
-      `Sheet1!B2:C9` or a defined name. Without --out, every formula range is
-      an output. `--emit-ir PATH` also writes the program as JSON.
-  sheetc run FILE|PROGRAM.json [--in ...] [--out ...] [runtime options]
+  sheetc build FILE [-o OUT] [options]
+      Compile FILE into a standalone executable. The workbook declares its
+      inputs, outputs and metadata in a settings sheet (see below).
+      `--emit-ir PATH` also writes the program as JSON.
+  sheetc run FILE|PROGRAM.json [options] [runtime options]
       Compile in memory and run immediately (JSON on stdin/--input).
-  sheetc calc \"=FORMULA\" [runtime options]
+  sheetc calc \"=FORMULA\" [--locale TAG] [--now N] [--seed N]
       Evaluate one formula.
   sheetc inspect FILE
       Show what the compiler sees: sizes, unsupported functions, cycles.
 
-BUILD OPTIONS
+SETTINGS SHEET
+  First row: key, value, description, meta_type. A row with meta_type `input`
+  or `output` declares the range in `key` (`Sheet1!B2:C9`); any other type is
+  free metadata. The executable lists them with `--meta`. Without the sheet
+  every formula range is an output and nothing is an input.
+
+BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
+  --config PATH        configuration file (default: sheetc.toml next to FILE)
+  --settings SHEET     settings sheet (default: `settings`, optional)
+  --outputs LEVEL      declared (default): only the declared outputs, the most
+                       pruning; named: also the workbook's defined names can
+                       be queried; any: any range can be queried
+  --locale TAG         regional settings, any BCP-47 tag (default `en`); fixed
+                       at build time. More in the [locale] table of the file.
   --no-fold            keep every reachable formula (no build-time evaluation)
-  --runtime-locale     leave the locale open: the executable accepts --locale.
-                       Formulas that may depend on it stay live; the rest still
-                       fold. Without it the locale is fixed at build time.
+  --now SERIAL   --seed N
   --runtime PATH       runtime stub to embed into (default: sheetrs-rt next to
                        this binary, else this binary)
-  --locale en|es   --now SERIAL   --seed N
   The date system, iteration, search settings and dialect come from the
   document and are not options. `calc` has no document and accepts
   --date-system 1899|1900|1904, --dialect core|xlsx|ods and --iterate[=N[,EPS]].
 
-Executables accept the runtime options; run them with --help-runtime-style
-flags: --input, --serve, --pretty, --info.";
+Executables accept: --input, --serve, --pretty, --meta, --query RANGE, --info,
+--now, --seed.";
 
 fn main() {
     let args = Args(std::env::args().skip(1).collect());
@@ -81,31 +93,40 @@ fn load_model(path: &str) -> Result<Model, Fail> {
     loader::load(Path::new(path)).map_err(Fail::Run)
 }
 
-fn spec_from(args: &mut Args) -> Result<(Spec, sheetrs_compiler::Overrides), Fail> {
-    let inputs = args
-        .values("--in")?
-        .iter()
-        .map(|s| BindingSpec::parse(s))
-        .collect();
-    let outputs = args
-        .values("--out")?
-        .iter()
-        .map(|s| BindingSpec::parse(s))
-        .collect();
-    let fold = !args.flag("--no-fold");
-    let locale_runtime = args.flag("--runtime-locale");
-    let o = parse_overrides(args)?;
-    let spec = Spec {
-        inputs,
-        outputs,
-        locale: o.locale.clone(),
-        now: o.now,
-        rand_seed: o.rand_seed,
-        fold,
-        locale_runtime,
-        ..Spec::default()
+/// Command-line configuration over the file's: `--config`, or `sheetc.toml`
+/// next to the workbook.
+fn config_from(args: &mut Args) -> Result<(Config, Option<String>), Fail> {
+    let explicit = args.value("--config")?;
+    let mut cli = Config {
+        settings: args.value("--settings")?,
+        outputs: args.value("--outputs")?,
+        fold: args.flag("--no-fold").then_some(false),
+        locale: args.value("--locale")?.map(|tag| LocaleOverride {
+            tag: Some(tag),
+            ..LocaleOverride::default()
+        }),
+        ..Config::default()
     };
-    Ok((spec, o))
+    let o = parse_overrides(args)?;
+    cli.now = o.now;
+    cli.seed = o.rand_seed;
+    Ok((cli, explicit))
+}
+
+fn spec_for(
+    cli: Config,
+    explicit: Option<String>,
+    file: &str,
+    model: &Model,
+) -> Result<Spec, Fail> {
+    let path = explicit
+        .map(PathBuf::from)
+        .or_else(|| config::discover(Path::new(file)));
+    let base = match path {
+        Some(p) => config::load(&p).map_err(Fail::Run)?,
+        None => Config::default(),
+    };
+    cli.over(base).spec(model).map_err(|e| Fail::Run(e.0))
 }
 
 fn print_report(r: &sheetrs_compiler::Report, p: &Program) {
@@ -143,11 +164,12 @@ fn build(mut args: Args) -> Result<i32, Fail> {
     let out = args.value("-o")?;
     let emit = args.value("--emit-ir")?;
     let runtime = args.value("--runtime")?;
-    let (spec, _) = spec_from(&mut args)?;
+    let (cli, explicit) = config_from(&mut args)?;
     let [file] = args.0.as_slice() else {
         return Err(Fail::Usage("build needs exactly one input file".into()));
     };
     let model = load_model(file)?;
+    let spec = spec_for(cli, explicit, file, &model)?;
     let (program, report) = compile(&model, &spec).map_err(|e| Fail::Run(e.0))?;
     print_report(&report, &program);
     if let Some(p) = emit {
@@ -176,7 +198,7 @@ fn run(mut args: Args) -> Result<i32, Fail> {
     // Run-time flags go to `run_program` untouched; the rest configures the
     // in-memory build.
     let mut forwarded: Vec<String> = Vec::new();
-    for flag in ["--serve", "--pretty", "--info"] {
+    for flag in ["--serve", "--pretty", "--info", "--meta"] {
         if args.flag(flag) {
             forwarded.push(flag.into());
         }
@@ -184,7 +206,10 @@ fn run(mut args: Args) -> Result<i32, Fail> {
     if let Some(v) = args.value("--input")? {
         forwarded.extend(["--input".into(), v]);
     }
-    let (spec, _) = spec_from(&mut args)?;
+    for q in args.values("--query")? {
+        forwarded.extend(["--query".into(), q]);
+    }
+    let (cli, explicit) = config_from(&mut args)?;
     let [file] = args.0.as_slice() else {
         return Err(Fail::Usage("run needs exactly one input file".into()));
     };
@@ -193,6 +218,7 @@ fn run(mut args: Args) -> Result<i32, Fail> {
             .map_err(|e| Fail::Run(format!("{file}: {e}")))?
     } else {
         let model = load_model(file)?;
+        let spec = spec_for(cli, explicit, file, &model)?;
         let (p, report) = compile(&model, &spec).map_err(|e| Fail::Run(e.0))?;
         print_report(&report, &p);
         p
@@ -202,6 +228,7 @@ fn run(mut args: Args) -> Result<i32, Fail> {
 
 fn calc(mut args: Args) -> Result<i32, Fail> {
     let flags = cli::parse_model_flags(&mut args)?;
+    let tag = args.value("--locale")?;
     let o = parse_overrides(&mut args)?;
     let [formula] = args.0.as_slice() else {
         return Err(Fail::Usage("calc needs exactly one formula".into()));
@@ -210,11 +237,17 @@ fn calc(mut args: Args) -> Result<i32, Fail> {
     let s = m.add_sheet("Sheet1");
     m.set_formula(s, "A1", formula);
     let spec = Spec {
-        outputs: vec![BindingSpec::parse("Sheet1!A1")],
+        outputs: vec![sheetrs_compiler::BindingSpec::parse("Sheet1!A1")],
         date_system: flags.date_system,
         dialect: flags.dialect,
         iteration: flags.iteration,
-        locale: o.locale.clone(),
+        locale: Some(
+            sheetrs_compiler::locale::from_tag(
+                tag.as_deref().unwrap_or("en"),
+                &LocaleOverride::default(),
+            )?
+            .0,
+        ),
         now: o.now,
         rand_seed: o.rand_seed,
         ..Spec::default()
@@ -241,7 +274,7 @@ fn inspect(args: Args) -> Result<i32, Fail> {
     let model = load_model(file)?;
     let spec = Spec {
         fold: false,
-        ..Spec::default()
+        ..spec_for(Config::default(), None, file, &model)?
     };
     let (program, report) = compile(&model, &spec).map_err(|e| Fail::Run(e.0))?;
     println!("sheets: {}", model.sheets.join(", "));

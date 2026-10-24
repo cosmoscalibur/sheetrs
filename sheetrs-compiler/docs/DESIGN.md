@@ -100,7 +100,9 @@ step that can reuse the same IR.
 
 ## Inputs, outputs and what is optimized
 
-`--in` and `--out` declare cells or ranges exchanged as JSON. The compiler:
+The workbook's settings sheet (`input` and `output` rows) declares the cells or
+ranges exchanged as JSON; `--outputs` decides how far a caller's choice of
+outputs reaches (below). The compiler:
 
 1. Starts from the outputs and walks dependencies backwards, **cutting at
    inputs** (an input cell's own formula is ignored). Everything else is dead.
@@ -115,14 +117,29 @@ The compiled loan example drops from 1086 formulas to 1 for `payment` (an
 intermediate computation that depends on inputs stays; the 360-row schedule
 nobody asked for is gone).
 
+### Query levels
+
+`declared` starts the walk from the declared outputs only. `named` adds the
+workbook's defined names as further roots, `any` adds every formula of every
+sheet (except the settings sheet) and keeps the workbook's constants. Folding
+works identically at every level, so `any` still drops the formulas that depend
+on no input, and the program grows to the size of the data (`stress`: 50 k folded
+formulas keep 1 cell when declared, 100 001 when any range is queryable). A
+runtime query is checked against the level (`Queryable` in the program): rectangles
+inside a declared output, a named range, or any range outside the excluded
+sheets.
+
+### Who configures what
+
 The date system, iteration, search settings and dialect are the document's and
-are never overridable. The locale is the user's and is **static by default**:
-fixed at build time, so folding may use it. `--runtime-locale` leaves it open;
-then the compiler keeps live every formula that may depend on it (text
-constants, concatenation, comparisons, text/lookup/criteria functions, or a
-dependency on a text cell) and still folds the rest. `--no-fold` is a separate
-switch for build-time evaluation as a whole. Who decides what is in
-[FIDELITY.md](FIDELITY.md#who-decides-what).
+are never overridable. What a file cannot say comes from the build configuration
+(`sheetc.toml`, overridden by flags): the locale (fixed at build time, so
+folding may use it; any BCP-47 tag, see FIDELITY.md), the clock, the seed,
+`--no-fold`, the settings sheet's name and the query level. A run can only fix
+`NOW()` and the seed. Because the locale cannot change after the build, the
+compiler no longer needs to track which formulas depend on it: that analysis
+existed only for the former `--runtime-locale` and was removed. Who decides what
+is in [FIDELITY.md](FIDELITY.md#who-decides-what).
 
 ## Scale
 

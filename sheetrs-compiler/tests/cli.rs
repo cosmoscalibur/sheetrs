@@ -42,20 +42,6 @@ fn build_loan(file: &str, dir: &Path, extra: &[&str]) -> PathBuf {
     let mut args = vec![
         "build",
         asset(file).to_str().unwrap().to_owned().leak(),
-        "--in",
-        "Loan!B1",
-        "--in",
-        "Loan!B2",
-        "--in",
-        "Loan!B3",
-        "--in",
-        "Loan!B7",
-        "--out",
-        "Loan!B4",
-        "--out",
-        "Loan!B6",
-        "--out",
-        "Loan!B8",
         "--runtime",
         RUNTIME,
         "-o",
@@ -115,6 +101,21 @@ fn executable_is_self_describing_and_strict() {
     assert_eq!(info["inputs"].as_array().unwrap().len(), 4);
     assert_eq!(info["outputs"][0]["name"], "Loan!B4");
 
+    // The settings sheet's rows, inputs and outputs included.
+    let (code, out, _) = run(&exe, &["--meta"], "");
+    assert_eq!(code, 0);
+    let meta: Json = serde_json::from_str(&out).unwrap();
+    assert_eq!(meta["outputs"], "declared");
+    let rows = meta["meta"].as_array().unwrap();
+    assert_eq!(rows.len(), 8);
+    assert_eq!(rows[0]["key"], "Loan!B1");
+    assert_eq!(rows[0]["meta_type"], "input");
+    assert_eq!(rows[6]["description"], "Balance at that month");
+    assert_eq!(
+        rows[7],
+        json!({"key": "version", "value": "1.0", "description": "Model version", "meta_type": "info"})
+    );
+
     let (code, _, err) = run(&exe, &[], r#"{"bogus": 1}"#);
     assert_eq!(code, 1);
     assert!(err.contains("unknown input `bogus`"), "{err}");
@@ -153,18 +154,14 @@ fn serve_mode_answers_line_by_line() {
 #[test]
 fn run_time_options_are_only_what_a_file_cannot_say() {
     let dir = tempfile::tempdir().unwrap();
-    // The locale is fixed at build time by default, with or without --no-fold.
+    // The locale is fixed when the program is built, with or without --no-fold.
     for extra in [&[][..], &["--no-fold"][..]] {
         let fixed = build_loan("loan.xlsx", dir.path(), extra);
         let (code, _, err) = run(&fixed, &["--locale", "es"], "{}");
-        assert_eq!(code, 1);
-        assert!(err.contains("--runtime-locale"), "{err}");
+        assert_eq!(code, 2, "{err}");
+        assert!(err.contains("fixed when the program is built"), "{err}");
     }
-
-    // Left open, the user's regional settings are chosen when it runs.
-    let open = build_loan("loan.ods", dir.path(), &["--runtime-locale"]);
-    let (code, _, err) = run(&open, &["--locale", "es"], "{}");
-    assert_eq!(code, 0, "{err}");
+    let open = build_loan("loan.ods", dir.path(), &[]);
 
     // Date system, iteration, search settings and dialect belong to the
     // document: no flag, at build time or run time.
@@ -202,14 +199,7 @@ fn run_time_options_are_only_what_a_file_cannot_say() {
 fn run_command_compiles_in_memory() {
     let (code, out, err) = run(
         Path::new(SHEETC),
-        &[
-            "run",
-            asset("loan.xlsx").to_str().unwrap(),
-            "--in",
-            "Loan!B1",
-            "--out",
-            "Loan!B4",
-        ],
+        &["run", asset("loan.xlsx").to_str().unwrap()],
         r#"{"Loan!B1": 1000}"#,
     );
     assert_eq!(code, 0, "{err}");
@@ -228,6 +218,19 @@ fn calc_command() {
         "",
     );
     assert_eq!(out.trim(), "\"1.234,50\"");
+    // Any locale tag, resolved from CLDR.
+    let (_, out, _) = run(
+        Path::new(SHEETC),
+        &["calc", "=TEXT(1234.5,\"#,##0.00\")", "--locale", "de-CH"],
+        "",
+    );
+    assert_eq!(out.trim(), "\"1'234.50\"");
+    let (code, _, err) = run(
+        Path::new(SHEETC),
+        &["calc", "=1", "--locale", "not a tag"],
+        "",
+    );
+    assert_ne!(code, 0, "{err}");
     let (_, out, _) = run(Path::new(SHEETC), &["calc", "=1/0"], "");
     assert_eq!(out.trim(), "{\"error\":\"#DIV/0!\"}");
 }
@@ -241,10 +244,6 @@ fn bundle_roundtrip_json_matches() {
         &[
             "build",
             asset("loan.xlsx").to_str().unwrap(),
-            "--in",
-            "Loan!B1",
-            "--out",
-            "Loan!B4",
             "--runtime",
             RUNTIME,
             "--emit-ir",
@@ -264,4 +263,105 @@ fn bundle_roundtrip_json_matches() {
     assert_eq!(code, 0, "{err}");
     assert!(serde_json::from_str::<Json>(&out).unwrap()["Loan!B4"].is_number());
     let _ = json!(null);
+}
+
+#[test]
+fn outputs_level_decides_what_can_be_queried() {
+    let dir = tempfile::tempdir().unwrap();
+    let ask = |exe: &Path, q: &str| run(exe, &["--query", q], "{}");
+
+    // declared (default): the outputs only.
+    let exe = build_loan("loan.xlsx", dir.path(), &[]);
+    let (code, out, _) = ask(&exe, "Loan!B4");
+    assert_eq!(code, 0);
+    assert!(serde_json::from_str::<Json>(&out).unwrap()["Loan!B4"].is_number());
+    let (code, _, err) = ask(&exe, "Loan!B5");
+    assert_eq!(code, 1);
+    assert!(err.contains("outputs = declared"), "{err}");
+
+    // any: every range of the workbook, and the settings sheet is not part of it.
+    let exe = build_loan("loan.xlsx", dir.path(), &["--outputs", "any"]);
+    let (code, out, err) = run(
+        &exe,
+        &["--query", "Loan!B5", "--query", "Loan!A11:B12"],
+        r#"{"Loan!B1": 100000}"#,
+    );
+    assert_eq!(code, 0, "{err}");
+    let v: Json = serde_json::from_str(&out).unwrap();
+    assert!(v["Loan!B5"].is_number());
+    assert_eq!(v["Loan!A11:B12"][1][0], 2);
+    assert!((v["Loan!B4"].as_f64().unwrap() - pmt(100_000.0, 0.05, 30.0)).abs() < 1e-6);
+    // The same through `$query` in the JSON line.
+    let (_, out, _) = run(&exe, &["--serve"], "{\"$query\": [\"Loan!B3\"]}\n");
+    assert_eq!(serde_json::from_str::<Json>(&out).unwrap()["Loan!B3"], 30);
+    let (code, _, _) = ask(&exe, "settings!A1");
+    assert_eq!(code, 1);
+
+    // named: only the workbook's defined names (none in this workbook).
+    let exe = build_loan("loan.xlsx", dir.path(), &["--outputs", "named"]);
+    let (code, _, err) = ask(&exe, "Loan!B5");
+    assert_eq!(code, 1);
+    assert!(err.contains("outputs = named"), "{err}");
+
+    let (code, _, err) = run(
+        Path::new(SHEETC),
+        &[
+            "build",
+            asset("loan.xlsx").to_str().unwrap(),
+            "--outputs",
+            "all",
+        ],
+        "",
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("declared, named or any"), "{err}");
+}
+
+#[test]
+fn configuration_file_and_command_line_layering() {
+    let dir = tempfile::tempdir().unwrap();
+    let book = dir.path().join("loan.ods");
+    std::fs::copy(asset("loan.ods"), &book).unwrap();
+    let exe = dir.path().join("m");
+    let build = |extra: &[&str]| {
+        let mut args = vec![
+            "build",
+            book.to_str().unwrap(),
+            "--runtime",
+            RUNTIME,
+            "-o",
+            exe.to_str().unwrap(),
+        ];
+        args.extend_from_slice(extra);
+        run(Path::new(SHEETC), &args, "")
+    };
+    let outputs_of = |exe: &Path| {
+        let (_, out, _) = run(exe, &["--meta"], "");
+        serde_json::from_str::<Json>(&out).unwrap()["outputs"].clone()
+    };
+
+    // `sheetc.toml` next to the workbook is picked up.
+    std::fs::write(dir.path().join("sheetc.toml"), "outputs = \"any\"\n").unwrap();
+    let (code, _, err) = build(&[]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(outputs_of(&exe), "any");
+    // The command line wins.
+    let (code, _, err) = build(&["--outputs", "declared"]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(outputs_of(&exe), "declared");
+    // An explicit file replaces the discovered one; unknown keys are errors.
+    let other = dir.path().join("other.toml");
+    std::fs::write(&other, "outputs = \"named\"\n").unwrap();
+    let (code, _, _) = build(&["--config", other.to_str().unwrap()]);
+    assert_eq!(code, 0);
+    assert_eq!(outputs_of(&exe), "named");
+    std::fs::write(&other, "iterations = 5\n").unwrap();
+    let (code, _, err) = build(&["--config", other.to_str().unwrap()]);
+    assert_eq!(code, 1);
+    assert!(err.contains("iterations"), "{err}");
+
+    // A settings sheet that does not exist is an error once named explicitly.
+    let (code, _, err) = build(&["--settings", "nowhere"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("settings sheet `nowhere` not found"), "{err}");
 }

@@ -2,8 +2,8 @@
 
 use crate::addr::{CellRef, Rect};
 use crate::engine::Engine;
-use crate::ir::{Binding, Program};
-use crate::options::{EngineOptions, Locale};
+use crate::ir::{Binding, Program, Queryable};
+use crate::options::EngineOptions;
 use crate::value::{ErrorKind, Value};
 use serde_json::{Map, Number, Value as Json};
 use std::sync::Arc;
@@ -23,39 +23,84 @@ fn fail<T>(msg: impl Into<String>) -> Result<T, RunError> {
     Err(RunError(msg.into()))
 }
 
-/// Run-time choices. Only what the document cannot express is open: the date
-/// system, iteration, search settings and dialect are the file's and cannot be
-/// overridden; the locale (the user's regional settings), the clock and the
-/// random seed are not stored in a file.
+/// Run-time choices. Only what a file cannot say and a build did not fix is
+/// open: the clock and the random seed. The date system, iteration, search
+/// settings and dialect are the file's, and the locale is fixed when the
+/// program is built (folding already used it).
 #[derive(Debug, Clone, Default)]
 pub struct Overrides {
-    pub locale: Option<Locale>,
     pub now: Option<f64>,
     pub rand_seed: Option<u64>,
 }
 
 impl Program {
-    /// Options in force for a run. Overriding what build-time folding already
-    /// consumed would silently mix two configurations, so it is rejected.
-    pub fn effective_options(&self, o: &Overrides) -> Result<EngineOptions, RunError> {
+    pub fn effective_options(&self, o: &Overrides) -> EngineOptions {
         let mut opts = self.options.clone();
-        if let Some(l) = &o.locale {
-            if !self.locale_open {
-                return fail(
-                    "the locale was fixed when the program was built; build with --runtime-locale to choose it at run time",
-                );
-            }
-            opts.locale = l.clone();
-        }
         opts.now = o.now.or(opts.now);
         opts.rand_seed = o.rand_seed.or(opts.rand_seed);
-        Ok(opts)
+        opts
     }
 
     /// Evaluate with JSON inputs, returning a JSON object keyed by output name.
     pub fn execute(&self, input: &Json, o: &Overrides) -> Result<Json, RunError> {
-        let opts = self.effective_options(o)?;
-        let mut engine = Engine::new(self, opts);
+        self.execute_with(input, o, &[])
+    }
+
+    /// Resolve a range typed by a caller (`Sheet1!B2:C9`) against the ranges the
+    /// program can answer.
+    pub fn resolve_query(&self, text: &str) -> Result<Rect, RunError> {
+        let (sheet, tail) = crate::addr::split_sheet(text.trim());
+        let sheet_id = match &sheet {
+            Some(n) => self
+                .sheets
+                .iter()
+                .position(|s| crate::addr::same_name(s, n)),
+            None => Some(0),
+        };
+        let (Some(s), Some(area)) = (sheet_id, crate::addr::parse_area(tail)) else {
+            return fail(format!("`{text}` is not a range of this workbook"));
+        };
+        let rect = crate::addr::bind(area, s as u16);
+        let inside = |b: &Binding| {
+            let o = &b.rect;
+            o.sheet == rect.sheet
+                && o.r0 <= rect.r0
+                && o.c0 <= rect.c0
+                && o.r1 >= rect.r1
+                && o.c1 >= rect.c1
+        };
+        let allowed = match &self.queryable {
+            Queryable::Any { excluded } => !excluded.contains(&rect.sheet),
+            Queryable::Named(extra) => self.outputs.iter().chain(extra).any(inside),
+            Queryable::Declared => self.outputs.iter().any(inside),
+        };
+        if allowed {
+            Ok(rect)
+        } else {
+            fail(format!(
+                "`{text}` cannot be queried: this program was built with outputs = {} (see --meta)",
+                match &self.queryable {
+                    Queryable::Declared => "declared",
+                    Queryable::Named(_) => "named",
+                    Queryable::Any { .. } => "any",
+                }
+            ))
+        }
+    }
+
+    /// Like [`execute`](Self::execute), also answering `queries`: ranges keyed by
+    /// their canonical text, subject to the program's [`Queryable`] level.
+    pub fn execute_with(
+        &self,
+        input: &Json,
+        o: &Overrides,
+        queries: &[String],
+    ) -> Result<Json, RunError> {
+        let query_rects = queries
+            .iter()
+            .map(|q| self.resolve_query(q))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut engine = Engine::new(self, self.effective_options(o));
         let empty = Map::new();
         let obj = match input {
             Json::Object(m) => m,
@@ -82,6 +127,12 @@ impl Program {
         let mut out = Map::new();
         for b in &self.outputs {
             out.insert(b.name.clone(), read_output(&mut engine, &b.rect));
+        }
+        for r in query_rects {
+            let name = crate::addr::qualified(&self.sheets, &r);
+            if !out.contains_key(&name) {
+                out.insert(name, read_output(&mut engine, &r));
+            }
         }
         Ok(Json::Object(out))
     }

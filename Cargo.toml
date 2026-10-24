@@ -36,6 +36,9 @@ fancy-regex = "0.19"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 icu_collator = "2"
 icu_locale = "2"
+icu_decimal = "2"
+icu_datetime = "2"
+icu_calendar = "2"
 tempfile = "3.27"
 aho-corasick = "1.1.4"
 

@@ -17,7 +17,7 @@ use crate::engine::{ConstSource, Engine};
 use crate::fastmap::{FastMap, FastSet};
 use crate::formula::{self, ParseCtx};
 use crate::graph::{self, Csr};
-use crate::ir::{Binding, CellDef, CellKind, Expr, Ns, PROGRAM_VERSION, Program};
+use crate::ir::{Binding, CellDef, CellKind, Expr, Meta, Ns, PROGRAM_VERSION, Program, Queryable};
 use crate::model::Model;
 use crate::options::{DatePatterns, DateSystem, EngineOptions, Iteration, Locale, Search};
 use crate::value::{ErrorKind, Value};
@@ -56,9 +56,37 @@ pub struct Spec {
     pub rand_seed: Option<u64>,
     /// Evaluate input-independent cells at build time.
     pub fold: bool,
-    /// Leave the locale open to the run-time caller. With folding on, formulas
-    /// whose result may depend on the locale are then kept live.
-    pub locale_runtime: bool,
+    /// Which ranges a caller may ask for besides the outputs.
+    pub query: QueryLevel,
+    /// Settings-sheet rows, carried into the program for `--meta`.
+    pub meta: Vec<Meta>,
+    /// The settings sheet: not part of the computation's outputs or queries.
+    pub skip_sheet: Option<u16>,
+    /// Added to the program's diagnostics (for example, about the locale).
+    pub notes: Vec<String>,
+}
+
+/// How much of the workbook the program keeps for run-time queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum QueryLevel {
+    /// Only the declared outputs; everything else is pruned.
+    #[default]
+    Declared,
+    /// The declared outputs plus the workbook's defined names.
+    Named,
+    /// Any range.
+    Any,
+}
+
+impl QueryLevel {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "declared" => Some(Self::Declared),
+            "named" => Some(Self::Named),
+            "any" => Some(Self::Any),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Spec {
@@ -74,7 +102,10 @@ impl Default for Spec {
             now: None,
             rand_seed: None,
             fold: true,
-            locale_runtime: false,
+            query: QueryLevel::Declared,
+            meta: Vec::new(),
+            skip_sheet: None,
+            notes: Vec::new(),
         }
     }
 }
@@ -172,6 +203,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
     }
     let mut report = Report::default();
     let mut diags: Vec<String> = model.diagnostics.clone();
+    diags.extend(spec.notes.iter().cloned());
     let mut parse_diags: Vec<String> = Vec::new();
 
     // ----- 1. lower formulas -----
@@ -273,10 +305,10 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             rect,
         });
     }
-    if spec.outputs.is_empty() {
+    if spec.outputs.is_empty() && spec.query == QueryLevel::Declared {
         let mut bbs: Vec<Option<(u32, u32, u32, u32)>> = vec![None; model.sheets.len()];
         for (at, k) in &formulas {
-            if matches!(k, CellKind::Formula(_)) {
+            if matches!(k, CellKind::Formula(_)) && Some(at.sheet) != spec.skip_sheet {
                 let bb = &mut bbs[at.sheet as usize];
                 *bb = Some(match *bb {
                     None => (at.row, at.col, at.row, at.col),
@@ -308,6 +340,49 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         }
     }
 
+    // Ranges kept for run-time queries.
+    let mut query_rects: Vec<Rect> = Vec::new();
+    let mut named: Vec<Binding> = Vec::new();
+    match spec.query {
+        QueryLevel::Declared => {}
+        QueryLevel::Named => {
+            for name in model.names.keys() {
+                if let Ok(rect) = resolve_target(model, name)
+                    && rect.area() <= MAX_BINDING_CELLS
+                    && Some(rect.sheet) != spec.skip_sheet
+                {
+                    named.push(Binding {
+                        name: addr::qualified(&model.sheets, &rect),
+                        rect,
+                    });
+                }
+            }
+            named.sort_by(|a, b| a.name.cmp(&b.name));
+            named.dedup_by(|a, b| a.name == b.name);
+            query_rects.extend(named.iter().map(|b| b.rect));
+        }
+        QueryLevel::Any => {
+            let mut ext = vec![(0u32, 0u32); model.sheets.len().max(1)];
+            for at in model.cells.keys() {
+                let e = &mut ext[at.sheet as usize];
+                e.0 = e.0.max(at.row + 1);
+                e.1 = e.1.max(at.col + 1);
+            }
+            for (s, (rows, cols)) in ext.into_iter().enumerate() {
+                if rows > 0 && cols > 0 && Some(s as u16) != spec.skip_sheet {
+                    query_rects.push(Rect::new(s as u16, 0, 0, rows - 1, cols - 1));
+                }
+            }
+        }
+    }
+    let queryable = match spec.query {
+        QueryLevel::Declared => Queryable::Declared,
+        QueryLevel::Named => Queryable::Named(named),
+        QueryLevel::Any => Queryable::Any {
+            excluded: spec.skip_sheet.into_iter().collect(),
+        },
+    };
+
     trace(&t0, "bindings");
     let list = formulas;
     let n = list.len();
@@ -331,8 +406,8 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         flags: HashMap::new(),
     };
     let mut roots: Vec<u32> = Vec::new();
-    for b in &outputs {
-        g.members(&b.rect, &mut roots);
+    for r in outputs.iter().map(|b| &b.rect).chain(&query_rects) {
+        g.members(r, &mut roots);
     }
     let mut visited = vec![false; n];
     let mut cone: Vec<u32> = Vec::new();
@@ -370,7 +445,6 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
     // ----- 3/4. taint and fold -----
     let mut tainted = vec![false; cone.len()];
     let mut comp_cyclic = Vec::new();
-    let mut text_rects: FastMap<Rect, bool> = FastMap::default();
     for comp in sccs.components() {
         let mut t = false;
         for &m in comp {
@@ -380,14 +454,8 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                     CellKind::Input(_) => t = true,
                     CellKind::Formula(e) => {
                         let f = g.flags.get(&v);
+                        let _ = e;
                         t |= !spec.fold || f.is_some_and(|f| f.dynamic || f.volatile);
-                        t |= spec.locale_runtime
-                            && (locale_sensitive(e)
-                                || dependencies(e).0.into_iter().any(|r| {
-                                    *text_rects
-                                        .entry(r)
-                                        .or_insert_with(|| view.rect_has_text(&r, &ids))
-                                }));
                     }
                     CellKind::Const(_) => {}
                 }
@@ -412,7 +480,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             .starts_with(locale.tag.split('-').next().unwrap_or("en"))
     {
         diags.push(format!(
-            "the document language is {lang}; text and number conversions follow the locale {} (--locale)",
+            "the document language is {lang}; text and number conversions follow the locale {} (build configuration)",
             locale.tag
         ));
     }
@@ -464,11 +532,12 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             version: PROGRAM_VERSION,
             sheets: model.sheets.clone(),
             options: opts.clone(),
-            locale_open: false,
             cells,
             cycles,
             inputs: Vec::new(),
             outputs: Vec::new(),
+            queryable: Queryable::Declared,
+            meta: Vec::new(),
             diagnostics: Vec::new(),
         };
         let mut eng = Engine::with_base(&tmp, opts.clone(), &view);
@@ -492,6 +561,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         }
     }
     need_rects.extend(outputs.iter().map(|b| b.rect));
+    need_rects.extend(query_rects.iter().copied());
     let mut need_folded: FastSet<u32> = FastSet::default();
     let mut const_cells: Vec<CellRef> = Vec::new();
     let mut members = Vec::new();
@@ -575,11 +645,12 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             version: PROGRAM_VERSION,
             sheets: model.sheets.clone(),
             options: opts.clone(),
-            locale_open: spec.locale_runtime,
             cells,
             cycles,
             inputs,
             outputs,
+            queryable,
+            meta: spec.meta.clone(),
             diagnostics: diags,
         },
         report,
@@ -646,14 +717,6 @@ impl<'m> ConstView<'m> {
                 .copied()
                 .filter(|at| !nodes.contains_key(at)),
         );
-    }
-
-    fn rect_has_text(&self, r: &Rect, nodes: &FastMap<CellRef, u32>) -> bool {
-        let mut cells = Vec::new();
-        self.consts_in(r, nodes, &mut cells);
-        cells
-            .iter()
-            .any(|&at| matches!(self.get(at), Some(Value::Text(_))))
     }
 }
 
@@ -869,67 +932,4 @@ fn offset_const(args: &[Expr]) -> Option<Rect> {
     Some(Rect::new(
         base.sheet, r0 as u32, c0 as u32, r1 as u32, c1 as u32,
     ))
-}
-
-/// Functions that convert between text and numbers/dates or compare text, and
-/// so can give another answer under another locale.
-const LOCALE_FUNCTIONS: &[&str] = &[
-    "TEXT",
-    "VALUE",
-    "DATEVALUE",
-    "NUMBERVALUE",
-    "FIXED",
-    "TEXTJOIN",
-    "CONCAT",
-    "CONCATENATE",
-    "LEN",
-    "LEFT",
-    "RIGHT",
-    "MID",
-    "FIND",
-    "SEARCH",
-    "SUBSTITUTE",
-    "REPLACE",
-    "REPT",
-    "EXACT",
-    "MATCH",
-    "VLOOKUP",
-    "HLOOKUP",
-    "XLOOKUP",
-    "COUNTIF",
-    "COUNTIFS",
-    "SUMIF",
-    "SUMIFS",
-    "AVERAGEIF",
-    "AVERAGEIFS",
-    "MAXIFS",
-    "MINIFS",
-    "SWITCH",
-    "T",
-    "N",
-];
-
-/// Whether a formula may evaluate differently under another locale. Deliberately
-/// conservative: text constants, concatenation, comparisons, and the functions
-/// above count; so does depending on a text cell (checked by the caller).
-fn locale_sensitive(e: &Expr) -> bool {
-    let mut hit = false;
-    e.walk(&mut |x| match x {
-        Expr::Const(Value::Text(_)) | Expr::Binary(crate::ir::BinOp::Concat, ..) => hit = true,
-        Expr::Const(Value::Array(a)) => hit |= a.data.iter().any(|v| matches!(v, Value::Text(_))),
-        Expr::Binary(op, ..) => {
-            hit |= matches!(
-                op,
-                crate::ir::BinOp::Eq
-                    | crate::ir::BinOp::Ne
-                    | crate::ir::BinOp::Lt
-                    | crate::ir::BinOp::Le
-                    | crate::ir::BinOp::Gt
-                    | crate::ir::BinOp::Ge
-            );
-        }
-        Expr::Call(id, _) => hit |= LOCALE_FUNCTIONS.contains(&id.def().name),
-        _ => {}
-    });
-    hit
 }

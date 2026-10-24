@@ -2,7 +2,7 @@ mod common;
 use common::*;
 use serde_json::{Value as Json, json};
 use sheetrs_compiler::ir::CellKind;
-use sheetrs_compiler::options::{Iteration, Locale};
+use sheetrs_compiler::options::Iteration;
 use sheetrs_compiler::{Overrides, Spec};
 
 fn model() -> sheetrs_compiler::Model {
@@ -225,69 +225,35 @@ fn dynamic_references_resolve_at_run_time() {
 }
 
 #[test]
-fn locale_is_static_unless_left_open() {
+fn locale_is_fixed_at_build_time() {
+    use sheetrs_compiler::locale::{LocaleOverride, from_tag};
     let m = sheet(&[
         ("A1", json!(1234.5)),
         ("B1", json!("=TEXT(A1,\"#,##0.00\")&\" \"&(1/2)")),
         ("C1", json!("=A1*2")),
     ]);
-    let es = Overrides {
-        locale: Some(Locale::es_es()),
-        ..Default::default()
-    };
     let key = "Sheet1!B1";
+    let with = |tag: &str, fold: bool| {
+        let mut s = Spec {
+            fold,
+            ..spec(&[], &["B1"])
+        };
+        s.locale = Some(from_tag(tag, &LocaleOverride::default()).unwrap().0);
+        let (p, _) = build(&m, &s);
+        p.execute(&Json::Null, &Overrides::default()).unwrap()[key].clone()
+    };
 
-    // Default: the locale is fixed at build time (folded or not) and a run-time
-    // choice is refused.
+    // Folded or not, the build's locale is the one in force; any tag works.
     for fold in [true, false] {
-        let (p, _) = build(
-            &m,
-            &Spec {
-                fold,
-                ..spec(&[], &["B1"])
-            },
-        );
-        assert!(!p.locale_open);
-        assert!(
-            p.execute(&Json::Null, &es)
-                .unwrap_err()
-                .0
-                .contains("--runtime-locale")
-        );
-        assert_eq!(
-            p.execute(&Json::Null, &Overrides::default()).unwrap()[key],
-            json!("1,234.50 0.5")
-        );
+        assert_eq!(with("en", fold), json!("1,234.50 0.5"));
+        assert_eq!(with("es", fold), json!("1.234,50 0,5"));
+        assert_eq!(with("es-CO", fold), json!("1.234,50 0,5"));
+        assert_eq!(with("es-MX", fold), json!("1,234.50 0.5"));
+        assert_eq!(with("de-DE", fold), json!("1.234,50 0,5"));
     }
 
-    // Chosen at build time: baked in.
-    let mut s = spec(&[], &["B1"]);
-    s.locale = Some(Locale::es_es());
-    let (p, _) = build(&m, &s);
-    assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()[key],
-        json!("1.234,50 0,5")
-    );
-
-    // Left open, formulas still folded: the locale-sensitive formula stays live
-    // and follows the run-time locale; the numeric one is folded.
-    let s = Spec {
-        locale_runtime: true,
-        ..spec(&[], &["B1", "C1"])
-    };
-    let (p, r) = build(&m, &s);
-    assert!(p.locale_open);
-    assert_eq!(r.formulas_kept, 1, "only the text formula remains live");
-    assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()[key],
-        json!("1,234.50 0.5")
-    );
-    let out = p.execute(&Json::Null, &es).unwrap();
-    assert_eq!(out[key], json!("1.234,50 0,5"));
-    assert_eq!(out["Sheet1!C1"], json!(2469));
-
     // Formulas unfolded and locale static are independent choices.
-    let (p, r) = build(
+    let (_, r) = build(
         &m,
         &Spec {
             fold: false,
@@ -295,7 +261,6 @@ fn locale_is_static_unless_left_open() {
         },
     );
     assert_eq!(r.formulas_kept, 1);
-    assert!(!p.locale_open);
 
     // The date system is not a run-time choice: it is the document's (build
     // time, for a model with no file behind it).
@@ -315,7 +280,6 @@ fn volatile_functions_are_not_folded() {
     let o = Overrides {
         rand_seed: Some(7),
         now: Some(45292.5),
-        ..Default::default()
     };
     let x = p.execute(&Json::Null, &o).unwrap();
     assert_eq!(x, p.execute(&Json::Null, &o).unwrap()); // deterministic when seeded
@@ -355,4 +319,85 @@ fn bad_targets_fail_early() {
     assert!(e.0.contains("cannot resolve"));
     let e = sheetrs_compiler::compile(&model(), &spec(&["A1", "A1"], &["C2"])).unwrap_err();
     assert!(e.0.contains("declared twice"));
+}
+
+#[test]
+fn query_levels_keep_progressively_more() {
+    use sheetrs_compiler::Program;
+    use sheetrs_compiler::compile::QueryLevel;
+    let mut m = sheet(&[
+        ("A1", json!(2)),
+        ("B1", json!("=A1*10")),
+        ("C1", json!("=B1+1")),
+        ("D1", json!("=A1+100")),
+    ]);
+    m.names.insert("Total".into(), "Sheet1!C1".into());
+    let at = |level, ins: &[&str]| {
+        let s = Spec {
+            query: level,
+            ..spec(ins, &["B1"])
+        };
+        build(&m, &s).0
+    };
+    let ask =
+        |p: &Program, q: &str| p.execute_with(&Json::Null, &Overrides::default(), &[q.into()]);
+
+    // declared: B1 only; C1 and D1 are pruned away.
+    let p = at(QueryLevel::Declared, &[]);
+    assert_eq!(ask(&p, "B1").unwrap()["Sheet1!B1"], json!(20));
+    assert!(ask(&p, "C1").unwrap_err().0.contains("outputs = declared"));
+
+    // named: the defined name `Total` (Sheet1!C1) is answerable, D1 is not.
+    let p = at(QueryLevel::Named, &[]);
+    assert_eq!(ask(&p, "Sheet1!C1").unwrap()["Sheet1!C1"], json!(21));
+    assert!(ask(&p, "D1").is_err());
+
+    // any: every cell, still following the inputs.
+    let p = at(QueryLevel::Any, &["A1"]);
+    let out = p
+        .execute_with(
+            &json!({"Sheet1!A1": 5}),
+            &Overrides::default(),
+            &["D1".into(), "Sheet1!A1:C1".into()],
+        )
+        .unwrap();
+    assert_eq!(out["Sheet1!D1"], json!(105));
+    assert_eq!(out["Sheet1!A1:C1"], json!([[5, 50, 51]]));
+    assert!(ask(&p, "Z9:Z10").is_ok());
+    assert!(ask(&p, "Nope!A1").is_err());
+}
+
+#[test]
+fn settings_sheet_errors_and_defaults() {
+    use sheetrs_compiler::Value;
+    use sheetrs_compiler::config::Config;
+    let mut m = sheet(&[("A1", json!(1)), ("B1", json!("=A1+1"))]);
+    let s = m.add_sheet("settings");
+    for (c, h) in ["key", "value", "description", "meta_type"]
+        .iter()
+        .enumerate()
+    {
+        m.set(s, &format!("{}1", (b'A' + c as u8) as char), Value::text(h));
+    }
+    m.set(s, "A2", Value::text("version"));
+    m.set(s, "D2", Value::text("info"));
+    // Declared outputs are mandatory when the sheet exists.
+    let e = Config::default().spec(&m).unwrap_err().0;
+    assert!(e.contains("declares no output"), "{e}");
+    // ... unless the caller queries ranges.
+    let any = Config {
+        outputs: Some("any".into()),
+        ..Config::default()
+    };
+    let spec = any.spec(&m).unwrap();
+    assert_eq!(spec.skip_sheet, Some(s));
+    assert_eq!(spec.meta.len(), 1);
+    let (p, _) = build(&m, &spec);
+    assert!(p.outputs.is_empty());
+    let out = p
+        .execute_with(&Json::Null, &Overrides::default(), &["B1".into()])
+        .unwrap();
+    assert_eq!(out["Sheet1!B1"], json!(2));
+    // The settings sheet cannot be queried.
+    assert!(p.resolve_query("settings!A1").is_err());
 }

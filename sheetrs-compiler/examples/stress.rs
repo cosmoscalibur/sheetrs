@@ -1,5 +1,6 @@
 //! Scale check: `cargo run --release --example stress`.
 use serde_json::json;
+use sheetrs_compiler::compile::QueryLevel;
 use sheetrs_compiler::ir::Ns;
 use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, Value, compile};
 use std::time::Instant;
@@ -12,10 +13,22 @@ fn time<T>(label: &str, f: impl FnOnce() -> T) -> T {
 }
 
 fn run(title: &str, m: &Model, inputs: &[&str], outputs: &[&str], input: serde_json::Value) {
+    run_level(title, m, inputs, outputs, input, QueryLevel::Declared);
+}
+
+fn run_level(
+    title: &str,
+    m: &Model,
+    inputs: &[&str],
+    outputs: &[&str],
+    input: serde_json::Value,
+    query: QueryLevel,
+) {
     println!("{title}");
     let spec = Spec {
         inputs: inputs.iter().map(|s| BindingSpec::parse(s)).collect(),
         outputs: outputs.iter().map(|s| BindingSpec::parse(s)).collect(),
+        query,
         ..Spec::default()
     };
     let (p, r) = time("compile", || compile(m, &spec).unwrap());
@@ -42,9 +55,9 @@ fn main() {
     run(
         "chain of 100k formulas",
         &m,
-        &["x=A1"],
-        &[&format!("y=A{n}")],
-        json!({"x": 5}),
+        &["A1"],
+        &[&format!("A{n}")],
+        json!({"S!A1": 5}),
     );
 
     // B: running totals anchored at the top (quadratic range reads).
@@ -58,9 +71,9 @@ fn main() {
     run(
         "running SUM($A$1:An), 5k rows",
         &m,
-        &["a=A1"],
-        &[&format!("t=B1:B{k}")],
-        json!({"a": 1}),
+        &["A1"],
+        &[&format!("B1:B{k}")],
+        json!({"S!A1": 1}),
     );
 
     // C: many lookups into one table.
@@ -83,9 +96,9 @@ fn main() {
     run(
         "20k VLOOKUPs over a 10k table",
         &m,
-        &["d=D1"],
-        &["f=F1"],
-        json!({"d": 3}),
+        &["D1"],
+        &["F1"],
+        json!({"S!D1": 3}),
     );
 
     // D: wide independent formulas, all folded at build time.
@@ -96,5 +109,13 @@ fn main() {
         m.set_formula(s, &format!("B{i}"), &format!("A{i}*2+ROUND(A{i}/3,2)"));
     }
     m.set_formula(s, "C1", "SUM(B1:B50000)");
-    run("50k folded formulas", &m, &[], &["c=C1"], json!(null));
+    run("50k folded formulas", &m, &[], &["C1"], json!(null));
+    run_level(
+        "50k folded formulas, any range queryable",
+        &m,
+        &[],
+        &["C1"],
+        json!(null),
+        QueryLevel::Any,
+    );
 }

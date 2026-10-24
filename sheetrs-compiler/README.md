@@ -11,7 +11,7 @@ loan.ods  ──┘  (format independent)          └─ Program::execute() (li
 
 * **One IR, one engine.** Both formats are lowered to the same intermediate
   representation; there is no second execution engine to keep in sync.
-* **Inputs and outputs are declared.** Cells that do not depend on an input are
+* **Inputs and outputs are declared in the workbook**, in a settings sheet. Cells that do not depend on an input are
   evaluated at build time and disappear; cells that do not feed an output are
   dropped. What remains is the minimal computation.
 * **Hybrid compile/run-time.** Static references are resolved and ordered at
@@ -22,9 +22,11 @@ loan.ods  ──┘  (format independent)          └─ Program::execute() (li
   and LibreOffice (booleans as numbers, `0^0`, 1900 leap-year quirk, number
   formatting…) follows the file's dialect; every case is listed and tested in
   [docs/FIDELITY.md](docs/FIDELITY.md).
-* **Execution is configurable:** 1899/1900/1904 date system, iterative calculation
-  (iterations and tolerance) and locale (separators, month/day names, boolean
-  names).
+* **Execution is configurable where the file is silent:** the document decides
+  the date system, iterative calculation, search settings and dialect; the build
+  configuration (`sheetc.toml` and flags) decides the locale (any BCP-47 tag,
+  fixed at build time), the clock, the seed and how much of the workbook stays
+  queryable.
 
 Architecture and decisions: [docs/DESIGN.md](docs/DESIGN.md). Differences between
 Excel and LibreOffice: [docs/FIDELITY.md](docs/FIDELITY.md).
@@ -36,24 +38,23 @@ Requires Rust ≥ 1.99 (`rust-toolchain.toml` pins it).
 ```bash
 cargo build --profile dist -p sheetrs-compiler -p sheetrs-engine   # target/dist/{sheetc, sheetrs-rt}
 
-# Compile a model: declare which ranges are inputs and which are outputs.
-sheetc build tests/assets/loan.xlsx \
-    --in Loan!B1 --in Loan!B2 --in Loan!B3 \
-    --out Loan!B4 --out Loan!B6 \
-    -o loan
-# cells: 1464 total, 4 reachable, 4 kept | formulas: 1086 total, 0 folded, 1 kept ...
+# The workbook declares its inputs and outputs in a `settings` sheet
+# (see below); compiling needs nothing else.
+sheetc build tests/assets/loan.xlsx -o loan
+# cells: 1493 total, 1090 reachable, 1493 kept | formulas: 1086 total ...
 
 echo '{"Loan!B1": 250000, "Loan!B2": 0.045, "Loan!B3": 15}' | ./loan
-# {"Loan!B4":1912.4832220336577,"Loan!B6":94246.9799660584}
+# {"Loan!B4":1912.4832220336577,"Loan!B6":94246.9799660584,"Loan!B8":...}
 
-./loan --info                  # declared inputs/outputs, shapes, diagnostics
+./loan --meta                  # the settings sheet: inputs, outputs, custom metadata
+./loan --info                  # technical description: shapes, cycles, diagnostics
 ./loan --serve                 # one JSON object per line in, one per line out
 ```
 
 The same works from `.ods`, and without producing a file:
 
 ```bash
-sheetc run tests/assets/loan.ods --in Loan!B1 --out Loan!B4 <<< '{"Loan!B1": 1000}'
+sheetc run tests/assets/loan.ods <<< '{"Loan!B1": 1000}'
 sheetc calc '=TEXT(1234.5,"#,##0.00")' --locale es          # "1.234,50"
 sheetc inspect model.xlsx      # sizes, unsupported functions, cycles, run-time refs
 ```
@@ -67,14 +68,45 @@ sheetc inspect model.xlsx      # sizes, unsupported functions, cycles, run-time 
 | `calc "=FORMULA"` | Evaluate a single formula. |
 | `inspect FILE` | Report what the compiler sees. |
 
-### Inputs and outputs (`--in`, `--out`)
+### The settings sheet
 
-Each is a list of cells and ranges: `Sheet1!A1`, `'My Sheet'!B2:C9`, an
-unqualified address (first sheet) or a defined name (resolved to its range).
-That is all the engine knows: JSON keys are the **canonical range text**
-(`Sheet1!B2:C9`, sheet quoted when needed). Friendly names, schemas and
-documentation are a layer above the engine. Without any `--out`, every sheet's
-formula range is an output.
+The workbook parameterises itself. A sheet called `settings` (or the name given
+with `--settings` / `settings = ...`) has these headers in its first row, in any
+order:
+
+| key | value | description | meta_type |
+| --- | ----- | ----------- | --------- |
+| `Loan!B1` | | Principal | `input` |
+| `Loan!B4` | | Monthly payment | `output` |
+| `version` | `1.0` | Model version | `info` |
+
+* `meta_type` `input` or `output`: `key` is a cell or range (`Sheet1!A1`,
+  `'My Sheet'!B2:C9`, an unqualified address on the first sheet, or a defined
+  name). That is all the engine knows: JSON keys are the **canonical range text**
+  (`Sheet1!B2:C9`, sheet quoted when needed). `value` and `description` are
+  documentation.
+* Any other `meta_type` is free metadata (`key`, `value`, `description`).
+* The executable prints every row with `--meta`, inputs and outputs included.
+* There is no other way to declare inputs and outputs: no command-line list, no
+  names. The sheet is never part of the computation's outputs or queries.
+* Rows are validated at build time (unknown range, duplicate, missing
+  `meta_type`) and a sheet with no `output` row is an error unless
+  `outputs = "any"`. Without a settings sheet, every formula range is an output
+  and nothing is an input.
+
+### How much stays queryable (`--outputs`)
+
+| Level | Caller may read | Kept in the program |
+| ----- | --------------- | ------------------- |
+| `declared` (default) | the declared outputs | the minimum: only what feeds them |
+| `named` | the declared outputs and the workbook's defined names | also what feeds the named ranges |
+| `any` | any range, like the range API of a spreadsheet application (not the settings sheet) | every cell; formulas that depend on no input are still folded |
+
+Ranges beyond the declared outputs are requested when running:
+`./loan --query 'Loan!B5' --query 'Loan!A11:B12'`, or `"$query": [...]` in the
+JSON object (also per line with `--serve`). A range the level does not allow is
+an error naming the level. Inputs stay strict at every level: only the declared
+ones can be set.
 
 JSON mapping: a single cell is a scalar, a range is an array of rows (a flat
 array is accepted for one-row/one-column ranges). Numbers, strings, booleans and
@@ -88,24 +120,51 @@ unknown keys are rejected.
 **The document decides** date system (`date1904` / `table:null-date`),
 iterative calculation (`calcPr` / `table:iteration`), search settings (regular
 expressions, wildcards, whole cell, case sensitivity: ODS) and dialect (the
-file extension). There is no command-line flag for them in `build`, `run` or
-compiled executables, and a flag given anyway is an error: the engine is
-faithful to what the file says. (`calc`, which has no file, accepts
+file extension). There is no flag or configuration key for them in `build`,
+`run` or compiled executables, and a flag given anyway is an error: the engine
+is faithful to what the file says. (`calc`, which has no file, accepts
 `--date-system 1899|1900|1904`, `--dialect` and `--iterate[=N[,EPS]]`; so does
 the library for models built in memory.)
 
-**The command line decides what a file cannot say:**
+**The build configuration decides what a file cannot say.** Every option is a
+flag of `build`/`run` and a key of `sheetc.toml`; the command line wins over the
+file, and the file over the defaults. The file is `--config PATH`, else
+`sheetc.toml` in the workbook's directory (only there: a build does not depend on
+where it is started). Unknown keys are errors.
 
-| Option | Meaning |
-| ------ | ------- |
-| `--locale en\|es` | The user's regional settings: decimal/group separators, date order of text dates, month and day names, boolean names. Default `en`. The document's *language* is informational and does not change evaluation (LibreOffice evaluates an `es-ES` document with the system locale). |
-| `--now SERIAL` | Fix `NOW()`/`TODAY()`. Default: the system clock at each run. For reproducible CI. |
-| `--seed N` | Fix the `RAND`/`RANDBETWEEN` generator. Default: seeded from the clock. For reproducible CI. |
-| `--no-fold` | Keep every reachable formula; evaluate nothing at build time. |
-| `--runtime-locale` | Leave the locale open: the executable accepts `--locale`. Formulas that may depend on it (text, comparisons, text functions, anything reading a text cell) stay live; the rest still fold. Without it the locale is fixed at build time and a run-time `--locale` is an error. |
+```toml
+settings = "settings"   # --settings
+outputs  = "declared"   # --outputs: declared | named | any
+fold     = true         # --no-fold
+now      = 45292.5      # --now SERIAL: fix NOW()/TODAY() (default: the clock, at each run)
+seed     = 42           # --seed N: fix RAND (default: seeded from the clock)
 
-`--no-fold` and `--runtime-locale` are independent: all formulas kept with a
-static locale, folded formulas with an open locale, or any other combination.
+[locale]                # the user's regional settings; --locale TAG sets `tag`
+tag = "es-CO"           # any BCP-47 tag; default en
+decimal = ","           # each of these overrides what the tag gives
+group = "."
+true_text = "VERDADERO"
+false_text = "FALSO"
+currency = "$"
+two_digit_year_start = 1930
+date_order = "dmy"      # mdy | dmy | ymd
+```
+
+**Locale** is fixed when the program is built: folding already used it, so a run
+cannot change it (`--locale` on an executable is an error). Any locale tag is
+accepted. Text ordering and equality use the ICU collator for the tag. For `en`
+and `es` the separators, names and date order are the hand-checked ones verified
+against Excel and LibreOffice. For any other tag they come from CLDR through
+ICU4X (separators, month and day names, short-date order) and the build lists
+what is **unverified**: boolean text and currency keep the English defaults and
+native digits are not parsed, unless the `[locale]` table overrides them. The
+document's *language* is informational and does not change evaluation
+(LibreOffice evaluates an `es-ES` document with the system locale).
+
+The `[locale]` keys are the application-wide regional settings that Excel and
+LibreOffice let a user change outside any document (separators, two-digit-year
+window, list and currency conventions). Other application-wide settings can be
+added to the file as they are verified; per-document ones stay the document's.
 
 ## Function support
 

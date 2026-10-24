@@ -12,11 +12,14 @@
 //! and prunes them. See `docs/DESIGN.md`.
 
 pub mod compile;
+pub mod config;
 pub mod formula;
 pub mod graph;
 #[cfg(feature = "load")]
 pub mod loader;
+pub mod locale;
 pub mod model;
+pub mod settings;
 
 // The engine's modules under their usual paths, so `sheetrs_compiler::ir::Ns`
 // and `crate::value::Value` keep working.

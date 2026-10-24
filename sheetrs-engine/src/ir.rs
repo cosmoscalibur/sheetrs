@@ -173,14 +173,40 @@ pub struct Program {
     pub version: u32,
     pub sheets: Vec<String>,
     pub options: EngineOptions,
-    /// The locale (the user's regional settings) may be chosen when the program
-    /// runs. Otherwise it is fixed: constants may have been folded with it.
-    pub locale_open: bool,
     pub cells: Vec<CellDef>,
     pub cycles: Vec<(u32, u32)>,
     pub inputs: Vec<Binding>,
     pub outputs: Vec<Binding>,
+    /// Which ranges, besides `outputs`, a caller may ask for when running.
+    pub queryable: Queryable,
+    /// Entries of the workbook's settings sheet, inputs and outputs included.
+    pub meta: Vec<Meta>,
     pub diagnostics: Vec<String>,
 }
 
-pub const PROGRAM_VERSION: u32 = 1;
+/// How far the caller's choice of outputs reaches. Each level keeps more of
+/// the workbook in the program.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub enum Queryable {
+    /// Only the declared outputs: everything else is pruned.
+    #[default]
+    Declared,
+    /// The declared outputs plus these ranges (the workbook's defined names).
+    Named(Vec<Binding>),
+    /// Any range of the workbook, like the cell-range API of a spreadsheet
+    /// application, except the `excluded` sheets (the settings sheet). Only
+    /// constants that cannot change are folded.
+    Any { excluded: Vec<u16> },
+}
+
+/// One row of the settings sheet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Meta {
+    pub key: String,
+    pub value: serde_json::Value,
+    pub description: String,
+    /// `input`, `output` or a custom type.
+    pub meta_type: String,
+}
+
+pub const PROGRAM_VERSION: u32 = 2;

@@ -1,7 +1,7 @@
 //! Command-line plumbing shared by the compiler binary and the runtime stub.
 
 use crate::ir::Program;
-use crate::options::{DateSystem, Iteration, Locale};
+use crate::options::{DateSystem, Iteration};
 use crate::run::Overrides;
 use std::io::{BufRead, Read, Write};
 
@@ -79,10 +79,6 @@ pub fn parse_iteration(args: &mut Args) -> Result<Option<Iteration>, String> {
     Ok(Some(it))
 }
 
-pub fn parse_locale(s: &str) -> Result<Locale, String> {
-    Locale::by_tag(s).ok_or_else(|| format!("unknown locale `{s}` ({})", locale_help()))
-}
-
 /// Options for a formula that has no file behind it (`calc`): what a document
 /// would otherwise define.
 #[derive(Debug, Default)]
@@ -116,11 +112,7 @@ pub const FILE_DEFINED_FLAGS: [&str; 5] = [
     "--search",
 ];
 
-pub fn locale_help() -> &'static str {
-    "built in: en, es"
-}
-
-/// Options for build and run time: the user's locale, the clock, the seed.
+/// Options of the clock and the random seed, shared by build and run time.
 pub fn parse_overrides(args: &mut Args) -> Result<Overrides, String> {
     for f in FILE_DEFINED_FLAGS {
         if args
@@ -135,8 +127,15 @@ pub fn parse_overrides(args: &mut Args) -> Result<Overrides, String> {
         }
     }
     let mut o = Overrides::default();
-    if let Some(v) = args.value("--locale")? {
-        o.locale = Some(parse_locale(&v)?);
+    if args
+        .0
+        .iter()
+        .any(|a| a == "--locale" || a.starts_with("--locale="))
+    {
+        return Err(
+            "the locale is fixed when the program is built (`--locale` or `[locale]` in the build configuration)"
+                .into(),
+        );
     }
     if let Some(v) = args.value("--now")? {
         o.now = Some(
@@ -171,9 +170,48 @@ Options:
   --input FILE|-       JSON object with the inputs (default: stdin)
   --serve              read one JSON object per line, answer one per line
   --pretty             indent the JSON output
-  --info               describe the inputs and outputs of this program
-  --locale en|es   --now SERIAL   --seed N
-  (date system, iteration, search settings and dialect come from the document)";
+  --meta               list the settings-sheet entries (inputs, outputs, custom)
+  --query RANGE        also return RANGE (`Sheet1!B2:C9`), when the program was
+                       built to allow it; repeatable. In JSON input: \"$query\": [...]
+  --info               technical description of the program
+  --now SERIAL   --seed N
+  (date system, iteration, search settings and dialect come from the document;
+  the locale is fixed when the program is built)";
+
+/// Split the reserved `$query` key off a JSON input.
+fn take_queries(
+    input: serde_json::Value,
+    extra: &[String],
+) -> Result<(serde_json::Value, Vec<String>), String> {
+    let mut queries = extra.to_vec();
+    let serde_json::Value::Object(mut m) = input else {
+        return Ok((input, queries));
+    };
+    if let Some(q) = m.remove("$query") {
+        let list = q
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|v| v.as_str().map(str::to_string))
+                    .collect::<Option<Vec<_>>>()
+            })
+            .and_then(|x| x)
+            .ok_or("`$query` must be an array of range strings")?;
+        queries.extend(list);
+    }
+    Ok((serde_json::Value::Object(m), queries))
+}
+
+fn meta_json(p: &Program) -> serde_json::Value {
+    serde_json::json!({
+        "outputs": match &p.queryable {
+            crate::ir::Queryable::Declared => "declared",
+            crate::ir::Queryable::Named(_) => "named",
+            crate::ir::Queryable::Any { .. } => "any",
+        },
+        "meta": p.meta,
+    })
+}
 
 /// Execute a program according to command-line arguments. Returns the exit
 /// code: 0 on success, 1 on a failed run, 2 on bad arguments.
@@ -181,7 +219,12 @@ pub fn run_program(program: &Program, mut args: Args) -> i32 {
     let pretty = args.flag("--pretty");
     let serve = args.flag("--serve");
     let info = args.flag("--info");
+    let meta = args.flag("--meta");
     let input = match args.value("--input") {
+        Ok(v) => v,
+        Err(e) => return usage_error(&e),
+    };
+    let cli_queries = match args.values("--query") {
         Ok(v) => v,
         Err(e) => return usage_error(&e),
     };
@@ -192,10 +235,6 @@ pub fn run_program(program: &Program, mut args: Args) -> i32 {
     if let Some(extra) = args.0.first() {
         return usage_error(&format!("unexpected argument `{extra}`\n{RUNTIME_HELP}"));
     }
-    if info {
-        println!("{}", describe(program));
-        return 0;
-    }
     let show = |v: &serde_json::Value| {
         if pretty {
             serde_json::to_string_pretty(v)
@@ -203,6 +242,20 @@ pub fn run_program(program: &Program, mut args: Args) -> i32 {
             serde_json::to_string(v)
         }
         .unwrap_or_default()
+    };
+    if info {
+        println!("{}", describe(program));
+        return 0;
+    }
+    if meta {
+        println!("{}", show(&meta_json(program)));
+        return 0;
+    }
+    let answer = |j: serde_json::Value| {
+        let (j, queries) = take_queries(j, &cli_queries)?;
+        program
+            .execute_with(&j, &overrides, &queries)
+            .map_err(|e| e.0)
     };
     if serve {
         let stdin = std::io::stdin();
@@ -214,16 +267,14 @@ pub fn run_program(program: &Program, mut args: Args) -> i32 {
             }
             let reply = serde_json::from_str::<serde_json::Value>(&line)
                 .map_err(|e| format!("invalid JSON input: {e}"))
-                .and_then(|j| program.execute(&j, &overrides).map_err(|e| e.0))
+                .and_then(answer)
                 .unwrap_or_else(|e| serde_json::json!({ "error_message": e }));
             let _ = writeln!(out, "{}", serde_json::to_string(&reply).unwrap_or_default());
             let _ = out.flush();
         }
         return 0;
     }
-    let result =
-        read_input(input.as_deref()).and_then(|j| program.execute(&j, &overrides).map_err(|e| e.0));
-    match result {
+    match read_input(input.as_deref()).and_then(answer) {
         Ok(v) => {
             println!("{}", show(&v));
             0

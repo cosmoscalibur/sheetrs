@@ -69,7 +69,8 @@ Excel files carry none of the search settings, so XLSX uses Excel's behavior
 | Decided by | What |
 | ---------- | ---- |
 | The document | Date system, iteration, search settings (ODS), two-digit-year window, dialect (extension). The command line cannot override them. |
-| The user (`--locale`) | Regional settings: separators, date order of text dates, month/day names, boolean names. |
+| The build configuration (`[locale]`, `--locale`) | Application-wide regional settings that Excel and LibreOffice let the user change outside any document: separators, date order of text dates, month/day names, boolean names, currency, two-digit-year window. Fixed at build time. |
+| The run | Only the clock (`NOW()`) and the random seed. |
 | Nobody (informational) | The document's language (`fo:language`/`fo:country` of the default cell style). |
 
 The language is not an input to evaluation. Evidence: a probe document
@@ -82,8 +83,13 @@ diagnostic when it differs from the locale in use, and nothing more.
 
 ### Locale support
 
-Only `en` and `es` are built in, because those are the two whose behavior can be
-checked here with sense. A locale fixes the date order of numeric text dates
+Any BCP-47 tag is accepted. `en` and `es` are the two whose behavior is checked
+against Excel and LibreOffice (hand-written tables); any other tag is resolved
+from CLDR through ICU4X: decimal and group separators, month and day names and
+the short-date order. These are **not verified** against either application,
+the build says so, boolean text and currency keep the English defaults, and
+native (non-ASCII) digits are not parsed. The `[locale]` table of `sheetc.toml`
+overrides each value. A locale fixes the date order of numeric text dates
 (`3/1/2024` is March 1st under `en`, January 3rd under `es`; a four-digit first
 component is always year-first), month names (the locale's and English),
 decimal and group separators, boolean names and `TEXT` day/month names. Times
@@ -137,7 +143,7 @@ Fidelity also depends on reading what the file stores, not on a convention:
 | `CHAR`/`CODE` above 127 | Windows-1252, as in Western Excel (and LibreOffice on Windows). LibreOffice on a UTF-8 Linux yields U+FFFD for 128–255; that is the environment, not the document, so it is not copied. Other code pages are not modeled. |
 | ICU-only regular-expression syntax | Look-around and back-references work (`fancy-regex`). Constructs specific to ICU (`\\h`, `\\R`, `\\X`, some property names) are not available; a pattern that does not compile matches nothing. |
 | Ordering of booleans in `MATCH`/sorted lookups | Excel ordering in every dialect. |
-| Locales other than `en` and `es`; other date spellings per locale (localized month abbreviations with dots) | Not covered; use ISO or a supported pattern. |
+| Locales other than `en` and `es` | Accepted, with CLDR separators, names and date order; unverified against Excel and LibreOffice (see Locale support). Boolean text, currency, localized function names and other date spellings (month abbreviations with dots) are not derived. |
 | Excel's own `DATEDIF(…,"MD")` result | Pinned to the LibreOffice-verified formula; not checked against Excel. |
 | Excel-only dynamic arrays (`FILTER`, `SORT`, spill) and `LET`/`LAMBDA` | Not implemented. |
 | `table:precision-as-shown` / `fullPrecision="0"` | Not applied (diagnostic emitted). |
