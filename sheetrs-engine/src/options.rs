@@ -104,6 +104,9 @@ pub struct Locale {
     pub months: [String; 12],
     /// Sunday first.
     pub days: [String; 7],
+    /// Letters that sort as their own letter right after another: `('ñ', 'n')`.
+    #[serde(default)]
+    pub tailoring: Vec<(char, char)>,
 }
 
 fn strs<const N: usize>(a: [&str; N]) -> [String; N] {
@@ -145,6 +148,7 @@ impl Locale {
                 "Friday",
                 "Saturday",
             ]),
+            tailoring: Vec::new(),
         }
     }
 
@@ -182,6 +186,7 @@ impl Locale {
                 "viernes",
                 "sábado",
             ]),
+            tailoring: vec![('ñ', 'n')],
         }
     }
 

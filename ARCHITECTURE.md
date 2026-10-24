@@ -67,7 +67,7 @@ Two crates, split along the line that matters for reuse and build time:
 
 - **`sheetrs-engine`** executes a compiled `Program` (the format-independent IR)
   with JSON in and JSON out: values, the function registry (`core`/`xlsx`/`ods`
-  namespaces), dates, text conversion, ICU collation, search patterns and the
+  namespaces), dates, text conversion, collation, search patterns and the
   demand-driven evaluator. It knows nothing about XLSX or ODS and does not
   depend on the readers; its binary `sheetrs-rt` is the stub a compiled
   executable is made from.

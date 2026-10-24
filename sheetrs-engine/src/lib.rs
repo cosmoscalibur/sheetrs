@@ -13,6 +13,7 @@ pub mod addr;
 pub mod bundle;
 pub mod cli;
 pub mod coerce;
+pub mod collate;
 pub mod dates;
 pub mod engine;
 pub mod fastmap;

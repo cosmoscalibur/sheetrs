@@ -10,6 +10,7 @@
 //! tag = "es-CO"
 //! decimal = ","
 //! group = "."
+//! date_order = "dmy"
 //! two_digit_year_start = 1930
 //! ```
 //!
@@ -52,6 +53,9 @@ impl LocaleOverride {
             currency: self.currency.or(base.currency),
             two_digit_year_start: self.two_digit_year_start.or(base.two_digit_year_start),
             date_order: self.date_order.or(base.date_order),
+            months: self.months.or(base.months),
+            days: self.days.or(base.days),
+            tailoring: self.tailoring.or(base.tailoring),
         }
     }
 }
@@ -103,8 +107,16 @@ impl Config {
                     "settings sheet `{name}` declares no output; add `output` rows or build with outputs = \"any\""
                 )));
             }
-            spec.inputs = s.inputs.iter().map(|t| BindingSpec::parse(t)).collect();
-            spec.outputs = s.outputs.iter().map(|t| BindingSpec::parse(t)).collect();
+            spec.inputs = s
+                .inputs
+                .iter()
+                .map(|(n, t)| BindingSpec::named(n, t))
+                .collect();
+            spec.outputs = s
+                .outputs
+                .iter()
+                .map(|(n, t)| BindingSpec::named(n, t))
+                .collect();
             spec.meta = s.meta;
             spec.skip_sheet = Some(s.sheet);
         }

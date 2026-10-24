@@ -227,6 +227,12 @@ fn dynamic_references_resolve_at_run_time() {
 #[test]
 fn locale_is_fixed_at_build_time() {
     use sheetrs_compiler::locale::{LocaleOverride, from_tag};
+    let regional = |decimal, group| LocaleOverride {
+        decimal: Some(decimal),
+        group: Some(group),
+        date_order: Some("dmy".into()),
+        ..LocaleOverride::default()
+    };
     let m = sheet(&[
         ("A1", json!(1234.5)),
         ("B1", json!("=TEXT(A1,\"#,##0.00\")&\" \"&(1/2)")),
@@ -238,18 +244,22 @@ fn locale_is_fixed_at_build_time() {
             fold,
             ..spec(&[], &["B1"])
         };
-        s.locale = Some(from_tag(tag, &LocaleOverride::default()).unwrap().0);
+        let over = match tag {
+            "es-CO" => regional(',', '.'),
+            "es-MX" => regional('.', ','),
+            _ => LocaleOverride::default(),
+        };
+        s.locale = Some(from_tag(tag, &over).unwrap().0);
         let (p, _) = build(&m, &s);
         p.execute(&Json::Null, &Overrides::default()).unwrap()[key].clone()
     };
 
-    // Folded or not, the build's locale is the one in force; any tag works.
+    // Folded or not, the build's locale is the one in force.
     for fold in [true, false] {
         assert_eq!(with("en", fold), json!("1,234.50 0.5"));
         assert_eq!(with("es", fold), json!("1.234,50 0,5"));
         assert_eq!(with("es-CO", fold), json!("1.234,50 0,5"));
         assert_eq!(with("es-MX", fold), json!("1,234.50 0.5"));
-        assert_eq!(with("de-DE", fold), json!("1.234,50 0,5"));
     }
 
     // Formulas unfolded and locale static are independent choices.

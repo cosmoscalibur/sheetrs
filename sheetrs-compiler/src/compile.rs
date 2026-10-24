@@ -23,19 +23,27 @@ use crate::options::{DatePatterns, DateSystem, EngineOptions, Iteration, Locale,
 use crate::value::{ErrorKind, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-/// A cell or range declared as input or output. The engine knows nothing
-/// else about it: JSON keys are the canonical range text (`Sheet1!B2:C9`), and
-/// naming them is the job of a layer above.
+/// A cell or range declared as input or output.
 #[derive(Debug, Clone)]
 pub struct BindingSpec {
     /// `Sheet1!A1`, `Sheet1!A1:B3`, `A1` (first sheet) or a defined name.
     pub target: String,
+    /// The JSON key; the canonical range text (`Sheet1!B2:C9`) when absent.
+    pub name: Option<String>,
 }
 
 impl BindingSpec {
     pub fn parse(s: &str) -> Self {
         Self {
             target: s.trim().to_string(),
+            name: None,
+        }
+    }
+
+    pub fn named(name: &str, target: &str) -> Self {
+        Self {
+            target: target.trim().to_string(),
+            name: Some(name.trim().to_string()),
         }
     }
 }
@@ -272,7 +280,10 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         if rect.area() > MAX_BINDING_CELLS {
             return err(format!("input `{}` spans too many cells", b.target));
         }
-        let name = addr::qualified(&model.sheets, &rect);
+        let name = b
+            .name
+            .clone()
+            .unwrap_or_else(|| addr::qualified(&model.sheets, &rect));
         for r in rect.r0..=rect.r1 {
             for c in rect.c0..=rect.c1 {
                 let at = CellRef::new(rect.sheet, r, c);
@@ -301,7 +312,10 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             return err(format!("output `{}` spans too many cells", b.target));
         }
         outputs.push(Binding {
-            name: addr::qualified(&model.sheets, &rect),
+            name: b
+                .name
+                .clone()
+                .unwrap_or_else(|| addr::qualified(&model.sheets, &rect)),
             rect,
         });
     }

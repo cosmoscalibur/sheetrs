@@ -1,8 +1,7 @@
 //! Runtime values shared by the IR, the optimizer and the engine.
 
 use crate::addr::Rect;
-use icu_collator::options::{CollatorOptions, Strength};
-use icu_collator::{Collator, CollatorBorrowed, CollatorPreferences};
+use crate::collate::Collator;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -128,12 +127,9 @@ impl Value {
     }
 }
 
-/// Text collators for a language: one that ignores case (accents still count)
-/// and one that breaks ties by case, lowercase first. They are ICU/CLDR
-/// collators — the ones LibreOffice itself uses — so `ñ` falls between `n` and
-/// `o` in Spanish, `á` sorts with `a` and a new language is a new tag.
-/// A collator with its built-in (compiled) data.
-pub type Coll = CollatorBorrowed<'static>;
+/// Text collators for a locale: one that ignores case (accents still count)
+/// and one that breaks ties by case, lowercase first. See [`crate::collate`].
+pub type Coll = Collator;
 
 pub struct Collators {
     ci: Coll,
@@ -141,23 +137,11 @@ pub struct Collators {
 }
 
 impl Collators {
-    /// `lang`: the language subtag of the locale (`en`, `es`).
-    pub fn new(lang: &str) -> Self {
-        let locale = lang
-            .parse::<icu_locale::Locale>()
-            .unwrap_or(icu_locale::locale!("en"));
-        let make = |strength| {
-            let mut o = CollatorOptions::default();
-            o.strength = Some(strength);
-            Collator::try_new(CollatorPreferences::from(&locale), o)
-                .or_else(|_| {
-                    Collator::try_new(CollatorPreferences::from(icu_locale::locale!("en")), o)
-                })
-                .expect("built-in collation data")
-        };
+    /// `tailoring`: the locale's letters with a place of their own (`ñ`).
+    pub fn new(tailoring: &[(char, char)]) -> Self {
         Self {
-            ci: make(Strength::Secondary),
-            cs: make(Strength::Tertiary),
+            ci: Collator::new(tailoring, false),
+            cs: Collator::new(tailoring, true),
         }
     }
 
@@ -168,13 +152,9 @@ impl Collators {
 }
 
 /// Whether two texts are equal at the collator's strength (case ignored,
-/// accents significant). ASCII strings, the overwhelming majority of cell
-/// text, are decided without the collator; the result is the same.
+/// accents significant).
 pub fn text_equal(x: &str, y: &str, col: &Coll) -> bool {
-    if x.is_ascii() && y.is_ascii() {
-        return x.eq_ignore_ascii_case(y);
-    }
-    col.compare(x, y) == Ordering::Equal
+    col.equal(x, y)
 }
 
 /// Spreadsheet ordering of two scalars. `Empty` takes the type of the other
@@ -205,8 +185,8 @@ mod tests {
 
     #[test]
     fn collation() {
-        let en = Collators::new("en");
-        let es = Collators::new("es");
+        let en = Collators::new(&[]);
+        let es = Collators::new(&[('ñ', 'n')]);
         let (ci, cs) = (en.get(false), en.get(true));
         assert_eq!(
             ci.compare("á", "b"),

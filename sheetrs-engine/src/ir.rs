@@ -209,4 +209,4 @@ pub struct Meta {
     pub meta_type: String,
 }
 
-pub const PROGRAM_VERSION: u32 = 2;
+pub const PROGRAM_VERSION: u32 = 1;

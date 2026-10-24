@@ -3,9 +3,12 @@
 //!
 //! The first row holds the headers `key`, `value`, `description` and
 //! `meta_type` (any order, other columns ignored). A row whose `meta_type` is
-//! `input` or `output` declares a range in `key` (`Sheet1!B2:C9`, `A1`, or a
-//! defined name); any other `meta_type` is free metadata (`version`, `author`…).
-//! Everything is listed by the executable's `--meta`.
+//! `input` or `output` gives the name `key` to the range in `value`: the name
+//! is the JSON key of that input or output. `value` starts with the sheet
+//! (`Sheet1!B2:C9`, `'My Sheet'!A1`, a bare sheet name for its used range) or is
+//! a defined name. For any other `meta_type`, `key` is the name of a metadata
+//! field and `value` its literal value. Everything is listed by the executable's
+//! `--meta`.
 
 use crate::addr;
 use crate::compile::{CompileError, resolve_target};
@@ -20,9 +23,9 @@ pub const DEFAULT_SHEET: &str = "settings";
 #[derive(Debug, Clone, Default)]
 pub struct SheetSettings {
     pub sheet: u16,
-    /// Targets as written, in sheet order.
-    pub inputs: Vec<String>,
-    pub outputs: Vec<String>,
+    /// `(name, reference)` in sheet order.
+    pub inputs: Vec<(String, String)>,
+    pub outputs: Vec<(String, String)>,
     pub meta: Vec<Meta>,
 }
 
@@ -34,6 +37,35 @@ fn text(v: &Value) -> String {
         Value::Bool(b) => b.to_string().to_uppercase(),
         _ => String::new(),
     }
+}
+
+/// The range a settings row points at. It must start with the sheet (or be a
+/// sheet or a defined name): an address with no sheet depends on which sheet is
+/// first, and the settings sheet is not the place to guess.
+fn resolve_reference(model: &Model, reference: &str) -> Result<crate::addr::Rect, CompileError> {
+    let r = reference.trim();
+    if r.is_empty() {
+        return Err(CompileError("`value` must hold the range".into()));
+    }
+    if let Some(id) = model.sheet_id(r) {
+        let used = model.cells.keys().filter(|a| a.sheet == id).fold(
+            None,
+            |acc: Option<(u32, u32)>, a| {
+                Some(acc.map_or((a.row, a.col), |(r, c)| (r.max(a.row), c.max(a.col))))
+            },
+        );
+        return used
+            .map(|(rows, cols)| crate::addr::Rect::new(id, 0, 0, rows, cols))
+            .ok_or_else(|| CompileError(format!("sheet `{r}` is empty")));
+    }
+    let (sheet, _) = addr::split_sheet(r);
+    let is_name = model.names.keys().any(|k| addr::same_name(k, r));
+    if sheet.is_none() && !is_name {
+        return Err(CompileError(format!(
+            "`{r}` must start with the sheet (`Sheet1!{r}`), or be a sheet or a defined name"
+        )));
+    }
+    resolve_target(model, r)
 }
 
 /// Read the settings sheet called `name`. A missing sheet is an error only when
@@ -92,24 +124,25 @@ pub fn read(
                 "row {line} needs both `key` and `meta_type`"
             ))));
         }
-        let key = match meta_type.as_str() {
-            "input" | "output" => {
-                let rect = resolve_target(model, &key)
-                    .map_err(|e| CompileError(at(&format!("row {line}: {e}"))))?;
-                if rect.sheet == sheet {
-                    return Err(CompileError(at(&format!(
-                        "row {line}: `{key}` lies in the settings sheet"
-                    ))));
-                }
-                if meta_type == "input" {
-                    out.inputs.push(key.clone());
-                } else {
-                    out.outputs.push(key.clone());
-                }
-                addr::qualified(&model.sheets, &rect)
+        let value = vc.and_then(|c| cells.get(&c));
+        let mut shown = value.map_or(serde_json::Value::Null, |v| value_to_json(v));
+        if matches!(meta_type.as_str(), "input" | "output") {
+            let reference = value.map(|v| text(v)).unwrap_or_default();
+            let rect = resolve_reference(model, &reference)
+                .map_err(|e| CompileError(at(&format!("row {line}: {e}"))))?;
+            if rect.sheet == sheet {
+                return Err(CompileError(at(&format!(
+                    "row {line}: `{reference}` lies in the settings sheet"
+                ))));
             }
-            _ => key,
-        };
+            shown = serde_json::Value::String(addr::qualified(&model.sheets, &rect));
+            let list = if meta_type == "input" {
+                &mut out.inputs
+            } else {
+                &mut out.outputs
+            };
+            list.push((key.clone(), reference));
+        }
         if !seen.insert((meta_type.clone(), key.clone())) {
             return Err(CompileError(at(&format!(
                 "row {line}: `{key}` is already listed as {meta_type}"
@@ -117,9 +150,7 @@ pub fn read(
         }
         out.meta.push(Meta {
             key,
-            value: vc
-                .and_then(|c| cells.get(&c))
-                .map_or(serde_json::Value::Null, |v| value_to_json(v)),
+            value: shown,
             description: dc.map_or_else(String::new, get),
             meta_type,
         });
@@ -137,6 +168,7 @@ mod tests {
         let data = m.add_sheet("Data");
         let s = m.add_sheet("settings");
         m.set(data, "A1", Value::Number(1.0));
+        m.set(data, "B2", Value::Number(2.0));
         for (c, h) in ["key", "value", "description", "meta_type"]
             .iter()
             .enumerate()
@@ -148,16 +180,14 @@ mod tests {
             );
         }
         let rows = [
-            ("Data!A1", "", "rate", "input"),
-            ("Data!B1:B3", "", "result", "output"),
+            ("rate", "Data!A1", "interest rate", "input"),
+            ("result", "Data!B1:B3", "result", "output"),
             ("version", "1.2", "model version", "info"),
         ];
         for (i, (k, v, d, t)) in rows.iter().enumerate() {
             let r = i + 2;
             m.set(s, &format!("A{r}"), Value::Text((*k).into()));
-            if !v.is_empty() {
-                m.set(s, &format!("B{r}"), Value::Text((*v).into()));
-            }
+            m.set(s, &format!("B{r}"), Value::Text((*v).into()));
             m.set(s, &format!("C{r}"), Value::Text((*d).into()));
             m.set(s, &format!("D{r}"), Value::Text((*t).into()));
         }
@@ -165,14 +195,36 @@ mod tests {
     }
 
     #[test]
-    fn reads_bindings_and_metadata() {
+    fn names_ranges_and_carries_metadata() {
         let s = read(&model(), "SETTINGS", false).unwrap().unwrap();
-        assert_eq!(s.inputs, ["Data!A1"]);
-        assert_eq!(s.outputs, ["Data!B1:B3"]);
+        assert_eq!(s.inputs, [("rate".to_string(), "Data!A1".to_string())]);
+        assert_eq!(s.outputs[0].0, "result");
         assert_eq!(s.meta.len(), 3);
+        // Inputs and outputs list their canonical range as the value.
+        assert_eq!(s.meta[0].key, "rate");
+        assert_eq!(s.meta[0].value, serde_json::json!("Data!A1"));
+        assert_eq!(s.meta[0].description, "interest rate");
+        // Other types carry the literal.
         assert_eq!(s.meta[2].meta_type, "info");
         assert_eq!(s.meta[2].value, serde_json::json!("1.2"));
-        assert_eq!(s.meta[0].description, "rate");
+    }
+
+    #[test]
+    fn references_start_with_the_sheet() {
+        let mut m = model();
+        m.names.insert("Total".into(), "Data!B2".into());
+        let with = |m: &mut Model, v: &str| {
+            m.set(1, "B3", Value::Text(v.into()));
+            read(m, "settings", false)
+        };
+        // A bare address is refused; a sheet name or a defined name is not.
+        let e = with(&mut m, "B1:B3").unwrap_err().0;
+        assert!(e.contains("must start with the sheet"), "{e}");
+        assert!(with(&mut m, "Total").is_ok());
+        assert!(with(&mut m, "Data").is_ok());
+        assert!(with(&mut m, "Data!$B$1:$B$3").is_ok());
+        assert!(with(&mut m, "Nowhere!A1").is_err());
+        assert!(with(&mut m, "").is_err());
     }
 
     #[test]
@@ -184,13 +236,16 @@ mod tests {
     #[test]
     fn bad_rows_fail_fast() {
         let mut m = model();
-        m.set(1, "A5", Value::Text("Data!A1".into()));
+        m.set(1, "A5", Value::Text("rate".into()));
+        m.set(1, "B5", Value::Text("Data!B2".into()));
         m.set(1, "D5", Value::Text("input".into()));
         let e = read(&m, "settings", false).unwrap_err().0;
         assert!(e.contains("row 5") && e.contains("already listed"), "{e}");
+        // The same name may be an input and an output.
         let mut m = model();
-        m.set(1, "A5", Value::Text("Nowhere!Z1".into()));
+        m.set(1, "A5", Value::Text("rate".into()));
+        m.set(1, "B5", Value::Text("Data!B2".into()));
         m.set(1, "D5", Value::Text("output".into()));
-        assert!(read(&m, "settings", false).is_err());
+        assert!(read(&m, "settings", false).is_ok());
     }
 }

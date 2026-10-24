@@ -1,26 +1,22 @@
-//! Locales for any BCP-47 tag, derived from CLDR through ICU4X.
+//! Locales: the user's regional settings, resolved at build time.
 //!
-//! The engine only holds the resolved [`Locale`] (separators, month and day
-//! names, date order, boolean text), so ICU stays out of the runtime for these;
-//! text ordering uses the same tag at run time. `en` and `es` are verified
-//! against Excel and LibreOffice; for every other language CLDR supplies the
-//! separators, names and date order and the rest keeps the English defaults
-//! unless the configuration says otherwise.
+//! `en` (United States conventions) and `es` (Spain) are built in; their
+//! separators, names and date order are the ones verified against Excel and
+//! LibreOffice. Any other region or language is stated in the `[locale]` table
+//! of the build configuration rather than guessed: what Excel and LibreOffice
+//! take from the operating system's regional settings cannot be derived from a
+//! tag with certainty, and a wrong decimal separator changes every number read
+//! from text.
 
 use crate::options::{DateOrder, Locale};
-use icu_calendar::Date;
-use icu_datetime::{DateTimeFormatter, fieldsets};
-use icu_decimal::DecimalFormatter;
-use icu_decimal::input::Decimal;
-use icu_locale::Locale as IcuLocale;
 use serde::Deserialize;
 
-/// What the configuration may set on top of the CLDR data: the regional
-/// settings an application lets the user change.
+/// The `[locale]` table. Everything but `tag` overrides what the tag gives; for
+/// a language that is not built in, it provides it.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LocaleOverride {
-    /// BCP-47 tag; default `en`.
+    /// Locale tag (`es-CO`); default `en`.
     pub tag: Option<String>,
     pub decimal: Option<char>,
     pub group: Option<char>,
@@ -29,95 +25,136 @@ pub struct LocaleOverride {
     pub currency: Option<String>,
     /// First year of the window for two-digit years (default 1930).
     pub two_digit_year_start: Option<u16>,
-    /// `mdy`, `dmy` or `ymd`.
+    /// `mdy`, `dmy` or `ymd`: the order of numeric text dates.
     pub date_order: Option<String>,
+    /// Twelve month names, January first.
+    pub months: Option<Vec<String>>,
+    /// Seven day names, Sunday first.
+    pub days: Option<Vec<String>>,
+    /// Letters with a place of their own in the alphabet, as `"ñ>n"`: sorts
+    /// right after `n`. `es` has `ñ>n` built in.
+    pub tailoring: Option<Vec<String>>,
 }
 
-/// Resolve `tag` into a locale. The second element lists what could not be
-/// taken from CLDR and what is unverified.
-pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>), String> {
-    let norm = tag.replace('_', "-");
-    let id: IcuLocale = norm
-        .parse()
-        .map_err(|e| format!("`{tag}` is not a valid locale tag ({e})"))?;
-    let lang = id.id.language.as_str().to_string();
-    let verified = matches!(lang.as_str(), "en" | "es");
-    let mut notes = Vec::new();
-    let mut loc = Locale::by_tag(&lang).unwrap_or_else(Locale::en_us);
-    loc.tag = id.to_string();
+struct Tag {
+    language: String,
+    region: Option<String>,
+}
 
-    match DecimalFormatter::try_new((&id).into(), Default::default()) {
-        Ok(f) => {
-            let text = f
-                .format(&"1234567.5".parse::<Decimal>().map_err(|e| e.to_string())?)
-                .to_string();
-            let marks: Vec<char> = text.chars().filter(|c| !c.is_numeric()).collect();
-            if let (Some(g), Some(d)) = (marks.first(), marks.last()) {
-                loc.group = *g;
-                loc.decimal = *d;
+fn parse_tag(tag: &str) -> Result<Tag, String> {
+    let bad = || format!("`{tag}` is not a locale tag (like `en`, `es-CO`)");
+    let mut parts = tag.split(['-', '_']);
+    let language = parts
+        .next()
+        .filter(|l| (2..=3).contains(&l.len()) && l.chars().all(|c| c.is_ascii_alphabetic()));
+    let language = language.ok_or_else(bad)?.to_ascii_lowercase();
+    // Skip a script subtag (`Latn`); the region is two letters or three digits.
+    let region = parts
+        .find(|p| {
+            (p.len() == 2 && p.chars().all(|c| c.is_ascii_alphabetic()))
+                || (p.len() == 3 && p.chars().all(|c| c.is_ascii_digit()))
+        })
+        .map(str::to_ascii_uppercase);
+    Ok(Tag { language, region })
+}
+
+fn order(s: &str) -> Result<DateOrder, String> {
+    match s.to_ascii_lowercase().as_str() {
+        "mdy" => Ok(DateOrder::Mdy),
+        "dmy" => Ok(DateOrder::Dmy),
+        "ymd" => Ok(DateOrder::Ymd),
+        _ => Err(format!("date_order must be mdy, dmy or ymd, got `{s}`")),
+    }
+}
+
+fn fixed<const N: usize>(what: &str, v: &[String]) -> Result<[String; N], String> {
+    <[String; N]>::try_from(v.to_vec())
+        .map_err(|_| format!("{what} needs {N} names, got {}", v.len()))
+}
+
+fn tailoring(spec: &[String]) -> Result<Vec<(char, char)>, String> {
+    spec.iter()
+        .map(|s| {
+            let mut it = s.split('>').map(str::trim);
+            match (it.next(), it.next(), it.next()) {
+                (Some(a), Some(b), None) if a.chars().count() == 1 && b.chars().count() == 1 => {
+                    Ok((
+                        a.chars().next().unwrap_or(' '),
+                        b.chars().next().unwrap_or(' '),
+                    ))
+                }
+                _ => Err(format!("tailoring `{s}` must look like `ñ>n`")),
             }
-            if text.chars().any(|c| c.is_numeric() && !c.is_ascii_digit()) {
+        })
+        .collect()
+}
+
+/// Resolve `tag` and the overrides into a locale. The second element lists what
+/// was inherited from the built-in language of a region that differs from it.
+pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>), String> {
+    let t = parse_tag(tag)?;
+    let mut notes = Vec::new();
+    let mut missing: Vec<&str> = Vec::new();
+    let builtin = match t.language.as_str() {
+        "en" => Some(("US", Locale::en_us())),
+        "es" => Some(("ES", Locale::es_es())),
+        _ => None,
+    };
+    let mut loc = match &builtin {
+        Some((home, base)) => {
+            if let Some(r) = t.region.as_deref().filter(|r| r != home) {
+                // The conventions of another region are stated, not guessed.
+                for (key, set) in [
+                    ("decimal", over.decimal.is_some()),
+                    ("group", over.group.is_some()),
+                    ("date_order", over.date_order.is_some()),
+                ] {
+                    if !set {
+                        missing.push(key);
+                    }
+                }
+                if !missing.is_empty() {
+                    return Err(format!(
+                        "locale {tag}: the built-in {} locale follows {home} conventions; for region {r} set {} in [locale]",
+                        t.language,
+                        missing.join(", ")
+                    ));
+                }
                 notes.push(format!(
-                    "locale {}: native digits are not parsed, only 0-9",
-                    loc.tag
+                    "locale {tag}: month and day names, boolean text and currency are those of the built-in `{}`; the table [locale] can change them",
+                    t.language
                 ));
             }
+            base.clone()
         }
-        Err(e) => notes.push(format!("locale {}: no separators ({e})", loc.tag)),
-    }
-
-    if let Ok(f) = DateTimeFormatter::try_new((&id).into(), fieldsets::M::long()) {
-        for (i, m) in loc.months.iter_mut().enumerate() {
-            if let Ok(d) = Date::try_new_iso(2024, i as u8 + 1, 1) {
-                *m = f.format(&d).to_string();
-            }
-        }
-    }
-    if let Ok(f) = DateTimeFormatter::try_new((&id).into(), fieldsets::E::long()) {
-        // 2023-01-01 was a Sunday.
-        for (i, d) in loc.days.iter_mut().enumerate() {
-            if let Ok(date) = Date::try_new_iso(2023, 1, i as u8 + 1) {
-                *d = f.format(&date).to_string();
-            }
-        }
-    }
-    if let Ok(f) = DateTimeFormatter::try_new((&id).into(), fieldsets::YMD::short())
-        && let Ok(date) = Date::try_new_iso(2033, 11, 22)
-    {
-        let text = f.format(&date).to_string();
-        let nums: Vec<&str> = text
-            .split(|c: char| !c.is_ascii_digit())
-            .filter(|s| !s.is_empty())
-            .collect();
-        let order = match nums.as_slice() {
-            [a, b, c] => {
-                let year = |s: &str| s == "33" || s == "2033";
-                match (*a, *b, *c) {
-                    (y, "11", "22") if year(y) => Some(DateOrder::Ymd),
-                    ("11", "22", y) if year(y) => Some(DateOrder::Mdy),
-                    ("22", "11", y) if year(y) => Some(DateOrder::Dmy),
-                    _ => None,
+        None => {
+            for (key, set) in [
+                ("decimal", over.decimal.is_some()),
+                ("group", over.group.is_some()),
+                ("date_order", over.date_order.is_some()),
+                ("months", over.months.is_some()),
+                ("days", over.days.is_some()),
+                ("true_text", over.true_text.is_some()),
+                ("false_text", over.false_text.is_some()),
+                ("currency", over.currency.is_some()),
+            ] {
+                if !set {
+                    missing.push(key);
                 }
             }
-            _ => None,
-        };
-        match order {
-            Some(o) => loc.date_order = o,
-            None => notes.push(format!(
-                "locale {}: date order not recognised from `{text}`, keeping month-day-year",
-                loc.tag
-            )),
+            if !missing.is_empty() {
+                return Err(format!(
+                    "locale {tag}: only `en` and `es` are built in; define this locale in [locale] (missing: {})",
+                    missing.join(", ")
+                ));
+            }
+            Locale::en_us()
         }
+    };
+    loc.tag = tag.replace('_', "-");
+    if builtin.is_none() {
+        loc.tailoring.clear();
     }
-
-    if !verified {
-        notes.push(format!(
-            "locale {}: separators, month/day names and date order come from CLDR and are not verified \
-             against Excel or LibreOffice; boolean text and currency keep the English defaults unless configured",
-            loc.tag
-        ));
-    }
-
     if let Some(c) = over.decimal {
         loc.decimal = c;
     }
@@ -137,12 +174,22 @@ pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>
         loc.two_digit_year_start = y;
     }
     if let Some(o) = &over.date_order {
-        loc.date_order = match o.to_ascii_lowercase().as_str() {
-            "mdy" => DateOrder::Mdy,
-            "dmy" => DateOrder::Dmy,
-            "ymd" => DateOrder::Ymd,
-            _ => return Err(format!("date_order must be mdy, dmy or ymd, got `{o}`")),
-        };
+        loc.date_order = order(o)?;
+    }
+    if let Some(m) = &over.months {
+        loc.months = fixed("months", m)?;
+    }
+    if let Some(d) = &over.days {
+        loc.days = fixed("days", d)?;
+    }
+    if let Some(t) = &over.tailoring {
+        loc.tailoring = tailoring(t)?;
+    }
+    if loc.decimal == loc.group {
+        return Err(format!(
+            "locale {tag}: decimal and group separators are both `{}`",
+            loc.decimal
+        ));
     }
     Ok((loc, notes))
 }
@@ -151,59 +198,91 @@ pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>
 mod tests {
     use super::*;
 
-    fn get(tag: &str) -> Locale {
-        from_tag(tag, &LocaleOverride::default()).unwrap().0
+    fn get(tag: &str) -> Result<Locale, String> {
+        from_tag(tag, &LocaleOverride::default()).map(|l| l.0)
     }
 
     #[test]
-    fn regional_variants_follow_cldr() {
-        let l = get("es-CO");
-        assert_eq!((l.decimal, l.group), (',', '.'));
-        let l = get("es-MX");
+    fn en_and_es_are_built_in() {
+        let l = get("en").unwrap();
         assert_eq!((l.decimal, l.group), ('.', ','));
-        assert_eq!(l.months[0], "enero");
+        assert_eq!(l.date_order, DateOrder::Mdy);
+        let l = get("es_ES").unwrap();
+        assert_eq!((l.decimal, l.group, l.tag.as_str()), (',', '.', "es-ES"));
+        assert_eq!(l.tailoring, [('ñ', 'n')]);
         assert_eq!(l.true_text, "VERDADERO");
-        let l = get("en-GB");
-        assert_eq!(l.date_order, DateOrder::Dmy);
-        assert_eq!(l.days[0], "Sunday");
+        assert!(get("en-US").is_ok());
     }
 
     #[test]
-    fn unverified_languages_are_flagged() {
-        let (l, notes) = from_tag("de-DE", &LocaleOverride::default()).unwrap();
-        assert_eq!(
-            (l.decimal, l.group, l.date_order),
-            (',', '.', DateOrder::Dmy)
-        );
-        assert_eq!(l.months[2], "März");
-        assert_eq!(l.days[1], "Montag");
-        assert!(
-            notes.iter().any(|n| n.contains("not verified")),
-            "{notes:?}"
-        );
-        let l = get("ja-JP");
-        assert_eq!(l.date_order, DateOrder::Ymd);
-        assert!(
-            from_tag("en", &LocaleOverride::default())
-                .unwrap()
-                .1
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn configuration_wins_and_bad_tags_fail() {
+    fn other_regions_are_stated_not_guessed() {
+        let e = get("es-MX").unwrap_err();
+        assert!(e.contains("decimal, group, date_order"), "{e}");
         let over = LocaleOverride {
-            decimal: Some(';'),
-            true_text: Some("WAHR".into()),
-            date_order: Some("ymd".into()),
+            decimal: Some('.'),
+            group: Some(','),
+            date_order: Some("dmy".into()),
             ..LocaleOverride::default()
         };
-        let l = from_tag("de", &over).unwrap().0;
+        let (l, notes) = from_tag("es-MX", &over).unwrap();
         assert_eq!(
-            (l.decimal, l.true_text.as_str(), l.date_order),
-            (';', "WAHR", DateOrder::Ymd)
+            (l.decimal, l.group, l.date_order),
+            ('.', ',', DateOrder::Dmy)
         );
-        assert!(from_tag("not a tag", &LocaleOverride::default()).is_err());
+        assert_eq!(l.months[0], "enero");
+        assert_eq!(l.tailoring, [('ñ', 'n')]);
+        assert!(
+            notes.iter().any(|n| n.contains("built-in `es`")),
+            "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn other_languages_are_defined_in_full() {
+        let e = get("de-DE").unwrap_err();
+        assert!(
+            e.contains("only `en` and `es` are built in") && e.contains("months"),
+            "{e}"
+        );
+        let names = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+        let over = LocaleOverride {
+            decimal: Some(','),
+            group: Some('.'),
+            date_order: Some("dmy".into()),
+            true_text: Some("WAHR".into()),
+            false_text: Some("FALSCH".into()),
+            currency: Some("€".into()),
+            months: Some(names(
+                "Januar Februar März April Mai Juni Juli August September Oktober November Dezember",
+            )),
+            days: Some(names(
+                "Sonntag Montag Dienstag Mittwoch Donnerstag Freitag Samstag",
+            )),
+            tailoring: Some(vec!["ß>s".into()]),
+            ..LocaleOverride::default()
+        };
+        let (l, notes) = from_tag("de-DE", &over).unwrap();
+        assert_eq!(
+            (l.months[2].as_str(), l.days[1].as_str()),
+            ("März", "Montag")
+        );
+        assert_eq!(l.true_text, "WAHR");
+        assert_eq!(l.tailoring, [('ß', 's')]);
+        assert!(notes.is_empty());
+    }
+
+    #[test]
+    fn malformed_input_fails() {
+        assert!(get("not a tag").is_err());
+        assert!(get("").is_err());
+        let bad = |f: fn(&mut LocaleOverride)| {
+            let mut o = LocaleOverride::default();
+            f(&mut o);
+            from_tag("en", &o).unwrap_err()
+        };
+        assert!(bad(|o| o.date_order = Some("xyz".into())).contains("mdy, dmy or ymd"));
+        assert!(bad(|o| o.months = Some(vec!["a".into()])).contains("12 names"));
+        assert!(bad(|o| o.tailoring = Some(vec!["ñ".into()])).contains("ñ>n"));
+        assert!(bad(|o| o.group = Some('.')).contains("both `.`"));
     }
 }

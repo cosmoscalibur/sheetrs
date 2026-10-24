@@ -1,0 +1,8 @@
+[package]
+name = "gen"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+icu_collator = "2"
+icu_locale = "2"

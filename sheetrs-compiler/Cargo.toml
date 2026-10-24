@@ -28,10 +28,6 @@ sheetrs-formula = { path = "../sheetrs-formula" }
 sheetrs = { path = "../sheetrs", default-features = false, optional = true }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
-icu_decimal.workspace = true
-icu_datetime.workspace = true
-icu_calendar.workspace = true
-icu_locale.workspace = true
 toml.workspace = true
 
 [dev-dependencies]

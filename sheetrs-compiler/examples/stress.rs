@@ -110,6 +110,20 @@ fn main() {
     }
     m.set_formula(s, "C1", "SUM(B1:B50000)");
     run("50k folded formulas", &m, &[], &["C1"], json!(null));
+    // Inputs that may be any cell leave nothing to fold: the cost of `--no-fold`.
+    let spec = Spec {
+        outputs: vec![BindingSpec::parse("C1")],
+        fold: false,
+        ..Spec::default()
+    };
+    let (p, r) = time("compile, no folding", || compile(&m, &spec).unwrap());
+    println!(
+        "  kept {} cells, {} formulas",
+        r.cells_kept, r.formulas_kept
+    );
+    time("run, no folding", || {
+        p.execute(&json!(null), &Overrides::default()).unwrap()
+    });
     run_level(
         "50k folded formulas, any range queryable",
         &m,

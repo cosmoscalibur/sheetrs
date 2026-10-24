@@ -63,23 +63,23 @@ fn check_loan(exe: &Path) {
     let (code, out, err) = run(
         exe,
         &[],
-        r#"{"Loan!B1": 250000, "Loan!B2": 0.045, "Loan!B3": 15, "Loan!B7": 24}"#,
+        r#"{"principal": 250000, "rate": 0.045, "years": 15, "month": 24}"#,
     );
     assert_eq!(code, 0, "{err}");
     let v: Json = serde_json::from_str(&out).unwrap();
     let want = pmt(250_000.0, 0.045, 15.0);
-    assert!((v["Loan!B4"].as_f64().unwrap() - want).abs() < 1e-6, "{v}");
-    assert!((v["Loan!B6"].as_f64().unwrap() - (want * 180.0 - 250_000.0)).abs() < 1e-4);
+    assert!((v["payment"].as_f64().unwrap() - want).abs() < 1e-6, "{v}");
+    assert!((v["interest"].as_f64().unwrap() - (want * 180.0 - 250_000.0)).abs() < 1e-4);
     // Balance after 24 payments (dynamic INDIRECT in the source workbook).
     let r: f64 = 0.045 / 12.0;
     let bal = 250_000.0 * (1.0 + r).powi(24) - want * (((1.0 + r).powi(24) - 1.0) / r);
-    assert!((v["Loan!B8"].as_f64().unwrap() - bal).abs() < 1e-4, "{v}");
+    assert!((v["balance"].as_f64().unwrap() - bal).abs() < 1e-4, "{v}");
 
     // Defaults come from the spreadsheet when an input is omitted.
     let (code, out, _) = run(exe, &[], "{}");
     assert_eq!(code, 0);
     let v: Json = serde_json::from_str(&out).unwrap();
-    assert!((v["Loan!B4"].as_f64().unwrap() - pmt(200_000.0, 0.05, 30.0)).abs() < 1e-6);
+    assert!((v["payment"].as_f64().unwrap() - pmt(200_000.0, 0.05, 30.0)).abs() < 1e-6);
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn executable_is_self_describing_and_strict() {
     assert_eq!(code, 0);
     let info: Json = serde_json::from_str(&out).unwrap();
     assert_eq!(info["inputs"].as_array().unwrap().len(), 4);
-    assert_eq!(info["outputs"][0]["name"], "Loan!B4");
+    assert_eq!(info["outputs"][0]["name"], "payment");
 
     // The settings sheet's rows, inputs and outputs included.
     let (code, out, _) = run(&exe, &["--meta"], "");
@@ -108,8 +108,10 @@ fn executable_is_self_describing_and_strict() {
     assert_eq!(meta["outputs"], "declared");
     let rows = meta["meta"].as_array().unwrap();
     assert_eq!(rows.len(), 8);
-    assert_eq!(rows[0]["key"], "Loan!B1");
+    assert_eq!(rows[0]["key"], "principal");
+    assert_eq!(rows[0]["value"], "Loan!B1");
     assert_eq!(rows[0]["meta_type"], "input");
+    assert_eq!(rows[6]["key"], "balance");
     assert_eq!(rows[6]["description"], "Balance at that month");
     assert_eq!(
         rows[7],
@@ -130,7 +132,7 @@ fn executable_is_self_describing_and_strict() {
 fn serve_mode_answers_line_by_line() {
     let dir = tempfile::tempdir().unwrap();
     let exe = build_loan("loan.xlsx", dir.path(), &[]);
-    let input = "{\"Loan!B1\": 100000}\n\n{\"nope\": 1}\n{\"Loan!B1\": 200000}\n";
+    let input = "{\"principal\": 100000}\n\n{\"nope\": 1}\n{\"principal\": 200000}\n";
     let (code, out, _) = run(&exe, &["--serve"], input);
     assert_eq!(code, 0);
     let lines: Vec<Json> = out
@@ -145,8 +147,8 @@ fn serve_mode_answers_line_by_line() {
             .contains("unknown input")
     );
     let (a, b) = (
-        lines[0]["Loan!B4"].as_f64().unwrap(),
-        lines[2]["Loan!B4"].as_f64().unwrap(),
+        lines[0]["payment"].as_f64().unwrap(),
+        lines[2]["payment"].as_f64().unwrap(),
     );
     assert!((b / a - 2.0).abs() < 1e-9);
 }
@@ -200,11 +202,11 @@ fn run_command_compiles_in_memory() {
     let (code, out, err) = run(
         Path::new(SHEETC),
         &["run", asset("loan.xlsx").to_str().unwrap()],
-        r#"{"Loan!B1": 1000}"#,
+        r#"{"principal": 1000}"#,
     );
     assert_eq!(code, 0, "{err}");
     let v: Json = serde_json::from_str(&out).unwrap();
-    assert!((v["Loan!B4"].as_f64().unwrap() - pmt(1000.0, 0.05, 30.0)).abs() < 1e-9);
+    assert!((v["payment"].as_f64().unwrap() - pmt(1000.0, 0.05, 30.0)).abs() < 1e-9);
 }
 
 #[test]
@@ -218,19 +220,18 @@ fn calc_command() {
         "",
     );
     assert_eq!(out.trim(), "\"1.234,50\"");
-    // Any locale tag, resolved from CLDR.
-    let (_, out, _) = run(
-        Path::new(SHEETC),
-        &["calc", "=TEXT(1234.5,\"#,##0.00\")", "--locale", "de-CH"],
-        "",
-    );
-    assert_eq!(out.trim(), "\"1'234.50\"");
+    // Only en and es are built in; other locales are defined in the configuration.
+    for tag in ["de-CH", "es-MX"] {
+        let (code, _, err) = run(Path::new(SHEETC), &["calc", "=1", "--locale", tag], "");
+        assert_eq!(code, 2, "{err}");
+        assert!(err.contains("[locale]"), "{err}");
+    }
     let (code, _, err) = run(
         Path::new(SHEETC),
         &["calc", "=1", "--locale", "not a tag"],
         "",
     );
-    assert_ne!(code, 0, "{err}");
+    assert_eq!(code, 2, "{err}");
     let (_, out, _) = run(Path::new(SHEETC), &["calc", "=1/0"], "");
     assert_eq!(out.trim(), "{\"error\":\"#DIV/0!\"}");
 }
@@ -258,10 +259,10 @@ fn bundle_roundtrip_json_matches() {
     let (code, out, err) = run(
         Path::new(SHEETC),
         &["run", ir.to_str().unwrap()],
-        r#"{"Loan!B1": 1000}"#,
+        r#"{"principal": 1000}"#,
     );
     assert_eq!(code, 0, "{err}");
-    assert!(serde_json::from_str::<Json>(&out).unwrap()["Loan!B4"].is_number());
+    assert!(serde_json::from_str::<Json>(&out).unwrap()["payment"].is_number());
     let _ = json!(null);
 }
 
@@ -284,13 +285,13 @@ fn outputs_level_decides_what_can_be_queried() {
     let (code, out, err) = run(
         &exe,
         &["--query", "Loan!B5", "--query", "Loan!A11:B12"],
-        r#"{"Loan!B1": 100000}"#,
+        r#"{"principal": 100000}"#,
     );
     assert_eq!(code, 0, "{err}");
     let v: Json = serde_json::from_str(&out).unwrap();
     assert!(v["Loan!B5"].is_number());
     assert_eq!(v["Loan!A11:B12"][1][0], 2);
-    assert!((v["Loan!B4"].as_f64().unwrap() - pmt(100_000.0, 0.05, 30.0)).abs() < 1e-6);
+    assert!((v["payment"].as_f64().unwrap() - pmt(100_000.0, 0.05, 30.0)).abs() < 1e-6);
     // The same through `$query` in the JSON line.
     let (_, out, _) = run(&exe, &["--serve"], "{\"$query\": [\"Loan!B3\"]}\n");
     assert_eq!(serde_json::from_str::<Json>(&out).unwrap()["Loan!B3"], 30);
@@ -359,6 +360,26 @@ fn configuration_file_and_command_line_layering() {
     let (code, _, err) = build(&["--config", other.to_str().unwrap()]);
     assert_eq!(code, 1);
     assert!(err.contains("iterations"), "{err}");
+
+    // A locale beyond en/es is defined in full in the file.
+    std::fs::write(
+        &other,
+        "[locale]\ntag = \"de-DE\"\ndecimal = \",\"\ngroup = \".\"\n",
+    )
+    .unwrap();
+    let (code, _, err) = build(&["--config", other.to_str().unwrap()]);
+    assert_eq!(code, 1);
+    assert!(err.contains("missing: date_order, months, days"), "{err}");
+    std::fs::write(
+        &other,
+        "[locale]\ntag = \"de-DE\"\ndecimal = \",\"\ngroup = \".\"\ndate_order = \"dmy\"\n\
+         true_text = \"WAHR\"\nfalse_text = \"FALSCH\"\ncurrency = \"€\"\n\
+         months = [\"Jan\",\"Feb\",\"Mär\",\"Apr\",\"Mai\",\"Jun\",\"Jul\",\"Aug\",\"Sep\",\"Okt\",\"Nov\",\"Dez\"]\n\
+         days = [\"So\",\"Mo\",\"Di\",\"Mi\",\"Do\",\"Fr\",\"Sa\"]\n",
+    )
+    .unwrap();
+    let (code, _, err) = build(&["--config", other.to_str().unwrap()]);
+    assert_eq!(code, 0, "{err}");
 
     // A settings sheet that does not exist is an error once named explicitly.
     let (code, _, err) = build(&["--settings", "nowhere"]);

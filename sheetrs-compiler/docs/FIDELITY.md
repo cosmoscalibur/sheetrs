@@ -83,24 +83,43 @@ diagnostic when it differs from the locale in use, and nothing more.
 
 ### Locale support
 
-Any BCP-47 tag is accepted. `en` and `es` are the two whose behavior is checked
-against Excel and LibreOffice (hand-written tables); any other tag is resolved
-from CLDR through ICU4X: decimal and group separators, month and day names and
-the short-date order. These are **not verified** against either application,
-the build says so, boolean text and currency keep the English defaults, and
-native (non-ASCII) digits are not parsed. The `[locale]` table of `sheetc.toml`
-overrides each value. A locale fixes the date order of numeric text dates
-(`3/1/2024` is March 1st under `en`, January 3rd under `es`; a four-digit first
-component is always year-first), month names (the locale's and English),
-decimal and group separators, boolean names and `TEXT` day/month names. Times
-(`13:30`, `1:30 PM`) and date-times parse in every locale.
+`en` (United States conventions) and `es` (Spain) are built in: their
+separators, names and date order are the ones checked against Excel and
+LibreOffice. Anything else is **stated**, in the `[locale]` table of
+`sheetc.toml`, not derived from the tag: Excel and LibreOffice take these from
+the operating system's regional settings, a tag cannot give them with
+certainty, and a wrong decimal separator changes every number read from text.
+So:
 
-Text order (`<`, `>`, sorted lookups) comes from ICU4X (CLDR) collators, the same
-data LibreOffice uses: letters first (`á` sorts with `a`), then accents, then —
-for the case-sensitive comparison operators of an ODS document — case, lowercase
-first. Under `es` the `ñ` is a letter between `n` and `o` (`"ñu">"nz"` is true);
-under `en` it is `n` with a tilde. Excel orders with Windows NLS tables, which
-agree for English and Spanish in what was checked; not verified against Excel.
+* a region other than the built-in one (`es-MX`, `en-GB`) must state `decimal`,
+  `group` and `date_order`; month and day names, boolean text and currency are
+  inherited from the built-in language (the build says so);
+* another language (`de`, `fr`, `pt`…) must define the whole locale: those three
+  plus `months`, `days`, `true_text`, `false_text` and `currency`, and
+  `tailoring` for letters with a place of their own in the alphabet.
+
+A locale fixes the date order of numeric text dates (`3/1/2024` is March 1st
+under `en`, January 3rd under `es`; a four-digit first component is always
+year-first), month names (the locale's and English), decimal and group
+separators, boolean names and `TEXT` day/month names. Times (`13:30`,
+`1:30 PM`) and date-times parse in every locale.
+
+Text order (`<`, `>`, sorted lookups) follows the CLDR root collation that
+LibreOffice uses (it uses ICU): letters first (`á` sorts with `a`), then
+accents, then — for the case-sensitive comparison operators of an ODS
+document — case, lowercase first. Punctuation, symbols and currency sort before
+digits and digits before letters, as in CLDR. Under `es` the `ñ` is a letter
+between `n` and `o` (`"ñu">"nz"` is true); under `en` it is `n` with a tilde.
+It is implemented without a library: a table derived once from ICU
+(`sheetrs-engine/scripts/gen_collation.rs`) covers Latin text, punctuation,
+symbols, currency, arrows and math, and was checked against ICU over 1.6 million
+random string pairs (English and Spanish, both strengths, including Greek,
+Cyrillic and CJK samples) with no difference, plus a golden test in the crate.
+Outside the table, characters order by lowercase code point after the Latin
+letters: right for Greek and Cyrillic, an approximation for scripts whose
+conventional order differs (Han, kana). Text is compared as stored (decomposed
+accents are not recomposed). Excel orders with Windows NLS tables, which agree
+for English and Spanish in what was checked; not verified against Excel.
 Number and date *formatting* is hand-written and tested rather than taken from
 CLDR on purpose: CLDR and Excel disagree there (e.g. Spanish does not group
 four-digit numbers in CLDR, Excel does).
@@ -143,7 +162,7 @@ Fidelity also depends on reading what the file stores, not on a convention:
 | `CHAR`/`CODE` above 127 | Windows-1252, as in Western Excel (and LibreOffice on Windows). LibreOffice on a UTF-8 Linux yields U+FFFD for 128–255; that is the environment, not the document, so it is not copied. Other code pages are not modeled. |
 | ICU-only regular-expression syntax | Look-around and back-references work (`fancy-regex`). Constructs specific to ICU (`\\h`, `\\R`, `\\X`, some property names) are not available; a pattern that does not compile matches nothing. |
 | Ordering of booleans in `MATCH`/sorted lookups | Excel ordering in every dialect. |
-| Locales other than `en` and `es` | Accepted, with CLDR separators, names and date order; unverified against Excel and LibreOffice (see Locale support). Boolean text, currency, localized function names and other date spellings (month abbreviations with dots) are not derived. |
+| Locales other than `en` and `es` | Defined by the user in `[locale]` (see Locale support); nothing is derived from the tag. Localized function names and other date spellings (month abbreviations with dots) are not covered. |
 | Excel's own `DATEDIF(…,"MD")` result | Pinned to the LibreOffice-verified formula; not checked against Excel. |
 | Excel-only dynamic arrays (`FILTER`, `SORT`, spill) and `LET`/`LAMBDA` | Not implemented. |
 | `table:precision-as-shown` / `fullPrecision="0"` | Not applied (diagnostic emitted). |

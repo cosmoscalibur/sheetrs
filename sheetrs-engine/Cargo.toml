@@ -21,8 +21,6 @@ sheetrs-formula = { path = "../sheetrs-formula" }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
 fancy-regex.workspace = true
-icu_collator.workspace = true
-icu_locale.workspace = true
 
 [lints]
 workspace = true

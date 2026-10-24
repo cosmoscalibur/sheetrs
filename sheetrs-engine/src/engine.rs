@@ -96,13 +96,7 @@ impl<'p> Engine<'p> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0x9E37_79B9, |d| d.as_nanos() as u64)
         });
-        let opts_lang = opts
-            .locale
-            .tag
-            .split('-')
-            .next()
-            .unwrap_or("en")
-            .to_string();
+        let coll = Collators::new(&opts.locale.tailoring);
         if let Some(b) = base {
             for (s, e) in extent.iter_mut().enumerate() {
                 let (r, c) = b.extent(s as u16);
@@ -124,7 +118,7 @@ impl<'p> Engine<'p> {
             array_depth: 0,
             range_cache: FastMap::default(),
             unstable_reads: 0,
-            coll: Collators::new(&opts_lang),
+            coll,
         }
     }
 

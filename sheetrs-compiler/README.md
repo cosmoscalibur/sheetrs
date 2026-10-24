@@ -43,8 +43,8 @@ cargo build --profile dist -p sheetrs-compiler -p sheetrs-engine   # target/dist
 sheetc build tests/assets/loan.xlsx -o loan
 # cells: 1493 total, 1090 reachable, 1493 kept | formulas: 1086 total ...
 
-echo '{"Loan!B1": 250000, "Loan!B2": 0.045, "Loan!B3": 15}' | ./loan
-# {"Loan!B4":1912.4832220336577,"Loan!B6":94246.9799660584,"Loan!B8":...}
+echo '{"principal": 250000, "rate": 0.045, "years": 15}' | ./loan
+# {"payment":1912.4832220336577,"interest":94246.9799660584,"balance":...}
 
 ./loan --meta                  # the settings sheet: inputs, outputs, custom metadata
 ./loan --info                  # technical description: shapes, cycles, diagnostics
@@ -54,7 +54,7 @@ echo '{"Loan!B1": 250000, "Loan!B2": 0.045, "Loan!B3": 15}' | ./loan
 The same works from `.ods`, and without producing a file:
 
 ```bash
-sheetc run tests/assets/loan.ods <<< '{"Loan!B1": 1000}'
+sheetc run tests/assets/loan.ods <<< '{"principal": 1000}'
 sheetc calc '=TEXT(1234.5,"#,##0.00")' --locale es          # "1.234,50"
 sheetc inspect model.xlsx      # sizes, unsupported functions, cycles, run-time refs
 ```
@@ -76,23 +76,29 @@ order:
 
 | key | value | description | meta_type |
 | --- | ----- | ----------- | --------- |
-| `Loan!B1` | | Principal | `input` |
-| `Loan!B4` | | Monthly payment | `output` |
+| `principal` | `Loan!B1` | Loan amount | `input` |
+| `rate` | `Loan!B2` | Annual rate | `input` |
+| `payment` | `Loan!B4` | Monthly payment | `output` |
 | `version` | `1.0` | Model version | `info` |
 
-* `meta_type` `input` or `output`: `key` is a cell or range (`Sheet1!A1`,
-  `'My Sheet'!B2:C9`, an unqualified address on the first sheet, or a defined
-  name). That is all the engine knows: JSON keys are the **canonical range text**
-  (`Sheet1!B2:C9`, sheet quoted when needed). `value` and `description` are
-  documentation.
-* Any other `meta_type` is free metadata (`key`, `value`, `description`).
-* The executable prints every row with `--meta`, inputs and outputs included.
-* There is no other way to declare inputs and outputs: no command-line list, no
-  names. The sheet is never part of the computation's outputs or queries.
+* `meta_type` `input` or `output`: `key` is the name of the field in the JSON
+  (an alias, like a named range but defined in this sheet) and `value` the cell
+  or range it stands for. `value` starts with the sheet (`Loan!B1`,
+  `'My Sheet'!B2:C9`); a bare sheet name stands for its used range and a
+  workbook's defined name is accepted too. An address without a sheet is an
+  error: what it points at would depend on which sheet comes first.
+* Any other `meta_type` is free metadata: `key` is the field name and `value` its
+  literal value.
+* `description` documents the key.
+* The executable prints every row with `--meta`; for inputs and outputs the value
+  shown is the canonical range.
+* There is no other way to declare inputs and outputs: no command-line list.
+  Names are unique per type (an input and an output may share one), and the
+  sheet is never part of the computation's outputs or queries.
 * Rows are validated at build time (unknown range, duplicate, missing
   `meta_type`) and a sheet with no `output` row is an error unless
   `outputs = "any"`. Without a settings sheet, every formula range is an output
-  and nothing is an input.
+  (keyed by its range text) and nothing is an input.
 
 ### How much stays queryable (`--outputs`)
 
@@ -104,7 +110,9 @@ order:
 
 Ranges beyond the declared outputs are requested when running:
 `./loan --query 'Loan!B5' --query 'Loan!A11:B12'`, or `"$query": [...]` in the
-JSON object (also per line with `--serve`). A range the level does not allow is
+JSON object (also per line with `--serve`); each comes back under its canonical
+range text (`Loan!B5`), beside the declared outputs under their names. A range
+the level does not allow is
 an error naming the level. Inputs stay strict at every level: only the declared
 ones can be set.
 
@@ -140,26 +148,28 @@ now      = 45292.5      # --now SERIAL: fix NOW()/TODAY() (default: the clock, a
 seed     = 42           # --seed N: fix RAND (default: seeded from the clock)
 
 [locale]                # the user's regional settings; --locale TAG sets `tag`
-tag = "es-CO"           # any BCP-47 tag; default en
-decimal = ","           # each of these overrides what the tag gives
-group = "."
-true_text = "VERDADERO"
-false_text = "FALSO"
-currency = "$"
-two_digit_year_start = 1930
+tag = "es-MX"           # default en
+decimal = "."           # a region other than en-US / es-ES states these three
+group = ","
 date_order = "dmy"      # mdy | dmy | ymd
+# For a language that is not built in, also: months (12), days (7, Sunday
+# first), true_text, false_text, currency. Optional everywhere:
+two_digit_year_start = 1930
+tailoring = ["ñ>n"]     # letters that sort as their own letter after another
 ```
 
 **Locale** is fixed when the program is built: folding already used it, so a run
-cannot change it (`--locale` on an executable is an error). Any locale tag is
-accepted. Text ordering and equality use the ICU collator for the tag. For `en`
-and `es` the separators, names and date order are the hand-checked ones verified
-against Excel and LibreOffice. For any other tag they come from CLDR through
-ICU4X (separators, month and day names, short-date order) and the build lists
-what is **unverified**: boolean text and currency keep the English defaults and
-native digits are not parsed, unless the `[locale]` table overrides them. The
-document's *language* is informational and does not change evaluation
-(LibreOffice evaluates an `es-ES` document with the system locale).
+cannot change it (`--locale` on an executable is an error). `en` (United States
+conventions) and `es` (Spain) are built in and verified against Excel and
+LibreOffice. Anything else is **stated, not guessed**: a region other than the
+built-in one needs `decimal`, `group` and `date_order`, and another language needs
+the whole locale. The build fails naming what is missing, because what Excel and
+LibreOffice take from the operating system's regional settings cannot be derived
+from a tag with certainty, and a wrong decimal separator changes every number
+read from text. Text ordering follows the CLDR collation LibreOffice uses (see
+[docs/FIDELITY.md](docs/FIDELITY.md#locale-support)). The document's *language*
+is informational and does not change evaluation (LibreOffice evaluates an
+`es-ES` document with the system locale).
 
 The `[locale]` keys are the application-wide regional settings that Excel and
 LibreOffice let a user change outside any document (separators, two-digit-year

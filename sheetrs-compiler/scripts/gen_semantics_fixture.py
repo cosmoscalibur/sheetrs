@@ -156,15 +156,16 @@ def build_loan(path):
         ws[f"C{r}"] = f"=D{r - 1}*$B$2/12"
         ws[f"D{r}"] = f"=D{r - 1}+C{r}-B{r}"
     ws["A372"], ws["B372"] = "Unused note", "=SUM(B11:B370)*0+LEN(A1)"
-    # The settings sheet declares the inputs, outputs and metadata.
+    # The settings sheet declares the inputs, outputs and metadata: `key` is
+    # the JSON name, `value` the range (or the literal of a metadata field).
     st = wb.create_sheet("settings")
     st.append(["key", "value", "description", "meta_type"])
-    for key, desc in [("Loan!B1", "Principal"), ("Loan!B2", "Annual rate"),
-                      ("Loan!B3", "Years"), ("Loan!B7", "Month to inspect")]:
-        st.append([key, None, desc, "input"])
-    for key, desc in [("Loan!B4", "Monthly payment"), ("Loan!B6", "Total interest"),
-                      ("Loan!B8", "Balance at that month")]:
-        st.append([key, None, desc, "output"])
+    for key, ref, desc in [("principal", "Loan!B1", "Loan amount"), ("rate", "Loan!B2", "Annual rate"),
+                           ("years", "Loan!B3", "Term in years"), ("month", "Loan!B7", "Month to inspect")]:
+        st.append([key, ref, desc, "input"])
+    for key, ref, desc in [("payment", "Loan!B4", "Monthly payment"), ("interest", "Loan!B6", "Total interest"),
+                           ("balance", "Loan!B8", "Balance at that month")]:
+        st.append([key, ref, desc, "output"])
     st.append(["version", "1.0", "Model version", "info"])
     wb.save(path)
 

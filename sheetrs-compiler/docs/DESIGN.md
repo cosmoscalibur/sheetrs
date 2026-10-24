@@ -129,6 +129,26 @@ runtime query is checked against the level (`Queryable` in the program): rectang
 inside a declared output, a named range, or any range outside the excluded
 sheets.
 
+### Why inputs stay strict
+
+The query levels could also apply to inputs; they are not offered, because the
+cost lands on what makes the program small. An input cuts the dependency cone
+(its own formula is ignored) and marks everything downstream as live; whatever
+depends on no input folds at build time.
+
+| Inputs | Live part of the program | Consequence |
+| --- | --- | --- |
+| declared | what is downstream of the declared inputs | smallest program, most folding |
+| named (workbook names) | also what is downstream of every defined name | grows with the names; authors name assumptions *and* internal results, so the contract widens silently; the settings sheet already lets the author add an alias with one row |
+| any cell | everything: no formula can be folded | the program is the whole workbook; a cell may be a formula, so an input must override it |
+
+The last row is measured by `--no-fold`, which is its upper bound: 50 000
+independent formulas run in 27 µs when folded and 69 ms when nothing may fold
+(`cargo run --release --example stress`), the program grows from 1 cell to
+100 001, and at 40 MB the program, which is serialized JSON loaded at start, is
+the size of the workbook. Outputs do not pay this: a wider output set only keeps
+more of the cone, and the folded part stays folded.
+
 ### Who configures what
 
 The date system, iteration, search settings and dialect are the document's and
@@ -164,17 +184,30 @@ copied every cell into the graph and into a temporary program, needed 69 s and
 bytes per cell); a streaming reader that skips cells outside the cone is the next
 step if this has to go lower.
 
-### Cost of ICU collation
+### Collation without a library
 
-Text comparison goes through an ICU4X collator (~110 ns per comparison); ASCII
-strings, nearly all cell text, are compared for equality without it. On the 49 MB
-workbook, 600 000 text equalities cost ~0.26 s in total and 600 000 ordering
-comparisons ~0.24 s (`--example bench_text`), a small part of a run that also
-builds the arrays. Build time: the ICU and `fancy-regex` dependencies add ~20 s
-to a clean release build, once (incremental builds are unaffected; changing the
-compiler recompiles in ~10 s); the runtime stub grows by ~3 MB (3.9 MB stripped).
-Collation affects only text *ordering and equality*, never display: the engine
-computes cell values, and cell number formats are not read at all
+Text comparison is implemented in `sheetrs-engine/src/collate.rs` from a table
+derived once from ICU, instead of depending on ICU4X. ICU4X was used first and
+measured against the in-house version over the same inputs:
+
+| | ICU4X collator | in-house |
+| --- | ---: | ---: |
+| comparison (`Customer 123 - region 4`) | 138 ns | 31 ns |
+| runtime stub (`sheetrs-rt`, `dist`) | 3.97 MB | 2.71 MB |
+| `sheetc` (`dist`) | 6.50 MB | 4.04 MB |
+| cold `dist` build of both crates | 70 s | 54 s |
+
+(The build times include the ICU4X locale-data crates the compiler used to
+derive separators and names, which the explicit `[locale]` table made unnecessary.)
+Agreement with ICU for English and Spanish, both strengths: 0 differences in 1.6
+million random pairs, and the table covers what spreadsheets contain. The risk
+is left where it was: scripts outside the table order by code point (see
+FIDELITY.md), and a language whose alphabet needs more than one extra letter or a
+digraph (`ch` in Czech) needs a `tailoring` entry or is unsupported. Adding a
+built-in language is a table in `options.rs`.
+
+The collation only decides text *ordering and equality*, never display: the
+engine computes cell values, and cell number formats are not read at all
 (`TEXT`/`FIXED`, whose result is a string value, are the only users of format
 codes).
 
@@ -252,16 +285,16 @@ a diagnostic.
 1899 = real calendar, the ODS default),
 iteration (`max_iterations`, `max_change`; Excel defaults 100 / 0.001), locale
 (decimal/group separators, boolean names, month and day names; `en` and `es`
-built in; text order from ICU4X collators) plus fixed `now` and `rand` seed for determinism. The
+built in, others defined in the build configuration; text order from the in-house collation) plus fixed `now` and `rand` seed for determinism. The
 source file's own setting (`date1904`) is the default. Locale affects text
 conversion at run time (`TEXT`, `&`, `VALUE`, `FIXED`); function *names* are not
 localized because files always store the canonical ones.
 
 ## Executable format
 
-`sheetc build` copies a runtime stub — `sheetrs-rt` (~4 MB with the ICU collation data, engine only) or
+`sheetc build` copies a runtime stub — `sheetrs-rt` (~2.7 MB, engine only) or
 the full binary — and appends the program as JSON plus a 16-byte trailer
-(`XLSLANG1` + length). At start the binary looks for the trailer in its own
+(`SHEETRS1` + length). At start the binary looks for the trailer in its own
 file; if present it runs the program, otherwise it is the compiler. No
 toolchain is needed to build, the artifact is a single file, startup is ~2 ms.
 Programs are plain data, so the same bytes can be embedded in a library or
