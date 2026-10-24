@@ -16,7 +16,7 @@ use crate::ir::Meta;
 use crate::model::Model;
 use crate::run::value_to_json;
 use crate::value::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 pub const DEFAULT_SHEET: &str = "settings";
 
@@ -111,7 +111,9 @@ pub fn read(
         sheet,
         ..SheetSettings::default()
     };
-    let mut seen: HashSet<(String, String)> = HashSet::new();
+    // A key names one thing: no other row, sheet, defined name or table (the
+    // readers list tables among the defined names) may share it.
+    let mut seen: HashMap<String, (u32, String)> = HashMap::new();
     for (&row, cells) in rows.iter().skip(1) {
         let get = |c: u32| cells.get(&c).map_or_else(String::new, |v| text(v));
         let (key, meta_type) = (get(kc), get(tc).to_lowercase());
@@ -143,9 +145,26 @@ pub fn read(
             };
             list.push((key.clone(), reference));
         }
-        if !seen.insert((meta_type.clone(), key.clone())) {
+        if let Some((first, kind)) = seen.insert(key.to_lowercase(), (line, meta_type.clone())) {
             return Err(CompileError(at(&format!(
-                "row {line}: `{key}` is already listed as {meta_type}"
+                "row {line}: `{key}` is already defined in row {first} (as {kind}); a key names one input, output or field"
+            ))));
+        }
+        if let Some(what) = model
+            .sheets
+            .iter()
+            .any(|n| addr::same_name(n, &key))
+            .then_some("a sheet")
+            .or_else(|| {
+                model
+                    .names
+                    .keys()
+                    .any(|n| addr::same_name(n, &key))
+                    .then_some("a defined name or table")
+            })
+        {
+            return Err(CompileError(at(&format!(
+                "row {line}: `{key}` is also {what} of the workbook; keys cannot coincide with them"
             ))));
         }
         out.meta.push(Meta {
@@ -235,17 +254,37 @@ mod tests {
 
     #[test]
     fn bad_rows_fail_fast() {
+        let row5 = |m: &mut Model, key: &str, value: &str, kind: &str| {
+            m.set(1, "A5", Value::Text(key.into()));
+            m.set(1, "B5", Value::Text(value.into()));
+            m.set(1, "D5", Value::Text(kind.into()));
+            read(m, "settings", false)
+        };
+        // One key, one thing: not twice as the same type, nor as another type,
+        // nor in another case.
+        for (key, kind) in [
+            ("rate", "input"),
+            ("rate", "output"),
+            ("Version", "info"),
+            ("RATE", "x"),
+        ] {
+            let e = row5(&mut model(), key, "Data!B2", kind).unwrap_err().0;
+            assert!(
+                e.contains("row 5") && e.contains("already defined in row"),
+                "{e}"
+            );
+        }
+        // Not a sheet, a defined name or a table either.
         let mut m = model();
-        m.set(1, "A5", Value::Text("rate".into()));
-        m.set(1, "B5", Value::Text("Data!B2".into()));
-        m.set(1, "D5", Value::Text("input".into()));
-        let e = read(&m, "settings", false).unwrap_err().0;
-        assert!(e.contains("row 5") && e.contains("already listed"), "{e}");
-        // The same name may be an input and an output.
-        let mut m = model();
-        m.set(1, "A5", Value::Text("rate".into()));
-        m.set(1, "B5", Value::Text("Data!B2".into()));
-        m.set(1, "D5", Value::Text("output".into()));
-        assert!(read(&m, "settings", false).is_ok());
+        m.names.insert("Total".into(), "Data!B2".into());
+        for (key, what) in [
+            ("data", "a sheet"),
+            ("Settings", "a sheet"),
+            ("TOTAL", "a defined name or table"),
+        ] {
+            let e = row5(&mut m, key, "Data!B2", "input").unwrap_err().0;
+            assert!(e.contains(what), "{e}");
+        }
+        assert!(row5(&mut m, "other", "Data!B2", "output").is_ok());
     }
 }

@@ -360,20 +360,26 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
     match spec.query {
         QueryLevel::Declared => {}
         QueryLevel::Named => {
+            let mut skipped = Vec::new();
             for name in model.names.keys() {
-                if let Ok(rect) = resolve_target(model, name)
-                    && rect.area() <= MAX_BINDING_CELLS
-                    && Some(rect.sheet) != spec.skip_sheet
-                {
-                    named.push(Binding {
-                        name: addr::qualified(&model.sheets, &rect),
+                match resolve_target(model, name) {
+                    Ok(rect) if Some(rect.sheet) == spec.skip_sheet => {}
+                    Ok(rect) if rect.area() <= MAX_BINDING_CELLS => named.push(Binding {
+                        name: name.clone(),
                         rect,
-                    });
+                    }),
+                    _ => skipped.push(name.as_str()),
                 }
             }
             named.sort_by(|a, b| a.name.cmp(&b.name));
-            named.dedup_by(|a, b| a.name == b.name);
             query_rects.extend(named.iter().map(|b| b.rect));
+            if !skipped.is_empty() {
+                skipped.sort_unstable();
+                diags.push(format!(
+                    "defined names that are not a plain range cannot be queried: {}",
+                    skipped.join(", ")
+                ));
+            }
         }
         QueryLevel::Any => {
             let mut ext = vec![(0u32, 0u32); model.sheets.len().max(1)];

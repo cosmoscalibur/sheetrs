@@ -93,8 +93,10 @@ order:
 * The executable prints every row with `--meta`; for inputs and outputs the value
   shown is the canonical range.
 * There is no other way to declare inputs and outputs: no command-line list.
-  Names are unique per type (an input and an output may share one), and the
-  sheet is never part of the computation's outputs or queries.
+  A key names one thing: it cannot repeat in the sheet (not as the same type nor
+  as another: an input, an output or a field), and it cannot coincide with a
+  sheet, a defined name or a table of the workbook. All of that fails the
+  build. The sheet is never part of the computation's outputs or queries.
 * Rows are validated at build time (unknown range, duplicate, missing
   `meta_type`) and a sheet with no `output` row is an error unless
   `outputs = "any"`. Without a settings sheet, every formula range is an output
@@ -105,13 +107,15 @@ order:
 | Level | Caller may read | Kept in the program |
 | ----- | --------------- | ------------------- |
 | `declared` (default) | the declared outputs | the minimum: only what feeds them |
-| `named` | the declared outputs and the workbook's defined names | also what feeds the named ranges |
+| `named` | the declared outputs and the workbook's defined names (and tables), by name | also what feeds the named ranges |
 | `any` | any range, like the range API of a spreadsheet application (not the settings sheet) | every cell; formulas that depend on no input are still folded |
 
 Ranges beyond the declared outputs are requested when running:
-`./loan --query 'Loan!B5' --query 'Loan!A11:B12'`, or `"$query": [...]` in the
+`./loan --query 'Loan!B5' --query 'Loan!A11:B12'` (at `named`, also
+`--query Total`), or `"$query": [...]` in the
 JSON object (also per line with `--serve`); each comes back under its canonical
-range text (`Loan!B5`), beside the declared outputs under their names. A range
+range text (`Loan!B5`), or under the defined name when asked by name, beside
+the declared outputs under their aliases. A range
 the level does not allow is
 an error naming the level. Inputs stay strict at every level: only the declared
 ones can be set.

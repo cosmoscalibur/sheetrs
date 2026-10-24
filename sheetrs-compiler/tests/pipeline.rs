@@ -357,8 +357,10 @@ fn query_levels_keep_progressively_more() {
     assert_eq!(ask(&p, "B1").unwrap()["Sheet1!B1"], json!(20));
     assert!(ask(&p, "C1").unwrap_err().0.contains("outputs = declared"));
 
-    // named: the defined name `Total` (Sheet1!C1) is answerable, D1 is not.
+    // named: the defined name `Total` (Sheet1!C1) is answerable, by name or by
+    // range; D1 is not.
     let p = at(QueryLevel::Named, &[]);
+    assert_eq!(ask(&p, "total").unwrap()["Total"], json!(21));
     assert_eq!(ask(&p, "Sheet1!C1").unwrap()["Sheet1!C1"], json!(21));
     assert!(ask(&p, "D1").is_err());
 

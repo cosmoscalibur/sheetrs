@@ -46,9 +46,17 @@ impl Program {
         self.execute_with(input, o, &[])
     }
 
-    /// Resolve a range typed by a caller (`Sheet1!B2:C9`) against the ranges the
-    /// program can answer.
-    pub fn resolve_query(&self, text: &str) -> Result<Rect, RunError> {
+    /// Resolve what a caller asked for (`Sheet1!B2:C9`, or a defined name at the
+    /// `named` level) against what the program can answer. The first element is
+    /// the key of the answer: the name, or the canonical range text.
+    pub fn resolve_query(&self, text: &str) -> Result<(String, Rect), RunError> {
+        if let Queryable::Named(extra) = &self.queryable
+            && let Some(b) = extra
+                .iter()
+                .find(|b| crate::addr::same_name(&b.name, text.trim()))
+        {
+            return Ok((b.name.clone(), b.rect));
+        }
         let (sheet, tail) = crate::addr::split_sheet(text.trim());
         let sheet_id = match &sheet {
             Some(n) => self
@@ -75,7 +83,7 @@ impl Program {
             Queryable::Declared => self.outputs.iter().any(inside),
         };
         if allowed {
-            Ok(rect)
+            Ok((crate::addr::qualified(&self.sheets, &rect), rect))
         } else {
             fail(format!(
                 "`{text}` cannot be queried: this program was built with outputs = {} (see --meta)",
@@ -128,8 +136,7 @@ impl Program {
         for b in &self.outputs {
             out.insert(b.name.clone(), read_output(&mut engine, &b.rect));
         }
-        for r in query_rects {
-            let name = crate::addr::qualified(&self.sheets, &r);
+        for (name, r) in query_rects {
             if !out.contains_key(&name) {
                 out.insert(name, read_output(&mut engine, &r));
             }
