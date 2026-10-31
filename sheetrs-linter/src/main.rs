@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use sheetrs_core::{Linter, LinterConfig, Severity};
+use sheetrs_linter::{Linter, LinterConfig, Severity};
 use std::path::PathBuf;
 
 mod formatter;
@@ -60,7 +60,7 @@ fn main() -> Result<()> {
     };
 
     // Validate configuration
-    let valid_tokens = sheetrs_core::rules::registry::get_all_valid_tokens();
+    let valid_tokens = sheetrs_linter::rules::registry::get_all_valid_tokens();
     config
         .validate_rules(&valid_tokens)
         .context("Invalid configuration")?;

@@ -2,24 +2,48 @@
 name = "sheetrs-linter"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "CLI interface for SheetLint Excel/ODS linter"
+description = "Spreadsheet linter: rules, configuration and violations (library) and the `sheetlint` executable"
+
+
+[lib]
+name = "sheetrs_linter"
+path = "src/lib.rs"
 
 [[bin]]
 name = "sheetlint"
 path = "src/main.rs"
 
+[features]
+default = ["link-validation"]
+# EXT802 checks the URLs of the workbook over HTTP. Not available for WASM.
+link-validation = ["dep:reqwest"]
+
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core", version = "0.3.2" }
+sheetrs-core = { path = "../sheetrs-core", version = "0.3.3" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.3" }
 clap.workspace = true
 anyhow.workspace = true
 serde.workspace = true
+toml.workspace = true
+regex.workspace = true
+aho-corasick.workspace = true
 colored.workspace = true
 serde_json = "1.0.151"
+reqwest = { workspace = true, optional = true }
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "wasmbind"] }
+
+[dev-dependencies]
+zip.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

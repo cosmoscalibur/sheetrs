@@ -1,22 +1,24 @@
 //! Python bindings for the SheetRS suite.
 //!
-//! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports it. It exposes
-//! the three tools as functions that take a path (`str`/`os.PathLike`) or the bytes of a workbook:
+//! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports its submodules.
+//! There is one submodule per tool, as there is one crate per tool: the rules exist only as part
+//! of the linter, so the catalog is `linter.rules()`, next to `linter.lint()`.
 //!
-//! - `lint`: `sheetlint`, returning `Violation` objects.
-//! - `stats`: `sheetstats`, returning a `dict`.
-//! - `edit`: `sheetedit`, writing a modified copy of a workbook.
+//! - `linter` (`sheetrs-linter`): `lint`, `rules`, `Violation`.
+//! - `stats` (`sheetrs-stats`): `compute`.
+//! - `edit` (`sheetrs-edit`): `modify`.
 //!
-//! The functions release the GIL while they read and analyze a workbook.
+//! A workbook is a path (`str`/`os.PathLike`) or its bytes. The functions release the GIL while
+//! they read and analyze a workbook.
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 use sheetrs_core::reader::{self, Workbook};
-use sheetrs_core::report::{ViolationRecord, violation_records};
-use sheetrs_core::rules::registry;
-use sheetrs_core::writer::{self, ValueScope, WorkbookModifications};
-use sheetrs_core::{Linter, LinterConfig};
+use sheetrs_edit::writer::{self, ValueScope, WorkbookModifications};
+use sheetrs_linter::report::{ViolationRecord, violation_records};
+use sheetrs_linter::rules::registry;
+use sheetrs_linter::{Linter, LinterConfig};
 use sheetrs_stats::stats::WorkbookStats;
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -204,7 +206,8 @@ fn lint(
 /// The lint rules: a list of dicts with `id`, `name`, `category` and `default` (whether the rule
 /// runs without configuration).
 #[pyfunction]
-fn rules(py: Python<'_>) -> PyResult<Bound<'_, PyList>> {
+#[pyo3(name = "rules")]
+fn lint_rules(py: Python<'_>) -> PyResult<Bound<'_, PyList>> {
     let list = PyList::empty(py);
     for meta in registry::get_all_rule_metadata(&LinterConfig::default()) {
         let item = PyDict::new(py);
@@ -223,7 +226,8 @@ fn rules(py: Python<'_>) -> PyResult<Bound<'_, PyList>> {
 /// The file size is 0 for a workbook given as bytes.
 #[pyfunction]
 #[pyo3(signature = (source, *, extension=None))]
-fn stats<'py>(
+#[pyo3(name = "compute")]
+fn stats_compute<'py>(
     py: Python<'py>,
     source: &Bound<'py, PyAny>,
     extension: Option<&str>,
@@ -258,7 +262,8 @@ fn stats<'py>(
     recalc_on_open=false,
 ))]
 #[allow(clippy::too_many_arguments)]
-fn edit(
+#[pyo3(name = "modify")]
+fn edit_modify(
     py: Python<'_>,
     input: PathBuf,
     output: PathBuf,
@@ -291,13 +296,32 @@ fn edit(
 }
 
 #[pymodule(gil_used = false)]
-fn _sheetrs(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add("SheetrsError", module.py().get_type::<SheetrsError>())?;
-    module.add_class::<PyViolation>()?;
-    module.add_function(wrap_pyfunction!(lint, module)?)?;
-    module.add_function(wrap_pyfunction!(rules, module)?)?;
-    module.add_function(wrap_pyfunction!(stats, module)?)?;
-    module.add_function(wrap_pyfunction!(edit, module)?)?;
-    module.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    Ok(())
+mod _sheetrs {
+    use pyo3::prelude::*;
+
+    #[pymodule_export]
+    use super::SheetrsError;
+
+    #[pymodule]
+    mod linter {
+        #[pymodule_export]
+        use super::super::{PyViolation, lint, lint_rules};
+    }
+
+    #[pymodule]
+    mod stats {
+        #[pymodule_export]
+        use super::super::stats_compute;
+    }
+
+    #[pymodule]
+    mod edit {
+        #[pymodule_export]
+        use super::super::edit_modify;
+    }
+
+    #[pymodule_init]
+    fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {
+        module.add("__version__", env!("CARGO_PKG_VERSION"))
+    }
 }

@@ -36,7 +36,9 @@ body:
         - sheetlint
         - sheetstats
         - sheetedit
-        - sheetrs-core (library)
+        - sheetc
+        - Rust libraries (sheetrs-core, sheetrs-linter, sheetrs-stats, sheetrs-edit)
+        - sheetrs-py (Python)
         - sheetrs-wasm
         - Multiple / All
     validations:

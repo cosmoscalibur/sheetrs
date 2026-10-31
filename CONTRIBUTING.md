@@ -74,10 +74,10 @@ docs match it:
 
 | Change | Update |
 | ------ | ------ |
-| New/changed lint rule | `sheetrs-linter/README.md` rule reference; `docs/coding-patterns.md` if it introduces a pattern |
+| New/changed lint rule | `sheetrs-linter/README.md` rule reference; `docs/coding-patterns.md` if it introduces a pattern (rules live in `sheetrs-linter/src/rules`) |
 | CLI args or behavior | the tool README (`sheetlint`/`sheetstats`/`sheetedit`); `README.md` if the getting-started experience changes |
 | Config format (`sheetlint.toml`) | `docs/coding-patterns.md`; the relevant tool README |
-| Module layout or new crate | `ARCHITECTURE.md`; `docs/README.md`; `README.md` project structure |
+| Module layout or new crate | `ARCHITECTURE.md` (a module goes in `sheetrs-core` only if two tools need it); `docs/README.md`; `README.md` project structure |
 | Dependencies or commands | `README.md`; this guide |
 | API of the Python or WASM bindings | `sheetrs-py/README.md` and `sheetrs-py/python/sheetrs/_sheetrs.pyi`, or `sheetrs-wasm/README.md`; a pytest case for Python |
 | Engine behavior that differs between Excel and LibreOffice | `sheetrs-compiler/docs/FIDELITY.md`; a probe in `sheetrs-compiler/scripts/probe_behavior.py` |

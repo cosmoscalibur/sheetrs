@@ -213,7 +213,7 @@ runs, measured in one session; older entries are release builds.
 The linter's output MD5 differs from the entries below on purpose: the reader reads the cached
 string result of a formula as text, a number in a Text-formatted cell as a number, and CALC202
 takes the references of a formula from its AST. What each rule reports, and why, is in the
-documentation of its module (`cargo doc -p sheetrs-core --open`, `sheetrs_core::rules`).
+documentation of its module (`cargo doc -p sheetrs-linter --open`, `sheetrs_linter::rules`).
 
 ### Compiler and engine crates, rule corrections (#73)
 

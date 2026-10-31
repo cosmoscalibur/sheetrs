@@ -2,32 +2,24 @@
 name = "sheetrs-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Core library for Excel/ODS linting with hierarchical violation reporting"
+description = "Shared kernel of the SheetRS suite: workbook model and XLSX/ODS readers"
 
 [dependencies]
-sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.2" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.3" }
 
 serde.workspace = true
-toml.workspace = true
 anyhow.workspace = true
 quick-xml.workspace = true
 zip.workspace = true
-reqwest = { workspace = true, optional = true }
 regex.workspace = true
 aho-corasick.workspace = true
-chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "wasmbind"] }
-
-[features]
-default = ["link-validation"]
-link-validation = ["reqwest"]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -3,18 +3,11 @@
 use anyhow::Result;
 use colored::*;
 use serde::Serialize;
-use sheetrs_core::violation::CellReference;
-use sheetrs_core::{FormatContext, RuleId, Severity, Violation, ViolationScope, reader::Workbook};
-use std::collections::BTreeMap;
+use sheetrs_core::reader::Workbook;
+use sheetrs_linter::report::group_by_scope;
+use sheetrs_linter::{FormatContext, RuleId, Severity, Violation, ViolationScope};
 use std::io::{BufWriter, Write};
 use std::path::Path;
-
-/// The violations reported in one sheet: those of the sheet itself and those of each of its cells.
-#[derive(Default)]
-struct SheetViolations<'a> {
-    sheet: Vec<&'a Violation>,
-    cells: BTreeMap<CellReference, Vec<&'a Violation>>,
-}
 
 /// Print violations in human-readable format with colors and hierarchy
 pub fn print_human(file_path: &Path, violations: &[Violation], workbook: &Workbook) {
@@ -28,53 +21,19 @@ pub fn print_human(file_path: &Path, violations: &[Violation], workbook: &Workbo
 
     let ctx = FormatContext { workbook };
 
-    // Group violations by scope for hierarchical display
-    let mut book_violations = Vec::new();
-    let mut sheet_data: BTreeMap<String, SheetViolations> = BTreeMap::new();
-
-    for violation in violations {
-        match &violation.scope {
-            ViolationScope::Book => book_violations.push(violation),
-            ViolationScope::Sheet(sheet_idx) => {
-                // Lookup sheet name from index
-                let sheet_name = workbook
-                    .sheet_name_by_index(*sheet_idx)
-                    .unwrap_or("Unknown Sheet")
-                    .to_string();
-                sheet_data
-                    .entry(sheet_name)
-                    .or_default()
-                    .sheet
-                    .push(violation);
-            }
-            ViolationScope::Cell(sheet_idx, cell_ref) => {
-                // Lookup sheet name from index
-                let sheet_name = workbook
-                    .sheet_name_by_index(*sheet_idx)
-                    .unwrap_or("Unknown Sheet")
-                    .to_string();
-                sheet_data
-                    .entry(sheet_name)
-                    .or_default()
-                    .cells
-                    .entry(cell_ref.clone())
-                    .or_default()
-                    .push(violation);
-            }
-        }
-    }
+    let grouped = group_by_scope(violations, workbook);
 
     // Print book-level violations
-    if !book_violations.is_empty() {
+    if !grouped.book.is_empty() {
         println!("{}", "Book-level violations:".bold().underline());
-        for violation in book_violations {
+        for violation in &grouped.book {
             print_violation(violation, 1, &ctx);
         }
         println!();
     }
 
     // Print sheet violations (consolidated)
-    for (sheet_name, data) in &sheet_data {
+    for (sheet_name, data) in &grouped.sheets {
         println!("{} {}", "Sheet:".bold(), sheet_name.cyan().bold());
 
         // Print sheet-level violations first
@@ -246,7 +205,7 @@ impl Serialize for JsonScope<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_core::violation::CellReference;
+    use sheetrs_linter::violation::CellReference;
 
     fn json(violations: &[Violation]) -> String {
         let workbook = Workbook::default();

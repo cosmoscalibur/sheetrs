@@ -7,6 +7,7 @@ use std::fs::File;
 use std::path::Path;
 use zip::ZipArchive;
 
+pub mod excel_error;
 pub mod ods_parser;
 pub mod parser_utils;
 pub mod workbook;
@@ -14,6 +15,7 @@ pub mod xlsx_parser;
 
 use self::ods_parser::OdsReader;
 use self::xlsx_parser::XlsxReader;
+pub use excel_error::ExcelError;
 pub use sheetrs_formula::grid::Grid;
 pub use workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, NumFmt, Sheet, Workbook,

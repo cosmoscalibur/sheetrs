@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use sheetrs_core::writer;
+use sheetrs_edit::writer;
 use std::path::PathBuf;
 
 #[derive(Parser)]

@@ -669,7 +669,7 @@ mod tests {
         Edit::DeleteRows { sheet, at, count }
     }
 
-    /// What LibreOffice 26.8 gave (`sheetrs-core/scripts/compare_structure_with_libreoffice.py`).
+    /// What LibreOffice 26.8 gave (`sheetrs-edit/scripts/compare_structure_with_libreoffice.py`).
     #[test]
     fn a_3d_reference_changes_only_where_the_deletion_touches_it() {
         // A deletion before what it names, in a sheet of the span or out of it, changes nothing.

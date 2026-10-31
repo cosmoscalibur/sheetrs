@@ -10,23 +10,58 @@ The reference behavior of the compiler, the runtime and the modifications of `sh
 
 ```
 sheetrs/
-├── sheetrs-core/       # Core library (readers, writers, rules, config)
+├── sheetrs-core/       # Shared kernel: workbook model + XLSX/ODS readers
 ├── sheetrs-formula/    # Lossless formula AST (parse, print, rewrite references)
+├── sheetrs-linter/     # Rules, configuration, violations (lib) + `sheetlint`
+├── sheetrs-stats/      # Workbook metrics (lib) + `sheetstats`
+├── sheetrs-edit/       # Workbook modification (lib) + `sheetedit`
 ├── sheetrs-engine/     # IR, function library, run-time evaluation, `sheetrs-rt`
 ├── sheetrs-compiler/   # Loader, dependency analysis, folding, `sheetc`
-├── sheetrs-linter/     # Linter CLI
-├── sheetrs-stats/      # Statistics CLI
-├── sheetrs-edit/       # Workbook editing CLI (`sheetedit`)
 ├── sheetrs-wasm/       # Bindings for the browser (wasm-bindgen)
 ├── sheetrs-py/         # Bindings for Python (PyO3, maturin)
 └── Cargo.toml          # Workspace configuration
 ```
 
+## Layering
+
+The suite follows a hexagonal (ports and adapters) layout. A **tool crate** is an application
+core: it owns the decisions about a workbook (the linter's rules, the statistics, the edit
+operations, the compilation) and exposes them as a Rust library. Around it:
+
+- **Driven side** (what a tool needs): the workbook model and the readers of `sheetrs-core`. The
+  model (`Workbook`, `Cell`, `Grid`, `CellSink`, `WorkbookReader`) is the port; the XLSX and ODS
+  parsers are its adapters. A tool never sees a file format.
+- **Driving side** (who calls a tool): the executables (`sheetlint`, `sheetstats`, `sheetedit`,
+  `sheetc`) and the bindings (`sheetrs-wasm`, `sheetrs-py`). Each is an adapter that translates
+  arguments and renders results; none holds a decision. What several adapters need to present
+  (violations grouped by sheet and cell, flat records) is part of the tool's library
+  (`sheetrs_linter::report`), not copied into each adapter.
+
+Dependencies point inward: adapters → tool libraries → `sheetrs-core` / `sheetrs-formula`. Tool
+crates do not depend on each other.
+
+### What belongs in `sheetrs-core`
+
+`sheetrs-core` is a **shared kernel**, not "the public library": the public surface of the suite is
+every library crate and every binding. A module is in the kernel when at least two tools need it
+and it has no meaning outside the workbook model. The test, applied to the code that was in the
+crate:
+
+| Code | Used by | Decision |
+| ---- | ------- | -------- |
+| `reader` (model, `Grid`, `CellSink`, XLSX/ODS parsers), `ExcelError` | linter, stats, compiler, edit | kernel |
+| `reader::parser_utils`, the XLSX shared-formula and part-name helpers the writer reuses | readers and edit | kernel |
+| `rules`, `config`, `violation`, `report`, `Linter` | linter only (rules exist only to be run by it) | `sheetrs-linter` |
+| `writer` (XLSX/ODS stream editing, `ValueScope`) | edit only | `sheetrs-edit` |
+
+Moving code out of the kernel is how its boundary stays honest: a feature of one tool (a new rule,
+a new edit operation) never changes `sheetrs-core`, and a second consumer of a tool's code is
+served by that tool's library, not by growing the kernel. Reading is shared because four crates
+read workbooks; writing is not, because one does.
+
 ## 1. sheetrs-core
 
-The heart of the suite. It encapsulates all domain logic, file parsing, rule enforcement, and configuration management.
-
-### Key Modules
+The shared kernel: the format-agnostic workbook model and the streaming readers that fill it.
 
 - **`reader`**: Abstracts over file formats (XLSX, ODS).
   - Uses `zip` and matching XML parsers (`quick-xml` or custom) for efficient data reading.
@@ -41,25 +76,7 @@ The heart of the suite. It encapsulates all domain logic, file parsing, rule enf
     in row order. A `Cell` holds the value, formula, array flag and number format, and not its own
     position: the position is the cell's place in the `Grid`, which iteration and `CellSink::cell`
     hand over with it. The cell is 56 bytes (the hash map's entry was 80 plus its table).
-
-- **`rules`**: Implements the linting logic.
-  - Each rule is a standalone struct implementing the `WalkerRule` trait.
-  - The `WorkbookWalker` executes all rules in a single pass over the workbook.
-  - Rules are registered in a central `Registry`.
-  - Categories: `ERR` (Errors), `CALC` (Calculations), `REF` (References), `INT` (Interruptions), `CPX` (Complexity), `VUL` (Vulnerability), `DATA` (Data Issues), `EXT` (External), `HID` (Hidden), `FILE` (Files), `VBA` (Macros).
-
-- **`config`**: Handles TOML configuration.
-  - Hierarchical loading: Default -> Global Config -> Sheet Overrides.
-  - Supports enabling/disabling rules by ID or Category.
-
-- **`writer`**: Handles file modification.
-  - `xlsx_writer.rs` and `ods_writer.rs` apply the same `WorkbookModifications` to each format.
-  - Uses `zip` and `quick-xml` to stream-edit the archive structure (e.g., removing sheets, converting formulas to values) without fully rewriting the file, ensuring speed and preserving metadata.
-  - `ValueScope` selects the cells to convert (a sheet, columns or rows) independently of the file format.
-
-- **`report`**: flat, serializable form of the violations (`ViolationRecord`: rule name, sheet
-  name, A1 cell, rendered message). The one place that resolves a `Violation` for consumers that
-  are not Rust, so the bindings do not each re-implement it.
+  - `ExcelError` is the error value a cell can hold (`#DIV/0!`, …).
 
 ## 1b. sheetrs-formula
 
@@ -98,42 +115,56 @@ The date system, iteration, search settings and reference syntax come from the d
 see [sheetrs-compiler/docs/DESIGN.md](sheetrs-compiler/docs/DESIGN.md) and
 [sheetrs-compiler/docs/FIDELITY.md](sheetrs-compiler/docs/FIDELITY.md).
 
-## 2. CLI Tools
+## 2. Tools
 
-The tool crates are thin wrappers around `sheetrs-core`. Each is named `sheetrs-<tool>` and builds an
-executable with the short name below.
+Each tool is a crate `sheetrs-<tool>`: a library with the tool's logic and, for the three
+original tools, the executable (`src/main.rs`) that adapts it to the command line.
 
 - **`sheetlint`** (crate `sheetrs-linter`):
-  - Responsible for loading configuration (`sheetlint.toml`).
-  - Iterates over the workbook using `sheetrs-core` readers.
-  - Formats output (Text/JSON).
+  - `rules`: each rule is a standalone struct implementing `WalkerRule`; the `WorkbookWalker`
+    runs them in a single pass; they are registered in `rules::registry`, which is also the
+    catalog of rules (the rules exist only inside the linter).
+  - Categories: `ERR` (Errors), `CALC` (Calculations), `REF` (References), `INT` (Interruptions), `CPX` (Complexity), `VUL` (Vulnerability), `DATA` (Data Issues), `EXT` (External), `HID` (Hidden), `FILE` (Files), `VBA` (Macros).
+  - `config`: TOML configuration. Hierarchical loading: Default -> Global Config -> Sheet
+    Overrides; rules enabled or disabled by ID or category.
+  - `violation`: `Violation`, `RuleId`, `Severity`, `ViolationScope`.
+  - `report`: `group_by_scope` (book → sheet → cell, one entry per sheet) and `ViolationRecord`
+    (flat form for the bindings).
+  - `Linter` runs the rules over a `Workbook` it is given; it reads nothing.
+  - `main.rs` and `formatter.rs`: arguments, colored text and streamed JSON.
 
 - **`sheetstats`** (crate `sheetrs-stats`):
   - Focuses on aggregating metrics.
   - Uses the same `Workbook` model but collects different data points (counts, distributions).
-  - A library plus the executable: `stats.rs` (`WorkbookStats::from_path`/`from_reader`) computes
-    workbook and per-sheet metrics and is what the bindings call; `main.rs` handles arguments
-    and output.
+  - `stats.rs` (`WorkbookStats::from_path`/`from_reader`) computes workbook and per-sheet
+    metrics and is what the bindings call; `main.rs` handles arguments and output.
 
 - **`sheetedit`** (crate `sheetrs-edit`):
-  - Handles command-line arguments for operations.
-  - Delegates complex logic (like ZIP manipulation) to `sheetrs_core::writer`.
+  - `writer`: `xlsx_writer.rs` and `ods_writer.rs` apply the same `WorkbookModifications` to each
+    format, stream-editing the archive with `zip` and `quick-xml` (removing sheets, converting
+    formulas to values, deleting rows and columns) without fully rewriting the file.
+  - `ValueScope` selects the cells to convert (a sheet, columns or rows) independently of the
+    file format.
+  - `main.rs` handles arguments.
 
 ## 3. Bindings
 
-The bindings are thin: they convert arguments and results and hold no analysis logic. What they
-need from the suite lives in the libraries (`sheetrs_core::report`, `sheetrs_stats::stats`,
-`sheetrs_core::writer`), so every surface reports the same findings.
+The bindings are adapters: they convert arguments and results and hold no analysis logic. What
+they present comes from the tool libraries (`sheetrs_linter::report`, `sheetrs_stats::stats`,
+`sheetrs_edit::writer`), so every surface reports the same findings. The API of a binding is
+organized by tool, as the crates are: the rules are a part of the linter, so they are offered
+next to `lint`, not as a separate service.
 
 - **`sheetrs-wasm`** (`cdylib`, wasm-bindgen): bytes in, structured values (`lint_workbook_records`,
-  `workbook_stats`, `get_rules_definition`) or the human text report out. Packaged for npm by
+  `lint_rules`, `workbook_stats`) or the human text report out. Packaged for npm by
   `scripts/package-wasm.sh` (`wasm-bindgen --target web`, template in `sheetrs-wasm/npm`).
-- **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs` plus the
-  `python/sheetrs` package (re-exports, type stubs). `lint` and `stats` take a path or bytes and
-  release the GIL while they work; `edit` wraps `writer::modify_workbook`. It is built by
-  maturin, which enables the `extension-module` feature; the crate has no Rust test harness
-  (it would have to link libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding
-  crate is published to crates.io.
+- **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs` with one
+  submodule per tool (`sheetrs.linter.lint`/`rules`, `sheetrs.stats.compute`,
+  `sheetrs.edit.modify`) plus the `python/sheetrs` package (type stubs). The functions take a
+  path or bytes and release the GIL while they work. It is built by maturin, which enables the
+  `extension-module` feature; the crate has no Rust test harness (it would have to link
+  libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding crate is published to
+  crates.io.
 
 ## Design Principles
 

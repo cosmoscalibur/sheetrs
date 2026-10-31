@@ -7,22 +7,24 @@ edit XLSX and ODS workbooks with the same engine as the `sheetlint`,
 ```python
 import sheetrs
 
-# sheetlint: violations ordered by book, sheet, cell and rule
-for v in sheetrs.lint("book.xlsx", config_path="sheetlint.toml"):
+# Linter (sheetlint): violations ordered by book, sheet, cell and rule
+for v in sheetrs.linter.lint("book.xlsx", config_path="sheetlint.toml"):
     print(v.rule_id, v.severity, v.sheet, v.cell, v.message)
+sheetrs.linter.rules()   # the linter's rules
 
 # A workbook can also be given as bytes (the extension tells the format)
-sheetrs.lint(data, extension="ods")
+sheetrs.linter.lint(data, extension="ods")
 
-# sheetstats: a dict, as `sheetstats --format json`
-stats = sheetrs.stats("book.xlsx")
+# Statistics (sheetstats): a dict, as `sheetstats --format json`
+stats = sheetrs.stats.compute("book.xlsx")
 
-# sheetedit: write a modified copy
-sheetrs.edit("book.xlsx", "clean.xlsx",
-             remove_sheets=["Secrets"], convert_to_values=["Report!B:D"])
-
-sheetrs.rules()  # the catalog of rules
+# Editing (sheetedit): write a modified copy
+sheetrs.edit.modify("book.xlsx", "clean.xlsx",
+                    remove_sheets=["Secrets"], convert_to_values=["Report!B:D"])
 ```
+
+There is one submodule per tool, as there is one Rust crate per tool; the rules belong to the
+linter, so they are listed there.
 
 Errors: `ValueError` (invalid configuration or scope), `OSError` (a file cannot
 be read), `sheetrs.SheetrsError` (a workbook cannot be parsed or written).

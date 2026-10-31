@@ -1,8 +1,8 @@
 //! Keeps the rule reference in `README.md` and the `sheetlint.toml` example in
 //! sync with the rule registry.
 
-use sheetrs_core::LinterConfig;
-use sheetrs_core::rules::registry::get_all_rule_metadata;
+use sheetrs_linter::LinterConfig;
+use sheetrs_linter::rules::registry::get_all_rule_metadata;
 use std::collections::BTreeSet;
 
 const README: &str = include_str!("../README.md");

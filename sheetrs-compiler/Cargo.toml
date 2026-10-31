@@ -27,9 +27,9 @@ load = ["dep:sheetrs-core", "dep:sha2"]
 profile = ["dep:pprof"]
 
 [dependencies]
-sheetrs-engine = { path = "../sheetrs-engine", version = "0.3.2" }
-sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.2" }
-sheetrs-core = { path = "../sheetrs-core", version = "0.3.2", default-features = false, optional = true }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.3.3" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.3" }
+sheetrs-core = { path = "../sheetrs-core", version = "0.3.3", default-features = false, optional = true }
 sha2 = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true

@@ -183,8 +183,8 @@ pub fn percentage(part: u64, total: u64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sheetrs_core::reader::ExcelError;
     use sheetrs_core::reader::{CellValue, read_workbook_from_reader_into};
-    use sheetrs_core::violation::ExcelError;
     use std::io::Cursor;
     use std::sync::Arc;
 

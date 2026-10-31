@@ -32,7 +32,7 @@ sheetedit <FILE>.ods --remove-sheets "Temp" -o cleaned.ods
 The reference behavior of every operation is **LibreOffice 26.8 on Linux**: what a formula
 becomes after an operation is what LibreOffice gives when the same operation is made in it
 (`docs/FIDELITY.md` of `sheetrs-compiler` lists where Excel differs). The check is made on XLSX
-and ODS files against LibreOffice: `sheetrs-core/scripts/compare_structure_with_libreoffice.py` makes
+and ODS files against LibreOffice: `sheetrs-edit/scripts/compare_structure_with_libreoffice.py` makes
 each operation in LibreOffice through UNO and with `sheetedit` on the same file, opens both results
 in LibreOffice and compares formulas, values, notes, page breaks and shapes. Excel is not part of
 it.

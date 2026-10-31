@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
-use crate::violation::ExcelError;
+use crate::reader::ExcelError;
 
 /// Represents an external workbook reference
 #[derive(Debug, Clone)]

@@ -29,9 +29,9 @@ Python package (see [Distribution](#distribution)):
 | Surface | Package | What it gives |
 | ------- | ------- | ------------- |
 | Executables | GitHub release assets (`sheetrs-vX.Y.Z-<target>`) | `sheetlint`, `sheetstats`, `sheetedit`, `sheetc`, `sheetrs-rt` |
-| Rust libraries | `sheetrs-core` (readers, rules, writer, `report`), `sheetrs-stats` (statistics), `sheetrs-formula`, `sheetrs-engine`, `sheetrs-compiler` | The same code the executables run |
+| Rust libraries | `sheetrs-linter` (rules, configuration, violations), `sheetrs-stats`, `sheetrs-edit`, `sheetrs-core` (workbook model and readers, shared by all), `sheetrs-formula`, `sheetrs-engine`, `sheetrs-compiler` | The same code the executables run |
 | WebAssembly | `sheetrs-wasm` (npm tarball in the release) | Lint and statistics in the browser, structured and text output |
-| Python | `sheetrs` (wheels and sdist in the release; [sheetrs-py](sheetrs-py/README.md)) | `lint`, `stats`, `edit`, `rules` |
+| Python | `sheetrs` (wheels and sdist in the release; [sheetrs-py](sheetrs-py/README.md)) | `sheetrs.linter` (`lint`, `rules`), `sheetrs.stats`, `sheetrs.edit` |
 
 ### Python
 
@@ -42,10 +42,10 @@ pip install sheetrs          # or the wheel from the GitHub release
 ```python
 import sheetrs
 
-for v in sheetrs.lint("book.xlsx"):
+for v in sheetrs.linter.lint("book.xlsx"):
     print(v.rule_id, v.sheet, v.cell, v.message)
-print(sheetrs.stats("book.xlsx")["total_formulas"])
-sheetrs.edit("book.xlsx", "clean.xlsx", remove_sheets=["Secrets"])
+print(sheetrs.stats.compute("book.xlsx")["total_formulas"])
+sheetrs.edit.modify("book.xlsx", "clean.xlsx", remove_sheets=["Secrets"])
 ```
 
 Wheels are `abi3` (Python ≥ 3.10). Details in [sheetrs-py/README.md](sheetrs-py/README.md).
@@ -110,13 +110,13 @@ No environment variables are required. Configuration is via `sheetlint.toml`.
 
 ```text
 sheetrs/
-├── sheetrs-core/   # Core library (readers, writers, rules, config)
+├── sheetrs-core/   # Shared kernel: workbook model and XLSX/ODS readers
 ├── sheetrs-formula/# Formula AST: parse, print, rewrite references
 ├── sheetrs-engine/ # IR, functions, run-time evaluation (JSON in/out)
 ├── sheetrs-compiler/ # Workbook → program compiler (`sheetc`)
-├── sheetrs-linter/ # Linter CLI
-├── sheetrs-stats/  # Statistics CLI
-├── sheetrs-edit/   # Workbook editing CLI (`sheetedit`)
+├── sheetrs-linter/ # Rules, config, violations + `sheetlint`
+├── sheetrs-stats/  # Workbook metrics + `sheetstats`
+├── sheetrs-edit/   # Workbook modification + `sheetedit`
 ├── sheetrs-wasm/   # WASM bindings for browser use
 ├── sheetrs-py/     # Python bindings (PyO3, maturin)
 ├── docs/           # Documentation index + WASM demo

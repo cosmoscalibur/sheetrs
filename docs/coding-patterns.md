@@ -238,22 +238,26 @@ The workspace uses [semantic versioning](https://semver.org/):
 
 ### Public API Surface
 
-The `sheetrs-core` library crate exports:
+Every tool is a library plus, for the original tools, an executable; the bindings are adapters
+over those libraries. Where code lives follows who uses it (see `ARCHITECTURE.md`, *Layering*):
 
-- `reader` module — `Workbook` trait, format parsers
-- `rules` module — rule registry and `WalkerRule` trait
-- `config` module — TOML configuration loading
-- `writer` module — workbook modification utilities
-- `violation` module — violation types and formatting
-- `report` module — `ViolationRecord`, the flat serializable form of a violation
+- `sheetrs-core` (shared kernel): `reader` (the `Workbook` model, `Grid`, `CellSink`, `ExcelError`,
+  the XLSX/ODS parsers). Add to it only what two tools need and has no meaning outside the
+  workbook model; code used by one tool belongs to that tool's crate.
+- `sheetrs-linter`: `rules` (`WalkerRule`, the registry and the catalog), `config`, `violation`,
+  `report` (`group_by_scope`, `ViolationRecord`), `Linter`.
+- `sheetrs-stats`: `stats` (`WorkbookStats`).
+- `sheetrs-edit`: `writer` (`WorkbookModifications`, `ValueScope`, `modify_workbook`).
 
-`sheetrs-stats` is also a library (`stats::WorkbookStats`). Keep logic in the libraries and out of
-the executables and the bindings (`sheetrs-wasm`, `sheetrs-py`): a binding converts arguments and
-results and nothing else. A change to a binding's API updates its README (and the type stubs of
-`sheetrs-py`), and a new capability is exposed in both bindings.
+Keep logic in the libraries and out of the executables and the bindings (`sheetrs-wasm`,
+`sheetrs-py`): an adapter converts arguments and results and nothing else, and what two adapters
+both present (a grouping, a flat record) goes in the library. The API of a binding is organized by
+tool (the rules are part of the linter, so they sit next to `lint`). A change to a binding's API
+updates its README (and the type stubs of `sheetrs-py`), and a new capability is exposed in both
+bindings.
 
 Path dependencies between publishable crates carry a `version`
-(`sheetrs-core = { path = "../sheetrs-core", version = "0.3.2" }`) so that they can be published;
+(`sheetrs-core = { path = "../sheetrs-core", version = "0.3.3" }`) so that they can be published;
 `cargo set-version --workspace <version>` (cargo-edit) updates them with the workspace version.
 
 ### Backward Compatibility

@@ -63,8 +63,8 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo check -p sheetrs-wasm --target wasm32-unknown-unknown
-      # Build without link-validation (reqwest), which is a default feature.
-      - run: cargo check -p sheetrs-core --no-default-features
+      # Build the linter without link-validation (reqwest), which is a default feature.
+      - run: cargo check -p sheetrs-linter --no-default-features
 
   engine-only:
     name: engine and compiler without the file loader

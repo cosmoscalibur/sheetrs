@@ -1,11 +1,9 @@
 use serde::Serialize;
-use sheetrs_core::reader::read_workbook_from_reader;
-use sheetrs_core::report::violation_records;
-use sheetrs_core::rules::registry;
-use sheetrs_core::violation::CellReference;
-use sheetrs_core::{FormatContext, Linter, LinterConfig, violation::Violation};
-use sheetrs_core::{Severity, ViolationScope};
-use std::collections::{BTreeMap, HashMap};
+use sheetrs_core::reader::{Workbook, read_workbook_from_reader};
+use sheetrs_linter::report::{group_by_scope, violation_records};
+use sheetrs_linter::rules::registry;
+use sheetrs_linter::{FormatContext, Linter, LinterConfig, Severity, Violation};
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Cursor;
 use wasm_bindgen::prelude::*;
@@ -24,7 +22,7 @@ struct RuleInfo {
 }
 
 #[wasm_bindgen]
-pub fn get_rules_definition() -> Result<JsValue, JsValue> {
+pub fn lint_rules() -> Result<JsValue, JsValue> {
     let config = LinterConfig::default();
     let metadata = registry::get_all_rule_metadata(&config);
 
@@ -114,7 +112,7 @@ pub fn workbook_stats(file_data: &[u8], extension: &str) -> Result<JsValue, JsVa
 fn format_violations_human(
     violations: &[Violation],
     rule_names: &HashMap<String, String>,
-    workbook: &sheetrs_core::reader::Workbook,
+    workbook: &Workbook,
 ) -> String {
     let mut output = String::new();
 
@@ -123,66 +121,24 @@ fn format_violations_human(
         return output;
     }
 
-    // Group violations by scope for hierarchical display
-    let mut book_violations = Vec::new();
-    let mut sheet_violations: BTreeMap<String, Vec<&Violation>> = BTreeMap::new();
-    let mut cell_violations: BTreeMap<String, BTreeMap<CellReference, Vec<&Violation>>> =
-        BTreeMap::new();
-
-    for violation in violations {
-        match &violation.scope {
-            ViolationScope::Book => book_violations.push(violation),
-            ViolationScope::Sheet(sheet_idx) => {
-                // Lookup sheet name from index
-                let sheet_name = workbook
-                    .sheet_name_by_index(*sheet_idx)
-                    .unwrap_or("Unknown Sheet")
-                    .to_string();
-                sheet_violations
-                    .entry(sheet_name)
-                    .or_default()
-                    .push(violation);
-            }
-            ViolationScope::Cell(sheet_idx, cell_ref) => {
-                // Lookup sheet name from index
-                let sheet_name = workbook
-                    .sheet_name_by_index(*sheet_idx)
-                    .unwrap_or("Unknown Sheet")
-                    .to_string();
-                cell_violations
-                    .entry(sheet_name)
-                    .or_default()
-                    .entry(cell_ref.clone())
-                    .or_default()
-                    .push(violation);
-            }
-        }
-    }
-
+    let grouped = group_by_scope(violations, workbook);
     let ctx = FormatContext { workbook };
 
-    // Print book-level violations
-    if !book_violations.is_empty() {
+    if !grouped.book.is_empty() {
         output.push_str("📚 Book-level violations:\n");
-        for violation in book_violations {
+        for violation in &grouped.book {
             output.push_str(&format_violation(violation, rule_names, 1, &ctx));
         }
         output.push('\n');
     }
 
-    // Print sheet-level violations
-    for (sheet_name, violations) in &sheet_violations {
+    // One header per sheet, then its own violations and its cells.
+    for (sheet_name, data) in &grouped.sheets {
         let _ = writeln!(output, "📄 Sheet: {sheet_name}");
-        for violation in violations {
+        for violation in &data.sheet {
             output.push_str(&format_violation(violation, rule_names, 1, &ctx));
         }
-        output.push('\n');
-    }
-
-    // Print cell-level violations
-    for (sheet_name, cells) in &cell_violations {
-        let _ = writeln!(output, "📄 Sheet: {sheet_name}");
-        for (cell_ref, violations) in cells {
+        for (cell_ref, violations) in &data.cells {
             let _ = writeln!(output, "  📍 Cell: {cell_ref}");
             for violation in violations {
                 output.push_str(&format_violation(violation, rule_names, 2, &ctx));
@@ -290,7 +246,9 @@ pub fn get_workbook_stats(file_data: &[u8], extension: &str) -> Result<String, J
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_core::reader::{Sheet, Workbook};
+    use sheetrs_core::reader::Sheet;
+    use sheetrs_linter::ViolationScope;
+    use sheetrs_linter::violation::CellReference;
 
     #[test]
     fn test_human_format_orders_cells_numerically() {
@@ -302,7 +260,7 @@ mod tests {
             .iter()
             .map(|&(row, col)| {
                 Violation::new(
-                    sheetrs_core::RuleId::Cpx509,
+                    sheetrs_linter::RuleId::Cpx509,
                     ViolationScope::Cell(0, CellReference::new(row, col)),
                     "Long formula",
                     Severity::Warning,
@@ -318,5 +276,33 @@ mod tests {
         assert!(positions[0] < positions[3]);
         assert!(positions[3] < positions[1]);
         assert!(positions[1] < positions[2]);
+    }
+
+    #[test]
+    fn a_sheet_with_sheet_and_cell_violations_has_one_header() {
+        let workbook = Workbook {
+            sheets: vec![Sheet::new("Data".to_string(), 0)],
+            ..Default::default()
+        };
+        let violations = vec![
+            Violation::new(
+                sheetrs_linter::RuleId::Cpx502,
+                ViolationScope::Sheet(0),
+                "Merged cells",
+                Severity::Warning,
+            ),
+            Violation::new(
+                sheetrs_linter::RuleId::Cpx509,
+                ViolationScope::Cell(0, CellReference::new(0, 0)),
+                "Long formula",
+                Severity::Warning,
+            ),
+        ];
+        let output = format_violations_human(&violations, &HashMap::new(), &workbook);
+
+        assert_eq!(output.matches("Sheet: Data").count(), 1);
+        let sheet_level = output.find("Merged cells").expect("sheet violation");
+        let cell_level = output.find("Cell: A1").expect("cell violation");
+        assert!(sheet_level < cell_level);
     }
 }

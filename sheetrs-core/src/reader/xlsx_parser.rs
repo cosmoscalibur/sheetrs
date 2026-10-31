@@ -15,7 +15,7 @@ use super::parser_utils::{
 use super::{
     Cell, CellSink, CellValue, DocumentSettings, IterationSettings, NumFmt, Sheet, WorkbookReader,
 };
-use crate::violation::ExcelError;
+use crate::reader::ExcelError;
 
 /// Resolve sheet name to its XML path in the XLSX archive
 pub fn get_xlsx_sheet_path(
@@ -110,7 +110,7 @@ pub fn get_xlsx_sheet_path(
 ///
 /// Targets are relative to `xl/` (`worksheets/sheet1.xml`) or absolute part
 /// names (`/xl/worksheets/sheet1.xml`).
-pub(crate) fn workbook_part_name(target: &str) -> String {
+pub fn workbook_part_name(target: &str) -> String {
     match target.strip_prefix('/') {
         Some(part) => part.to_string(),
         None => format!("xl/{target}"),
@@ -1123,7 +1123,7 @@ fn bracket_group_end(text: &str, at: usize) -> usize {
 /// sheet (past column `XFD` or row 1,048,576, or before the first) is `Sheet!#REF!`, with the sheet
 /// it was on (`home_sheet` for one without qualifier): LibreOffice reads that as `#REF!`, which is
 /// what it computes for a formula it moves outside the sheet.
-pub(crate) fn translate_shared_formula(
+pub fn translate_shared_formula(
     formula: &str,
     row_shift: i32,
     col_shift: i32,
@@ -1724,7 +1724,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
 /// Dynamic array formulas (`cm`) cache `#VALUE!` and keep their result in a
 /// rich value (`vm`), such as a spill error. A `#VALUE!` of any formula that
 /// holds `:` is read the same way (#62).
-pub(crate) fn is_array_error_placeholder(err: &str, formula: &str, is_array: bool) -> bool {
+pub fn is_array_error_placeholder(err: &str, formula: &str, is_array: bool) -> bool {
     err == "#VALUE!" && (is_array || formula.contains(':'))
 }
 

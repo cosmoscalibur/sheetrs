@@ -2,23 +2,35 @@
 name = "sheetrs-edit"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "CLI tools for SheetChecks"
+description = "Workbook modification: removing sheets and names, converting formulas to values, deleting rows and columns (library) and the `sheetedit` executable"
+
+
+[lib]
+name = "sheetrs_edit"
+path = "src/lib.rs"
 
 [[bin]]
 name = "sheetedit"
 path = "src/main.rs"
 
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core", version = "0.3.2" }
+sheetrs-core = { path = "../sheetrs-core", version = "0.3.3" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.3" }
 clap.workspace = true
 anyhow.workspace = true
 zip.workspace = true
 quick-xml.workspace = true
+aho-corasick.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+regex.workspace = true
 
 [lints]
 workspace = true

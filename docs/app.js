@@ -1,4 +1,4 @@
-import init, { lint_workbook, get_workbook_stats, get_rules_definition, init_panic_hook } from './pkg/sheetrs_wasm.js';
+import init, { lint_workbook, get_workbook_stats, lint_rules, init_panic_hook } from './pkg/sheetrs_wasm.js';
 
 let wasmReady = false;
 let currentTool = 'lint';
@@ -13,7 +13,7 @@ async function run() {
         wasmReady = true;
         updateStatus('WASM Loaded');
 
-        rulesMetadata = get_rules_definition();
+        rulesMetadata = lint_rules();
         buildRulesUI();
     } catch (e) {
         console.error("Initialization error:", e);

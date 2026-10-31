@@ -1,6 +1,6 @@
 # Test Assets
 
-This directory contains test files used across all sheetrs project components (sheetrs-core, sheetlint, sheetedit, sheetstats).
+This directory contains test files used across all sheetrs project components (sheetrs-core, sheetrs-linter, sheetrs-edit, sheetrs-stats).
 
 ## Files
 
@@ -48,10 +48,10 @@ Consider a `std::sync::LazyLock` to cache parsed workbooks across tests to impro
 
 ## Structure fixtures
 
-`sheetrs-core/tests/assets/structure/book.{xlsx,ods}` is one workbook that LibreOffice 26.8 wrote
-(`sheetrs-core/scripts/gen_structure_fixtures.py`): sheet `T` with numbers and formulas, sheet `F` with
+`sheetrs-edit/tests/assets/structure/book.{xlsx,ods}` is one workbook that LibreOffice 26.8 wrote
+(`sheetrs-edit/scripts/gen_structure_fixtures.py`): sheet `T` with numbers and formulas, sheet `F` with
 one formula per reference form that reads `T`, defined names, a merged area, notes, manual page
 breaks and a shape. The tests of rows
-and columns deleted and of sheets and names removed (`sheetrs-core/tests/structure_*`) start from it,
-and `sheetrs-core/scripts/compare_structure_with_libreoffice.py` checks `sheetedit` against LibreOffice
+and columns deleted and of sheets and names removed (`sheetrs-edit/tests/structure_*`) start from it,
+and `sheetrs-edit/scripts/compare_structure_with_libreoffice.py` checks `sheetedit` against LibreOffice
 itself on the same file.

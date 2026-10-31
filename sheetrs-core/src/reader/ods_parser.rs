@@ -5,7 +5,7 @@ use super::workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, Sheet,
 };
 use super::{CellSink, NumFmt, WorkbookReader};
-use crate::violation::ExcelError;
+use crate::reader::ExcelError;
 use anyhow::Result;
 use quick_xml::Reader;
 use quick_xml::events::Event;

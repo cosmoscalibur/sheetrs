@@ -2,6 +2,7 @@
 name = "sheetrs-stats"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -18,7 +19,7 @@ name = "sheetstats"
 path = "src/main.rs"
 
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core", version = "0.3.2" }
+sheetrs-core = { path = "../sheetrs-core", version = "0.3.3" }
 clap.workspace = true
 anyhow.workspace = true
 serde.workspace = true
