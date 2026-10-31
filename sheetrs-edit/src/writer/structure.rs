@@ -212,8 +212,10 @@ pub(crate) struct StructureEdits {
 }
 
 impl StructureEdits {
-    /// The plan of a command. A scope on a removed sheet is dropped with its sheet; a scope on a
-    /// sheet the workbook does not have is an error.
+    /// The plan of a command. A scope on a sheet the workbook does not have is an error. A deletion
+    /// in a sheet that the command also removes is kept: it still moves the rows or columns that a
+    /// reference across sheets spanning that sheet addresses, as it would if the deletion were done
+    /// first and the sheet removed afterwards.
     pub fn new(
         sheets: Option<&[String]>,
         removed_sheets: &HashSet<String>,
@@ -231,9 +233,6 @@ impl StructureEdits {
                         .with_context(|| format!("Sheet '{}' not found", scope.sheet))?,
                     None => &scope.sheet,
                 };
-                if removed_sheets.contains(name) {
-                    continue;
-                }
                 match (scope.target, want_rows) {
                     (ValueTarget::Rows(first, last), true) => {
                         rows.entry(name.clone()).or_default().push((first, last));
@@ -369,27 +368,51 @@ impl StructureEdits {
         self.cols.get(sheet).cloned().unwrap_or_default()
     }
 
-    /// The edits to apply to a formula, in the order that leaves the positions of the next one as
-    /// they were.
+    /// The edits to apply to a formula, in the canonical order of the plan: what the command
+    /// gives is what these edits give one after the other, so it does not depend on the order in
+    /// which the operations were written, on a hash order or on the sheet they belong to.
+    ///
+    /// Every position is one of the input file, and the order keeps it valid: the rows deleted
+    /// anywhere come from the last to the first (a deletion shifts only what is below it, so the
+    /// positions of the next one, above, are as they were), then the columns the same way, and the
+    /// sheets removed last, so that a deletion in a sheet that goes still shapes the references
+    /// that span it. Bands that start at the same row or column go by sheet name.
     pub fn edits(&self) -> Vec<Edit<'_>> {
-        let mut edits = Vec::new();
-        for sheet in &self.removed_sheets {
-            edits.push(Edit::DeleteSheet { sheet });
-        }
+        let mut rows: Vec<(u32, u32, &str)> = Vec::new();
         for (sheet, bands) in &self.rows {
-            edits.extend(bands.last_first().map(|(at, count)| Edit::DeleteRows {
-                sheet,
-                at,
-                count,
-            }));
+            rows.extend(
+                bands
+                    .last_first()
+                    .map(|(at, count)| (at, count, sheet.as_str())),
+            );
         }
+        let mut cols: Vec<(u32, u32, &str)> = Vec::new();
         for (sheet, bands) in &self.cols {
-            edits.extend(bands.last_first().map(|(at, count)| Edit::DeleteCols {
-                sheet,
-                at,
-                count,
-            }));
+            cols.extend(
+                bands
+                    .last_first()
+                    .map(|(at, count)| (at, count, sheet.as_str())),
+            );
         }
+        let last_first =
+            |a: &(u32, u32, &str), b: &(u32, u32, &str)| b.0.cmp(&a.0).then_with(|| a.2.cmp(b.2));
+        rows.sort_by(last_first);
+        cols.sort_by(last_first);
+        let mut removed: Vec<&str> = self.removed_sheets.iter().map(String::as_str).collect();
+        removed.sort_unstable();
+
+        let mut edits = Vec::new();
+        edits.extend(rows.into_iter().map(|(at, count, sheet)| Edit::DeleteRows {
+            sheet,
+            at,
+            count,
+        }));
+        edits.extend(cols.into_iter().map(|(at, count, sheet)| Edit::DeleteCols {
+            sheet,
+            at,
+            count,
+        }));
+        edits.extend(removed.into_iter().map(|sheet| Edit::DeleteSheet { sheet }));
         edits
     }
 

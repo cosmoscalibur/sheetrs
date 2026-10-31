@@ -44,7 +44,33 @@ it.
 - A removed named range stays in the formulas that use it, as in LibreOffice, where it is the
   unknown name `#NAME?`; another name whose definition used it has `#NAME?` there.
 - The operations of one command are applied together, reading each sheet
-  once.
+  once. They are not run in the order they are written: they are planned (below).
+
+#### How the operations of one command are planned
+
+Every operation is written against the **input** file, and the order in which they are given
+changes nothing. Run one after another as written they would not mean that: a deletion shifts every
+position below it, a formula converted after the cells it reads were deleted has lost its result,
+and a reference across sheets shrinks by the deletions of every sheet in the order they happen. So
+the command is resolved once into a canonical order, which is the only one the result is defined
+by and which is applied in a single pass:
+
+1. formulas converted to values, while every cached result is still there (a conversion on a sheet
+   that is removed goes with it);
+2. rows deleted, in every sheet, **from the last to the first**, overlapping or touching ranges
+   merged, so a deletion shifts only what is below it and the next one is still at the position the
+   input gives it;
+3. columns deleted the same way;
+4. named ranges removed;
+5. sheets removed, last: a deletion in a sheet that is removed still shapes the references that
+   span it, as if it had been made before the sheet went;
+6. the mark to recalculate when the file is opened.
+
+The result equals running those steps one per pass, each on the output of the previous one, and it
+is the same on every run. `sheetrs_edit::EditPlan::schedule` returns the steps (the Python
+`Plan.schedule`). Rows deleted in different sheets under a reference across sheets are applied
+from the last row to the first whatever the sheet, since such a reference has one row range for
+all its sheets; two bands that start at the same row go by sheet name.
 
 #### Delete rows and columns
 

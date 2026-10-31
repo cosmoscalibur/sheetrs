@@ -111,10 +111,10 @@ fn main() -> Result<()> {
         plan.convert_to_values(scope);
     }
     for scope in cli.delete_rows {
-        plan.delete_rows(scope);
+        plan.delete_rows(scope)?;
     }
     for scope in cli.delete_cols {
-        plan.delete_columns(scope);
+        plan.delete_columns(scope)?;
     }
     if cli.recalc_on_open {
         plan.recalculate_on_open();

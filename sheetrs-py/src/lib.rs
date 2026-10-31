@@ -271,6 +271,10 @@ fn stats_compute<'py>(
     py.import("json")?.call_method1("loads", (json,))
 }
 
+fn invalid(error: anyhow::Error) -> PyErr {
+    PyValueError::new_err(format!("{error:#}"))
+}
+
 fn strings(values: &Bound<'_, PyTuple>) -> PyResult<Vec<String>> {
     values.extract()
 }
@@ -285,13 +289,18 @@ fn scopes(values: &Bound<'_, PyTuple>) -> PyResult<Vec<ValueScope>> {
         .collect()
 }
 
-/// Operations on one workbook, collected and applied together.
+/// A plan: operations on one workbook, resolved into the order that gives the right result and
+/// applied in a single pass over the file.
 ///
 /// Lazy mode: each method records operations and returns the plan, so calls chain; nothing is
-/// read or written until `save(output)`, which applies all of them while it streams the file
-/// once. All the operations address the **input** workbook (its rows, columns and sheet names),
-/// whatever order they were added in; adding an operation twice counts once. A malformed scope
-/// raises `ValueError` where it is added.
+/// read or written until `save(output)`. Every operation is written against the **input**
+/// workbook (its rows, columns and sheet names), in any order: the plan merges overlapping row
+/// and column ranges and orders what it does so that no operation sees the positions another one
+/// changed (formulas converted before the cells they read are deleted, rows deleted from the last
+/// to the first across sheets, sheets removed last). `schedule` shows that order. The result does
+/// not depend on the order the operations were added in, and equals running the schedule one
+/// operation per pass. Adding an operation twice counts once. A malformed scope, or rows deleted
+/// with a column range, raises `ValueError` where it is added.
 ///
 /// For immediate execution, one pass per operation, see the functions of this module.
 #[pyclass(name = "Plan", module = "sheetrs.edit")]
@@ -353,7 +362,7 @@ impl PyPlan {
         scopes: &Bound<'py, PyTuple>,
     ) -> PyResult<PyRefMut<'py, Self>> {
         for scope in self::scopes(scopes)? {
-            slf.plan.delete_rows(scope);
+            slf.plan.delete_rows(scope).map_err(invalid)?;
         }
         Ok(slf)
     }
@@ -365,7 +374,7 @@ impl PyPlan {
         scopes: &Bound<'py, PyTuple>,
     ) -> PyResult<PyRefMut<'py, Self>> {
         for scope in self::scopes(scopes)? {
-            slf.plan.delete_columns(scope);
+            slf.plan.delete_columns(scope).map_err(invalid)?;
         }
         Ok(slf)
     }
@@ -376,11 +385,22 @@ impl PyPlan {
         slf
     }
 
-    /// The recorded operations, in the order they were added, as text.
+    /// The operations as they were added, as text.
     #[getter]
     fn operations(&self) -> Vec<String> {
         self.plan
             .operations()
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    /// The plan in the order it is applied, as text: normalized (ranges merged, repeats and
+    /// conversions on removed sheets dropped) and ordered so every position is the input's.
+    #[getter]
+    fn schedule(&self) -> Vec<String> {
+        self.plan
+            .schedule()
             .iter()
             .map(ToString::to_string)
             .collect()
@@ -480,9 +500,9 @@ fn edit_delete_rows(
     scopes: &Bound<'_, PyTuple>,
 ) -> PyResult<()> {
     run_eager(py, input, output, |plan| {
-        self::scopes(scopes)?.into_iter().for_each(|s| {
-            plan.delete_rows(s);
-        });
+        for scope in self::scopes(scopes)? {
+            plan.delete_rows(scope).map_err(invalid)?;
+        }
         Ok(())
     })
 }
@@ -497,9 +517,9 @@ fn edit_delete_columns(
     scopes: &Bound<'_, PyTuple>,
 ) -> PyResult<()> {
     run_eager(py, input, output, |plan| {
-        self::scopes(scopes)?.into_iter().for_each(|s| {
-            plan.delete_columns(s);
-        });
+        for scope in self::scopes(scopes)? {
+            plan.delete_columns(scope).map_err(invalid)?;
+        }
         Ok(())
     })
 }

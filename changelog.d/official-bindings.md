@@ -5,8 +5,10 @@
   `lint`), `sheetrs.stats` (`compute`) and `sheetrs.edit`, which offers a lazy mode (`Plan`:
   operations are collected and applied in one pass on `save`) and an eager one (a function per
   operation). A workbook is a path or bytes; type stubs and a pytest suite included.
-- Add `sheetrs_edit::EditPlan` and `Operation`: the operations on a workbook, collected and
-  applied in one pass. `sheetedit` builds its run with it.
+- Add `sheetrs_edit::EditPlan` and `Operation`: the operations on a workbook, each written
+  against the input, resolved into a canonical order (`schedule`) and applied in one pass.
+  `sheetedit` builds its run with it. A plan's result does not depend on the order its operations
+  were added in and equals running its schedule one operation per pass.
 
 - Add `sheetrs_linter::report` (`group_by_scope`, `ViolationRecord`, `violation_records`): the
   findings grouped by book, sheet and cell and in a flat serializable form, shared by the
@@ -35,6 +37,13 @@
 
 ### Fixed
 
+- `sheetedit` gave different workbooks for the same command: the formula edits of each sheet were
+  applied in hash order, which changes the result when deletions in several sheets meet a
+  reference across sheets. They are applied in one canonical order, rows and columns from the last
+  to the first across sheets, and sheets last.
+- A deletion in a sheet that the same command removes was dropped; it now still shapes the
+  references across sheets that span the sheet, as when the deletion is made first and the sheet
+  removed after.
 - A configuration naming a rule or category the linter does not know is rejected when it is
   parsed, in every interface (the executable checked it after parsing; the bindings did not). A
   `LinterConfig` is valid by construction: its fields are private to the crate and its

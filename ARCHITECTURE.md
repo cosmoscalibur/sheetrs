@@ -147,9 +147,13 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
     formulas to values, deleting rows and columns) without fully rewriting the file.
   - `ValueScope` selects the cells to convert (a sheet, columns or rows) independently of the
     file format.
-  - `plan`: `EditPlan` and `Operation`, the operations on one workbook collected one at a time
-    and applied by `execute` in a single pass over the file (all of them address the input
-    workbook). `sheetedit` and the bindings build their runs with it.
+  - `plan`: `EditPlan` and `Operation`, the operations on one workbook collected one at a time,
+    each written against the input workbook, and **resolved** into a canonical order
+    (`schedule`: conversions first, rows then columns deleted from the last to the first across
+    all sheets, names, sheets last) that the writer applies in a single pass. The order is defined
+    once, in `StructureEdits::edits`, and `schedule` is derived from it; a test checks that the
+    single pass equals the schedule one operation per pass, for any order the operations were
+    written in. `sheetedit` and the bindings build their runs with it.
   - `main.rs` handles arguments.
 
 ## 3. Bindings
@@ -166,7 +170,8 @@ next to `lint`, not as a separate service.
 - **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs` with one
   submodule per tool (`sheetrs.linter.Linter`, `sheetrs.stats.compute`, `sheetrs.edit`)
   plus the `python/sheetrs` package (type stubs). `edit` has two modes over the same
-  `EditPlan`: lazy (`Plan`, one pass on `save`) and eager (a function per operation). The functions take a
+  `EditPlan`: lazy (`Plan`: a plan resolved into a canonical order, applied in one pass on `save`)
+  and eager (a function per operation, one pass each, addressing the previous output). The functions take a
   path or bytes and release the GIL while they work. It is built by maturin, which enables the
   `extension-module` feature; the crate has no Rust test harness (it would have to link
   libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding crate is published to
