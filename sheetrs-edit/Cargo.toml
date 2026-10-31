@@ -1,0 +1,22 @@
+[package]
+name = "sheetrs-edit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI tools for SheetChecks"
+
+[[bin]]
+name = "sheetedit"
+path = "src/main.rs"
+
+[dependencies]
+sheetrs-core = { path = "../sheetrs-core" }
+clap.workspace = true
+anyhow.workspace = true
+zip.workspace = true
+quick-xml.workspace = true
+
+[lints]
+workspace = true

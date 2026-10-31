@@ -1,6 +1,6 @@
 # Test Assets
 
-This directory contains test files used across all sheetrs project components (sheetrs lib, sheetlint, sheetcli, sheetstats).
+This directory contains test files used across all sheetrs project components (sheetrs-core, sheetlint, sheetedit, sheetstats).
 
 ## Files
 
@@ -45,3 +45,13 @@ let ods_path = "tests/minimal_test.ods";
 
 ### Caching Parsed Workbooks
 Consider a `std::sync::LazyLock` to cache parsed workbooks across tests to improve performance.
+
+## Structure fixtures
+
+`sheetrs-core/tests/assets/structure/book.{xlsx,ods}` is one workbook that LibreOffice 26.8 wrote
+(`sheetrs-core/scripts/gen_structure_fixtures.py`): sheet `T` with numbers and formulas, sheet `F` with
+one formula per reference form that reads `T`, defined names, a merged area, notes, manual page
+breaks and a shape. The tests of rows
+and columns deleted and of sheets and names removed (`sheetrs-core/tests/structure_*`) start from it,
+and `sheetrs-core/scripts/compare_structure_with_libreoffice.py` checks `sheetedit` against LibreOffice
+itself on the same file.

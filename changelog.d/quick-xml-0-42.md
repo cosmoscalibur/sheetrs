@@ -11,4 +11,4 @@
 
 ### Fixed
 
-- Fix `sheetcli --remove-sheets` and `--remove-ranges` ignoring sheets and named ranges whose names contain XML entities (e.g. `R&D`).
+- Fix `sheetedit --remove-sheets` and `--remove-ranges` ignoring sheets and named ranges whose names contain XML entities (e.g. `R&D`).

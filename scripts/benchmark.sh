@@ -28,7 +28,7 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_FILE="scripts/benchmark_${TIMESTAMP}.txt"
 
 echo "=== Building sheetlint with the profiling profile ==="
-cargo build --profile profiling --package sheetlint
+cargo build --profile profiling --package sheetrs-linter
 
 SHEETLINT="./target/profiling/sheetlint"
 
@@ -38,7 +38,7 @@ if [ -n "$BASELINE_REF" ]; then
     trap 'git worktree remove --force "$BASELINE_DIR"' EXIT
     echo "=== Building baseline ${BASELINE_REF} (${BASELINE_SHA}) ==="
     git worktree add --detach "$BASELINE_DIR" "$BASELINE_SHA"
-    cargo build --profile profiling --package sheetlint \
+    cargo build --profile profiling --package sheetrs-linter \
         --manifest-path "$BASELINE_DIR/Cargo.toml" --target-dir target/baseline
 fi
 BASELINE_SHEETLINT="./target/baseline/profiling/sheetlint"

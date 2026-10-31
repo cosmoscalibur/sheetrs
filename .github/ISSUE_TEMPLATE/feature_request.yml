@@ -35,8 +35,8 @@ body:
       options:
         - sheetlint
         - sheetstats
-        - sheetcli
-        - sheetrs (library)
+        - sheetedit
+        - sheetrs-core (library)
         - sheetrs-wasm
         - Multiple / All
     validations:

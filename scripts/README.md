@@ -1,7 +1,7 @@
 # Sheetlint Profiling & Benchmarking
 
 This directory contains scripts for measuring the performance of `sheetlint`
-and `sheetcli`.
+and `sheetedit`.
 
 ## Scripts
 
@@ -41,14 +41,14 @@ entry states it.
 `target/baseline/`) and times it before the current tree. Its results carry
 metrics only, without the violations report.
 
-### `benchmark_cli.sh`
+### `benchmark_edit.sh`
 
-Times `sheetcli` modifications with the same metrics as `benchmark.sh`, built
+Times `sheetedit` modifications with the same metrics as `benchmark.sh`, built
 with the `profiling` profile. Each scenario of its `SCENARIOS` list runs twice
 on each production file: removing a sheet, removing a named range, converting
 a whole sheet, converting columns and rows, and all of them in one command.
 
-`sheetcli` modifies a copy of each production file in a temporary directory
+`sheetedit` modifies a copy of each production file in a temporary directory
 and writes its output there; the script fails if a production file changes.
 ZIP entries carry their write time, so the reported output MD5 hashes the
 extracted parts rather than the archive.
@@ -56,10 +56,10 @@ extracted parts rather than the archive.
 **Usage:**
 
 ```bash
-./scripts/benchmark_cli.sh
+./scripts/benchmark_edit.sh
 ```
 
-Its results go to the [CLI Comparisons](#cli-comparisons), apart from the
+Its results go to the [Edit Comparisons](#edit-comparisons), apart from the
 `sheetlint` ones.
 
 ### Interpreting results
@@ -70,10 +70,10 @@ entry without an explanation in the change, investigate before accepting the
 result: debug the suspected code path, or profile it (requires `perf`):
 
 ```bash
-cargo flamegraph --profile profiling -p sheetlint -- <file>
+cargo flamegraph --profile profiling -p sheetrs-linter -- <file>
 ```
 
-[PROFILING.md](../sheetlint/docs/PROFILING.md) holds the phase and per-rule
+[PROFILING.md](../sheetrs-linter/docs/PROFILING.md) holds the phase and per-rule
 profile and the commands that produce it. A change that targets the cost of a
 rule or phase updates that profile along with its Comparisons entry.
 
@@ -103,10 +103,71 @@ outputs and compare them with streaming tools (`diff`) to find the difference.
 Tools that load the whole document into memory, such as `jq` on the
 `--format json` output, can exhaust RAM.
 
-## CLI Comparisons
+## Edit Comparisons
 
-`benchmark_cli.sh` entries, mean of 2 runs, measured in one session. The
+`benchmark_edit.sh` entries, mean of 2 runs, measured in one session. The
 scenario names are those of its `SCENARIOS` list.
+
+### `sheetstats` counts while it reads (#73)
+
+`sheetstats` hands the cells to a counter as the reader finds them instead of building the
+workbook, and reports the end, comments, charts and tables of each sheet. Same counts as the
+version that kept the cells, on the production files (user time, peak RAM):
+
+| Version | XLSX | ODS |
+|---------|------|-----|
+| Cells kept in memory | 2.27s, 462 MB | 3.54s, 440 MB |
+| Cells counted while reading | 2.15s, 22 MB | 3.47s, 5 MB |
+
+### Rows and columns deleted, references adjusted (#73)
+
+The deletion rewrites every sheet, because a formula of any sheet can read what goes; removing a
+sheet does the same now that the references to it become `#REF!`. An XLSX sheet that names none of
+the sheets edited and holds no reference across sheets (`Sheet1:Sheet3!A1`, which spans sheets it
+does not name) is copied as it is after a scan of its text. `delete-rows` and `delete-columns`
+cut `INPUTS`, `delete-rows-columns` adds `--recalc-on-open`, and `structure-plan` removes a sheet
+and a name too. Before this entry `remove-sheets` took 0.00s on the XLSX and 2.38s on the ODS,
+with 5 MB of RAM in both.
+
+| Scenario | XLSX user time | XLSX peak RAM | XLSX user instructions | ODS user time | ODS peak RAM | ODS user instructions |
+|----------|----------------|---------------|------------------------|---------------|--------------|-----------------------|
+| `remove-sheets` | 1.17s | 6 MB | 22.3 G | 4.48s | 8 MB | 73.2 G |
+| `remove-ranges` | 0.01s | 5 MB | 0.0 G | 2.27s | 5 MB | 33.9 G |
+| `convert-sheet` | 3.33s | 8 MB | 47.3 G | 3.33s | 6 MB | 55.0 G |
+| `convert-columns-rows` | 3.62s | 8 MB | 49.7 G | 4.00s | 5 MB | 63.3 G |
+| `plan` | 3.43s | 9 MB | 50.0 G | 3.95s | 8 MB | 64.9 G |
+| `delete-rows` | 7.58s | 9 MB | 110.5 G | 6.88s | 8 MB | 113.5 G |
+| `delete-columns` | 7.54s | 9 MB | 108.2 G | 6.87s | 8 MB | 113.4 G |
+| `delete-rows-columns` | 7.75s | 9 MB | 112.0 G | 7.30s | 8 MB | 119.6 G |
+| `structure-plan` | 7.73s | 9 MB | 113.4 G | 7.07s | 8 MB | 118.1 G |
+
+On the ODS the sheet names of `content.xml` are read in a second pass only when a 3D reference
+needs them (it spans the sheets between its ends, which can come after the formula), so a
+document without them pays nothing for it.
+
+The peak memory of every scenario is about 9 MB on these production files: the sheets stream, one
+row (ODS) or one cell (XLSX) at a time. A deletion costs about twice the time of `convert-sheet`.
+
+Profile of `delete-rows` on the XLSX (`perf`, share of the samples of the run):
+
+| Share | Where |
+|-------|-------|
+| 25% | compression of the output ZIP (`deflate`) |
+| 21% | reading and rewriting the formulas (`SheetStructure::rewrite`, of which the parser 11%) |
+| 15% | rebuilding each cell element to renumber it (`relocated_cell`) |
+| 10% | reading the XML (`quick-xml`) |
+| 7% | translating the cells of shared formulas (`shared_text`) |
+
+Plan to bring the time down, in the order of its return:
+
+1. Compress the output at a fast level (or store it): the first row of the profile.
+2. Rewrite each distinct formula text once (workbooks repeat patterns) instead of parsing it for
+   every cell.
+3. Change only the `r` attribute of a cell in place, as text, instead of rebuilding its attributes.
+4. ODS: copy a row that holds no formula as it is, without buffering it, and skip the formulas
+   that name none of the sheets edited, as the XLSX does for its sheets.
+5. XLSX: rewrite the sheets in parallel (they are independent parts), at the price of a sheet in
+   memory per thread.
 
 ### Formula conversion and ODS modifications (#59)
 
@@ -146,6 +207,36 @@ Benchmarks use production files in `tests/production/`. Each entry measures
 the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
+
+### Output MD5 of the linter since `ac80165`
+
+The linter's output MD5 differs from the entries below on purpose: the reader reads the cached
+string result of a formula as text, a number in a Text-formatted cell as a number, and CALC202
+takes the references of a formula from its AST. What each rule reports, and why, is in the
+documentation of its module (`cargo doc -p sheetrs-core --open`, `sheetrs_core::rules`).
+
+### Compiler and engine crates, rule corrections (#73)
+
+The output MD5 differs from the previous entry on purpose (see *Output MD5 of the linter since `ac80165`*). The shared
+formulas of an XLSX are translated by a scanner instead of a regular expression, and the ODS
+reader stops looking for the null date at the first table. Against the previous entry (#39),
+user instructions are 0.5% lower on XLSX and 3% higher on ODS, and peak RAM falls by a third.
+
+| Metric | XLSX | ODS |
+|--------|------|-----|
+| User time | 25.8s | 26.5s |
+| Peak RAM | 1239 MB | 1215 MB |
+| User instructions | 321.3 G | 332.6 G |
+| Output MD5 | `b4f753355076ca606e788aa446f28223` | `afb440b8a13a69cec011b57ce37b7517` |
+| Binary size | 9.2M | - |
+
+The ODS MD5 was `3dd17a729a43f97032e27cd55e357a82` before the ODS reader read a range that repeats
+its sheet (`[$S.A1:$S.B1]`) as the one that leaves it out (`[$S.A1:.B1]`). The file holds
+`SUM(INPUTS!DA36474:DE36474)` written both ways, so VUL601 reports 14 more duplicated formulas;
+nothing else changes there. CPX509 then counts the characters of a formula without the namespace
+prefix of its functions (`_xlfn.`, `COM.MICROSOFT.`), as the application shows them: the MD5s
+before it were `3d3b557c191acff9c5bc5a7e4eb7c223` (XLSX) and `5280d61581b3db4464737826ce3a9b1a`
+(ODS), and only CPX509 messages differ (both formats report the same 26 formulas now).
 
 ### Violation sink for walker hooks (#39)
 

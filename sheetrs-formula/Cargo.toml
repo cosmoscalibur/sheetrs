@@ -1,0 +1,16 @@
+[package]
+name = "sheetrs-formula"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Lossless spreadsheet formula AST: parser, printer, reference rewriting"
+
+[dependencies]
+
+[dev-dependencies]
+sheetrs-core = { path = "../sheetrs-core", default-features = false }
+
+[lints]
+workspace = true
