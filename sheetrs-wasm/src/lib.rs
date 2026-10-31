@@ -1,9 +1,9 @@
 use serde::Serialize;
-use sheetrs::reader::read_workbook_from_reader;
-use sheetrs::rules::registry;
-use sheetrs::violation::CellReference;
-use sheetrs::{FormatContext, Linter, LinterConfig, violation::Violation};
-use sheetrs::{Severity, ViolationScope};
+use sheetrs_core::reader::read_workbook_from_reader;
+use sheetrs_core::rules::registry;
+use sheetrs_core::violation::CellReference;
+use sheetrs_core::{FormatContext, Linter, LinterConfig, violation::Violation};
+use sheetrs_core::{Severity, ViolationScope};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use std::io::Cursor;
@@ -76,7 +76,7 @@ pub fn lint_workbook(
 fn format_violations_human(
     violations: &[Violation],
     rule_names: &HashMap<String, String>,
-    workbook: &sheetrs::reader::Workbook,
+    workbook: &sheetrs_core::reader::Workbook,
 ) -> String {
     let mut output = String::new();
 
@@ -252,7 +252,7 @@ pub fn get_workbook_stats(file_data: &[u8], extension: &str) -> Result<String, J
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs::reader::{Sheet, Workbook};
+    use sheetrs_core::reader::{Sheet, Workbook};
 
     #[test]
     fn test_human_format_orders_cells_numerically() {
@@ -264,7 +264,7 @@ mod tests {
             .iter()
             .map(|&(row, col)| {
                 Violation::new(
-                    sheetrs::RuleId::Cpx509,
+                    sheetrs_core::RuleId::Cpx509,
                     ViolationScope::Cell(0, CellReference::new(row, col)),
                     "Long formula",
                     Severity::Warning,

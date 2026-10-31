@@ -1,0 +1,42 @@
+[package]
+name = "sheetrs-compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Compiler from XLSX/ODS spreadsheets to standalone executables: loader, dependency analysis, constant folding, input/output pruning"
+
+[lib]
+name = "sheetrs_compiler"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sheetc"
+path = "src/main.rs"
+required-features = ["load"]
+
+[features]
+default = ["load"]
+# Frontend that reads XLSX/ODS files through the sheetrs-core readers.
+load = ["dep:sheetrs-core", "dep:sha2"]
+# `SHEETC_FLAMEGRAPH=out.svg sheetc …` writes a sampled flamegraph (no perf needed).
+profile = ["dep:pprof"]
+
+[dependencies]
+sheetrs-engine = { path = "../sheetrs-engine" }
+sheetrs-formula = { path = "../sheetrs-formula" }
+sheetrs-core = { path = "../sheetrs-core", default-features = false, optional = true }
+sha2 = { workspace = true, optional = true }
+serde = { workspace = true, features = ["rc"] }
+serde_json.workspace = true
+toml.workspace = true
+pprof = { version = "0.14", optional = true, default-features = false, features = ["flamegraph"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true

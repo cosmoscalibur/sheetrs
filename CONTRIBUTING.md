@@ -39,6 +39,9 @@ Changes should be tested with `tests/minimal_test.ods` and
 - Use file paths for integration tests.
 - Create both positive (expected behavior) and negative (error handling, edge
   cases) test cases.
+- A fixture for code that decides by looking for a name in text (a shortcut that skips a
+  formula that does not mention a sheet) uses names that cannot occur in the text around them:
+  `Zeta`, not `T` or `U`, which any function name contains.
 
 ## Code Style
 
@@ -62,11 +65,12 @@ docs match it:
 
 | Change | Update |
 | ------ | ------ |
-| New/changed lint rule | `sheetlint/README.md` rule reference; `docs/coding-patterns.md` if it introduces a pattern |
-| CLI args or behavior | the tool README (`sheetlint`/`sheetstats`/`sheetcli`); `README.md` if the getting-started experience changes |
+| New/changed lint rule | `sheetrs-linter/README.md` rule reference; `docs/coding-patterns.md` if it introduces a pattern |
+| CLI args or behavior | the tool README (`sheetlint`/`sheetstats`/`sheetedit`); `README.md` if the getting-started experience changes |
 | Config format (`sheetlint.toml`) | `docs/coding-patterns.md`; the relevant tool README |
 | Module layout or new crate | `ARCHITECTURE.md`; `docs/README.md`; `README.md` project structure |
 | Dependencies or commands | `README.md`; this guide |
+| Engine behavior that differs between Excel and LibreOffice | `sheetrs-compiler/docs/FIDELITY.md`; a probe in `sheetrs-compiler/scripts/probe_behavior.py` |
 
 ## Changelog Fragments
 

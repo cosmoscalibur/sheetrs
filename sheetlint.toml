@@ -1,7 +1,7 @@
 # sheetlint Configuration Example
 #
 # Lists every configuration key with its default value. Rule IDs and the
-# parameters each rule reads are documented in sheetlint/README.md.
+# parameters each rule reads are documented in sheetrs-linter/README.md.
 
 # Global configuration
 [global]
@@ -23,6 +23,10 @@ ignore_hardcoded_power_of_ten = true
 
 # CALC203: Double operator. If true, `--` (coercion to number) is not flagged.
 calc203_allow_double_negative = false
+
+# Compatibility features, all off unless listed. LONGTEXT: ERR102 accepts the #NAME? of
+# `_xlfn._LONGTEXT(...)`, how LibreOffice 26.2 wrote a text literal over 255 characters.
+enable_features = []
 
 # REF310: Minimum contiguous adjacent data cells beyond a range boundary
 ref310_min_adjacent_data = 1
@@ -51,7 +55,7 @@ max_formula_length = 255
 avoid_sheet_names = ["sheet", "copy"]
 # DATA703: Expected date format (per sheet)
 date_format = "mm/dd/yyyy"
-# DATA704: Maximum text length in bytes (UTF-8) (per sheet)
+# DATA704: Maximum text length in characters (per sheet)
 max_text_length = 255
 
 # EXT802: Web URLs. "ALL" reports every URL; "INVALID" only unreachable ones.

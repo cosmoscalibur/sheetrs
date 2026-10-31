@@ -1,7 +1,7 @@
 ### Added
 
-- Add `sheetcli --convert-to-values` to replace formulas by their cached values in whole sheets (`Sheet`), columns (`Sheet!B:D`) or rows (`Sheet!3:10`) of XLSX and ODS workbooks (#11). In XLSX, shared formula cells left outside the scope get their own formula, and the calculation chain is removed.
-- Add ODS support to `sheetcli` modifications (`--remove-sheets`, `--remove-ranges`, `--convert-to-values`) and `writer::modify_workbook_ods`.
+- Add `sheetedit --convert-to-values` to replace formulas by their cached values in whole sheets (`Sheet`), columns (`Sheet!B:D`) or rows (`Sheet!3:10`) of XLSX and ODS workbooks (#11). In XLSX, shared formula cells left outside the scope get their own formula, and the calculation chain is removed.
+- Add ODS support to `sheetedit` modifications (`--remove-sheets`, `--remove-ranges`, `--convert-to-values`) and `writer::modify_workbook_ods`.
 - Add `writer::ValueScope` and `WorkbookModifications::convert_to_values` to the library.
 
 ### Changed

@@ -4,12 +4,20 @@ The **SheetRS Suite** is a high-performance toolkit for processing, linting,
 and manipulating spreadsheets (XLSX and ODS). Written in Rust, it is designed
 for speed, safety, and ease of integration into CI/CD pipelines.
 
-The suite consists of three specialized CLI tools:
+The suite consists of three specialized CLI tools, a compiler, and two
+libraries:
 
 - **sheetlint**: Advanced spreadsheet linter with hierarchical rule enforcement.
 - **sheetstats**: Detailed statistics and dependency analysis for workbooks.
-- **sheetcli**: General-purpose spreadsheet operations (convert, modify,
+- **sheetedit**: General-purpose spreadsheet operations (convert, modify,
   repair).
+- **sheetc** (`sheetrs-compiler`): Compiler from a spreadsheet to a standalone
+  executable (JSON in, JSON out) with a format-independent IR and a calculation
+  engine (`sheetrs-engine`) faithful to Excel and LibreOffice. See
+  [sheetrs-compiler/README.md](sheetrs-compiler/README.md).
+- **sheetrs-formula**: Lossless formula AST (parser, printer, reference
+  rewriting for row/column/sheet edits, R1C1 form), shared by the engine and,
+  later, by the linter rules.
 
 ## Prerequisites
 
@@ -25,9 +33,9 @@ git clone https://github.com/cosmoscalibur/sheetrs.git
 cd sheetrs
 
 # Install all tools
-cargo install --path sheetlint
-cargo install --path sheetstats
-cargo install --path sheetcli
+cargo install --path sheetrs-linter
+cargo install --path sheetrs-stats
+cargo install --path sheetrs-edit
 ```
 
 ## Development
@@ -54,10 +62,13 @@ No environment variables are required. Configuration is via `sheetlint.toml`.
 
 ```text
 sheetrs/
-├── sheetrs/        # Core library (parsers, rules, config, writer)
-├── sheetlint/      # Linter CLI
-├── sheetstats/     # Statistics CLI
-├── sheetcli/       # Manipulation CLI
+├── sheetrs-core/   # Core library (readers, writers, rules, config)
+├── sheetrs-formula/# Formula AST: parse, print, rewrite references
+├── sheetrs-engine/ # IR, functions, run-time evaluation (JSON in/out)
+├── sheetrs-compiler/ # Workbook → program compiler (`sheetc`)
+├── sheetrs-linter/ # Linter CLI
+├── sheetrs-stats/  # Statistics CLI
+├── sheetrs-edit/   # Workbook editing CLI (`sheetedit`)
 ├── sheetrs-wasm/   # WASM bindings for browser use
 ├── docs/           # Documentation index + WASM demo
 ├── tests/          # Shared test assets (minimal_test.xlsx/.ods)
@@ -100,7 +111,7 @@ sheetlint workbook.xlsx --format json > report.json
 - `DATA703`: Inconsistent date formats
 - `CPX501`: Excessive sheet counts
 
-See the [rule reference](sheetlint/README.md#rule-reference) for the full,
+See the [rule reference](sheetrs-linter/README.md#rule-reference) for the full,
 authoritative catalog.
 
 ### 2. sheetstats
@@ -120,7 +131,7 @@ Provides deep insights into workbook structure, complexity, and dependencies.
 sheetstats workbook.xlsx
 ```
 
-### 3. sheetcli
+### 3. sheetedit
 
 A swiss-army knife for spreadsheet manipulation.
 
@@ -133,13 +144,13 @@ A swiss-army knife for spreadsheet manipulation.
 
 ```bash
 # Remove sensitive sheets and save to new file
-sheetcli input.xlsx --remove-sheets "Secrets" "Admin" --output cleaned.xlsx
+sheetedit input.xlsx --remove-sheets "Secrets" "Admin" --output cleaned.xlsx
 
 # Remove named ranges
-sheetcli input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
+sheetedit input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
 
 # Freeze the inputs sheet and columns B:D of the model as values
-sheetcli master.xlsx --convert-to-values "Inputs" "Model!B:D" --output run.xlsx
+sheetedit master.xlsx --convert-to-values "Inputs" "Model!B:D" --output run.xlsx
 ```
 
 ## Roadmap

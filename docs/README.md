@@ -10,11 +10,19 @@ getting-started instructions, see the root [README.md](../README.md).
 - [Coding Patterns](coding-patterns.md) — conventions, naming, SoC principle,
   WalkerRule trait pattern, CLI and library guidelines.
 
+## Compiler and engine (sheetc)
+
+- [sheetrs-compiler README](../sheetrs-compiler/README.md) — build, run, inputs/outputs, options.
+- [Design](../sheetrs-compiler/docs/DESIGN.md) — pipeline, IR, hybrid compile/run time,
+  ordering, reader contract, roadmap.
+- [Fidelity](../sheetrs-compiler/docs/FIDELITY.md) — every difference between Excel and
+  LibreOffice the engine models, with the evidence behind it.
+
 ## Analysis & Profiling
 
-- [Comparative Report](../sheetlint/comparative_report.md) — rule comparison
+- [Comparative Report](../sheetrs-linter/comparative_report.md) — rule comparison
   with PerfectXL Risk Finder and ExceLint.
-- [Profiling](../sheetlint/docs/PROFILING.md) — phase breakdown, per-rule
+- [Profiling](../sheetrs-linter/docs/PROFILING.md) — phase breakdown, per-rule
   sample share, single-pass walker architecture.
 - [Benchmarks](../scripts/README.md) — benchmark scripts and historical
   performance data.

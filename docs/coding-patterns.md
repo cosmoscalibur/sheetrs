@@ -45,8 +45,9 @@ for single-pass cell-by-cell traversal:
 
 - `on_workbook_start()` — called once before traversal begins.
 - `on_sheet_start()` — called at the start of each sheet.
-- `on_cell()` — called for each cell during the walk. Collect data into
-  `LinterContext`.
+- `on_cell(sheet, at, cell, …)` — called for each cell during the walk, in row
+  order, with its `(row, column)` as `at`: a `Cell` does not repeat its position
+  (the sheet's `Grid` has it). Collect data into `LinterContext`.
 - `on_sheet_end()` — called at the end of each sheet.
 - `on_workbook_end()` — called after all cells are visited. Emit violations
   based on collected data.
@@ -54,7 +55,7 @@ for single-pass cell-by-cell traversal:
 Hooks return `()` and push each violation into the `out: &mut Vec<Violation>`
 sink that the walker passes to every rule, so a hook that emits nothing leaves
 `out` untouched. A unit test collects a hook's output with
-`rules::collect_violations(|out| rule.on_cell(&sheet, &cell, &mut ctx, out))`.
+`rules::collect_violations(|out| rule.on_cell(&sheet, at, &cell, &mut ctx, out))`.
 
 Hooks take `&mut self`: rules keep their collected state in plain fields
 (e.g. `HashMap`), without locks. The registry creates fresh instances for every
@@ -144,11 +145,15 @@ Rules may accept configuration parameters via `LinterConfig`:
 
 - `calc203_allow_double_negative` (bool) — If `true`, `--` (double negative /
   coercion to number) is not flagged by CALC203.
+- `enable_features` (array of names, default empty) — Compatibility features,
+  all off unless listed; known: `LONGTEXT` (ERR102 accepts the `#NAME?` of
+  `_xlfn._LONGTEXT(…)`). Unknown names make the configuration invalid.
 - `int_min_formula_sequence` (int, default 3) — Minimum formula run length
   for INT401–403 to consider a sequence.
-- `ref310_min_adjacent_data` (int, default 1) — Minimum number of contiguous
-  adjacent data cells beyond a range boundary to trigger REF310 (Longer Ref
-  Expected). PerfectXL uses 1.
+- `ref310_min_adjacent_data` (int ≥ 1, default 1) — Minimum number of contiguous
+  adjacent lines that continue the block (constants after constants, the same
+  formula pattern after formulas) beyond a range boundary to trigger REF310
+  (Longer Ref Expected). PerfectXL uses 1; keep parity with it.
 
 ### Shared Formula Helpers
 
@@ -186,11 +191,22 @@ parsers and rules:
 - Compile static regexes once, in a module-level `LazyLock<Regex>`. Build
   derived search patterns (e.g. `"FUNC("` strings) the same way.
 - For case-insensitive formula matching in `on_cell()`, use
-  `LinterContext::formula_upper(sheet, cell)`, which converts each cell's formula once
+  `LinterContext::formula_upper(sheet, at, cell)`, which converts each cell's formula once
   for all rules. Use the original formula to inspect string literal content.
 - In regex replacements on hot paths, implement `regex::Replacer::replace_append`
   and write into the output buffer instead of returning a `String` per match.
 - Prefer `include_bytes!` in tests over file I/O.
+- Do not keep a copy of the workbook's cells in a rule. A rule reads `sheet.cells` (a `Grid`, in
+  row order) in `on_sheet_end`/`on_workbook_end`, where it has the sheet; what it must keep
+  between hooks is the facts it needs, not the cells. A set of every position cost 40 bytes a
+  cell (REF309), and a classification of every cell with a copy of its formula pattern, three
+  times over (INT401–403): +590 MB on a 6.6 M-cell workbook. Repeated text (formula patterns) is
+  interned and kept as an id.
+- Output is written as it is produced (`sheetlint --format json` serializes each violation):
+  building a tree of the whole document costs about 4 KB a violation.
+- Memory is measured as the peak of the run (`measure_perf.py` does it for `sheetc`; for the
+  linter, `wait4`'s `ru_maxrss` or `/usr/bin/time -v`), with the human and the JSON output, and a
+  change must leave the output byte-identical (compare the MD5).
 
 ## CLI Conventions
 
@@ -222,7 +238,7 @@ The workspace uses [semantic versioning](https://semver.org/):
 
 ### Public API Surface
 
-The `sheetrs` library crate exports:
+The `sheetrs-core` library crate exports:
 
 - `reader` module — `Workbook` trait, format parsers
 - `rules` module — rule registry and `WalkerRule` trait
