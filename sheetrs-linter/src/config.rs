@@ -6,23 +6,49 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-/// Main linter configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Main linter configuration.
+///
+/// A `LinterConfig` is always valid: the only ways to get one are [`Default`] and parsing
+/// ([`from_toml`](Self::from_toml), [`from_file`](Self::from_file), or deserializing it), and
+/// parsing rejects what the linter cannot honour: a rule or category it does not know (a
+/// misspelled rule would otherwise be ignored without a word), `ALL` among the disabled rules, a
+/// parameter outside its range, an unknown feature. Nothing downstream, no executable and no
+/// binding, validates it again.
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct LinterConfig {
+    pub(crate) global: GlobalConfig,
+    pub(crate) sheets: HashMap<String, SheetConfig>,
+}
+
+/// The shape of a configuration before it is known to be valid; only [`LinterConfig`]'s
+/// `Deserialize` sees it.
+#[derive(Deserialize)]
+struct RawLinterConfig {
     #[serde(default)]
-    pub global: GlobalConfig,
+    global: GlobalConfig,
     #[serde(default)]
-    pub sheets: HashMap<String, SheetConfig>,
+    sheets: HashMap<String, SheetConfig>,
+}
+
+impl<'de> Deserialize<'de> for LinterConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let RawLinterConfig { global, sheets } = RawLinterConfig::deserialize(deserializer)?;
+        let config = Self { global, sheets };
+        config
+            .validate_rules(&crate::rules::registry::get_all_valid_tokens())
+            .map_err(serde::de::Error::custom)?;
+        Ok(config)
+    }
 }
 
 impl LinterConfig {
-    /// Load configuration from a TOML file
+    /// Load and validate the configuration in a TOML file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(path)?;
         Self::from_toml(&content)
     }
 
-    /// Load configuration from a TOML string
+    /// Parse and validate a configuration in TOML
     pub fn from_toml(content: &str) -> Result<Self> {
         let config: LinterConfig = toml::from_str(content)?;
         Ok(config)
@@ -73,8 +99,9 @@ impl LinterConfig {
         true
     }
 
-    /// Validate the configuration against a set of valid tokens
-    pub fn validate_rules(&self, valid_tokens: &HashSet<String>) -> Result<()> {
+    /// Validate the configuration against a set of valid tokens (parsing does it with the rules
+    /// the linter has)
+    pub(crate) fn validate_rules(&self, valid_tokens: &HashSet<String>) -> Result<()> {
         // Validate global disabled rules (NO "ALL" allowed)
         for rule in &self.global.disabled_rules {
             if rule == "ALL" {
@@ -165,6 +192,11 @@ impl LinterConfig {
 
     /// Keys under which the feature list can be written.
     const FEATURE_KEYS: &'static [&'static str] = &["enable_features", "enable-features"];
+
+    /// Whether the global parameter `key` is set.
+    pub fn has_param(&self, key: &str) -> bool {
+        self.global.params.contains_key(key)
+    }
 
     /// Whether the feature `name` is listed in `enable_features` (any case). Every feature is off
     /// unless listed.
@@ -350,6 +382,25 @@ mod tests {
         sheet_config.disabled_rules.insert("ABC".to_string());
         bad_config.sheets.insert("Sheet1".to_string(), sheet_config);
         assert!(bad_config.validate_rules(&tokens).is_err());
+    }
+
+    #[test]
+    fn parsing_rejects_what_the_linter_cannot_honour() {
+        for bad in [
+            "[global]\ndisabled_rules = [\"ERR1O2\"]\n",
+            "[global]\nenabled_rules = [\"NOPE\"]\n",
+            "[global]\ndisabled_rules = [\"ALL\"]\n",
+            "[sheets.Data]\ndisabled_rules = [\"ERR1O2\"]\n",
+        ] {
+            let error = LinterConfig::from_toml(bad).expect_err(bad);
+            assert!(error.to_string().contains("Configuration error"), "{error}");
+            // The same through any serde route: there is no way around the check.
+            assert!(toml::from_str::<LinterConfig>(bad).is_err(), "{bad}");
+        }
+        assert!(
+            LinterConfig::from_toml("[global]\ndisabled_rules = [\"ERR102\", \"CPX\"]\n").is_ok()
+        );
+        assert!(LinterConfig::from_toml("").is_ok());
     }
 }
 

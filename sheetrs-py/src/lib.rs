@@ -190,9 +190,9 @@ impl PyLinter {
             (None, None) => Ok(LinterConfig::default()),
         }
         .map_err(|e| PyValueError::new_err(format!("invalid configuration: {e:#}")))?;
-        let linter = Linter::try_with_config(config)
-            .map_err(|e| PyValueError::new_err(format!("invalid configuration: {e:#}")))?;
-        Ok(Self { linter })
+        Ok(Self {
+            linter: Linter::with_config(config),
+        })
     }
 
     /// Lint a workbook, given by path or as the bytes of an XLSX/XLSM/ODS file (then `extension`

@@ -131,8 +131,8 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
   - `report`: `group_by_scope` (book → sheet → cell, one entry per sheet) and `ViolationRecord`
     (flat form for the bindings).
   - `Linter` runs the rules over a `Workbook` it is given; it reads nothing.
-    `Linter::try_with_config` validates the configuration (unknown rules, categories or
-    parameters are an error), so no adapter has to repeat the check.
+    A `LinterConfig` is valid by construction (parsing validates: unknown rules, categories or
+    parameters are an error), so no adapter validates it again.
   - `main.rs` and `formatter.rs`: arguments, colored text and streamed JSON.
 
 - **`sheetstats`** (crate `sheetrs-stats`):

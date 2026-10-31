@@ -59,8 +59,7 @@ fn main() -> Result<()> {
         }
     };
 
-    // Create linter (validating the configuration) and run
-    let linter = Linter::try_with_config(config).context("Invalid configuration")?;
+    let linter = Linter::with_config(config);
 
     let (violations, workbook) = linter
         .lint_file_with_workbook(&cli.file)

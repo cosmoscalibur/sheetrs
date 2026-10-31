@@ -452,11 +452,7 @@ mod tests {
 
     #[test]
     fn enable_features_accepts_only_known_names() {
-        let ok = |toml: &str| {
-            LinterConfig::from_toml(toml)
-                .unwrap()
-                .validate_rules(&std::collections::HashSet::new())
-        };
+        let ok = |toml: &str| LinterConfig::from_toml(toml);
         assert!(ok("[global]\nenable_features = [\"LONGTEXT\"]\n").is_ok());
         assert!(ok("[global]\nenable-features = []\n").is_ok());
         assert!(ok("[global]\nenable_features = [\"NOPE\"]\n").is_err());

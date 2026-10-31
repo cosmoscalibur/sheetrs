@@ -57,8 +57,7 @@ pub fn lint_workbook(
             .map_err(|e| JsValue::from_str(&format!("Config error: {e}")))?
     };
 
-    let linter = Linter::try_with_config(config.clone())
-        .map_err(|e| JsValue::from_str(&format!("Config error: {e}")))?;
+    let linter = Linter::with_config(config.clone());
     let violations = linter
         .lint_workbook(&workbook)
         .map_err(|e| JsValue::from_str(&format!("Linter error: {e}")))?;
@@ -91,8 +90,7 @@ pub fn lint_workbook_records(
         LinterConfig::from_toml(config_toml)
             .map_err(|e| JsValue::from_str(&format!("Config error: {e}")))?
     };
-    let linter = Linter::try_with_config(config)
-        .map_err(|e| JsValue::from_str(&format!("Config error: {e}")))?;
+    let linter = Linter::with_config(config);
     let violations = linter
         .lint_workbook(&workbook)
         .map_err(|e| JsValue::from_str(&format!("Linter error: {e}")))?;

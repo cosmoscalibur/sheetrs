@@ -45,7 +45,7 @@ fn example_config_lists_every_documented_param() {
     for (id, params) in rule_rows() {
         for param in params.split('`').skip(1).step_by(2) {
             assert!(
-                config.global.params.contains_key(param),
+                config.has_param(param),
                 "{id} parameter `{param}` missing from sheetlint.toml"
             );
         }

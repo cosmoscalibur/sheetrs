@@ -7,8 +7,7 @@
   operation). A workbook is a path or bytes; type stubs and a pytest suite included.
 - Add `sheetrs_edit::EditPlan` and `Operation`: the operations on a workbook, collected and
   applied in one pass. `sheetedit` builds its run with it.
-- Add `Linter::try_with_config`, which rejects a configuration naming rules, categories or
-  parameters the linter does not know. `sheetlint` and both bindings use it.
+
 - Add `sheetrs_linter::report` (`group_by_scope`, `ViolationRecord`, `violation_records`): the
   findings grouped by book, sheet and cell and in a flat serializable form, shared by the
   executable and the bindings.
@@ -36,6 +35,10 @@
 
 ### Fixed
 
+- A configuration naming a rule or category the linter does not know is rejected when it is
+  parsed, in every interface (the executable checked it after parsing; the bindings did not). A
+  `LinterConfig` is valid by construction: its fields are private to the crate and its
+  `Deserialize` validates.
 - The WASM text report printed the `Sheet:` header twice for a sheet with sheet-level and
   cell-level violations; both renderers now group with `group_by_scope` (#70).
 - A cell error value that could not be parsed was reported as an "unknown rule ID".

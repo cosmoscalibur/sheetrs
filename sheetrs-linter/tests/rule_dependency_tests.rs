@@ -130,8 +130,9 @@ fn dependency_workbook() -> Workbook {
 fn assert_disabling_provider_keeps_dependents(workbook: &Workbook, label: &str) {
     let baseline = lint(workbook, LinterConfig::default());
     for &(provider, _) in DEPENDENCIES {
-        let mut config = LinterConfig::default();
-        config.global.disabled_rules.insert(provider.to_string());
+        let config =
+            LinterConfig::from_toml(&format!("[global]\ndisabled_rules = [\"{provider}\"]\n"))
+                .unwrap();
         let without_provider = lint(workbook, config);
         let expected: Vec<_> = baseline.iter().filter(|(id, _)| *id != provider).collect();
         let actual: Vec<_> = without_provider.iter().collect();
@@ -145,11 +146,12 @@ fn assert_disabling_provider_keeps_dependents(workbook: &Workbook, label: &str) 
 fn assert_enabling_dependents_alone_keeps_them(workbook: &Workbook, label: &str) {
     let dependents = dependents_only();
     let baseline = lint(workbook, LinterConfig::default());
-    let mut config = LinterConfig::default();
-    config
-        .global
-        .enabled_rules
-        .extend(dependents.iter().map(RuleId::to_string));
+    let enabled: Vec<String> = dependents.iter().map(|id| format!("\"{id}\"")).collect();
+    let config = LinterConfig::from_toml(&format!(
+        "[global]\nenabled_rules = [{}]\n",
+        enabled.join(", ")
+    ))
+    .unwrap();
     let expected: Vec<_> = baseline
         .iter()
         .filter(|(id, _)| dependents.contains(id))
