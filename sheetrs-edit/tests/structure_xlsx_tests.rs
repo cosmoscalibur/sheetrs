@@ -738,77 +738,97 @@ fn the_corners_of_a_shape_follow_their_cells_when_it_resizes_with_them() {
     );
 }
 
-/// The 3D references of sheet `F` after `mods`, over the sheets `T`, `U`, `V` in that order.
-fn three_d(mods: &WorkbookModifications) -> Vec<String> {
+/// Runs `mods` over a workbook where sheet `F` holds the formulas given, and `T`, `U`, `V` numbers.
+fn run_over_3d(
+    formulas_of_f: &[&str],
+    mods: &WorkbookModifications,
+) -> Result<Vec<String>, anyhow::Error> {
     let dir = tempfile::tempdir().unwrap();
-    let f = sheet(
-        "F",
-        formula_rows(&[
-            "SUM(T:V!A2:A4)",
-            "SUM(T:V!A1)",
-            "SUM(T:V!A6:A8)",
-            "SUM(T:V!B2:D2)",
-            "SUM(U:V!A2:A6)",
-            "SUM('T:V'!A3:A9)",
-        ]),
-    );
     let sheets = [
         sheet("T", number_rows(10)),
         sheet("U", number_rows(10)),
         sheet("V", number_rows(10)),
-        f,
+        sheet("F", formula_rows(formulas_of_f)),
     ];
-    let output = run(dir.path(), &sheets, "", mods).unwrap();
-    formulas(&part(&output, "xl/worksheets/sheet4.xml"))
+    let output = run(dir.path(), &sheets, "", mods)?;
+    Ok(formulas(&part(&output, "xl/worksheets/sheet4.xml")))
 }
 
-/// What LibreOffice 26.8 gave for the same deletions (`sheetrs-edit/scripts/compare_structure_with_libreoffice.py`).
+/// A reference across sheets (issue #75) is refused when rows, columns or sheets change, in any of
+/// the ways one is written; the message names the issue.
 #[test]
-fn a_3d_reference_follows_a_deletion_in_its_span_only_where_the_deletion_touches_it() {
-    // Row 1 of the sheet in the middle of the span: only the reference to row 1 changes.
-    let one_row = three_d(&WorkbookModifications {
-        delete_rows: vec![scope("U!1")],
-        ..Default::default()
-    });
-    assert_eq!(
-        one_row,
-        [
-            "SUM(T:V!A2:A4)",
-            "SUM(T!#REF!)",
-            "SUM(T:V!A6:A8)",
-            "SUM(T:V!B2:D2)",
-            "SUM(U:V!A2:A6)",
-            "SUM('T:V'!A3:A9)",
-        ]
-    );
-    // Rows 2-3 touch the ranges that name them; the sheet is at an end of the span or outside it.
-    for (sheet, kept) in [("U", false), ("T", false), ("V", false), ("F", true)] {
-        let out = three_d(&WorkbookModifications {
-            delete_rows: vec![scope(&format!("{sheet}!2:3"))],
+fn a_3d_reference_is_refused_when_the_structure_changes() {
+    let spans = [
+        "SUM(T:V!A2:A4)",
+        "SUM(T:V!A1)",
+        "SUM(U:V!A:A)",
+        "1+SUM('T:V'!A3:A9)",
+    ];
+    let changes = [
+        WorkbookModifications {
+            delete_rows: vec![scope("U!1")],
             ..Default::default()
-        });
-        assert_eq!(out[0] == "SUM(T:V!A2:A4)", kept, "{sheet}: {out:?}");
-        if !kept {
-            assert_eq!(out[0], "SUM(T:V!A2:A2)", "{sheet}");
+        },
+        WorkbookModifications {
+            delete_columns: vec![scope("T!B")],
+            ..Default::default()
+        },
+        WorkbookModifications {
+            remove_sheets: Some(["U".to_string()].into()),
+            ..Default::default()
+        },
+        // Even when the deletion is in a sheet that the reference does not span.
+        WorkbookModifications {
+            delete_rows: vec![scope("F!5")],
+            ..Default::default()
+        },
+    ];
+    for span in spans {
+        for change in &changes {
+            let error = run_over_3d(&[span], change).unwrap_err();
+            let error = format!("{error:#}");
+            assert!(error.contains("3D reference"), "{span}: {error}");
+            assert!(error.contains("issues/75"), "{span}: {error}");
         }
     }
 }
 
+/// What does not move or remove anything needs no reference rewritten, so it works.
 #[test]
-fn removing_a_sheet_of_a_3d_span_passes_the_end_to_the_next_one() {
-    let out = three_d(&WorkbookModifications {
-        remove_sheets: Some(["U".to_string()].into()),
-        ..Default::default()
-    });
-    // The sheet in the middle changes nothing; at an end of a span it passes the end on.
-    assert_eq!(out[0], "SUM(T:V!A2:A4)");
-    assert_eq!(out[4], "SUM(V!A2:A6)");
-    let out = three_d(&WorkbookModifications {
-        remove_sheets: Some(["T".to_string(), "V".to_string()].into()),
-        ..Default::default()
-    });
-    assert_eq!(out[0], "SUM(U!A2:A4)");
-    assert_eq!(out[4], "SUM(U!A2:A6)");
+fn a_3d_reference_does_not_stop_what_does_not_change_the_structure() {
+    let formulas_of_f = ["SUM(T:V!A2:A4)", "A1"];
+    for mods in [
+        WorkbookModifications {
+            convert_to_values: vec![scope("F")],
+            ..Default::default()
+        },
+        WorkbookModifications {
+            recalculate_on_open: true,
+            ..Default::default()
+        },
+    ] {
+        assert!(run_over_3d(&formulas_of_f, &mods).is_ok(), "{mods:?}");
+    }
+}
+
+/// A single-sheet range is not a span, however the second end is written.
+#[test]
+fn a_range_of_one_sheet_is_not_a_3d_reference() {
+    let out = run_over_3d(
+        &[
+            "SUM(T!A2:A4)",
+            "SUM(T!A2:T!A4)",
+            "SUM(A1:B2)",
+            "SUM(U!A5:A6)",
+        ],
+        &WorkbookModifications {
+            delete_rows: vec![scope("T!1")],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(out[0], "SUM(T!A1:A3)");
+    assert_eq!(out[3], "SUM(U!A5:A6)");
 }
 
 #[test]
@@ -846,26 +866,30 @@ fn a_filter_shrinks_around_the_deleted_columns_and_drops_their_criteria() {
     assert!(!xml.contains(r#"<filter val="1"/>"#), "{xml}");
 }
 
-/// A reference across sheets of a sheet that is not edited changes when a sheet inside its span
-/// is, whatever the names: the text of the formula does not name that sheet.
+/// A reference across sheets is refused when a sheet inside its span is edited, whatever the names:
+/// the text of the formula does not name that sheet, so no copy of the worksheet may skip it
+/// (a worksheet that names no edited sheet is copied without being read).
 #[test]
-fn a_3d_span_over_an_edited_sheet_it_does_not_name_changes() {
-    let dir = tempfile::tempdir().unwrap();
-    let sheets = [
-        sheet("Alpha", number_rows(10)),
-        sheet("Beta", number_rows(10)),
-        sheet("Gamma", number_rows(10)),
-        sheet("F", formula_rows(&["SUM(Alpha:Gamma!A2:A5)"])),
-    ];
-    let mods = WorkbookModifications {
-        delete_rows: vec![scope("Beta!3")],
-        ..Default::default()
-    };
-    let output = run(dir.path(), &sheets, "", &mods).unwrap();
-    assert_eq!(
-        formulas(&part(&output, "xl/worksheets/sheet4.xml")),
-        ["SUM(Alpha:Gamma!A2:A4)"]
-    );
+fn a_3d_span_over_an_edited_sheet_it_does_not_name_is_refused() {
+    for (first, middle, last, span) in [
+        ("Alpha", "Beta", "Gamma", "SUM(Alpha:Gamma!A2:A5)"),
+        ("Alpha 1", "Beta", "Gamma 3", "SUM('Alpha 1:Gamma 3'!A2:A5)"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let sheets = [
+            sheet(first, number_rows(10)),
+            sheet(middle, number_rows(10)),
+            sheet(last, number_rows(10)),
+            sheet("F", formula_rows(&[span])),
+        ];
+        let mods = WorkbookModifications {
+            delete_rows: vec![scope(&format!("{middle}!3"))],
+            ..Default::default()
+        };
+        let error = run(dir.path(), &sheets, "", &mods).unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains("issues/75"), "{span}: {error}");
+    }
 }
 
 #[test]

@@ -1,17 +1,15 @@
 //! Python bindings for the SheetRS suite.
 //!
-//! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports its submodules.
-//! There is one submodule per tool, as there is one crate per tool: the rules exist only as part
-//! of the linter, so their catalog is `Linter.rules()`, next to the configuration it reflects.
+//! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports it, flat: the
+//! three tools are `Linter`/`lint`, `stats` and `EditPlan`/`edit`. A workbook is a path
+//! (`str`/`os.PathLike`) or its bytes. The functions release the GIL while they read and analyze
+//! a workbook.
 //!
-//! - `linter` (`sheetrs-linter`): `Linter` (validated configuration, `lint`, `rules`), `lint`,
-//!   `Violation`.
-//! - `stats` (`sheetrs-stats`): `compute`.
-//! - `edit` (`sheetrs-edit`): `Plan` (lazy: operations collected, applied in one pass on `save`)
-//!   and one function per operation (eager: applied at once).
-//!
-//! A workbook is a path (`str`/`os.PathLike`) or its bytes. The functions release the GIL while
-//! they read and analyze a workbook.
+//! - `Linter`: a configuration validated when it is built, then `lint` and `rules` (the rules
+//!   exist only as part of the linter, so their catalog is next to the configuration it reflects).
+//! - `EditPlan`: lazy editing. Operations are collected, each written against the input workbook,
+//!   and `save` applies them resolved into one order in a single pass. `edit` is the eager form:
+//!   the same operations given at once, applied at once.
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -22,7 +20,7 @@ use sheetrs_edit::writer::ValueScope;
 use sheetrs_linter::report::{ViolationRecord, violation_records};
 use sheetrs_linter::rules::registry;
 use sheetrs_linter::{Linter, LinterConfig};
-use sheetrs_stats::stats::WorkbookStats;
+use sheetrs_stats::WorkbookStats;
 use std::io::Cursor;
 use std::path::PathBuf;
 
@@ -169,7 +167,7 @@ impl From<ViolationRecord> for PyViolation {
 /// (`config_path`), not both; without either, the default rules run. A rule, category or
 /// parameter the linter does not know is an error (`ValueError`), not something ignored.
 /// Build it once to lint many workbooks.
-#[pyclass(name = "Linter", frozen, module = "sheetrs.linter")]
+#[pyclass(name = "Linter", frozen, module = "sheetrs")]
 struct PyLinter {
     linter: Linter,
 }
@@ -258,16 +256,16 @@ fn lint(
 ///
 /// The file size is 0 for a workbook given as bytes.
 #[pyfunction]
-#[pyo3(signature = (source, *, extension=None))]
-#[pyo3(name = "compute")]
-fn stats_compute<'py>(
+#[pyo3(signature = (source, *, extension=None), name = "stats")]
+fn compute_stats<'py>(
     py: Python<'py>,
     source: &Bound<'py, PyAny>,
     extension: Option<&str>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let source = Source::from_py(source, extension)?;
-    let stats = py.detach(|| source.stats().map_err(to_py_err))?;
-    let json = serde_json::to_string(&stats).map_err(|e| SheetrsError::new_err(e.to_string()))?;
+    let computed = py.detach(|| source.stats().map_err(to_py_err))?;
+    let json =
+        serde_json::to_string(&computed).map_err(|e| SheetrsError::new_err(e.to_string()))?;
     py.import("json")?.call_method1("loads", (json,))
 }
 
@@ -289,28 +287,27 @@ fn scopes(values: &Bound<'_, PyTuple>) -> PyResult<Vec<ValueScope>> {
         .collect()
 }
 
-/// A plan: operations on one workbook, resolved into the order that gives the right result and
-/// applied in a single pass over the file.
+/// Operations on one workbook, written against the input workbook and applied in a single pass.
 ///
 /// Lazy mode: each method records operations and returns the plan, so calls chain; nothing is
-/// read or written until `save(output)`. Every operation is written against the **input**
-/// workbook (its rows, columns and sheet names), in any order: the plan merges overlapping row
-/// and column ranges and orders what it does so that no operation sees the positions another one
-/// changed (formulas converted before the cells they read are deleted, rows deleted from the last
-/// to the first across sheets, sheets removed last). `schedule` shows that order. The result does
-/// not depend on the order the operations were added in, and equals running the schedule one
-/// operation per pass. Adding an operation twice counts once. A malformed scope, or rows deleted
-/// with a column range, raises `ValueError` where it is added.
+/// read or written until `save(output)`. Operations address the rows, columns and sheet names of
+/// the **input**, in any order: the plan merges overlapping row and column ranges and orders what
+/// it does so that no operation sees the positions another one moved (formulas are converted
+/// before the cells they read are deleted, rows and columns are deleted from the last to the
+/// first, sheets are removed last). `operations` shows that order. The result does not depend on
+/// the order the operations were added in, and equals running them one per pass. Adding an
+/// operation twice counts once. A malformed scope, or rows deleted with a column range, raises
+/// `ValueError` where it is added. A formula with a 3D reference (`Sheet1:Sheet3!A1`) makes
+/// `save` fail when rows, columns or sheets are deleted or removed: not supported yet (issue #75).
 ///
-/// For immediate execution, one pass per operation, see the functions of this module.
-#[pyclass(name = "Plan", module = "sheetrs.edit")]
-struct PyPlan {
+#[pyclass(name = "EditPlan", module = "sheetrs")]
+struct PyEditPlan {
     input: PathBuf,
     plan: EditPlan,
 }
 
 #[pymethods]
-impl PyPlan {
+impl PyEditPlan {
     #[new]
     fn new(input: PathBuf) -> Self {
         Self {
@@ -385,22 +382,13 @@ impl PyPlan {
         slf
     }
 
-    /// The operations as they were added, as text.
+    /// The operations as they will be applied, as text: resolved (overlapping ranges merged,
+    /// repeats and scopes on removed sheets dropped) and in the order that gives the right result,
+    /// whatever the order they were added in.
     #[getter]
     fn operations(&self) -> Vec<String> {
         self.plan
             .operations()
-            .iter()
-            .map(ToString::to_string)
-            .collect()
-    }
-
-    /// The plan in the order it is applied, as text: normalized (ranges merged, repeats and
-    /// conversions on removed sheets dropped) and ordered so every position is the input's.
-    #[getter]
-    fn schedule(&self) -> Vec<String> {
-        self.plan
-            .schedule()
             .iter()
             .map(ToString::to_string)
             .collect()
@@ -427,111 +415,72 @@ impl PyPlan {
     }
 }
 
-/// Eager mode: runs one operation on `input` now and writes `output`.
-fn run_eager(
+/// Eager editing: write `output` from `input` with the operations given, now. It is
+/// `EditPlan(input)` with each argument added and `save(output)`; every argument is a list.
+///
+/// - `remove_sheets`, `remove_ranges`: names to remove.
+/// - `convert_to_values`: scopes (`"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"`) whose formulas are
+///   replaced by their cached values.
+/// - `delete_rows` (`"Sheet!3:10"`), `delete_columns` (`"Sheet!B:D"`): of the input; references to
+///   them become `#REF!`.
+/// - `recalc_on_open`: the application that opens the output recalculates every formula.
+///
+/// Raises `ValueError` for a malformed scope and `SheetrsError` when the operation fails (no
+/// output is left behind) or nothing was asked.
+#[pyfunction]
+#[pyo3(signature = (
+    input,
+    output,
+    *,
+    remove_sheets=None,
+    remove_ranges=None,
+    convert_to_values=None,
+    delete_rows=None,
+    delete_columns=None,
+    recalc_on_open=false,
+))]
+#[allow(clippy::too_many_arguments)]
+fn edit(
     py: Python<'_>,
     input: PathBuf,
     output: PathBuf,
-    add: impl FnOnce(&mut EditPlan) -> PyResult<()>,
+    remove_sheets: Option<Vec<String>>,
+    remove_ranges: Option<Vec<String>>,
+    convert_to_values: Option<Vec<String>>,
+    delete_rows: Option<Vec<String>>,
+    delete_columns: Option<Vec<String>>,
+    recalc_on_open: bool,
 ) -> PyResult<()> {
+    fn parse(specs: Option<Vec<String>>) -> PyResult<Vec<ValueScope>> {
+        specs
+            .unwrap_or_default()
+            .iter()
+            .map(|spec| {
+                spec.parse::<ValueScope>()
+                    .map_err(|e| PyValueError::new_err(format!("invalid scope '{spec}': {e:#}")))
+            })
+            .collect()
+    }
     let mut plan = EditPlan::new();
-    add(&mut plan)?;
-    py.detach(|| plan.execute(&input, &output).map_err(to_py_err))
-}
-
-/// Eager: write `output` without the sheets `names`.
-#[pyfunction]
-#[pyo3(signature = (input, output, *names), name = "remove_sheets")]
-fn edit_remove_sheets(
-    py: Python<'_>,
-    input: PathBuf,
-    output: PathBuf,
-    names: &Bound<'_, PyTuple>,
-) -> PyResult<()> {
-    run_eager(py, input, output, |plan| {
-        strings(names)?.into_iter().for_each(|n| {
-            plan.remove_sheet(n);
-        });
-        Ok(())
-    })
-}
-
-/// Eager: write `output` without the defined names `names`.
-#[pyfunction]
-#[pyo3(signature = (input, output, *names), name = "remove_ranges")]
-fn edit_remove_ranges(
-    py: Python<'_>,
-    input: PathBuf,
-    output: PathBuf,
-    names: &Bound<'_, PyTuple>,
-) -> PyResult<()> {
-    run_eager(py, input, output, |plan| {
-        strings(names)?.into_iter().for_each(|n| {
-            plan.remove_named_range(n);
-        });
-        Ok(())
-    })
-}
-
-/// Eager: write `output` with the formulas of `scopes` replaced by their cached values.
-#[pyfunction]
-#[pyo3(signature = (input, output, *scopes), name = "convert_to_values")]
-fn edit_convert_to_values(
-    py: Python<'_>,
-    input: PathBuf,
-    output: PathBuf,
-    scopes: &Bound<'_, PyTuple>,
-) -> PyResult<()> {
-    run_eager(py, input, output, |plan| {
-        self::scopes(scopes)?.into_iter().for_each(|s| {
-            plan.convert_to_values(s);
-        });
-        Ok(())
-    })
-}
-
-/// Eager: write `output` without the rows `scopes` (`"Sheet!3:10"`).
-#[pyfunction]
-#[pyo3(signature = (input, output, *scopes), name = "delete_rows")]
-fn edit_delete_rows(
-    py: Python<'_>,
-    input: PathBuf,
-    output: PathBuf,
-    scopes: &Bound<'_, PyTuple>,
-) -> PyResult<()> {
-    run_eager(py, input, output, |plan| {
-        for scope in self::scopes(scopes)? {
-            plan.delete_rows(scope).map_err(invalid)?;
-        }
-        Ok(())
-    })
-}
-
-/// Eager: write `output` without the columns `scopes` (`"Sheet!B:D"`).
-#[pyfunction]
-#[pyo3(signature = (input, output, *scopes), name = "delete_columns")]
-fn edit_delete_columns(
-    py: Python<'_>,
-    input: PathBuf,
-    output: PathBuf,
-    scopes: &Bound<'_, PyTuple>,
-) -> PyResult<()> {
-    run_eager(py, input, output, |plan| {
-        for scope in self::scopes(scopes)? {
-            plan.delete_columns(scope).map_err(invalid)?;
-        }
-        Ok(())
-    })
-}
-
-/// Eager: write `output` marked to be recalculated when opened.
-#[pyfunction]
-#[pyo3(name = "recalc_on_open")]
-fn edit_recalc_on_open(py: Python<'_>, input: PathBuf, output: PathBuf) -> PyResult<()> {
-    run_eager(py, input, output, |plan| {
+    for name in remove_sheets.unwrap_or_default() {
+        plan.remove_sheet(name);
+    }
+    for name in remove_ranges.unwrap_or_default() {
+        plan.remove_named_range(name);
+    }
+    for scope in parse(convert_to_values)? {
+        plan.convert_to_values(scope);
+    }
+    for scope in parse(delete_rows)? {
+        plan.delete_rows(scope).map_err(invalid)?;
+    }
+    for scope in parse(delete_columns)? {
+        plan.delete_columns(scope).map_err(invalid)?;
+    }
+    if recalc_on_open {
         plan.recalculate_on_open();
-        Ok(())
-    })
+    }
+    py.detach(|| plan.execute(&input, &output).map_err(to_py_err))
 }
 
 #[pymodule(gil_used = false)]
@@ -539,28 +488,7 @@ mod _sheetrs {
     use pyo3::prelude::*;
 
     #[pymodule_export]
-    use super::SheetrsError;
-
-    #[pymodule]
-    mod linter {
-        #[pymodule_export]
-        use super::super::{PyLinter, PyViolation, lint};
-    }
-
-    #[pymodule]
-    mod stats {
-        #[pymodule_export]
-        use super::super::stats_compute;
-    }
-
-    #[pymodule]
-    mod edit {
-        #[pymodule_export]
-        use super::super::{
-            PyPlan, edit_convert_to_values, edit_delete_columns, edit_delete_rows,
-            edit_recalc_on_open, edit_remove_ranges, edit_remove_sheets,
-        };
-    }
+    use super::{PyEditPlan, PyLinter, PyViolation, SheetrsError, compute_stats, edit, lint};
 
     #[pymodule_init]
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {

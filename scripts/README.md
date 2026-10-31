@@ -124,7 +124,7 @@ version that kept the cells, on the production files (user time, peak RAM):
 The deletion rewrites every sheet, because a formula of any sheet can read what goes; removing a
 sheet does the same now that the references to it become `#REF!`. An XLSX sheet that names none of
 the sheets edited and holds no reference across sheets (`Sheet1:Sheet3!A1`, which spans sheets it
-does not name) is copied as it is after a scan of its text. `delete-rows` and `delete-columns`
+does not name, and which `sheetedit` refuses: #75) is copied as it is after a scan of its text. `delete-rows` and `delete-columns`
 cut `INPUTS`, `delete-rows-columns` adds `--recalc-on-open`, and `structure-plan` removes a sheet
 and a name too. Before this entry `remove-sheets` took 0.00s on the XLSX and 2.38s on the ODS,
 with 5 MB of RAM in both.
@@ -140,10 +140,6 @@ with 5 MB of RAM in both.
 | `delete-columns` | 7.54s | 9 MB | 108.2 G | 6.87s | 8 MB | 113.4 G |
 | `delete-rows-columns` | 7.75s | 9 MB | 112.0 G | 7.30s | 8 MB | 119.6 G |
 | `structure-plan` | 7.73s | 9 MB | 113.4 G | 7.07s | 8 MB | 118.1 G |
-
-On the ODS the sheet names of `content.xml` are read in a second pass only when a 3D reference
-needs them (it spans the sheets between its ends, which can come after the formula), so a
-document without them pays nothing for it.
 
 The peak memory of every scenario is about 9 MB on these production files: the sheets stream, one
 row (ODS) or one cell (XLSX) at a time. A deletion costs about twice the time of `convert-sheet`.

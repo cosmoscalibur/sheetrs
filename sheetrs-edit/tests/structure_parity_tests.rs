@@ -95,15 +95,6 @@ fn rows_deleted_give_what_libreoffice_gives() {
             "SUM(T!B2:D2)",
             "SUM(T!C1:C8)",
             "SUM(T!B:C)",
-            "SUM(T:V!A2:A3)",
-            "SUM(T:V!A1)",
-            "SUM(#REF!)",
-            "SUM(T:V!A6:A8)",
-            "SUM(T:V!B2:D2)",
-            "SUM(U:V!A2:A6)",
-            "SUM(T:U!A3:A7)",
-            "SUM(#REF!)",
-            "SUM(T:V!B1:B8)",
         ]
     );
 }
@@ -139,15 +130,6 @@ fn several_scopes_read_the_rows_of_the_input() {
             "SUM(#REF!)",
             "SUM(T!C1:C7)",
             "SUM(T!B:C)",
-            "SUM(T:V!A2:A3)",
-            "SUM(T:V!A1)",
-            "SUM(T:V!A4:A5)",
-            "SUM(T:V!A6:A6)",
-            "SUM(#REF!)",
-            "SUM(U:V!A2:A6)",
-            "SUM(T:U!A3:A7)",
-            "SUM(T:V!A4:B4)",
-            "SUM(T:V!B1:B7)",
         ]
     );
 }
@@ -159,21 +141,6 @@ fn columns_deleted_give_the_same_in_both_formats() {
         ..Default::default()
     });
     assert_eq!(f[18..21], ["SUM(T!B2:C2)", "SUM(T!B1:B10)", "SUM(T!B:B)"]);
-    // Columns of a sheet of the span change the 3D references that name them.
-    assert_eq!(
-        f[21..],
-        [
-            "SUM(T:V!A2:A4)",
-            "SUM(T:V!A1)",
-            "SUM(T:V!A4:A5)",
-            "SUM(T:V!A6:A8)",
-            "SUM(T:V!B2:C2)",
-            "SUM(U:V!A2:A6)",
-            "SUM(T:U!A3:A9)",
-            "SUM(T:V!A4:A4)",
-            "SUM(#REF!)",
-        ]
-    );
     assert_eq!(f[..4], ["T!A2", "T!A4", "T!A5", "T!A6"]);
 }
 

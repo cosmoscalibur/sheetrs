@@ -540,7 +540,9 @@ what LibreOffice writes:
   An ODS has no shared formulas: each cell holds its own formula, and LibreOffice reads a formula
   cell repeated with `table:number-columns-repeated` as one cell, so no reference is moved.
 * A 3D reference (`Sheet1:Sheet3!A1`) is not evaluated (#75): it is `#REF!` with a diagnostic, where
-  LibreOffice sums, counts and so on across the sheets of the span.
+  LibreOffice sums, counts and so on across the sheets of the span. `sheetedit` does not support
+  them either: it refuses to delete rows or columns or to remove sheets in a workbook that holds one
+  (#75).
 * Tokens that look like a reference past those limits (`XFE1`, `ABCD1`, `A0`, `A1048577`) are names:
   `#NAME?` in a formula, `#REF!` through `INDIRECT`; defined names with those texts are accepted.
   A document has 16,384 columns, 1,048,576 rows and at most 10,000 sheets (what LibreOffice 26.8 accepts, checked by inserting sheets and evaluating references through UNO).

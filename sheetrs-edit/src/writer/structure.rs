@@ -8,7 +8,7 @@
 
 use super::{ValueScope, ValueTarget};
 use anyhow::{Context, Result, bail};
-use sheetrs_formula::edit::{Edit, Workbook};
+use sheetrs_formula::edit::Edit;
 use sheetrs_formula::parse::parse_spanned;
 use std::collections::{HashMap, HashSet};
 
@@ -135,12 +135,20 @@ pub(super) fn shape_depends_on_sizes(sheet: &str) -> anyhow::Error {
     )
 }
 
-/// Reads the names of the sheets of the document at a path, in order.
-pub(crate) type SheetReader = fn(&std::path::Path) -> Result<Vec<String>>;
+/// The error of a command that meets a 3D reference (a span of sheets, `Sheet1:Sheet3!A1`) while it
+/// deletes rows or columns or removes sheets: what the reference becomes is not implemented, and
+/// leaving it as it is would be a wrong formula without a word.
+pub(super) fn three_d_unsupported(formula: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "the formula '{formula}' holds a 3D reference (a span of sheets such as Sheet1:Sheet3!A1), which is not supported yet when rows or columns are deleted or sheets are removed (https://github.com/cosmoscalibur/sheetrs/issues/75)"
+    )
+}
 
 /// Finds, in text read in pieces, a reference across sheets: a `:` followed by a sheet name and
-/// `!` (`Sheet1:Sheet3!A1`, an XLSX) or `.` (`$S.A1:$T.B2`, an ODS). It also matches texts that are
-/// not one (`A1:A5.5`): the cost of that is a formula read that did not need it.
+/// `!` (`Sheet1:Sheet3!A1`, an XLSX) or `.` (`$S.A1:$T.B2`, an ODS), or a quoted sheet name that
+/// holds a `:` (`'Sheet 1:Sheet 3'!A1`). It also matches texts that are not one (`A1:A5.5`): the
+/// cost of that is a formula read that did not need it, where the formula is then refused if it
+/// is one. A part where it finds none is copied without reading, so it must not miss one.
 #[derive(Default)]
 struct SpanScan {
     state: ScanState,
@@ -155,14 +163,32 @@ enum ScanState {
     Name,
     Quoted,
     QuoteEnd,
+    /// Inside a quoted name that has no `:` yet, and one that has.
+    InQuote,
+    InQuoteColon,
+    /// A quote met inside a quoted name that held a `:`: closing it, or the first of a doubled one.
+    QuoteEndColon,
 }
 
 impl SpanScan {
     fn feed(&mut self, bytes: &[u8]) {
-        use ScanState::{AfterColon, Idle, Name, QuoteEnd, Quoted};
+        use ScanState::{
+            AfterColon, Idle, InQuote, InQuoteColon, Name, QuoteEnd, QuoteEndColon, Quoted,
+        };
         let name_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b >= 0x80;
         for &b in bytes {
             self.state = match (self.state, b) {
+                (InQuote, b':') => InQuoteColon,
+                (InQuote, b'\'') => Idle,
+                (InQuote, _) => InQuote,
+                (InQuoteColon, b'\'') => QuoteEndColon,
+                (InQuoteColon, _) => InQuoteColon,
+                (QuoteEndColon, b'\'') => InQuoteColon,
+                (QuoteEndColon, b'!' | b'.') => {
+                    self.found = true;
+                    Idle
+                }
+                (QuoteEndColon, _) => Idle,
                 (Quoted, b'\'') => QuoteEnd,
                 (Quoted, _) => Quoted,
                 (QuoteEnd, b'\'') => Quoted,
@@ -174,6 +200,7 @@ impl SpanScan {
                 (AfterColon, b'$') => AfterColon,
                 (AfterColon, b'\'') => Quoted,
                 (AfterColon | Name, b) if name_byte(b) => Name,
+                (Idle, b'\'') => InQuote,
                 _ => Idle,
             };
         }
@@ -200,11 +227,6 @@ pub(crate) struct StructureEdits {
     rows: HashMap<String, Bands>,
     cols: HashMap<String, Bands>,
     removed_sheets: HashSet<String>,
-    /// The sheets of the workbook in order, which a 3D reference spans, or the error of reading
-    /// them. Read when the first 3D reference needs them if the document does not give them first.
-    order: std::cell::OnceCell<Result<Vec<String>, String>>,
-    /// Where to read the sheets from when a 3D reference needs them.
-    order_source: Option<(std::path::PathBuf, SheetReader)>,
     /// Finds the name of an edited or removed sheet in a formula, to tell a formula of another
     /// sheet that cannot change from one that can. `None` when a name is not ASCII (its case
     /// would need more than this) or there is none.
@@ -212,10 +234,8 @@ pub(crate) struct StructureEdits {
 }
 
 impl StructureEdits {
-    /// The plan of a command. A scope on a sheet the workbook does not have is an error. A deletion
-    /// in a sheet that the command also removes is kept: it still moves the rows or columns that a
-    /// reference across sheets spanning that sheet addresses, as it would if the deletion were done
-    /// first and the sheet removed afterwards.
+    /// The plan of a command. A scope on a removed sheet is dropped with its sheet; a scope on a
+    /// sheet the workbook does not have is an error.
     pub fn new(
         sheets: Option<&[String]>,
         removed_sheets: &HashSet<String>,
@@ -233,6 +253,9 @@ impl StructureEdits {
                         .with_context(|| format!("Sheet '{}' not found", scope.sheet))?,
                     None => &scope.sheet,
                 };
+                if removed_sheets.contains(name) {
+                    continue;
+                }
                 match (scope.target, want_rows) {
                     (ValueTarget::Rows(first, last), true) => {
                         rows.entry(name.clone()).or_default().push((first, last));
@@ -264,40 +287,8 @@ impl StructureEdits {
             rows,
             cols,
             removed_sheets: removed_sheets.clone(),
-            order: sheets
-                .map(|sheets| std::cell::OnceCell::from(Ok(sheets.to_vec())))
-                .unwrap_or_default(),
-            order_source: None,
             mentions,
         })
-    }
-
-    /// The plan with the sheets of the workbook in order.
-    #[cfg(test)]
-    pub fn with_order(mut self, order: Vec<String>) -> Self {
-        self.order = std::cell::OnceCell::from(Ok(order));
-        self
-    }
-
-    /// The plan reading the sheets of the document at `path` with `read` when a 3D reference
-    /// needs them: a document that holds them after the formulas that name them.
-    pub fn with_order_source(mut self, path: std::path::PathBuf, read: SheetReader) -> Self {
-        self.order_source = Some((path, read));
-        self
-    }
-
-    /// The sheets of the workbook in order; none when they cannot be read (see `order_error`).
-    fn order(&self) -> &[String] {
-        let order = self.order.get_or_init(|| match &self.order_source {
-            Some((path, read)) => read(path).map_err(|e| format!("{e:#}")),
-            None => Ok(Vec::new()),
-        });
-        order.as_deref().unwrap_or_default()
-    }
-
-    /// Why the sheets could not be read, when a 3D reference needed them.
-    pub fn order_error(&self) -> Option<&str> {
-        self.order.get()?.as_ref().err().map(String::as_str)
     }
 
     /// Whether the command moves or deletes any cell or reference.
@@ -369,49 +360,46 @@ impl StructureEdits {
     }
 
     /// The edits to apply to a formula, in the canonical order of the plan: what the command
-    /// gives is what these edits give one after the other, so it does not depend on the order in
-    /// which the operations were written, on a hash order or on the sheet they belong to.
+    /// gives is what these edits give one after the other, whatever the order the operations were
+    /// written in and whatever a hash order would have been.
     ///
-    /// Every position is one of the input file, and the order keeps it valid: the rows deleted
-    /// anywhere come from the last to the first (a deletion shifts only what is below it, so the
-    /// positions of the next one, above, are as they were), then the columns the same way, and the
-    /// sheets removed last, so that a deletion in a sheet that goes still shapes the references
-    /// that span it. Bands that start at the same row or column go by sheet name.
+    /// Within a sheet, the rows deleted come from the last band to the first (a deletion shifts
+    /// only what is below it, so the positions of the next one, above, are as they were), then
+    /// the columns the same way. The sheets removed come last. Edits of different sheets do not
+    /// depend on each other, because a reference moves only with the rows and columns of the sheet
+    /// it names (a reference that spans sheets would tie them, and is refused), so the order
+    /// between sheets is free; they go by name, only so that it is always the same.
     pub fn edits(&self) -> Vec<Edit<'_>> {
-        let mut rows: Vec<(u32, u32, &str)> = Vec::new();
-        for (sheet, bands) in &self.rows {
-            rows.extend(
-                bands
-                    .last_first()
-                    .map(|(at, count)| (at, count, sheet.as_str())),
-            );
-        }
-        let mut cols: Vec<(u32, u32, &str)> = Vec::new();
-        for (sheet, bands) in &self.cols {
-            cols.extend(
-                bands
-                    .last_first()
-                    .map(|(at, count)| (at, count, sheet.as_str())),
-            );
-        }
-        let last_first =
-            |a: &(u32, u32, &str), b: &(u32, u32, &str)| b.0.cmp(&a.0).then_with(|| a.2.cmp(b.2));
-        rows.sort_by(last_first);
-        cols.sort_by(last_first);
+        let mut sheets: Vec<&str> = self
+            .rows
+            .keys()
+            .chain(self.cols.keys())
+            .map(String::as_str)
+            .collect();
+        sheets.sort_unstable();
+        sheets.dedup();
         let mut removed: Vec<&str> = self.removed_sheets.iter().map(String::as_str).collect();
         removed.sort_unstable();
 
         let mut edits = Vec::new();
-        edits.extend(rows.into_iter().map(|(at, count, sheet)| Edit::DeleteRows {
-            sheet,
-            at,
-            count,
-        }));
-        edits.extend(cols.into_iter().map(|(at, count, sheet)| Edit::DeleteCols {
-            sheet,
-            at,
-            count,
-        }));
+        for &sheet in &sheets {
+            if let Some(bands) = self.rows.get(sheet) {
+                edits.extend(bands.last_first().map(|(at, count)| Edit::DeleteRows {
+                    sheet,
+                    at,
+                    count,
+                }));
+            }
+        }
+        for &sheet in &sheets {
+            if let Some(bands) = self.cols.get(sheet) {
+                edits.extend(bands.last_first().map(|(at, count)| Edit::DeleteCols {
+                    sheet,
+                    at,
+                    count,
+                }));
+            }
+        }
         edits.extend(removed.into_iter().map(|sheet| Edit::DeleteSheet { sheet }));
         edits
     }
@@ -426,25 +414,10 @@ impl StructureEdits {
     ) -> Result<Option<String>> {
         let formula =
             parse_spanned(source).map_err(|e| anyhow::anyhow!("cannot read '{source}': {e}"))?;
-        let removed = |name: &str| self.removed_sheets.contains(name);
-        let book = Workbook {
-            order: self.order(),
-            removed: &removed,
-        };
-        Ok(formula.rewrite_all(edits, home_sheet, Some(&book)))
-    }
-
-    /// Whether the command removes the sheet.
-    pub fn removes_sheet(&self, name: &str) -> bool {
-        self.removed_sheets.contains(name)
-    }
-
-    /// The sheets of the workbook in order, for 3D references; `removed` tells the removed ones.
-    pub fn workbook<'a>(&'a self, removed: &'a dyn Fn(&str) -> bool) -> Workbook<'a> {
-        Workbook {
-            order: self.order(),
-            removed,
+        if formula.has_three_d() {
+            return Err(three_d_unsupported(source));
         }
+        Ok(formula.rewrite_all(edits, home_sheet))
     }
 
     /// The range `r0..=r1` by `c0..=c1` of `sheet` once the plan is applied, `None` when no cell
@@ -501,5 +474,31 @@ mod tests {
         assert_eq!(bands.span(4, 5), Some((3, 3)));
         assert_eq!(bands.span(5, 6), Some((3, 4)));
         assert_eq!(Bands::new(vec![(0, 2)]).span(0, 1), None);
+    }
+}
+
+#[cfg(test)]
+mod span_scan_tests {
+    use super::SpanScan;
+
+    fn found(text: &str) -> bool {
+        let mut scan = SpanScan::default();
+        // Fed in two pieces, as a reader gives it.
+        let (a, b) = text.as_bytes().split_at(text.len() / 2);
+        scan.feed(a);
+        scan.feed(b);
+        scan.found
+    }
+
+    #[test]
+    fn a_span_of_sheets_is_found_however_it_is_written() {
+        assert!(found("SUM(Alpha:Gamma!A2:A5)"));
+        assert!(found("SUM('Alpha 1':'Gamma 3'!A2)"));
+        assert!(found("SUM('Alpha 1:Gamma 3'!A2:A5)"));
+        assert!(found("SUM('It''s:Gamma 3'!A2)"));
+        assert!(found("SUM([$Alpha.A1:$Gamma.B2])"));
+        assert!(!found("SUM('Alpha 1'!A2:A5)+B1:B2"));
+        assert!(!found("SUM(Alpha!A2:A5)"));
+        assert!(!found("\"a:b\""));
     }
 }

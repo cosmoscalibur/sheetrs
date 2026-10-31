@@ -2,7 +2,8 @@
 """Writes sheetrs-edit/tests/assets/structure/book.{xlsx,ods}: the workbook that the tests of rows,
 columns, sheets and names deleted (`sheetrs-edit/tests/structure_*`) start from, built by LibreOffice.
 
-Sheets `U` and `V`, after `T`, hold numbers in A1:B10 for the 3D references of `F`.
+Sheets `U` and `V`, after `T`, hold numbers in A1:B10, so that a plan can edit several sheets.
+There is no 3D reference (`Sheet1:Sheet3!A1`): `sheetedit` does not support them yet (issue #75).
 Sheet `T` holds numbers in A1:B10 and formulas in C1:C10 over its own cells (alternating patterns); sheet `F` holds the
 formulas that read `T` (one reference form per row of the table in `F_FORMULAS`); the names are
 `NameOne`, `NameTwo`, `NameThree` and `Gone`; `T!A7:B8` is merged; `T` has notes on B3, B5, B6 and B7,
@@ -22,10 +23,6 @@ F_FORMULAS = [
     "=SUM($T.A4:A8)", "=SUM($T.A2:A8)", "=SUM($T.A5:A6)", "=SUM($T.A:A)", "=SUM($T.4:5)",
     "=SUM($T.3:6)", "=SUM($T.1:3)", "=$T.$A$6", "=SUM($T.A6:B7)", "=NameOne+1", "=NameTwo",
     "=SUM($T.B2:D2)", "=SUM($T.C1:C10)", "=SUM($T.B:C)",
-    # 3D references over `T`, `U` and `V`, in that order.
-    "=SUM($T.A2:$V.A4)", "=SUM($T.A1:$V.A1)", "=SUM($T.A4:$V.A5)", "=SUM($T.A6:$V.A8)",
-    "=SUM($T.B2:$V.D2)", "=SUM($U.A2:$V.A6)", "=SUM($T.A3:$U.A9)",
-    "=SUM($T.A4:$V.B4)", "=SUM($T.B1:$V.B10)",
 ]
 
 

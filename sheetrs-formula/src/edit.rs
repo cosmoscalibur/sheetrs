@@ -6,7 +6,6 @@
 //! shrinks or grows around
 //! the edit; absolute markers are irrelevant (both kinds move).
 
-use crate::addr::needs_quotes;
 use crate::addr::{MAX_COLS, MAX_ROWS, same_name};
 use crate::ast::{BinOp, Expr, RefArea, Reference};
 use crate::print::sheet_text;
@@ -214,145 +213,6 @@ fn replace(e: &mut Expr, r: Reference, s: Shift, rows: bool, target: &str) -> bo
     }
 }
 
-/// The sheets of a workbook, in order: the span of a 3D reference (`Sheet1:Sheet3!A1`) is
-/// the sheets between its two ends.
-#[derive(Clone, Copy)]
-pub struct Workbook<'a> {
-    pub order: &'a [String],
-    /// Whether the sheet is one the command removes.
-    pub removed: &'a dyn Fn(&str) -> bool,
-}
-
-impl Workbook<'_> {
-    fn position(&self, name: &str) -> Option<usize> {
-        self.order.iter().position(|s| same_name(s, name))
-    }
-}
-
-/// What a 3D reference becomes after an edit.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ThreeD {
-    Same,
-    /// The cells it names are gone.
-    CellsGone,
-    /// Every sheet of its span is gone.
-    SheetsGone,
-    Now {
-        first: String,
-        last: String,
-        area: RefArea,
-    },
-}
-
-/// The bounds of `area` along rows (or columns), `None` when it does not extend along that axis.
-fn bounds(area: &RefArea, rows: bool) -> Option<(u32, u32)> {
-    let (x, y) = match *area {
-        RefArea::Cell(c) => (
-            if rows { c.row } else { c.col },
-            if rows { c.row } else { c.col },
-        ),
-        RefArea::Range(a, b) if rows => (a.row, b.row),
-        RefArea::Range(a, b) => (a.col, b.col),
-        RefArea::Rows(a, b) if rows => (a.row, b.row),
-        RefArea::Cols(a, b) if !rows => (a.col, b.col),
-        _ => return None,
-    };
-    Some((x.min(y), x.max(y)))
-}
-
-/// The 3D reference `first:last!area` after `edit`, as LibreOffice does it:
-///
-/// - Rows or columns deleted on a sheet of the span change the reference only if they touch the
-///   rows or columns it names; deleted ones before it do not move it. Otherwise the reference
-///   follows the edit as a reference to one sheet does. A sheet outside the span changes nothing.
-/// - A removed sheet at an end of the span leaves the span to the next kept sheet; one in the
-///   middle changes nothing; the span of removed sheets only is gone.
-///
-/// The renaming of a sheet renames the end of the span that has its name. Insertions are not
-/// applied to a 3D reference: no tool of this workspace inserts rows or columns.
-pub fn apply_three_d(
-    first: &str,
-    last: &str,
-    area: &RefArea,
-    edit: &Edit<'_>,
-    book: &Workbook<'_>,
-) -> ThreeD {
-    let (Some(a), Some(b)) = (book.position(first), book.position(last)) else {
-        return ThreeD::Same;
-    };
-    let (a, b) = (a.min(b), a.max(b));
-    let (sheet, shift, rows) = match *edit {
-        Edit::DeleteRows { sheet, at, count } => (sheet, Shift::Delete { at, count }, true),
-        Edit::DeleteCols { sheet, at, count } => (sheet, Shift::Delete { at, count }, false),
-        Edit::DeleteSheet { sheet } => {
-            if !book.position(sheet).is_some_and(|x| x == a || x == b) {
-                return ThreeD::Same;
-            }
-            let kept: Vec<&String> = book.order[a..=b]
-                .iter()
-                .filter(|name| !(book.removed)(name))
-                .collect();
-            return match (kept.first(), kept.last()) {
-                (Some(f), Some(l)) => ThreeD::Now {
-                    first: (*f).clone(),
-                    last: (*l).clone(),
-                    area: *area,
-                },
-                _ => ThreeD::SheetsGone,
-            };
-        }
-        Edit::RenameSheet { from, to } => {
-            let renamed = |name: &str| if same_name(name, from) { to } else { name }.to_string();
-            return if same_name(first, from) || same_name(last, from) {
-                ThreeD::Now {
-                    first: renamed(first),
-                    last: renamed(last),
-                    area: *area,
-                }
-            } else {
-                ThreeD::Same
-            };
-        }
-        _ => return ThreeD::Same,
-    };
-    if !book.position(sheet).is_some_and(|x| (a..=b).contains(&x)) {
-        return ThreeD::Same;
-    }
-    let Shift::Delete { at, count } = shift else {
-        return ThreeD::Same;
-    };
-    let Some((lo, hi)) = bounds(area, rows) else {
-        return ThreeD::Same;
-    };
-    if hi < at || lo >= at + count {
-        return ThreeD::Same;
-    }
-    match shift_area(area, shift, rows) {
-        Some(new) if new == *area => ThreeD::Same,
-        Some(area) => ThreeD::Now {
-            first: first.to_string(),
-            last: last.to_string(),
-            area,
-        },
-        None => ThreeD::CellsGone,
-    }
-}
-
-/// The qualifier of a 3D reference as it is written before `!`.
-fn three_d_sheets(first: &str, last: &str) -> String {
-    if same_name(first, last) {
-        sheet_text(first)
-    } else if needs_quotes(first) || needs_quotes(last) {
-        format!(
-            "'{}:{}'",
-            first.replace('\'', "''"),
-            last.replace('\'', "''")
-        )
-    } else {
-        format!("{first}:{last}")
-    }
-}
-
 impl crate::parse::Formula {
     /// The formula text after `edit`, or `None` when it does not change.
     ///
@@ -360,7 +220,7 @@ impl crate::parse::Formula {
     /// function-name spelling and everything else in the source stay exactly as
     /// written.
     pub fn rewrite(&self, edit: &Edit<'_>, home_sheet: &str) -> Option<String> {
-        self.rewrite_all(std::slice::from_ref(edit), home_sheet, None)
+        self.rewrite_all(std::slice::from_ref(edit), home_sheet)
     }
 
     /// The formula text after every edit of `edits`, applied to each reference in order, or
@@ -368,73 +228,25 @@ impl crate::parse::Formula {
     /// now: to apply several deletions of one sheet at once, list them from the last row (or
     /// column) to the first, so each leaves the positions of the next one as they were.
     ///
-    /// With the sheets of the `book`, a 3D reference follows the rules of [`apply_three_d`].
-    /// Without them 3D references are not recognised: the last reference of one is read as a
-    /// reference to its own sheet.
-    pub fn rewrite_all(
-        &self,
-        edits: &[Edit<'_>],
-        home_sheet: &str,
-        book: Option<&Workbook<'_>>,
-    ) -> Option<String> {
+    ///
+    /// A 3D reference (`Sheet1:Sheet3!A1`) is not understood: see [`crate::parse::Formula::has_three_d`], which
+    /// a caller that cannot accept one asks first.
+    pub fn rewrite_all(&self, edits: &[Edit<'_>], home_sheet: &str) -> Option<String> {
         let refs = self.expr.references();
-        let three_d = book.map(|book| self.three_d_ends(book)).unwrap_or_default();
         let mut out = String::with_capacity(self.source.len());
         let mut last = 0;
         let mut changed = false;
-        for (i, (r, span)) in refs.into_iter().zip(&self.ref_spans).enumerate() {
-            let three = three_d.iter().find(|(at, ..)| *at == i);
-            let (start, replacement) = match (three, book) {
-                (Some((_, first, last_sheet, from)), Some(book)) => {
-                    let (mut f, mut l, mut area) = (first.clone(), last_sheet.clone(), r.area);
-                    let mut now = ThreeD::Same;
-                    for edit in edits {
-                        match apply_three_d(&f, &l, &area, edit, book) {
-                            ThreeD::Same => {}
-                            ThreeD::Now {
-                                first,
-                                last,
-                                area: moved,
-                            } => {
-                                (f, l, area) = (first, last, moved);
-                                now = ThreeD::Now {
-                                    first: f.clone(),
-                                    last: l.clone(),
-                                    area,
-                                };
-                            }
-                            gone => {
-                                now = gone;
-                                break;
-                            }
-                        }
-                    }
-                    let text = match now {
-                        ThreeD::Same => continue,
-                        ThreeD::CellsGone => format!("{}!#REF!", sheet_text(&f)),
-                        ThreeD::SheetsGone => "#REF!".to_string(),
-                        ThreeD::Now { first, last, area } => format!(
-                            "{}!{}",
-                            three_d_sheets(&first, &last),
-                            Reference { sheet: None, area }
-                        ),
-                    };
-                    (*from, text)
-                }
-                _ => {
-                    let mut node = Expr::Ref(r.clone());
-                    let mut touched = false;
-                    for edit in edits {
-                        touched |= apply(&mut node, edit, home_sheet);
-                    }
-                    if !touched {
-                        continue;
-                    }
-                    (span.start, node.to_string())
-                }
-            };
-            out.push_str(&self.source[last..start]);
-            out.push_str(&replacement);
+        for (r, span) in refs.into_iter().zip(&self.ref_spans) {
+            let mut node = Expr::Ref(r.clone());
+            let mut touched = false;
+            for edit in edits {
+                touched |= apply(&mut node, edit, home_sheet);
+            }
+            if !touched {
+                continue;
+            }
+            out.push_str(&self.source[last..span.start]);
+            out.push_str(&node.to_string());
             last = span.end;
             changed = true;
         }
@@ -442,37 +254,27 @@ impl crate::parse::Formula {
         changed.then_some(out)
     }
 
-    /// The 3D references of the formula: the index in [`Expr::references`] of the reference that
-    /// ends each (`Sheet1:Sheet3!A1` reads as the name `Sheet1` and the reference `Sheet3!A1`, a
-    /// quoted `'Sheet 1:Sheet 3'!A1` as one sheet), their first and last sheet, and where their
-    /// text starts.
-    fn three_d_ends(&self, book: &Workbook<'_>) -> Vec<(usize, String, String, usize)> {
-        let refs = self.expr.references();
-        let mut ends = Vec::new();
-        let mut named: Vec<(*const Reference, String)> = Vec::new();
-        self.expr.walk(&mut |e| {
-            if let Expr::Binary(BinOp::Range, a, b) = e
-                && let (Expr::Name(first), Expr::Ref(r)) = (&**a, &**b)
-                && r.sheet.is_some()
-                && book.position(first).is_some()
+    /// Whether the formula holds a 3D reference, one that spans sheets (`Sheet1:Sheet3!A1`, or
+    /// `'Sheet 1:Sheet 3'!A1`). Editing rows, columns or sheets under such a reference is not
+    /// supported (issue #75): the edits here read it as a reference to a single sheet, which is
+    /// wrong, so whoever applies them refuses a formula for which this is `true`.
+    ///
+    /// `Name:Sheet!A1` also reads as one: the AST of a range between a name and a sheet-qualified
+    /// cell is the same as that of a span, and a name cannot be told from a sheet here.
+    pub fn has_three_d(&self) -> bool {
+        let mut found = false;
+        self.expr.walk(&mut |e| match e {
+            Expr::Binary(BinOp::Range, a, b)
+                if matches!((&**a, &**b), (Expr::Name(_), Expr::Ref(r)) if r.sheet.is_some()) =>
             {
-                named.push((r, first.clone()));
+                found = true;
             }
+            Expr::Ref(r) if r.sheet.as_deref().is_some_and(|sheet| sheet.contains(':')) => {
+                found = true;
+            }
+            _ => {}
         });
-        for (i, (r, span)) in refs.into_iter().zip(&self.ref_spans).enumerate() {
-            if let Some((_, first)) = named.iter().find(|(p, _)| std::ptr::eq(*p, r)) {
-                let prefix = format!("{first}:");
-                let from = span.start.checked_sub(prefix.len());
-                if let (Some(from), Some(last)) = (from, &r.sheet)
-                    && self.source.get(from..span.start) == Some(prefix.as_str())
-                {
-                    ends.push((i, first.clone(), last.clone(), from));
-                }
-            } else if let Some((first, last)) = r.sheet.as_deref().and_then(|s| s.split_once(':')) {
-                ends.push((i, first.to_string(), last.to_string(), span.start));
-            }
-        }
-        ends
+        found
     }
 }
 
@@ -635,7 +437,7 @@ mod tests {
                     count,
                 })
                 .collect();
-            parse_spanned(f).unwrap().rewrite_all(&edits, "S", None)
+            parse_spanned(f).unwrap().rewrite_all(&edits, "S")
         };
         // Rows 2-3 and 6 deleted (1-based 3-4 and 7): A5 moves up two, A8 up three.
         assert_eq!(
@@ -649,108 +451,18 @@ mod tests {
         assert_eq!(rows("=A1+A2", &[(2, 2)]), None);
     }
 
-    /// The sheets `Alpha` to `Delta`, in that order (names that no cell has); `removed` are the ones the command removes.
-    fn three_d(formula: &str, edits: &[Edit<'_>], removed: &[&str]) -> Option<String> {
+    #[test]
+    fn a_span_of_sheets_is_a_3d_reference_and_a_single_sheet_is_not() {
         use crate::parse::parse_spanned;
-        let order: Vec<String> = ["Alpha", "Beta", "Gamma", "Delta"]
-            .map(String::from)
-            .to_vec();
-        let removes = |name: &str| removed.contains(&name);
-        let book = Workbook {
-            order: &order,
-            removed: &removes,
-        };
-        parse_spanned(formula)
-            .unwrap()
-            .rewrite_all(edits, "F", Some(&book))
-    }
-
-    fn rows_of(sheet: &'static str, at: u32, count: u32) -> Edit<'static> {
-        Edit::DeleteRows { sheet, at, count }
-    }
-
-    /// What LibreOffice 26.8 gave (`sheetrs-edit/scripts/compare_structure_with_libreoffice.py`).
-    #[test]
-    fn a_3d_reference_changes_only_where_the_deletion_touches_it() {
-        // A deletion before what it names, in a sheet of the span or out of it, changes nothing.
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A3:A5)", &[rows_of("Beta", 0, 2)], &[]),
-            None
-        );
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A3:A5)", &[rows_of("Delta", 2, 1)], &[]),
-            None
-        );
-        // One that touches it shrinks it, wherever the sheet is in the span.
-        for sheet in ["Alpha", "Beta", "Gamma"] {
-            assert_eq!(
-                three_d("=SUM(Alpha:Gamma!A3:A5)", &[rows_of(sheet, 3, 1)], &[]).as_deref(),
-                Some("=SUM(Alpha:Gamma!A3:A4)"),
-                "{sheet}"
-            );
-        }
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A3)", &[rows_of("Beta", 2, 1)], &[]).as_deref(),
-            Some("=SUM(Alpha!#REF!)")
-        );
-        // A whole column does not move when rows go.
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A:A)", &[rows_of("Beta", 2, 1)], &[]),
-            None
-        );
-    }
-
-    #[test]
-    fn a_removed_sheet_of_a_3d_span_passes_the_end_on() {
-        let gone = |sheet| [Edit::DeleteSheet { sheet }];
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A1)", &gone("Alpha"), &["Alpha"]).as_deref(),
-            Some("=SUM(Beta:Gamma!A1)")
-        );
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A1)", &gone("Gamma"), &["Gamma"]).as_deref(),
-            Some("=SUM(Alpha:Beta!A1)")
-        );
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A1)", &gone("Beta"), &["Beta"]),
-            None
-        );
-        assert_eq!(
-            three_d("=SUM(Alpha:Beta!A1)", &gone("Alpha"), &["Alpha"]).as_deref(),
-            Some("=SUM(Beta!A1)")
-        );
-        // Every sheet of the span goes, one after the other.
-        let both = [
-            Edit::DeleteSheet { sheet: "Alpha" },
-            Edit::DeleteSheet { sheet: "Beta" },
-        ];
-        assert_eq!(
-            three_d("=SUM(Alpha:Beta!A1)", &both, &["Alpha", "Beta"]).as_deref(),
-            Some("=SUM(#REF!)")
-        );
-        // The end that moved is the one the next edit reads, and the one a lost cell names.
-        let edits = [Edit::DeleteSheet { sheet: "Alpha" }, rows_of("Beta", 3, 1)];
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A2:A5)", &edits, &["Alpha"]).as_deref(),
-            Some("=SUM(Beta:Gamma!A2:A4)")
-        );
-        let edits = [Edit::DeleteSheet { sheet: "Alpha" }, rows_of("Beta", 2, 1)];
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A3)", &edits, &["Alpha"]).as_deref(),
-            Some("=SUM(Beta!#REF!)")
-        );
-    }
-
-    #[test]
-    fn a_renamed_sheet_renames_the_end_of_a_3d_span() {
-        let rename = [Edit::RenameSheet {
-            from: "gamma",
-            to: "Last one",
-        }];
-        assert_eq!(
-            three_d("=SUM(Alpha:Gamma!A1)", &rename, &[]).as_deref(),
-            Some("=SUM('Alpha:Last one'!A1)")
-        );
+        let three_d = |f: &str| parse_spanned(f).unwrap().has_three_d();
+        assert!(three_d("=SUM(Alpha:Gamma!A3:A5)"));
+        assert!(three_d("=SUM(Alpha:Gamma!A1)"));
+        assert!(three_d("=1+SUM(Alpha:Gamma!A:A)"));
+        assert!(three_d("=SUM('Alpha 1:Gamma 3'!A1)"));
+        assert!(!three_d("=SUM(Alpha!A3:A5)"));
+        assert!(!three_d("=SUM(Alpha!A3:Alpha!A5)"));
+        assert!(!three_d("=A1:B2+Alpha!C3"));
+        assert!(!three_d("=SUM(A1:A5)"));
     }
 
     #[test]

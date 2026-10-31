@@ -102,9 +102,8 @@ pub fn lint_workbook_records(
 /// structured counterpart of [`get_workbook_stats`]. `total_file_size` is 0: bytes carry no size.
 #[wasm_bindgen]
 pub fn workbook_stats(file_data: &[u8], extension: &str) -> Result<JsValue, JsValue> {
-    let stats =
-        sheetrs_stats::stats::WorkbookStats::from_reader(Cursor::new(file_data), Some(extension))
-            .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
+    let stats = sheetrs_stats::WorkbookStats::from_reader(Cursor::new(file_data), Some(extension))
+        .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
     serde_wasm_bindgen::to_value(&stats)
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
 }

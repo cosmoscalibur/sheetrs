@@ -5,7 +5,7 @@
 //! their values, rows and columns deleted), without rewriting what it does not change.
 //! [`EditPlan`] collects the operations to run on one workbook and applies them in a single pass.
 
-pub mod plan;
+mod plan;
 pub mod writer;
 
 pub use plan::{EditPlan, Operation};

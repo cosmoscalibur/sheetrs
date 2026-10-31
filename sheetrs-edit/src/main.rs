@@ -119,46 +119,18 @@ fn main() -> Result<()> {
     if cli.recalc_on_open {
         plan.recalculate_on_open();
     }
-    let mods = plan.to_modifications();
-
     if cli.dry_run {
-        println!("[DRY RUN] Operations on '{}':", cli.file.display());
-        if let Some(sheets) = &mods.remove_sheets {
-            println!("  Removing sheets:");
-            for s in sheets {
-                println!("    - {s}");
-            }
-        }
-        if let Some(ranges) = &mods.remove_named_ranges {
-            println!("  Removing named ranges:");
-            for r in ranges {
-                println!("    - {r}");
-            }
-        }
-        if !mods.convert_to_values.is_empty() {
-            println!("  Converting formulas to values:");
-            for scope in &mods.convert_to_values {
-                println!("    - {scope}");
-            }
-        }
-        for (what, scopes) in [
-            ("rows", &mods.delete_rows),
-            ("columns", &mods.delete_columns),
-        ] {
-            if !scopes.is_empty() {
-                println!("  Deleting {what}:");
-                for scope in scopes {
-                    println!("    - {scope}");
-                }
-            }
-        }
-        if mods.recalculate_on_open {
-            println!("  Marking the output to be recalculated when it is opened");
+        println!(
+            "[DRY RUN] Operations on '{}', in the order they are applied:",
+            cli.file.display()
+        );
+        for operation in plan.operations() {
+            println!("  - {operation}");
         }
         println!("\nOutput would be: {}", output_path.display());
     } else {
         println!("Modifying '{}'...", cli.file.display());
-        writer::modify_workbook(&cli.file, &output_path, &mods)
+        plan.execute(&cli.file, &output_path)
             .with_context(|| "Failed to modify workbook")?;
 
         println!("✓ Successfully modified workbook");

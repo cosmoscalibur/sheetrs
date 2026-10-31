@@ -23,7 +23,7 @@ sheetstats <FILE> [OPTIONS]
 The crate is also a library, used by the Python and WASM bindings:
 
 ```rust
-let stats = sheetrs_stats::stats::WorkbookStats::from_path("book.xlsx")?;
+let stats = sheetrs_stats::WorkbookStats::from_path("book.xlsx")?;
 println!("{} formulas in {} sheets", stats.total_formulas, stats.total_sheets);
 ```
 

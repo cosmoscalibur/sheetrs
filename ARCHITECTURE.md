@@ -147,19 +147,24 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
     formulas to values, deleting rows and columns) without fully rewriting the file.
   - `ValueScope` selects the cells to convert (a sheet, columns or rows) independently of the
     file format.
-  - `plan`: `EditPlan` and `Operation`, the operations on one workbook collected one at a time,
-    each written against the input workbook, and **resolved** into a canonical order
-    (`schedule`: conversions first, rows then columns deleted from the last to the first across
-    all sheets, names, sheets last) that the writer applies in a single pass. The order is defined
-    once, in `StructureEdits::edits`, and `schedule` is derived from it; a test checks that the
-    single pass equals the schedule one operation per pass, for any order the operations were
-    written in. `sheetedit` and the bindings build their runs with it.
+  - `EditPlan` and `Operation` (module `plan`, exported at the crate root): the operations on one
+    workbook collected one at a time, each written against the input workbook. `operations()` is
+    the plan **resolved** into the canonical order the writer applies in a single pass:
+    conversions first, then, in each sheet, rows and columns deleted from the last to the first,
+    then names, then sheets. The order is defined once, in `StructureEdits::edits`, and
+    `operations()` is read from it; a test checks that the single pass equals those operations one
+    per pass, for any order they were written in. Operations on different sheets are independent
+    (a reference moves only with the sheet it names), so no order between sheets is needed. A
+    reference that spans sheets would tie them, and is refused (issue #75). `sheetedit` and the
+    bindings build their runs with it.
+  - The writer streams: each worksheet is read and written event by event, and the plan is a few
+    bands and names, so memory does not depend on the size of the workbook.
   - `main.rs` handles arguments.
 
 ## 3. Bindings
 
 The bindings are adapters: they convert arguments and results and hold no analysis logic. What
-they present comes from the tool libraries (`sheetrs_linter::report`, `sheetrs_stats::stats`,
+they present comes from the tool libraries (`sheetrs_linter::report`, `sheetrs_stats`,
 `sheetrs_edit::writer`), so every surface reports the same findings. The API of a binding is
 organized by tool, as the crates are: the rules are a part of the linter, so they are offered
 next to `lint`, not as a separate service.
@@ -167,15 +172,13 @@ next to `lint`, not as a separate service.
 - **`sheetrs-wasm`** (`cdylib`, wasm-bindgen): bytes in, structured values (`lint_workbook_records`,
   `lint_rules`, `workbook_stats`) or the human text report out. Packaged for npm by
   `scripts/package-wasm.sh` (`wasm-bindgen --target web`, template in `sheetrs-wasm/npm`).
-- **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs` with one
-  submodule per tool (`sheetrs.linter.Linter`, `sheetrs.stats.compute`, `sheetrs.edit`)
-  plus the `python/sheetrs` package (type stubs). `edit` has two modes over the same
-  `EditPlan`: lazy (`Plan`: a plan resolved into a canonical order, applied in one pass on `save`)
-  and eager (a function per operation, one pass each, addressing the previous output). The functions take a
-  path or bytes and release the GIL while they work. It is built by maturin, which enables the
-  `extension-module` feature; the crate has no Rust test harness (it would have to link
-  libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding crate is published to
-  crates.io.
+- **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs`, re-exported flat
+  by the `python/sheetrs` package (type stubs): `Linter`/`lint`, `stats`, `EditPlan`/`edit`. There
+  is no module per tool: each tool is one class or function (`EditPlan` is the lazy form and `edit`
+  the eager one of the same `sheetrs_edit::EditPlan`). The functions take a path or bytes and
+  release the GIL while they work. It is built by maturin, which enables the `extension-module`
+  feature; the crate has no Rust test harness (it would have to link libpython), its tests are
+  `sheetrs-py/tests` (pytest). Neither binding crate is published to crates.io.
 
 ## Design Principles
 

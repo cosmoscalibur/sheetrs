@@ -247,7 +247,7 @@ over those libraries. Where code lives follows who uses it (see `ARCHITECTURE.md
 - `sheetrs-linter`: `rules` (`WalkerRule`, the registry and the catalog), `config`, `violation`,
   `report` (`group_by_scope`, `ViolationRecord`), `Linter`.
 - `sheetrs-stats`: `stats` (`WorkbookStats`).
-- `sheetrs-edit`: `plan` (`EditPlan`, `Operation`: operations written against the input, resolved into a canonical order and applied in one pass), `writer` (`WorkbookModifications`, `ValueScope`, `modify_workbook`).
+- `sheetrs-edit`: `plan` (`EditPlan`, `Operation`: operations written against the input, resolved by `operations()` into a canonical order and applied in one pass), `writer` (`WorkbookModifications`, `ValueScope`, `modify_workbook`).
 
 Keep logic in the libraries and out of the executables and the bindings (`sheetrs-wasm`,
 `sheetrs-py`): an adapter converts arguments and results and nothing else, and what two adapters

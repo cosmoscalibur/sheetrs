@@ -49,28 +49,45 @@ it.
 #### How the operations of one command are planned
 
 Every operation is written against the **input** file, and the order in which they are given
-changes nothing. Run one after another as written they would not mean that: a deletion shifts every
-position below it, a formula converted after the cells it reads were deleted has lost its result,
-and a reference across sheets shrinks by the deletions of every sheet in the order they happen. So
-the command is resolved once into a canonical order, which is the only one the result is defined
-by and which is applied in a single pass:
+changes nothing. Run one after another as written they would not mean that: a deletion shifts
+every position below it, and a formula converted after the cells it reads were deleted has lost
+its result. So the command is resolved once into a canonical order, which is the only one the
+result is defined by and which is applied in a single pass:
 
 1. formulas converted to values, while every cached result is still there (a conversion on a sheet
    that is removed goes with it);
-2. rows deleted, in every sheet, **from the last to the first**, overlapping or touching ranges
+2. in each sheet, rows deleted **from the last to the first**, overlapping or touching ranges
    merged, so a deletion shifts only what is below it and the next one is still at the position the
    input gives it;
-3. columns deleted the same way;
+3. in each sheet, columns deleted the same way;
 4. named ranges removed;
-5. sheets removed, last: a deletion in a sheet that is removed still shapes the references that
-   span it, as if it had been made before the sheet went;
+5. sheets removed (the deletions of a removed sheet go with it);
 6. the mark to recalculate when the file is opened.
 
+The order has two kinds of dependency and no more: a conversion must read values that a deletion
+or a removal would lose, and the deletions of one sheet shift one another. Operations on
+different sheets do not depend on each other, because a reference moves only with the rows and
+columns of the sheet it names, so the order between sheets is free (they go by name, only so that
+the result never depends on a hash order). That holds because references across sheets are not
+supported (below).
+
 The result equals running those steps one per pass, each on the output of the previous one, and it
-is the same on every run. `sheetrs_edit::EditPlan::schedule` returns the steps (the Python
-`Plan.schedule`). Rows deleted in different sheets under a reference across sheets are applied
-from the last row to the first whatever the sheet, since such a reference has one row range for
-all its sheets; two bands that start at the same row go by sheet name.
+is the same on every run. `sheetrs_edit::EditPlan::operations` returns the resolved steps, and
+`--dry-run` prints them. The plan is a handful of bands and names; the file is not loaded: each
+worksheet is read and written as a stream, one cell (XLSX) or row (ODS) at a time, so the memory
+does not grow with the size of the workbook (measured at 13 MB from 200,000 to 1,600,000 rows).
+Only the parts that are small by nature are read whole (the workbook part, its relationships and,
+for a sheet whose cells move, its notes and drawings).
+
+#### References across sheets are not supported
+
+A 3D reference (`Sheet1:Sheet3!A1`, `$S1.A1:$S3.B2` in an ODS) spans every sheet between its two
+ends, which ties the sheets together: what a deletion in one of them does to it, and in which order
+several deletions in different sheets act, are not implemented (issue #75). A command that deletes
+rows or columns or removes sheets in a workbook with a formula that holds one (in a cell, a name, a validation or a chart)
+**stops with an error that names the issue**, and writes nothing, instead of leaving the reference
+wrong. Commands that move nothing (`--convert-to-values`, `--remove-ranges`, `--recalc-on-open`)
+are not affected.
 
 #### Delete rows and columns
 
@@ -91,7 +108,6 @@ The formulas of **every sheet** follow, as LibreOffice does it:
 | a deleted cell or a range with no cell left | `Sheet!#REF!` (`#REF!` in an ODS); a removed sheet leaves a bare `#REF!` (see the last item of this list) |
 | a range that loses cells | the range of what is left (`A4:A8` is `A4:A6`) |
 | whole rows or columns | whole rows or columns (`A:A` stays when rows go), `#REF!` when all go |
-| a 3D reference (`Sheet1:Sheet3!A1`) | follows a deletion in a sheet of its span only when the deleted rows or columns touch what it names; one before it does not move it. A removed sheet at an end of the span passes the end to the next sheet; `#REF!` when no sheet of the span stays |
 
 Also adjusted: the cells and their rows or columns (widths, hidden, merged areas), shared and
 array formulas, defined names and print ranges, conditional formats, data validations,

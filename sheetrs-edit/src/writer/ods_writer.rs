@@ -50,20 +50,12 @@ pub fn modify_workbook_ods<W: Write + Seek>(
             BufReader::new(archive.by_index(i)?),
             &mut zip_writer,
             modifications,
-            |plan| plan.with_order_source(input.to_path_buf(), sheet_names_in_file),
         )
         .with_context(|| format!("Failed to modify {CONTENT_PART}"))?;
     }
 
     zip_writer.finish()?;
     Ok(())
-}
-
-/// The names of the sheets of the ODS file at `path`, in order.
-fn sheet_names_in_file(path: &Path) -> Result<Vec<String>> {
-    let mut archive = ZipArchive::new(File::open(path)?)?;
-    sheet_names(BufReader::new(archive.by_name(CONTENT_PART)?))
-        .with_context(|| format!("Failed to read the sheets of {CONTENT_PART}"))
 }
 
 fn is_cell(name: &str) -> bool {
@@ -85,37 +77,12 @@ fn repeat_count(element: &BytesStart, key: &str) -> Result<u32> {
         .max(1))
 }
 
-/// The names of the sheets of `content.xml`, in order.
-fn sheet_names<R: BufRead>(input: R) -> Result<Vec<String>> {
-    let mut reader = Reader::from_reader(input);
-    let mut names = Vec::new();
-    let (mut depth, mut buf) = (0u32, Vec::new());
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf)? {
-            Event::Start(e) if e.name().as_ref() == "table:table" => {
-                depth += 1;
-                if depth == 1 {
-                    names.extend(attribute(&e, "table:name")?);
-                }
-            }
-            Event::Empty(e) if depth == 0 && e.name().as_ref() == "table:table" => {
-                names.extend(attribute(&e, "table:name")?);
-            }
-            Event::End(e) if e.name().as_ref() == "table:table" => depth -= 1,
-            Event::Eof => return Ok(names),
-            _ => {}
-        }
-    }
-}
-
 /// Apply the modifications to `content.xml`: drop removed sheets and named
 /// ranges, and convert formulas to values in the sheets of `convert_to_values`.
 fn modify_content_xml<R: BufRead, W: Write>(
     input: R,
     output: W,
     modifications: &WorkbookModifications,
-    with_sheets: impl FnOnce(StructureEdits) -> StructureEdits,
 ) -> Result<()> {
     let removes_sheet = |name: &str| {
         modifications
@@ -132,7 +99,6 @@ fn modify_content_xml<R: BufRead, W: Write>(
         &modifications.delete_rows,
         &modifications.delete_columns,
     )?;
-    let plan = with_sheets(plan);
     let edits = plan.edits();
     let removed_ranges = modifications
         .remove_named_ranges
@@ -376,9 +342,6 @@ fn modify_content_xml<R: BufRead, W: Write>(
         }
     }
 
-    if let Some(error) = plan.order_error() {
-        bail!("cannot read the sheets of the document: {error}");
-    }
     writer.into_inner().flush()?;
     Ok(())
 }
@@ -1075,7 +1038,10 @@ fn write_column<W: Write>(
 /// The `table:table` element of a sheet with its print ranges adjusted.
 fn print_ranges(table: &BytesStart, s: &SheetStructure) -> Result<BytesStart<'static>> {
     map_attributes(table, |key, value| {
-        Ok((key == "table:print-ranges").then(|| adjust_range_list(s, value)))
+        if key != "table:print-ranges" {
+            return Ok(None);
+        }
+        Ok(Some(adjust_range_list(s, value)?))
     })
 }
 
@@ -1097,15 +1063,18 @@ fn defined_name_after(
     match element.name().as_ref() {
         // What LibreOffice writes for a range that is gone.
         "table:named-range" => Ok(Some(map_attributes(element, |key, value| {
-            Ok((key == "table:cell-range-address").then(|| {
-                Some(adjust_range_list(view, value).unwrap_or_else(|| "#REF!".to_string()))
-            }))
+            if key != "table:cell-range-address" {
+                return Ok(None);
+            }
+            Ok(Some(Some(
+                adjust_range_list(view, value)?.unwrap_or_else(|| "#REF!".to_string()),
+            )))
         })?)),
         "table:named-expression" => Ok(Some(map_attributes(element, |key, value| {
             if key != "table:expression" {
                 return Ok(None);
             }
-            let adjusted = rewrite_expression(view, value).unwrap_or_else(|| value.to_string());
+            let adjusted = rewrite_expression(view, value)?.unwrap_or_else(|| value.to_string());
             let new = match removed_ranges {
                 Some(removed) => replace_names(&adjusted, removed),
                 None => adjusted,
@@ -1114,7 +1083,7 @@ fn defined_name_after(
         })?)),
         "table:database-range" => {
             let range = attribute(element, "table:target-range-address")?.unwrap_or_default();
-            match adjust_range_list(view, &range) {
+            match adjust_range_list(view, &range)? {
                 Some(new) => Ok(Some(map_attributes(element, |key, _| {
                     Ok((key == "table:target-range-address").then(|| Some(new.clone())))
                 })?)),
@@ -1161,7 +1130,7 @@ fn adjust_range_holder(
     match element.name().as_ref() {
         "calcext:conditional-format" => {
             let range = attribute(element, "calcext:target-range-address")?.unwrap_or_default();
-            match adjust_range_list(view, &range) {
+            match adjust_range_list(view, &range)? {
                 Some(new) => Ok(Some(map_attributes(element, |key, _| {
                     Ok((key == "calcext:target-range-address").then(|| Some(new.clone())))
                 })?)),
@@ -1175,10 +1144,10 @@ fn adjust_range_holder(
                 "table:condition"
             };
             Ok(Some(map_attributes(element, |key, value| {
-                Ok((key == key_of)
-                    .then(|| rewrite_expression(view, value))
-                    .flatten()
-                    .map(Some))
+                if key != key_of {
+                    return Ok(None);
+                }
+                Ok(rewrite_expression(view, value)?.map(Some))
             })?))
         }
     }
@@ -1202,9 +1171,7 @@ mod tests {
 
     fn modify_xml(xml: &str, modifications: &WorkbookModifications) -> Result<String> {
         let mut output = Vec::new();
-        modify_content_xml(xml.as_bytes(), &mut output, modifications, |plan| {
-            plan.with_order(sheet_names(xml.as_bytes()).unwrap())
-        })?;
+        modify_content_xml(xml.as_bytes(), &mut output, modifications)?;
         Ok(String::from_utf8(output)?)
     }
 

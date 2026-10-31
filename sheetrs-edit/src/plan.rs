@@ -3,30 +3,33 @@
 //!
 //! Operations are written against the **input** workbook: `delete_rows("S!3")` and
 //! `convert_to_values("S!A:B")` address the rows and columns the input file has, whatever the
-//! order they were added in. Applied one after another as written, they would not mean that: a
-//! deletion shifts every position below it, so the next operation would address other cells, a
-//! formula converted after the cells it reads were deleted would have lost its result, and a
-//! reference across sheets would shrink by the deletions of one sheet and not by those of another
-//! depending on which came first.
+//! order they were added in. Applied one after another as written they would not mean that: a
+//! deletion shifts every position below it, so the next operation would address other cells, and a
+//! formula converted after the cells it reads were deleted has lost its result.
 //!
-//! The plan resolves this once. [`EditPlan::schedule`] is the plan in its canonical order, the
-//! only one the result is defined by, and the writer applies exactly that order in a single pass
-//! over the file:
+//! So [`EditPlan::operations`] is not the list of what was added: it is the plan resolved, the
+//! only order the result is defined by, and the one the writer applies in a single pass:
 //!
 //! 1. formulas converted to values, while every cached result is still there (a scope on a sheet
 //!    that goes is dropped with it);
-//! 2. rows deleted, in every sheet, from the last to the first, with overlapping or touching
-//!    ranges merged; each deletion shifts only what is below it, so the positions of the next one
+//! 2. in each sheet, rows deleted from the last to the first, overlapping or touching ranges
+//!    merged, so each deletion shifts only what is below it and the positions of the next one
 //!    are still the input's;
-//! 3. columns deleted the same way;
+//! 3. in each sheet, columns deleted the same way;
 //! 4. defined names removed;
-//! 5. sheets removed, last: a deletion in a sheet that goes still shapes the references that span
-//!    it, as if it had been done before the sheet went;
+//! 5. sheets removed;
 //! 6. the mark to recalculate when opened.
 //!
-//! So the result is the same for any order of the same operations, equals what running the
-//! schedule one operation per pass gives (the plan is the optimization, not another meaning), and
-//! costs one read and one write of the file instead of one per operation.
+//! The only dependencies are the ones that order lists: a conversion reads values that a deletion
+//! or a removal would lose, and the deletions of one sheet shift one another. Operations on
+//! different sheets are independent, since a reference moves only with the rows and columns of the
+//! sheet it names; a reference that spans sheets (`Sheet1:Sheet3!A1`) would tie them, and is not
+//! supported (issue #75): a plan that meets one fails instead of rewriting it wrongly. So no
+//! ordering between sheets is needed, and they go by name only so the result never depends on a
+//! hash order.
+//!
+//! The plan is a description, not a model of the workbook: it holds the operations (a few bands
+//! and names), and the writer streams the file once, rewriting each cell as it goes by.
 
 use crate::writer::structure::StructureEdits;
 use crate::writer::{self, ValueScope, ValueTarget, WorkbookModifications};
@@ -66,10 +69,10 @@ impl fmt::Display for Operation {
     }
 }
 
-/// Operations to apply to a workbook in a single pass.
+/// Operations to apply to a workbook in a single pass, written against the input workbook.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EditPlan {
-    operations: Vec<Operation>,
+    added: Vec<Operation>,
 }
 
 impl EditPlan {
@@ -92,8 +95,8 @@ impl EditPlan {
             }
             _ => {}
         }
-        if !self.operations.contains(&operation) {
-            self.operations.push(operation);
+        if !self.added.contains(&operation) {
+            self.added.push(operation);
         }
         Ok(self)
     }
@@ -126,20 +129,15 @@ impl EditPlan {
             .expect("the mark is always valid")
     }
 
-    /// The operations as they were added.
-    pub fn operations(&self) -> &[Operation] {
-        &self.operations
-    }
-
     pub fn is_empty(&self) -> bool {
-        self.operations.is_empty()
+        self.added.is_empty()
     }
 
-    /// The plan as the writer takes it. The order of the operations plays no part in it: the
-    /// writer applies the canonical order (see the module documentation).
+    /// The plan as the writer takes it. The order the operations were added in plays no part in
+    /// it: the writer applies the order of [`operations`](Self::operations).
     pub fn to_modifications(&self) -> WorkbookModifications {
         let mut mods = WorkbookModifications::default();
-        for operation in &self.operations {
+        for operation in &self.added {
             match operation {
                 Operation::RemoveSheet(name) => {
                     mods.remove_sheets
@@ -160,14 +158,15 @@ impl EditPlan {
         mods
     }
 
-    /// The plan in its canonical order: the operations normalized (ranges merged, repeats and
-    /// scopes on removed sheets dropped) and sorted as the module documentation lists, which is
-    /// the order the writer applies. Two plans with the same schedule give the same workbook.
+    /// The operations of the plan, resolved: normalized (ranges merged, repeats and scopes on
+    /// removed sheets dropped) and in the order the module documentation lists, which is the
+    /// order the writer applies. Two plans with the same operations give the same workbook,
+    /// whatever the order they were written in.
     ///
-    /// Every position in it is the input's: a step does not need the ones before it to be read.
-    /// Running the steps one per pass, each on the output of the previous one, gives the same
-    /// result as running the plan.
-    pub fn schedule(&self) -> Vec<Operation> {
+    /// Every position in it is the input's: an operation does not need the ones before it to be
+    /// read. Running them one per pass, each on the output of the previous one, gives the same
+    /// result as running the plan, which reads and writes the file once.
+    pub fn operations(&self) -> Vec<Operation> {
         let mods = self.to_modifications();
         let removed: HashSet<String> = mods.remove_sheets.clone().unwrap_or_default();
         let mut steps = Vec::new();
@@ -262,18 +261,18 @@ mod tests {
     }
 
     #[test]
-    fn operations_keep_their_order_and_ignore_repeats() {
+    fn repeats_count_once_and_the_order_added_is_not_kept() {
         let mut plan = EditPlan::new();
         plan.remove_sheet("B")
             .recalculate_on_open()
             .remove_sheet("A")
             .remove_sheet("B");
         assert_eq!(
-            described(plan.operations()),
+            described(&plan.operations()),
             [
+                "remove sheet A",
                 "remove sheet B",
-                "recalculate when opened",
-                "remove sheet A"
+                "recalculate when opened"
             ]
         );
     }
@@ -307,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn the_schedule_is_the_canonical_order_whatever_the_order_written() {
+    fn the_operations_are_in_the_canonical_order_whatever_the_order_written() {
         let mut one = EditPlan::new();
         one.recalculate_on_open()
             .remove_sheet("U")
@@ -315,12 +314,12 @@ mod tests {
         one.delete_columns(scope("T!D")).unwrap();
         one.delete_rows(scope("T!2")).unwrap();
         one.delete_rows(scope("V!6")).unwrap();
-        one.delete_rows(scope("U!4:5")).unwrap();
+        one.delete_rows(scope("T!8:9")).unwrap();
         one.convert_to_values(scope("F"));
 
         let mut other = EditPlan::new();
         other.convert_to_values(scope("F"));
-        other.delete_rows(scope("U!4:5")).unwrap();
+        other.delete_rows(scope("T!8:9")).unwrap();
         other.delete_rows(scope("V!6")).unwrap();
         other.delete_rows(scope("T!2")).unwrap();
         other.delete_columns(scope("T!D")).unwrap();
@@ -329,15 +328,15 @@ mod tests {
             .remove_sheet("U")
             .recalculate_on_open();
 
-        assert_eq!(one.schedule(), other.schedule());
+        assert_eq!(one.operations(), other.operations());
         assert_eq!(
-            described(&one.schedule()),
+            described(&one.operations()),
             [
                 "convert formulas to values in F",
-                // Rows from the last to the first across sheets, then columns.
-                "delete rows V!6:6",
-                "delete rows U!4:5",
+                // Each sheet's rows from the last band to the first; sheets by name.
+                "delete rows T!8:9",
                 "delete rows T!2:2",
+                "delete rows V!6:6",
                 "delete columns T!D:D",
                 "remove named range N",
                 "remove sheet U",
@@ -347,33 +346,34 @@ mod tests {
     }
 
     #[test]
-    fn the_schedule_merges_the_ranges_of_a_sheet() {
+    fn the_operations_merge_the_ranges_of_a_sheet() {
         let mut plan = EditPlan::new();
         for spec in ["T!5", "T!3:6", "T!7", "T!20"] {
             plan.delete_rows(scope(spec)).unwrap();
         }
         assert_eq!(
-            described(&plan.schedule()),
+            described(&plan.operations()),
             ["delete rows T!20:20", "delete rows T!3:7"]
         );
     }
 
     #[test]
-    fn a_conversion_goes_with_its_sheet_and_a_deletion_does_not() {
+    fn the_scopes_of_a_removed_sheet_go_with_it() {
         let mut plan = EditPlan::new();
         plan.remove_sheet("U").convert_to_values(scope("U!A:B"));
         plan.delete_rows(scope("U!2")).unwrap();
+        plan.delete_columns(scope("T!B")).unwrap();
         assert_eq!(
-            described(&plan.schedule()),
-            ["delete rows U!2:2", "remove sheet U"]
+            described(&plan.operations()),
+            ["delete columns T!B:B", "remove sheet U"]
         );
     }
 
     #[test]
-    fn an_empty_plan_has_no_schedule_and_does_not_execute() {
+    fn an_empty_plan_has_no_operations_and_does_not_execute() {
         let plan = EditPlan::new();
         assert!(plan.is_empty());
-        assert!(plan.schedule().is_empty());
+        assert!(plan.operations().is_empty());
         assert!(plan.to_modifications().remove_sheets.is_none());
         let error = plan.execute("in.xlsx", "out.xlsx").unwrap_err();
         assert!(error.to_string().contains("No operations"));

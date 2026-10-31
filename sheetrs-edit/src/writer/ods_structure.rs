@@ -5,13 +5,13 @@
 //! reads and writes the notation of ODF (`[$Sheet.A1:.B2]`) around it.
 
 use super::attribute;
+use super::structure::three_d_unsupported;
 use super::xlsx_structure::SheetStructure;
 use anyhow::{Result, bail};
 use quick_xml::events::{BytesStart, Event};
-use sheetrs_formula::addr::same_name;
 use sheetrs_formula::addr::{col_index, col_name, needs_quotes};
 use sheetrs_formula::ast::{CellAddr, ColAddr, Expr, RefArea, Reference, RowAddr};
-use sheetrs_formula::edit::{ThreeD, apply, apply_three_d};
+use sheetrs_formula::edit::apply;
 
 /// A reference as an ODS formula writes it, inside `[` `]`.
 struct OdsRef {
@@ -20,7 +20,8 @@ struct OdsRef {
     /// The second end of a range repeats the sheet (`S.A1:S.B2`), as an attribute writes it,
     /// instead of leaving it out (`$S.A1:.B2`), as a formula does.
     repeats_sheet: bool,
-    /// The last sheet of a 3D reference (`$A.A1:$C.B2`), when it is not the first.
+    /// The last sheet of a 3D reference (`$A.A1:$C.B2`), when it is not the first. Such a
+    /// reference is read to be refused.
     last_sheet: Option<String>,
     reference: Reference,
 }
@@ -217,10 +218,12 @@ fn print_ref(r: &OdsRef) -> String {
 /// The ODS notation of the reference `content` (the text between `[` and `]`) once the plan is
 /// applied: `Some(None)` when it is gone (`#REF!`), `Some(Some(text))` when it changes, `None`
 /// when it stays or is not a reference this reads.
-fn adjusted(s: &SheetStructure, content: &str) -> Option<Option<String>> {
-    let parsed = parse_ref(content)?;
-    if let (Some(first), Some(last)) = (&parsed.reference.sheet, &parsed.last_sheet) {
-        return adjusted_three_d(s, &parsed, first, last);
+fn adjusted(s: &SheetStructure, content: &str) -> Result<Option<Option<String>>> {
+    let Some(parsed) = parse_ref(content) else {
+        return Ok(None);
+    };
+    if parsed.last_sheet.is_some() {
+        return Err(three_d_unsupported(content));
     }
     let mut node = Expr::Ref(parsed.reference.clone());
     let mut changed = false;
@@ -228,9 +231,9 @@ fn adjusted(s: &SheetStructure, content: &str) -> Option<Option<String>> {
         changed |= apply(&mut node, edit, &s.sheet);
     }
     if !changed {
-        return None;
+        return Ok(None);
     }
-    Some(match node {
+    Ok(Some(match node {
         Expr::Ref(reference) => Some(print_ref(&OdsRef {
             sheet_abs: parsed.sheet_abs,
             repeats_sheet: parsed.repeats_sheet,
@@ -238,52 +241,12 @@ fn adjusted(s: &SheetStructure, content: &str) -> Option<Option<String>> {
             reference,
         })),
         _ => None,
-    })
-}
-
-/// A 3D reference of `first` to `last`, by the rules of
-/// [`sheetrs_formula::edit::apply_three_d`].
-fn adjusted_three_d(
-    s: &SheetStructure,
-    parsed: &OdsRef,
-    first: &str,
-    last: &str,
-) -> Option<Option<String>> {
-    let removed = |name: &str| s.plan.removes_sheet(name);
-    let book = s.plan.workbook(&removed);
-    let (mut first, mut last, mut area) =
-        (first.to_string(), last.to_string(), parsed.reference.area);
-    let mut changed = false;
-    for edit in s.edits {
-        match apply_three_d(&first, &last, &area, edit, &book) {
-            ThreeD::Same => {}
-            ThreeD::Now {
-                first: f,
-                last: l,
-                area: a,
-            } => {
-                (first, last, area) = (f, l, a);
-                changed = true;
-            }
-            ThreeD::CellsGone | ThreeD::SheetsGone => return Some(None),
-        }
-    }
-    changed.then(|| {
-        Some(print_ref(&OdsRef {
-            sheet_abs: parsed.sheet_abs,
-            repeats_sheet: parsed.repeats_sheet,
-            last_sheet: (!same_name(&first, &last)).then_some(last),
-            reference: Reference {
-                sheet: Some(first),
-                area,
-            },
-        }))
-    })
+    }))
 }
 
 /// The text of the ODS formula (or expression) `text` once the plan is applied, `None` when it
 /// does not change. References in brackets are adjusted; one that goes is `[#REF!]`.
-pub(super) fn rewrite_expression(s: &SheetStructure, text: &str) -> Option<String> {
+pub(super) fn rewrite_expression(s: &SheetStructure, text: &str) -> Result<Option<String>> {
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut changed = false;
@@ -319,7 +282,7 @@ pub(super) fn rewrite_expression(s: &SheetStructure, text: &str) -> Option<Strin
                 if j >= bytes.len() {
                     break;
                 }
-                if let Some(new) = adjusted(s, &text[i + 1..j]) {
+                if let Some(new) = adjusted(s, &text[i + 1..j])? {
                     out.push_str(&text[copied..i]);
                     out.push('[');
                     out.push_str(new.as_deref().unwrap_or("#REF!"));
@@ -333,7 +296,7 @@ pub(super) fn rewrite_expression(s: &SheetStructure, text: &str) -> Option<Strin
         }
     }
     out.push_str(&text[copied..]);
-    changed.then_some(out)
+    Ok(changed.then_some(out))
 }
 
 /// The formula of a `table:formula` attribute (`of:=…`) once the plan is applied.
@@ -344,7 +307,7 @@ pub(super) fn rewrite_cell_formula(s: &SheetStructure, formula: &str) -> Result<
     let Some(body) = formula.strip_prefix("of:=") else {
         bail!("the formula '{formula}' is not in the OpenFormula syntax (of:=)");
     };
-    Ok(rewrite_expression(s, body).map(|new| format!("of:={new}")))
+    Ok(rewrite_expression(s, body)?.map(|new| format!("of:={new}")))
 }
 
 /// The ranges of a list separated by spaces; a space inside a quoted sheet name is not one.
@@ -372,16 +335,19 @@ pub(super) fn sheet_of_address(address: &str) -> Option<String> {
 
 /// A cell range attribute (`S.A1:.B2`, one or several separated by spaces) once the plan is
 /// applied: the ranges that stay, `None` when none does.
-pub(super) fn adjust_range_list(s: &SheetStructure, value: &str) -> Option<String> {
-    let kept: Vec<String> = split_ranges(value)
+pub(super) fn adjust_range_list(s: &SheetStructure, value: &str) -> Result<Option<String>> {
+    let mut kept: Vec<String> = Vec::new();
+    for range in split_ranges(value)
         .into_iter()
         .filter(|range| !range.is_empty())
-        .filter_map(|range| match adjusted(s, range) {
-            None => Some(range.to_string()),
-            Some(new) => new,
-        })
-        .collect();
-    (!kept.is_empty()).then(|| kept.join(" "))
+    {
+        match adjusted(s, range)? {
+            None => kept.push(range.to_string()),
+            Some(Some(new)) => kept.push(new),
+            Some(None) => {}
+        }
+    }
+    Ok((!kept.is_empty()).then(|| kept.join(" ")))
 }
 
 /// The shapes of a cell with the `table:end-cell-address` of each moved as LibreOffice moves the
@@ -483,7 +449,7 @@ mod tests {
             cols: plan.cols_of("F"),
             recalculate: false,
         };
-        rewrite_expression(&structure, formula)
+        rewrite_expression(&structure, formula).unwrap()
     }
 
     #[test]
@@ -509,7 +475,9 @@ mod tests {
         // A whole row marked absolute, and a list of ranges whose sheet name has a space.
         assert_eq!(t("[$T.$3:.$6]").as_deref(), Some("[$T.$3:.$4]"));
         assert_eq!(
-            adjust_range_list(&view("F", "F!2"), "'My Sheet'.A3:.A5 F.A3:F.B4").as_deref(),
+            adjust_range_list(&view("F", "F!2"), "'My Sheet'.A3:.A5 F.A3:F.B4")
+                .unwrap()
+                .as_deref(),
             Some("'My Sheet'.A3:.A5 F.A2:F.B3")
         );
         // A reference without sheet reads the sheet of the formula.
@@ -517,5 +485,29 @@ mod tests {
             rows("F", "F!2", "[.A3]+[$T.A3]").as_deref(),
             Some("[.A2]+[$T.A3]")
         );
+    }
+
+    #[test]
+    fn a_reference_across_sheets_is_refused() {
+        let scopes: Vec<ValueScope> = vec!["T!4:5".parse().unwrap()];
+        let plan = StructureEdits::new(None, &HashSet::new(), &scopes, &[]).unwrap();
+        let edits = plan.edits();
+        let structure = SheetStructure {
+            plan: &plan,
+            edits: &edits,
+            sheet: "F".to_string(),
+            rows: plan.rows_of("F"),
+            cols: plan.cols_of("F"),
+            recalculate: false,
+        };
+        for formula in ["SUM([$T.A2:$V.A4])", "[$T.A1:$V.B2]+1"] {
+            let error = rewrite_expression(&structure, formula).unwrap_err();
+            let error = format!("{error}");
+            assert!(error.contains("3D reference"), "{error}");
+            assert!(error.contains("issues/75"), "{error}");
+        }
+        // A range inside one sheet is not one, in either way of writing the second end.
+        assert!(rewrite_expression(&structure, "SUM([$T.A2:.A4])").is_ok());
+        assert!(rewrite_expression(&structure, "SUM([$T.A2:$T.A4])").is_ok());
     }
 }

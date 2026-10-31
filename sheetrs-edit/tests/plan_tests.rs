@@ -1,8 +1,9 @@
 //! A plan gives the workbook that its schedule gives one operation per pass, whatever order the
 //! operations were written in, and gives it every time.
 //!
-//! The fixture is the workbook of `structure_parity_tests` (sheets `T`, `U`, `V` with numbers and
-//! formulas, and sheet `F` with formulas over `T` and over spans of sheets such as `T:V!A2:A4`).
+//! The fixture is the workbook of `structure_parity_tests`: sheets `T`, `U`, `V` with numbers and
+//! formulas, and sheet `F` with formulas over `T`. It holds no reference across sheets
+//! (`Sheet1:Sheet3!A1`), which are not supported (issue #75).
 
 use sheetrs_core::reader::read_workbook;
 use sheetrs_edit::{EditPlan, Operation};
@@ -78,7 +79,7 @@ fn run(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
 fn run_stepwise(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
     let dir = tempfile::tempdir().unwrap();
     let mut current = asset(extension);
-    for (i, step) in plan.schedule().into_iter().enumerate() {
+    for (i, step) in plan.operations().into_iter().enumerate() {
         let mut single = EditPlan::new();
         single.push(step).unwrap();
         let output = dir.path().join(format!("step{i}.{extension}"));
@@ -189,7 +190,11 @@ fn the_order_the_operations_were_written_in_changes_nothing() {
         for order in permutations(&specs) {
             let order: Vec<&str> = order.iter().map(String::as_str).collect();
             let shuffled = plan(&order);
-            assert_eq!(shuffled.schedule(), reference_plan.schedule(), "{order:?}");
+            assert_eq!(
+                shuffled.operations(),
+                reference_plan.operations(),
+                "{order:?}"
+            );
             assert_eq!(
                 run(extension, &shuffled),
                 reference,
@@ -244,7 +249,7 @@ fn a_conversion_keeps_the_values_that_a_deletion_would_otherwise_cost() {
 #[test]
 fn a_schedule_is_made_of_operations_that_run_on_their_own() {
     let plan = plan(&["rows T!4:5", "rows T!9", "cols T!D", "convert F", "sheet U"]);
-    for step in plan.schedule() {
+    for step in plan.operations() {
         assert!(
             !matches!(step, Operation::RecalculateOnOpen),
             "not part of this plan"
@@ -252,5 +257,55 @@ fn a_schedule_is_made_of_operations_that_run_on_their_own() {
         let mut single = EditPlan::new();
         single.push(step.clone()).unwrap();
         run("xlsx", &single).unwrap_or_else(|e| panic!("{step}: {e}"));
+    }
+}
+
+/// The operations on different sheets do not depend on each other, which is why a plan needs no
+/// order between sheets: running them in either order gives the same workbook.
+#[test]
+fn the_edits_of_different_sheets_commute() {
+    let in_order = |first: &str, second: &str| {
+        let mut results = Vec::new();
+        for extension in EXTENSIONS {
+            let dir = tempfile::tempdir().unwrap();
+            let mut current = asset(extension);
+            for (i, spec) in [first, second].into_iter().enumerate() {
+                let output = dir.path().join(format!("s{i}.{extension}"));
+                plan(&[spec]).execute(&current, &output).unwrap();
+                current = output;
+            }
+            results.push(snapshot(&current));
+        }
+        results
+    };
+    for (a, b) in [
+        ("rows T!4:5", "rows U!3"),
+        ("rows T!4:5", "cols U!B"),
+        ("cols T!D", "cols V!A"),
+        ("rows T!2", "rows F!5"),
+    ] {
+        assert_eq!(in_order(a, b), in_order(b, a), "{a} / {b}");
+    }
+}
+
+/// A deletion in a sheet that the plan removes is dropped with it: it gives what deleting first
+/// and removing the sheet afterwards gives, so the plan need not keep it.
+#[test]
+fn a_deletion_in_a_removed_sheet_changes_nothing_elsewhere() {
+    for extension in EXTENSIONS {
+        let dir = tempfile::tempdir().unwrap();
+        let (first, second) = (
+            dir.path().join(format!("a.{extension}")),
+            dir.path().join(format!("b.{extension}")),
+        );
+        plan(&["rows U!2"])
+            .execute(asset(extension), &first)
+            .unwrap();
+        plan(&["sheet U"]).execute(&first, &second).unwrap();
+        assert_eq!(
+            Ok(snapshot(&second)),
+            run(extension, &plan(&["rows U!2", "sheet U"])),
+            "{extension}"
+        );
     }
 }

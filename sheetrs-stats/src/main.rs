@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use sheetrs_stats::stats::{WorkbookStats, percentage};
+use sheetrs_stats::{WorkbookStats, percentage};
 use std::path::PathBuf;
 
 #[derive(Parser)]
