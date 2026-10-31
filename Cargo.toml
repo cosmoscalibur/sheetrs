@@ -1,5 +1,5 @@
 [workspace]
-members = ["sheetrs-core", "sheetrs-formula", "sheetrs-engine", "sheetrs-compiler", "sheetrs-linter", "sheetrs-stats", "sheetrs-edit", "sheetrs-wasm"]
+members = ["sheetrs-core", "sheetrs-formula", "sheetrs-engine", "sheetrs-compiler", "sheetrs-linter", "sheetrs-stats", "sheetrs-edit", "sheetrs-wasm", "sheetrs-py"]
 resolver = "2"
 
 [workspace.package]
@@ -9,6 +9,8 @@ rust-version = "1.99"
 authors = ["Edward Villegas <cosmoscalibur@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/cosmoscalibur/sheetrs"
+keywords = ["spreadsheet", "xlsx", "ods", "linter", "excel"]
+categories = ["parser-implementations", "command-line-utilities"]
 
 
 [workspace.dependencies]

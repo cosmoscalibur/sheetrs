@@ -1,13 +1,9 @@
 #![warn(dead_code_pub_in_binary)]
 
-mod stats;
-
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use sheetrs_core::reader;
+use sheetrs_stats::stats::{WorkbookStats, percentage};
 use std::path::PathBuf;
-
-use stats::{StatsSink, WorkbookStats, percentage};
 
 #[derive(Parser)]
 #[command(name = "sheetstats")]
@@ -34,10 +30,8 @@ enum OutputFormat {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let mut sink = StatsSink::default();
-    let workbook = reader::read_workbook_into(&cli.file, &mut sink)
+    let stats = WorkbookStats::from_path(&cli.file)
         .with_context(|| format!("Failed to read file: {}", cli.file.display()))?;
-    let stats = WorkbookStats::from_workbook(&workbook, &sink);
 
     match cli.format {
         OutputFormat::Human => print_human(&stats),

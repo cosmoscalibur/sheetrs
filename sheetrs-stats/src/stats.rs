@@ -1,52 +1,57 @@
 //! Workbook and per-sheet statistics computed from the format-agnostic model.
 
+use anyhow::Result;
 use serde::Serialize;
 use sheetrs_core::reader::parser_utils::column_letters;
-use sheetrs_core::reader::{Cell, CellSink, Sheet, Workbook};
+use sheetrs_core::reader::{
+    Cell, CellSink, Sheet, Workbook, read_workbook_from_reader_into, read_workbook_into,
+};
+use std::io::{Read, Seek};
+use std::path::Path;
 
 /// Statistics for the whole workbook.
 #[derive(Debug, Serialize)]
-pub(crate) struct WorkbookStats {
-    pub(crate) total_sheets: usize,
-    pub(crate) total_named_ranges: usize,
-    pub(crate) total_file_size: u64,
-    pub(crate) total_used_cells: u64,
-    pub(crate) total_formulas: u64,
-    pub(crate) total_errors: u64,
-    pub(crate) total_empty_cells: u64,
-    pub(crate) total_comments: u64,
-    pub(crate) total_charts: u64,
-    pub(crate) total_tables: u64,
-    pub(crate) total_xml_size: u64,
-    pub(crate) sheets: Vec<SheetStats>,
+pub struct WorkbookStats {
+    pub total_sheets: usize,
+    pub total_named_ranges: usize,
+    pub total_file_size: u64,
+    pub total_used_cells: u64,
+    pub total_formulas: u64,
+    pub total_errors: u64,
+    pub total_empty_cells: u64,
+    pub total_comments: u64,
+    pub total_charts: u64,
+    pub total_tables: u64,
+    pub total_xml_size: u64,
+    pub sheets: Vec<SheetStats>,
 }
 
 /// Statistics for one sheet, in workbook order.
 #[derive(Debug, Serialize)]
-pub(crate) struct SheetStats {
-    pub(crate) name: String,
+pub struct SheetStats {
+    pub name: String,
     /// Cells holding a value or a formula.
-    pub(crate) used_cells: u64,
-    pub(crate) formulas: u64,
+    pub used_cells: u64,
+    pub formulas: u64,
     /// Cells whose value (cached result for formulas) is an error.
-    pub(crate) errors: u64,
+    pub errors: u64,
     /// Cells without value or formula inside the used area, which spans from
     /// A1 to the last row and column holding a used cell.
-    pub(crate) empty_cells: u64,
+    pub empty_cells: u64,
     /// Bottom right corner of the used area (`GV5439`), `None` for a sheet without used cells.
-    pub(crate) end_of_sheet: Option<String>,
+    pub end_of_sheet: Option<String>,
     /// Notes of the sheet's cells.
-    pub(crate) comments: u64,
-    pub(crate) charts: u64,
+    pub comments: u64,
+    pub charts: u64,
     /// Table objects of an XLSX, named database ranges of an ODS.
-    pub(crate) tables: u64,
+    pub tables: u64,
     /// Uncompressed size of the XML describing the sheet.
-    pub(crate) xml_size: u64,
+    pub xml_size: u64,
 }
 
 /// What is counted of the cells of one sheet as they are read.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct Tally {
+pub struct Tally {
     used_cells: u64,
     formulas: u64,
     errors: u64,
@@ -57,7 +62,7 @@ pub(crate) struct Tally {
 /// Counts the cells of each sheet as the reader hands them over, so the workbook's cells are never
 /// held in memory.
 #[derive(Default)]
-pub(crate) struct StatsSink {
+pub struct StatsSink {
     sheets: Vec<Tally>,
 }
 
@@ -89,8 +94,23 @@ impl StatsSink {
 }
 
 impl WorkbookStats {
+    /// The statistics of the workbook file at `path`, read in a single streaming pass.
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let mut sink = StatsSink::default();
+        let workbook = read_workbook_into(path, &mut sink)?;
+        Ok(Self::from_workbook(&workbook, &sink))
+    }
+
+    /// The statistics of a workbook read from `reader`; `extension` (`xlsx`, `xlsm`, `ods`) tells
+    /// its format. The reported file size is 0: a reader does not know it.
+    pub fn from_reader<R: Read + Seek>(reader: R, extension: Option<&str>) -> Result<Self> {
+        let mut sink = StatsSink::default();
+        let workbook = read_workbook_from_reader_into(reader, extension, &mut sink)?;
+        Ok(Self::from_workbook(&workbook, &sink))
+    }
+
     /// The statistics of `workbook`, whose cells were counted by `sink` while it was read.
-    pub(crate) fn from_workbook(workbook: &Workbook, sink: &StatsSink) -> Self {
+    pub fn from_workbook(workbook: &Workbook, sink: &StatsSink) -> Self {
         let sheets: Vec<SheetStats> = workbook
             .sheets
             .iter()
@@ -152,7 +172,7 @@ fn is_used(cell: &Cell) -> bool {
 }
 
 /// Share of `part` in `total`, as a percentage (0 when `total` is 0).
-pub(crate) fn percentage(part: u64, total: u64) -> f64 {
+pub fn percentage(part: u64, total: u64) -> f64 {
     if total == 0 {
         0.0
     } else {

@@ -5,7 +5,8 @@ and manipulating spreadsheets (XLSX and ODS). Written in Rust, it is designed
 for speed, safety, and ease of integration into CI/CD pipelines.
 
 The suite consists of three specialized CLI tools, a compiler, and two
-libraries:
+libraries, available as executables, Rust crates, a WebAssembly module and a
+Python package (see [Distribution](#distribution)):
 
 - **sheetlint**: Advanced spreadsheet linter with hierarchical rule enforcement.
 - **sheetstats**: Detailed statistics and dependency analysis for workbooks.
@@ -23,7 +24,48 @@ libraries:
 
 - [Rust](https://www.rust-lang.org/tools/install) ≥ 1.99 (edition 2024)
 
+## Distribution
+
+| Surface | Package | What it gives |
+| ------- | ------- | ------------- |
+| Executables | GitHub release assets (`sheetrs-vX.Y.Z-<target>`) | `sheetlint`, `sheetstats`, `sheetedit`, `sheetc`, `sheetrs-rt` |
+| Rust libraries | `sheetrs-core` (readers, rules, writer, `report`), `sheetrs-stats` (statistics), `sheetrs-formula`, `sheetrs-engine`, `sheetrs-compiler` | The same code the executables run |
+| WebAssembly | `sheetrs-wasm` (npm tarball in the release) | Lint and statistics in the browser, structured and text output |
+| Python | `sheetrs` (wheels and sdist in the release; [sheetrs-py](sheetrs-py/README.md)) | `lint`, `stats`, `edit`, `rules` |
+
+### Python
+
+```bash
+pip install sheetrs          # or the wheel from the GitHub release
+```
+
+```python
+import sheetrs
+
+for v in sheetrs.lint("book.xlsx"):
+    print(v.rule_id, v.sheet, v.cell, v.message)
+print(sheetrs.stats("book.xlsx")["total_formulas"])
+sheetrs.edit("book.xlsx", "clean.xlsx", remove_sheets=["Secrets"])
+```
+
+Wheels are `abi3` (Python ≥ 3.10). Details in [sheetrs-py/README.md](sheetrs-py/README.md).
+
+### WebAssembly
+
+```bash
+scripts/package-wasm.sh      # builds target/npm/sheetrs-wasm-X.Y.Z.tgz
+```
+
+The package is an ES module (`--target web`); see
+[sheetrs-wasm/README.md](sheetrs-wasm/README.md) for the API.
+
 ## Installation
+
+### Executables
+
+Download the archive for your platform from the
+[releases](https://github.com/cosmoscalibur/sheetrs/releases) page (each has a
+`.sha256` file).
 
 ### From Source
 
@@ -36,6 +78,7 @@ cd sheetrs
 cargo install --path sheetrs-linter
 cargo install --path sheetrs-stats
 cargo install --path sheetrs-edit
+cargo install --path sheetrs-compiler   # sheetc
 ```
 
 ## Development
@@ -52,6 +95,11 @@ cargo clippy --all-targets -- -D warnings
 
 # Format check
 cargo fmt --check
+
+# Python bindings (needs Python ≥ 3.10)
+python -m venv .venv && . .venv/bin/activate
+pip install maturin pytest
+maturin develop -m sheetrs-py/Cargo.toml && pytest sheetrs-py
 ```
 
 CI checks are defined in `.github/workflows/ci.yml`.
@@ -70,6 +118,7 @@ sheetrs/
 ├── sheetrs-stats/  # Statistics CLI
 ├── sheetrs-edit/   # Workbook editing CLI (`sheetedit`)
 ├── sheetrs-wasm/   # WASM bindings for browser use
+├── sheetrs-py/     # Python bindings (PyO3, maturin)
 ├── docs/           # Documentation index + WASM demo
 ├── tests/          # Shared test assets (minimal_test.xlsx/.ods)
 ├── scripts/        # Benchmark scripts

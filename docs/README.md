@@ -32,6 +32,11 @@ getting-started instructions, see the root [README.md](../README.md).
 - [Test Assets](../tests/README.md) — test file descriptions, usage patterns,
   known limitations.
 
+## Bindings
+
+- [sheetrs-py](../sheetrs-py/README.md) — Python package (`lint`, `stats`, `edit`, `rules`).
+- [sheetrs-wasm](../sheetrs-wasm/README.md) — WebAssembly module and npm package.
+
 ## WASM Demo
 
 - [SheetRS WASM Demo](index.html) — browser-based demo using the sheetrs-wasm

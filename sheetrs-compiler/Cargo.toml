@@ -6,6 +6,8 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Compiler from XLSX/ODS spreadsheets to standalone executables: loader, dependency analysis, constant folding, input/output pruning"
 
 [lib]
@@ -25,9 +27,9 @@ load = ["dep:sheetrs-core", "dep:sha2"]
 profile = ["dep:pprof"]
 
 [dependencies]
-sheetrs-engine = { path = "../sheetrs-engine" }
-sheetrs-formula = { path = "../sheetrs-formula" }
-sheetrs-core = { path = "../sheetrs-core", default-features = false, optional = true }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.3.2" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.2" }
+sheetrs-core = { path = "../sheetrs-core", version = "0.3.2", default-features = false, optional = true }
 sha2 = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true

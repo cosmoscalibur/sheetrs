@@ -5,6 +5,8 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "CLI interface for SheetLint Excel/ODS linter"
 
 [[bin]]
@@ -12,7 +14,7 @@ name = "sheetlint"
 path = "src/main.rs"
 
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core" }
+sheetrs-core = { path = "../sheetrs-core", version = "0.3.2" }
 clap.workspace = true
 anyhow.workspace = true
 serde.workspace = true

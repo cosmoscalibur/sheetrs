@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod reader;
+pub mod report;
 pub mod rules;
 pub mod violation;
 pub mod writer;

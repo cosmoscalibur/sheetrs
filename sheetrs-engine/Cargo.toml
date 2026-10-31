@@ -6,6 +6,8 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Calculation engine for compiled spreadsheets: IR, function library, run-time evaluation with JSON in and out"
 
 [lib]
@@ -17,7 +19,7 @@ name = "sheetrs-rt"
 path = "src/bin/sheetrs-rt.rs"
 
 [dependencies]
-sheetrs-formula = { path = "../sheetrs-formula" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.2" }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
 bincode = "1.3"

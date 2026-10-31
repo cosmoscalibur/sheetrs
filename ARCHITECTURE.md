@@ -17,6 +17,8 @@ sheetrs/
 ├── sheetrs-linter/     # Linter CLI
 ├── sheetrs-stats/      # Statistics CLI
 ├── sheetrs-edit/       # Workbook editing CLI (`sheetedit`)
+├── sheetrs-wasm/       # Bindings for the browser (wasm-bindgen)
+├── sheetrs-py/         # Bindings for Python (PyO3, maturin)
 └── Cargo.toml          # Workspace configuration
 ```
 
@@ -54,6 +56,10 @@ The heart of the suite. It encapsulates all domain logic, file parsing, rule enf
   - `xlsx_writer.rs` and `ods_writer.rs` apply the same `WorkbookModifications` to each format.
   - Uses `zip` and `quick-xml` to stream-edit the archive structure (e.g., removing sheets, converting formulas to values) without fully rewriting the file, ensuring speed and preserving metadata.
   - `ValueScope` selects the cells to convert (a sheet, columns or rows) independently of the file format.
+
+- **`report`**: flat, serializable form of the violations (`ViolationRecord`: rule name, sheet
+  name, A1 cell, rendered message). The one place that resolves a `Violation` for consumers that
+  are not Rust, so the bindings do not each re-implement it.
 
 ## 1b. sheetrs-formula
 
@@ -105,11 +111,29 @@ executable with the short name below.
 - **`sheetstats`** (crate `sheetrs-stats`):
   - Focuses on aggregating metrics.
   - Uses the same `Workbook` model but collects different data points (counts, distributions).
-  - `stats.rs` computes workbook and per-sheet metrics; `main.rs` handles arguments and output.
+  - A library plus the executable: `stats.rs` (`WorkbookStats::from_path`/`from_reader`) computes
+    workbook and per-sheet metrics and is what the bindings call; `main.rs` handles arguments
+    and output.
 
 - **`sheetedit`** (crate `sheetrs-edit`):
   - Handles command-line arguments for operations.
   - Delegates complex logic (like ZIP manipulation) to `sheetrs_core::writer`.
+
+## 3. Bindings
+
+The bindings are thin: they convert arguments and results and hold no analysis logic. What they
+need from the suite lives in the libraries (`sheetrs_core::report`, `sheetrs_stats::stats`,
+`sheetrs_core::writer`), so every surface reports the same findings.
+
+- **`sheetrs-wasm`** (`cdylib`, wasm-bindgen): bytes in, structured values (`lint_workbook_records`,
+  `workbook_stats`, `get_rules_definition`) or the human text report out. Packaged for npm by
+  `scripts/package-wasm.sh` (`wasm-bindgen --target web`, template in `sheetrs-wasm/npm`).
+- **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs` plus the
+  `python/sheetrs` package (re-exports, type stubs). `lint` and `stats` take a path or bytes and
+  release the GIL while they work; `edit` wraps `writer::modify_workbook`. It is built by
+  maturin, which enables the `extension-module` feature; the crate has no Rust test harness
+  (it would have to link libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding
+  crate is published to crates.io.
 
 ## Design Principles
 

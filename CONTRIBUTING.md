@@ -24,6 +24,15 @@ cargo test
 cargo test --release
 ```
 
+The Python bindings are tested with pytest against the built extension:
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install maturin pytest
+maturin develop -m sheetrs-py/Cargo.toml
+pytest sheetrs-py
+```
+
 ### ODS/XLSX Parity
 
 Feature and behavior parity between ODS and XLSX formats is a requirement. Any
@@ -70,6 +79,7 @@ docs match it:
 | Config format (`sheetlint.toml`) | `docs/coding-patterns.md`; the relevant tool README |
 | Module layout or new crate | `ARCHITECTURE.md`; `docs/README.md`; `README.md` project structure |
 | Dependencies or commands | `README.md`; this guide |
+| API of the Python or WASM bindings | `sheetrs-py/README.md` and `sheetrs-py/python/sheetrs/_sheetrs.pyi`, or `sheetrs-wasm/README.md`; a pytest case for Python |
 | Engine behavior that differs between Excel and LibreOffice | `sheetrs-compiler/docs/FIDELITY.md`; a probe in `sheetrs-compiler/scripts/probe_behavior.py` |
 
 ## Changelog Fragments
@@ -92,6 +102,20 @@ the PR touches:
 
 Before each release, fragments are merged into the `[Unreleased]` section of
 `CHANGELOG.md` and deleted.
+
+## Releases
+
+1. Bump the version: `cargo set-version --workspace X.Y.Z` (cargo-edit; it also updates the
+   `version` of the path dependencies), merge the changelog fragments into `CHANGELOG.md`.
+2. Tag `vX.Y.Z` on `main` and push the tag. `.github/workflows/release.yml` checks that the tag
+   matches the workspace version, builds the executables, Python wheels and sdist and the npm
+   tarball, attaches them to a draft release and publishes it.
+3. Publishing to the registries is manual, with the maintainer's credentials:
+   - crates.io, in dependency order: `sheetrs-formula`, `sheetrs-core`, `sheetrs-stats`,
+     `sheetrs-linter`, `sheetrs-edit`, `sheetrs-engine`, `sheetrs-compiler`
+     (`sheetrs-wasm` and `sheetrs-py` have `publish = false`).
+   - PyPI: `twine upload` the wheels and sdist of the release (or configure trusted publishing).
+   - npm: `npm publish` the tarball of the release.
 
 ## Pull Request Process
 

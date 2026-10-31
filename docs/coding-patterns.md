@@ -245,6 +245,16 @@ The `sheetrs-core` library crate exports:
 - `config` module — TOML configuration loading
 - `writer` module — workbook modification utilities
 - `violation` module — violation types and formatting
+- `report` module — `ViolationRecord`, the flat serializable form of a violation
+
+`sheetrs-stats` is also a library (`stats::WorkbookStats`). Keep logic in the libraries and out of
+the executables and the bindings (`sheetrs-wasm`, `sheetrs-py`): a binding converts arguments and
+results and nothing else. A change to a binding's API updates its README (and the type stubs of
+`sheetrs-py`), and a new capability is exposed in both bindings.
+
+Path dependencies between publishable crates carry a `version`
+(`sheetrs-core = { path = "../sheetrs-core", version = "0.3.2" }`) so that they can be published;
+`cargo set-version --workspace <version>` (cargo-edit) updates them with the workspace version.
 
 ### Backward Compatibility
 

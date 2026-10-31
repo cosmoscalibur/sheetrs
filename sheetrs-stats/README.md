@@ -18,6 +18,17 @@ sheetstats <FILE> [OPTIONS]
 
 - `--format <FORMAT>`: Output format (human/json).
 
+## Library
+
+The crate is also a library, used by the Python and WASM bindings:
+
+```rust
+let stats = sheetrs_stats::stats::WorkbookStats::from_path("book.xlsx")?;
+println!("{} formulas in {} sheets", stats.total_formulas, stats.total_sheets);
+```
+
+`WorkbookStats::from_reader` takes any `Read + Seek` and the format's extension.
+
 ## Metrics Reported
 
 Workbook totals:

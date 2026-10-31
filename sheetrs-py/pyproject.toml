@@ -1,0 +1,37 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "sheetrs"
+description = "Lint, inspect and edit XLSX and ODS spreadsheets (Python bindings of the SheetRS suite)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Edward Villegas", email = "cosmoscalibur@gmail.com" }]
+keywords = ["spreadsheet", "xlsx", "ods", "linter", "excel", "libreoffice"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+    "Typing :: Typed",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/cosmoscalibur/sheetrs"
+Issues = "https://github.com/cosmoscalibur/sheetrs/issues"
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.maturin]
+module-name = "sheetrs._sheetrs"
+python-source = "python"
+features = ["extension-module"]
+# The wheel's version is the workspace's (`Cargo.toml`).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

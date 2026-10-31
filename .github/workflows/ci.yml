@@ -75,3 +75,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p sheetrs-engine
       - run: cargo build -p sheetrs-compiler --no-default-features --lib
+
+  python:
+    name: python bindings (maturin + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: python3 -m venv .venv
+      - run: .venv/bin/pip install maturin pytest
+      - run: .venv/bin/maturin develop --locked -m sheetrs-py/Cargo.toml
+      - run: .venv/bin/pytest sheetrs-py
+
+  wasm-package:
+    name: wasm npm package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The CLI must match the `wasm-bindgen` crate pinned by Cargo.lock (the script checks it).
+      - run: cargo install wasm-bindgen-cli --version "$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, ""); print; exit}' Cargo.lock)" --locked
+      - run: scripts/package-wasm.sh

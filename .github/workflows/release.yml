@@ -1,0 +1,115 @@
+name: Release
+
+# A `vX.Y.Z` tag builds every distribution and attaches it to a GitHub release:
+#   - executables (sheetlint, sheetstats, sheetedit, sheetc, sheetrs-rt) per platform,
+#   - Python wheels (abi3) and sdist,
+#   - the npm package tarball of the WASM build.
+# Publishing to crates.io, PyPI and npm is a manual step (see CONTRIBUTING.md): it needs the
+# maintainer's registry credentials.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: The tag matches the workspace version
+        run: |
+          version="$(awk -F'"' '/^version = / {print $2; exit}' Cargo.toml)"
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != workspace version $version" >&2; exit 1; }
+      - run: gh release create "$GITHUB_REF_NAME" --draft --generate-notes --title "$GITHUB_REF_NAME"
+
+  binaries:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-24.04-arm }
+          - { target: aarch64-apple-darwin, os: macos-15 }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --profile dist --locked -p sheetrs-linter -p sheetrs-stats -p sheetrs-edit -p sheetrs-compiler -p sheetrs-engine
+      - name: Package
+        run: |
+          name="sheetrs-$GITHUB_REF_NAME-${{ matrix.target }}"
+          mkdir "$name"
+          ext=""; [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
+          for bin in sheetlint sheetstats sheetedit sheetc sheetrs-rt; do
+            cp "target/dist/$bin$ext" "$name/"
+          done
+          cp LICENSE README.md "$name/"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "$name.zip" "$name" > /dev/null; asset="$name.zip"
+          else
+            tar czf "$name.tar.gz" "$name"; asset="$name.tar.gz"
+          fi
+          openssl dgst -sha256 -r "$asset" > "$asset.sha256"
+          gh release upload "$GITHUB_REF_NAME" "$asset" "$asset.sha256" --clobber
+
+  wheels:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, maturin: "--compatibility manylinux_2_28 --zig" }
+          - { os: ubuntu-24.04-arm, maturin: "--compatibility manylinux_2_28 --zig" }
+          - { os: macos-15, maturin: "" }
+          - { os: windows-latest, maturin: "" }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: python -m pip install "maturin[zig]"
+      - run: python -m maturin build --release --locked --out dist -m sheetrs-py/Cargo.toml ${{ matrix.maturin }}
+      - run: gh release upload "$GITHUB_REF_NAME" dist/*.whl --clobber
+
+  sdist:
+    needs: draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - run: python3 -m pip install maturin
+      - run: python3 -m maturin sdist --out dist -m sheetrs-py/Cargo.toml
+      - run: gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --clobber
+
+  wasm:
+    needs: draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install wasm-bindgen-cli --version "$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, ""); print; exit}' Cargo.lock)" --locked
+      - run: scripts/package-wasm.sh
+      - run: gh release upload "$GITHUB_REF_NAME" target/npm/*.tgz --clobber
+
+  publish:
+    needs: [binaries, wheels, sdist, wasm]
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"

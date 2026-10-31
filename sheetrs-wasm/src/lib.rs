@@ -1,5 +1,6 @@
 use serde::Serialize;
 use sheetrs_core::reader::read_workbook_from_reader;
+use sheetrs_core::report::violation_records;
 use sheetrs_core::rules::registry;
 use sheetrs_core::violation::CellReference;
 use sheetrs_core::{FormatContext, Linter, LinterConfig, violation::Violation};
@@ -71,6 +72,43 @@ pub fn lint_workbook(
         .collect();
 
     Ok(format_violations_human(&violations, &rule_names, &workbook))
+}
+
+/// Lints a workbook and returns the violations as an array of objects
+/// (`rule_id`, `rule_name`, `severity`, `message`, `scope`, `sheet`, `cell`, `row`, `col`), the
+/// structured counterpart of [`lint_workbook`]. `config_toml` is the text of a `sheetlint.toml`
+/// (empty for the default rules).
+#[wasm_bindgen]
+pub fn lint_workbook_records(
+    file_data: &[u8],
+    extension: &str,
+    config_toml: &str,
+) -> Result<JsValue, JsValue> {
+    let workbook = read_workbook_from_reader(Cursor::new(file_data), Some(extension))
+        .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
+    let config = if config_toml.trim().is_empty() {
+        LinterConfig::default()
+    } else {
+        LinterConfig::from_toml(config_toml)
+            .map_err(|e| JsValue::from_str(&format!("Config error: {e}")))?
+    };
+    let linter = Linter::with_config(config);
+    let violations = linter
+        .lint_workbook(&workbook)
+        .map_err(|e| JsValue::from_str(&format!("Linter error: {e}")))?;
+    serde_wasm_bindgen::to_value(&violation_records(&violations, &workbook, linter.config()))
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+}
+
+/// Statistics of a workbook as an object (the fields of `sheetstats --format json`), the
+/// structured counterpart of [`get_workbook_stats`]. `total_file_size` is 0: bytes carry no size.
+#[wasm_bindgen]
+pub fn workbook_stats(file_data: &[u8], extension: &str) -> Result<JsValue, JsValue> {
+    let stats =
+        sheetrs_stats::stats::WorkbookStats::from_reader(Cursor::new(file_data), Some(extension))
+            .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
+    serde_wasm_bindgen::to_value(&stats)
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
 }
 
 fn format_violations_human(
