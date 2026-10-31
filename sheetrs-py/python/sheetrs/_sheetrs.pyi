@@ -1,16 +1,17 @@
 import os
-from typing import Any, Literal, Self, TypedDict
+from typing import Any, Literal, TypedDict
 
 __version__: str
 
-Source = str | os.PathLike[str] | bytes
 Path = str | os.PathLike[str]
+Source = Path | bytes | Workbook
 
 class SheetrsError(Exception):
     """A workbook could not be read, analyzed or written."""
 
 class Violation:
-    """One finding of the linter."""
+    """One finding of the linter: the type of the items `Linter.lint` returns. It is exposed so
+    that results can be annotated and checked; it is not built by the user."""
 
     rule_id: str
     rule_name: str
@@ -41,18 +42,9 @@ class Linter:
         self, *, config: str | None = None, config_path: Path | None = None
     ) -> None: ...
     def lint(self, source: Source, *, extension: str | None = None) -> list[Violation]:
-        """Lint a workbook given by path or as bytes (then `extension` is required)."""
+        """Lint a workbook given by path, as bytes (then `extension` is required) or loaded."""
     def rules(self) -> list[Rule]:
         """The rules ordered by id; `enabled` tells whether this configuration runs each one."""
-
-def lint(
-    source: Source,
-    *,
-    config: str | None = None,
-    config_path: Path | None = None,
-    extension: str | None = None,
-) -> list[Violation]:
-    """Lint with a one-off `Linter(config=..., config_path=...)`."""
 
 class SheetStats(TypedDict):
     name: str
@@ -83,40 +75,59 @@ class WorkbookStats(TypedDict):
 def stats(source: Source, *, extension: str | None = None) -> WorkbookStats:
     """Statistics of a workbook given by path or as bytes (`total_file_size` is 0 for bytes)."""
 
-class EditPlan:
-    """Operations on one workbook, written against the input and applied in one pass on `save`.
+class Workbook:
+    """A workbook loaded for editing: eager mode.
+
+    It has a working copy of the file, and every operation runs when it is called, on the result
+    of the previous ones, and returns the `Workbook` that results (the one it was called on does
+    not change). The intermediate workbook can be linted or measured (`Linter.lint(workbook)`,
+    `stats(workbook)`), and a position is the one the earlier operations left.
 
     Scopes are `"Sheet"`, `"Sheet!B:D"` (columns) and `"Sheet!3:10"` (rows); quote a sheet name
-    that contains `!`. Rows are deleted with a row range and columns with a column range
-    (`ValueError` otherwise). Operations address the input workbook in any order; the plan
-    merges overlapping ranges and applies them in the order that gives the right result
-    (see `operations`). A formula with a 3D reference makes `save` fail when rows, columns or
-    sheets are deleted or removed (issue #75).
+    that contains `!`. The scopes of one call are simultaneous. Rows are deleted with a row range
+    and columns with a column range (`ValueError` otherwise).
     """
 
-    def __init__(self, input: Path) -> None: ...
-    def remove_sheets(self, *names: str) -> Self: ...
-    def remove_ranges(self, *names: str) -> Self: ...
-    def convert_to_values(self, *scopes: str) -> Self: ...
-    def delete_rows(self, *scopes: str) -> Self: ...
-    def delete_columns(self, *scopes: str) -> Self: ...
-    def recalc_on_open(self) -> Self: ...
+    def remove_sheets(self, *names: str) -> Workbook: ...
+    def remove_ranges(self, *names: str) -> Workbook: ...
+    def convert_to_values(self, *scopes: str) -> Workbook: ...
+    def delete_rows(self, *scopes: str) -> Workbook: ...
+    def delete_columns(self, *scopes: str) -> Workbook: ...
+    def recalc_on_open(self) -> Workbook: ...
+    def lazy(self) -> LazyWorkbook:
+        """The same workbook, lazily: what follows is recorded, not run."""
+    def write(self, path: Path) -> None:
+        """Save it to `path`, which must not be the file it was read from."""
+
+class LazyWorkbook:
+    """A workbook scanned for editing: lazy mode. Nothing is read.
+
+    The methods of `Workbook`, with the same meaning (each operation addresses the workbook as the
+    previous ones leave it), that record the operation and return the plan that results. The plan
+    runs on `sink` or `collect`, in the fewest passes over the file that give what running the
+    operations one at a time gives; `explain` shows them. A formula with a 3D reference
+    (`Sheet1:Sheet3!A1`) makes the run fail when rows, columns or sheets are deleted or removed
+    (issue #75).
+    """
+
+    def remove_sheets(self, *names: str) -> LazyWorkbook: ...
+    def remove_ranges(self, *names: str) -> LazyWorkbook: ...
+    def convert_to_values(self, *scopes: str) -> LazyWorkbook: ...
+    def delete_rows(self, *scopes: str) -> LazyWorkbook: ...
+    def delete_columns(self, *scopes: str) -> LazyWorkbook: ...
+    def recalc_on_open(self) -> LazyWorkbook: ...
     @property
     def operations(self) -> list[str]:
-        """The operations as they will be applied (resolved, in order), as text."""
-    def save(self, output: Path) -> None:
-        """Apply the operations in one pass and write `output` (never the input itself)."""
-    def __len__(self) -> int: ...
+        """The operations as they were written, as text."""
+    def explain(self) -> str:
+        """The passes over the file that run the plan, as text."""
+    def sink(self, path: Path) -> None:
+        """Run the plan and write the result to `path` (never the file it reads)."""
+    def collect(self) -> Workbook:
+        """Run the plan and load the result."""
 
-def edit(
-    input: Path,
-    output: Path,
-    *,
-    remove_sheets: list[str] | None = None,
-    remove_ranges: list[str] | None = None,
-    convert_to_values: list[str] | None = None,
-    delete_rows: list[str] | None = None,
-    delete_columns: list[str] | None = None,
-    recalc_on_open: bool = False,
-) -> None:
-    """Eager editing: `EditPlan(input)` with these operations, saved to `output` at once."""
+def read(source: Path | bytes, *, extension: str | None = None) -> Workbook:
+    """Load a workbook for editing, eagerly. Bytes need `extension`. The file is never modified."""
+
+def scan(path: Path) -> LazyWorkbook:
+    """Scan a workbook for editing, lazily. Only the path and the extension are checked."""

@@ -147,18 +147,20 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
     formulas to values, deleting rows and columns) without fully rewriting the file.
   - `ValueScope` selects the cells to convert (a sheet, columns or rows) independently of the
     file format.
-  - `EditPlan` and `Operation` (module `plan`, exported at the crate root): the operations on one
-    workbook collected one at a time, each written against the input workbook. `operations()` is
-    the plan **resolved** into the canonical order the writer applies in a single pass:
-    conversions first, then, in each sheet, rows and columns deleted from the last to the first,
-    then names, then sheets. The order is defined once, in `StructureEdits::edits`, and
-    `operations()` is read from it; a test checks that the single pass equals those operations one
-    per pass, for any order they were written in. Operations on different sheets are independent
-    (a reference moves only with the sheet it names), so no order between sheets is needed. A
-    reference that spans sheets would tie them, and is refused (issue #75). `sheetedit` and the
-    bindings build their runs with it.
-  - The writer streams: each worksheet is read and written event by event, and the plan is a few
-    bands and names, so memory does not depend on the size of the workbook.
+  - `EditPlan` and `Operation` (module `plan`, exported at the crate root): a **sequence** of
+    operations on one workbook, each addressing the workbook as the previous ones left it (what
+    running them one at a time gives). `passes()` plans the sequence into the fewest passes over
+    the file that give the same workbook: deletions of one sheet and axis share a pass, with the
+    later positions translated through the earlier deletions; deletions of different sheets and
+    on rows vs columns, name and sheet removals and the recalculation mark commute; a conversion
+    after another change, and two deletions that touch (which the writer would take for one
+    band), start a new pass. `against_input()` is the declarative case (a command line: all
+    written against the input, in no order), always one pass. A pass is applied by the writer in
+    the order defined once in `StructureEdits::edits`. A test generates sequences and compares
+    the plan with the operations run one at a time, in both formats. A reference that spans
+    sheets would tie sheets together, and is refused (issue #75).
+  - The writer streams: each pass reads and writes every worksheet event by event, and the plan
+    is a few bands and names, so memory does not depend on the size of the workbook.
   - `main.rs` handles arguments.
 
 ## 3. Bindings
@@ -173,12 +175,16 @@ next to `lint`, not as a separate service.
   `lint_rules`, `workbook_stats`) or the human text report out. Packaged for npm by
   `scripts/package-wasm.sh` (`wasm-bindgen --target web`, template in `sheetrs-wasm/npm`).
 - **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs`, re-exported flat
-  by the `python/sheetrs` package (type stubs): `Linter`/`lint`, `stats`, `EditPlan`/`edit`. There
-  is no module per tool: each tool is one class or function (`EditPlan` is the lazy form and `edit`
-  the eager one of the same `sheetrs_edit::EditPlan`). The functions take a path or bytes and
-  release the GIL while they work. It is built by maturin, which enables the `extension-module`
-  feature; the crate has no Rust test harness (it would have to link libpython), its tests are
-  `sheetrs-py/tests` (pytest). Neither binding crate is published to crates.io.
+  by the `python/sheetrs` package (type stubs): `Linter` (with `Violation`, its result type),
+  `stats`, and editing in the eager/lazy convention of dataframe libraries: `read` gives a
+  `Workbook` (a working copy; each operation runs when called) and `scan` a `LazyWorkbook`
+  (nothing read; operations recorded; `sink`/`collect` run the plan). Both have the same methods
+  with the same sequential meaning, and are two ways to run one `sheetrs_edit::EditPlan`: the
+  eager one a pass per call, the lazy one the planned passes. The functions take a path, bytes or
+  a loaded `Workbook` and release the GIL while they work. It is built by maturin, which enables
+  the `extension-module` feature; the crate has no Rust test harness (it would have to link
+  libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding crate is published to
+  crates.io.
 
 ## Design Principles
 

@@ -31,7 +31,7 @@ Python package (see [Distribution](#distribution)):
 | Executables | GitHub release assets (`sheetrs-vX.Y.Z-<target>`) | `sheetlint`, `sheetstats`, `sheetedit`, `sheetc`, `sheetrs-rt` |
 | Rust libraries | `sheetrs-linter` (rules, configuration, violations), `sheetrs-stats`, `sheetrs-edit`, `sheetrs-core` (workbook model and readers, shared by all), `sheetrs-formula`, `sheetrs-engine`, `sheetrs-compiler` | The same code the executables run |
 | WebAssembly | `sheetrs-wasm` (npm tarball in the release) | Lint and statistics in the browser, structured and text output |
-| Python | `sheetrs` (wheels and sdist in the release; [sheetrs-py](sheetrs-py/README.md)) | `Linter`/`lint`, `stats`, `EditPlan`/`edit` |
+| Python | `sheetrs` (wheels and sdist in the release; [sheetrs-py](sheetrs-py/README.md)) | `Linter`, `stats`, `read`/`scan` (eager and lazy editing) |
 
 ### Python
 
@@ -45,8 +45,8 @@ import sheetrs
 for v in sheetrs.Linter(config_path="sheetlint.toml").lint("book.xlsx"):
     print(v.rule_id, v.sheet, v.cell, v.message)
 print(sheetrs.stats("book.xlsx")["total_formulas"])
-# collect operations, one pass over the file on save
-sheetrs.EditPlan("book.xlsx").remove_sheets("Secrets").recalc_on_open().save("clean.xlsx")
+# lazy: nothing is read until sink(); eager is sheetrs.read(...) with the same methods
+sheetrs.scan("book.xlsx").remove_sheets("Secrets").recalc_on_open().sink("clean.xlsx")
 ```
 
 Wheels are `abi3` (Python ≥ 3.10). Details in [sheetrs-py/README.md](sheetrs-py/README.md).

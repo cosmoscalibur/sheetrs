@@ -45,21 +45,16 @@ def test_rules_catalog_reflects_the_configuration():
 def test_unknown_rules_in_the_configuration_are_rejected():
     with pytest.raises(ValueError, match="ERR1O2"):
         sheetrs.Linter(config='[global]\ndisabled_rules = ["ERR1O2"]\n')
-    with pytest.raises(ValueError, match="ERR1O2"):
-        sheetrs.lint(
-            FIXTURES[0], config='[global]\ndisabled_rules = ["ERR1O2"]\n'
-        )
 
 
 def test_a_linter_is_reusable(workbook):
     linter = sheetrs.Linter()
     first = [v.to_dict() for v in linter.lint(workbook)]
     assert first == [v.to_dict() for v in linter.lint(workbook)]
-    assert first == [v.to_dict() for v in sheetrs.lint(workbook)]
 
 
 def test_lint_returns_violations(workbook):
-    violations = sheetrs.lint(workbook)
+    violations = sheetrs.Linter().lint(workbook)
     assert violations
     first = violations[0]
     assert first.rule_id and first.message
@@ -72,32 +67,32 @@ def test_lint_parity_between_formats():
     # The ODS fixture, exported from LibreOffice, carries a macro library the XLSX twin lacks
     # (VBA1101): a property of the fixtures, not of the bindings.
     xlsx, ods = (
-        {v.rule_id for v in sheetrs.lint(p)} - {"VBA1101"} for p in FIXTURES
+        {v.rule_id for v in sheetrs.Linter().lint(p)} - {"VBA1101"} for p in FIXTURES
     )
     assert xlsx == ods
 
 
 def test_lint_accepts_str_pathlike_and_bytes(workbook):
-    from_path = [v.to_dict() for v in sheetrs.lint(workbook)]
-    assert [v.to_dict() for v in sheetrs.lint(str(workbook))] == from_path
+    from_path = [v.to_dict() for v in sheetrs.Linter().lint(workbook)]
+    assert [v.to_dict() for v in sheetrs.Linter().lint(str(workbook))] == from_path
     data = workbook.read_bytes()
     assert [
-        v.to_dict() for v in sheetrs.lint(data, extension=workbook.suffix[1:])
+        v.to_dict() for v in sheetrs.Linter().lint(data, extension=workbook.suffix[1:])
     ] == from_path
 
 
 def test_bytes_need_an_extension(workbook):
     with pytest.raises(ValueError, match="extension"):
-        sheetrs.lint(workbook.read_bytes())
+        sheetrs.Linter().lint(workbook.read_bytes())
 
 
 def test_wrong_source_type():
     with pytest.raises(TypeError):
-        sheetrs.lint(42)
+        sheetrs.Linter().lint(42)
 
 
 def test_cell_violations_carry_a_position(workbook):
-    cells = [v for v in sheetrs.lint(workbook) if v.scope == "cell"]
+    cells = [v for v in sheetrs.Linter().lint(workbook) if v.scope == "cell"]
     assert cells
     for v in cells:
         assert v.sheet and v.cell and v.row is not None and v.col is not None
@@ -105,33 +100,33 @@ def test_cell_violations_carry_a_position(workbook):
 
 
 def test_config_disables_rules(workbook):
-    everything = {v.rule_id for v in sheetrs.lint(workbook)}
+    everything = {v.rule_id for v in sheetrs.Linter().lint(workbook)}
     rule = sorted(everything)[0]
     toml = f'[global]\ndisabled_rules = ["{rule}"]\n'
-    assert rule not in {v.rule_id for v in sheetrs.lint(workbook, config=toml)}
+    assert rule not in {v.rule_id for v in sheetrs.Linter(config=toml).lint(workbook)}
 
 
 def test_config_path_and_exclusive_config(workbook, tmp_path):
     path = tmp_path / "sheetlint.toml"
     path.write_text("[global]\n")
-    assert sheetrs.lint(workbook, config_path=path)
+    assert sheetrs.Linter(config_path=path).lint(workbook)
     with pytest.raises(ValueError, match="not both"):
-        sheetrs.lint(workbook, config="", config_path=path)
+        sheetrs.Linter(config="", config_path=path)
 
 
 def test_invalid_config_is_a_value_error(workbook):
     with pytest.raises(ValueError, match="configuration"):
-        sheetrs.lint(workbook, config="global = 3")
+        sheetrs.Linter(config="global = 3")
 
 
 def test_missing_file_is_a_file_not_found_error(tmp_path):
     with pytest.raises(FileNotFoundError):
-        sheetrs.lint(tmp_path / "missing.xlsx")
+        sheetrs.Linter().lint(tmp_path / "missing.xlsx")
 
 
 def test_corrupt_workbook_is_a_sheetrs_error():
     with pytest.raises(sheetrs.SheetrsError):
-        sheetrs.lint(b"not a zip", extension="xlsx")
+        sheetrs.Linter().lint(b"not a zip", extension="xlsx")
 
 
 def test_stats(workbook):
@@ -151,153 +146,155 @@ def sheet_names(path):
     return [s["name"] for s in sheetrs.stats(path)["sheets"]]
 
 
-def test_lazy_plan_applies_everything_in_one_pass(workbook, tmp_path):
+def test_the_api_is_flat_and_has_one_way_to_do_each_thing():
+    assert set(sheetrs.__all__) >= {
+        "Linter", "Violation", "stats", "read", "scan", "Workbook", "LazyWorkbook",
+    }
+    for gone in ("lint", "edit", "EditPlan", "linter"):
+        assert not hasattr(sheetrs, gone)
+
+
+# ---- eager and lazy: the same methods, the same meaning --------------------------------------
+
+
+def test_read_loads_and_never_modifies_the_file(workbook, tmp_path):
+    before = workbook.read_bytes()
+    wb = sheetrs.read(workbook).remove_sheets(sheet_names(workbook)[-1])
+    wb.write(tmp_path / f"out{workbook.suffix}")
+    assert workbook.read_bytes() == before
+
+
+def test_eager_runs_when_called_and_the_result_can_be_inspected(workbook):
     names = sheet_names(workbook)
-    assert len(names) > 2
-    output = tmp_path / f"out{workbook.suffix}"
-    plan = (
-        sheetrs.EditPlan(workbook)
-        .remove_sheets(names[-1])
-        .remove_sheets(names[-2], names[-1])  # a repeat counts once
-        .recalc_on_open()
-    )
-    # Resolved: sorted, the repeat counted once.
-    assert plan.operations == [
-        *sorted([f"remove sheet {names[-1]}", f"remove sheet {names[-2]}"]),
-        "recalculate when opened",
-    ]
-    assert len(plan) == 3
-    assert not output.exists()  # lazy: nothing ran yet
-    plan.save(output)
-    assert sheet_names(output) == names[:-2]
+    original = sheetrs.read(workbook)
+    smaller = original.remove_sheets(names[-1])
+    # The call ran: the result is a workbook with one sheet less, and it can be measured as is.
+    assert sheet_names(smaller) == names[:-1]
+    assert sheetrs.Linter().lint(smaller) is not None
+    # The workbook it was called on does not change.
+    assert sheet_names(original) == names
 
 
-def test_plan_can_be_saved_twice(workbook, tmp_path):
-    plan = sheetrs.EditPlan(workbook).recalc_on_open()
-    for n in (1, 2):
-        plan.save(tmp_path / f"o{n}{workbook.suffix}")
-        assert (tmp_path / f"o{n}{workbook.suffix}").exists()
-
-
-def test_empty_plan_does_not_save(workbook, tmp_path):
-    with pytest.raises(sheetrs.SheetrsError, match="No operations"):
-        sheetrs.EditPlan(workbook).save(tmp_path / f"o{workbook.suffix}")
-
-
-def test_plan_validates_scopes_when_they_are_added(workbook):
-    with pytest.raises(ValueError, match="scope"):
-        sheetrs.EditPlan(workbook).delete_rows("!A")
-
-
-def test_plan_never_overwrites_its_input(workbook):
+def test_eager_errors_show_where_they_are_made(workbook):
+    wb = sheetrs.read(workbook)
     with pytest.raises(sheetrs.SheetrsError):
-        sheetrs.EditPlan(workbook).recalc_on_open().save(workbook)
-
-
-def test_plan_with_a_missing_input_fails_on_save(tmp_path):
-    plan = sheetrs.EditPlan(tmp_path / "missing.xlsx").recalc_on_open()
-    with pytest.raises(FileNotFoundError):
-        plan.save(tmp_path / "out.xlsx")
-
-
-def test_eager_operations_run_at_once(workbook, tmp_path):
-    names = sheet_names(workbook)
-    output = tmp_path / f"out{workbook.suffix}"
-    sheetrs.edit(workbook, output, remove_sheets=[names[-1]])
-    assert sheet_names(output) == names[:-1]
-
-
-def test_eager_operations_chain_through_their_outputs(workbook, tmp_path):
-    names = sheet_names(workbook)
-    first = tmp_path / f"one{workbook.suffix}"
-    second = tmp_path / f"two{workbook.suffix}"
-    sheetrs.edit(workbook, first, remove_sheets=[names[-1]])
-    sheetrs.edit(first, second, remove_sheets=[names[-2]])
-    assert sheet_names(second) == names[:-2]
-
-
-def test_eager_scopes_are_validated(workbook, tmp_path):
-    with pytest.raises(ValueError, match="scope"):
-        sheetrs.edit(workbook, tmp_path / f"o{workbook.suffix}", delete_columns=["!A"])
-
-
-def test_the_api_is_flat():
-    assert {"Linter", "lint", "Violation", "stats", "EditPlan", "edit"} <= set(
-        sheetrs.__all__
-    )
-    assert not hasattr(sheetrs, "linter")
-
-
-def test_plan_operations_are_resolved_and_independent_of_the_order_added(structure):
-    first = (
-        sheetrs.EditPlan(structure)
-        .delete_rows("T!5", "T!3:6", "U!2")
-        .delete_columns("T!D")
-        .convert_to_values("F")
-        .remove_ranges("NameOne")
-        .recalc_on_open()
-    )
-    second = (
-        sheetrs.EditPlan(structure)
-        .recalc_on_open()
-        .remove_ranges("NameOne")
-        .delete_columns("T!D")
-        .convert_to_values("F")
-        .delete_rows("U!2", "T!3:6")
-    )
-    assert first.operations == second.operations
-    assert first.operations == [
-        "convert formulas to values in F",
-        "delete rows T!3:6",  # merged from T!5 and T!3:6
-        "delete rows U!2:2",
-        "delete columns T!D:D",
-        "remove named range NameOne",
-        "recalculate when opened",
-    ]
-    assert len(first) == 6
-
-
-def test_plan_gives_the_same_workbook_in_any_order(structure, tmp_path):
-    ops = [
-        ("delete_rows", ("T!2",)),
-        ("delete_rows", ("U!4:5",)),
-        ("convert_to_values", ("F",)),
-        ("remove_sheets", ("V",)),
-    ]
-    outputs = []
-    for i, order in enumerate([ops, ops[::-1], ops[2:] + ops[:2]]):
-        plan = sheetrs.EditPlan(structure)
-        for name, args in order:
-            getattr(plan, name)(*args)
-        output = tmp_path / f"o{i}{structure.suffix}"
-        plan.save(output)
-        outputs.append(sheetrs.stats(output)["sheets"])
-    assert outputs[0] == outputs[1] == outputs[2]
-
-
-def test_rows_need_a_row_range_and_columns_a_column_range(workbook, tmp_path):
+        wb.delete_rows("NoSuchSheet!1")  # raised here, not at a later write
     with pytest.raises(ValueError, match="row range"):
-        sheetrs.EditPlan(workbook).delete_rows("T!B:D")
-    with pytest.raises(ValueError, match="column range"):
-        sheetrs.EditPlan(workbook).delete_columns("T!3:10")
-    with pytest.raises(ValueError, match="column range"):
-        sheetrs.edit(workbook, tmp_path / f"o{workbook.suffix}", delete_columns=["T"])
+        wb.delete_rows("T!B:D")
+
+
+def test_lazy_reads_nothing_until_it_runs(workbook, tmp_path):
+    names = sheet_names(workbook)
+    lazy = sheetrs.scan(workbook).remove_sheets(names[-1])
+    output = tmp_path / f"out{workbook.suffix}"
+    assert not output.exists()
+    lazy.sink(output)
+    assert sheet_names(output) == names[:-1]
+    # The plan is not consumed, and what it was called on is not changed.
+    assert sheetrs.scan(workbook).operations == []
+    lazy.sink(tmp_path / f"again{workbook.suffix}")
+
+
+def test_lazy_errors_show_when_the_plan_runs(workbook, tmp_path):
+    lazy = sheetrs.scan(workbook).delete_rows("NoSuchSheet!1")  # recorded, not run
+    with pytest.raises(sheetrs.SheetrsError):
+        lazy.sink(tmp_path / f"out{workbook.suffix}")
+    with pytest.raises(sheetrs.SheetrsError, match="No operations"):
+        sheetrs.scan(workbook).sink(tmp_path / f"o{workbook.suffix}")
+
+
+def test_scan_checks_only_the_path(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        sheetrs.scan(tmp_path / "missing.xlsx")
+    with pytest.raises(ValueError, match="XLSX, XLSM or ODS"):
+        sheetrs.scan(tmp_path)
+
+
+def test_read_checks_the_file_and_takes_bytes(workbook, tmp_path):
+    with pytest.raises(FileNotFoundError):
+        sheetrs.read(tmp_path / "missing.xlsx")
+    broken = tmp_path / "broken.xlsx"
+    broken.write_bytes(b"not a zip")
+    with pytest.raises(sheetrs.SheetrsError):
+        sheetrs.read(broken)
+    wb = sheetrs.read(workbook.read_bytes(), extension=workbook.suffix[1:])
+    assert sheet_names(wb) == sheet_names(workbook)
+    with pytest.raises(ValueError, match="extension"):
+        sheetrs.read(workbook.read_bytes())
+
+
+def test_a_workbook_never_overwrites_the_file_it_reads(workbook):
+    with pytest.raises(sheetrs.SheetrsError):
+        sheetrs.read(workbook).write(workbook)
+    with pytest.raises(sheetrs.SheetrsError):
+        sheetrs.scan(workbook).recalc_on_open().sink(workbook)
+
+
+def test_the_scopes_of_a_call_are_simultaneous_and_calls_are_sequential(structure, tmp_path):
+    def rows(wb):
+        return {k: v for k, v in sorted(cells(wb).items()) if k[0] == "F"}
+
+    # Row 3 deleted twice is the rows 3 and 4; "T!3, T!4" at once is the same two rows.
+    twice = sheetrs.read(structure).delete_rows("T!3").delete_rows("T!3")
+    at_once = sheetrs.read(structure).delete_rows("T!3", "T!4")
+    assert rows(twice) == rows(at_once)
+
+
+def cells(wb):
+    # The statistics are enough to tell two workbooks apart here.
+    return {("F", i, s["name"]): (s["used_cells"], s["formulas"], s["errors"])
+            for i, s in enumerate(sheetrs.stats(wb)["sheets"])}
+
+
+def test_lazy_and_eager_give_the_same_workbook(structure, tmp_path):
+    steps = [
+        ("convert_to_values", ("F",)),
+        ("delete_rows", ("T!2",)),
+        ("delete_rows", ("T!3",)),   # the input's row 4
+        ("delete_columns", ("U!B",)),
+        ("remove_ranges", ("NameOne",)),
+        ("remove_sheets", ("V",)),
+        ("recalc_on_open", ()),
+    ]
+    eager = sheetrs.read(structure)
+    lazy = sheetrs.scan(structure)
+    for name, args in steps:
+        eager = getattr(eager, name)(*args)
+        lazy = getattr(lazy, name)(*args)
+    assert lazy.operations[0].startswith("convert formulas to values")
+    out = tmp_path / f"lazy{structure.suffix}"
+    lazy.sink(out)
+    assert sheetrs.stats(out)["sheets"] == sheetrs.stats(eager)["sheets"]
+    assert sheetrs.stats(lazy.collect())["sheets"] == sheetrs.stats(eager)["sheets"]
+
+
+def test_explain_shows_the_passes_and_a_conversion_after_a_change_needs_another(structure):
+    one = sheetrs.scan(structure).delete_rows("T!2").delete_columns("U!B").remove_sheets("V")
+    assert one.explain().startswith("pass 1 of 1:")
+    two = sheetrs.scan(structure).delete_rows("T!2").convert_to_values("F")
+    assert two.explain().startswith("pass 1 of 2:")
+    assert "pass 2 of 2:" in two.explain()
+    gone = sheetrs.scan(structure).remove_sheets("U").delete_rows("U!2")
+    with pytest.raises(ValueError, match="removed"):
+        gone.explain()
 
 
 def test_a_3d_reference_stops_a_structural_edit_and_names_the_issue(tmp_path):
-    # The workbook of the linter tests holds no 3D reference: build the formula by text instead.
     from zipfile import ZipFile
 
-    source = STRUCTURE / "book.xlsx"
     broken = tmp_path / "span.xlsx"
-    with ZipFile(source) as zin, ZipFile(broken, "w") as zout:
+    with ZipFile(STRUCTURE / "book.xlsx") as zin, ZipFile(broken, "w") as zout:
         for item in zin.infolist():
             data = zin.read(item.filename)
             if item.filename == "xl/worksheets/sheet4.xml":
-                data = data.replace(b"<f aca=\"false\">T!A2</f>", b"<f aca=\"false\">SUM(T:V!A2:A4)</f>", 1)
+                data = data.replace(
+                    b'<f aca="false">T!A2</f>', b'<f aca="false">SUM(T:V!A2:A4)</f>', 1
+                )
                 assert b"T:V!" in data
             zout.writestr(item, data)
     with pytest.raises(sheetrs.SheetrsError, match="issues/75"):
-        sheetrs.EditPlan(broken).delete_rows("T!4:5").save(tmp_path / "out.xlsx")
+        sheetrs.read(broken).delete_rows("T!4:5")
+    with pytest.raises(sheetrs.SheetrsError, match="issues/75"):
+        sheetrs.scan(broken).delete_rows("T!4:5").sink(tmp_path / "out.xlsx")
     # What changes no structure is not stopped.
-    sheetrs.EditPlan(broken).recalc_on_open().save(tmp_path / "ok.xlsx")
+    sheetrs.read(broken).recalc_on_open().write(tmp_path / "ok.xlsx")

@@ -1,28 +1,33 @@
 //! Python bindings for the SheetRS suite.
 //!
-//! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports it, flat: the
-//! three tools are `Linter`/`lint`, `stats` and `EditPlan`/`edit`. A workbook is a path
-//! (`str`/`os.PathLike`) or its bytes. The functions release the GIL while they read and analyze
-//! a workbook.
+//! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports it, flat. A
+//! workbook is a path (`str`/`os.PathLike`), its bytes, or a `Workbook` already loaded. The
+//! functions release the GIL while they read and analyze a workbook.
 //!
 //! - `Linter`: a configuration validated when it is built, then `lint` and `rules` (the rules
 //!   exist only as part of the linter, so their catalog is next to the configuration it reflects).
-//! - `EditPlan`: lazy editing. Operations are collected, each written against the input workbook,
-//!   and `save` applies them resolved into one order in a single pass. `edit` is the eager form:
-//!   the same operations given at once, applied at once.
+//! - `stats`: the statistics of a workbook.
+//! - Editing follows the eager/lazy convention of dataframe libraries: the two modes have the
+//!   same methods and the same meaning (each operation addresses the workbook as the previous ones
+//!   left it); they differ in what is loaded and when it runs. `read` gives a `Workbook`, with
+//!   its own working copy, where each operation runs when it is called; `scan` gives a
+//!   `LazyWorkbook`, where nothing is read, operations are recorded, and `sink` (to a file) or
+//!   `collect` (to a `Workbook`) runs the plan, in as few passes over the file as it can.
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 use sheetrs_core::reader::{self, Workbook};
 use sheetrs_edit::EditPlan;
+use sheetrs_edit::Operation;
 use sheetrs_edit::writer::ValueScope;
 use sheetrs_linter::report::{ViolationRecord, violation_records};
 use sheetrs_linter::rules::registry;
 use sheetrs_linter::{Linter, LinterConfig};
 use sheetrs_stats::WorkbookStats;
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 pyo3::create_exception!(
     _sheetrs,
@@ -41,6 +46,9 @@ impl Source {
     /// `source` is a path (`str`, `os.PathLike`) or `bytes`; bytes need `extension`
     /// (`xlsx`, `xlsm` or `ods`) because the format is not read from the content.
     fn from_py(source: &Bound<'_, PyAny>, extension: Option<&str>) -> PyResult<Self> {
+        if let Ok(workbook) = source.extract::<PyRef<'_, PyWorkbook>>() {
+            return Ok(Self::Path(workbook.path.clone()));
+        }
         if let Ok(bytes) = source.cast::<PyBytes>() {
             let Some(extension) = extension else {
                 return Err(PyValueError::new_err(
@@ -238,19 +246,6 @@ impl PyLinter {
     }
 }
 
-/// Lint a workbook with a one-off linter: `Linter(config=…, config_path=…).lint(source, …)`.
-#[pyfunction]
-#[pyo3(signature = (source, *, config=None, config_path=None, extension=None))]
-fn lint(
-    py: Python<'_>,
-    source: &Bound<'_, PyAny>,
-    config: Option<&str>,
-    config_path: Option<PathBuf>,
-    extension: Option<&str>,
-) -> PyResult<Vec<PyViolation>> {
-    PyLinter::new(config, config_path)?.lint(py, source, extension)
-}
-
 /// Statistics of a workbook, as `sheetstats --format json` reports them: totals plus a
 /// `sheets` list with one dict per sheet.
 ///
@@ -287,104 +282,220 @@ fn scopes(values: &Bound<'_, PyTuple>) -> PyResult<Vec<ValueScope>> {
         .collect()
 }
 
-/// Operations on one workbook, written against the input workbook and applied in a single pass.
+/// The extensions of the workbooks the suite reads and writes.
+const EXTENSIONS: [&str; 3] = ["xlsx", "xlsm", "ods"];
+
+fn extension_of(path: &Path) -> PyResult<String> {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .filter(|e| EXTENSIONS.contains(&e.as_str()))
+        .ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "'{}' is not an XLSX, XLSM or ODS workbook (by its extension)",
+                path.display()
+            ))
+        })
+}
+
+fn temporary_folder() -> PyResult<Arc<tempfile::TempDir>> {
+    tempfile::tempdir()
+        .map(Arc::new)
+        .map_err(|e| SheetrsError::new_err(format!("cannot create a working folder: {e}")))
+}
+
+/// The operations of the two modes, built from the arguments of a call.
+fn remove_sheets_op(names: &Bound<'_, PyTuple>) -> PyResult<Operation> {
+    Ok(Operation::RemoveSheets(strings(names)?))
+}
+fn remove_ranges_op(names: &Bound<'_, PyTuple>) -> PyResult<Operation> {
+    Ok(Operation::RemoveNamedRanges(strings(names)?))
+}
+fn convert_op(specs: &Bound<'_, PyTuple>) -> PyResult<Operation> {
+    Ok(Operation::ConvertToValues(scopes(specs)?))
+}
+fn delete_rows_op(specs: &Bound<'_, PyTuple>) -> PyResult<Operation> {
+    Ok(Operation::DeleteRows(scopes(specs)?))
+}
+fn delete_columns_op(specs: &Bound<'_, PyTuple>) -> PyResult<Operation> {
+    Ok(Operation::DeleteColumns(scopes(specs)?))
+}
+
+/// A workbook loaded for editing: eager mode.
 ///
-/// Lazy mode: each method records operations and returns the plan, so calls chain; nothing is
-/// read or written until `save(output)`. Operations address the rows, columns and sheet names of
-/// the **input**, in any order: the plan merges overlapping row and column ranges and orders what
-/// it does so that no operation sees the positions another one moved (formulas are converted
-/// before the cells they read are deleted, rows and columns are deleted from the last to the
-/// first, sheets are removed last). `operations` shows that order. The result does not depend on
-/// the order the operations were added in, and equals running them one per pass. Adding an
-/// operation twice counts once. A malformed scope, or rows deleted with a column range, raises
-/// `ValueError` where it is added. A formula with a 3D reference (`Sheet1:Sheet3!A1`) makes
-/// `save` fail when rows, columns or sheets are deleted or removed: not supported yet (issue #75).
+/// It has a working copy of the file, and every operation runs when it is called, on the result
+/// of the previous ones, and returns the `Workbook` that results (the one it was called on is not
+/// changed). So an error shows where it is made, the intermediate workbook can be linted or
+/// measured (`Linter.lint(workbook)`, `stats(workbook)`), and a position is the one the earlier
+/// operations left. Each operation reads and writes the file once; `lazy()` and the plan of a
+/// `LazyWorkbook` do the same work in fewer passes. `write` saves it.
 ///
-#[pyclass(name = "EditPlan", module = "sheetrs")]
-struct PyEditPlan {
-    input: PathBuf,
-    plan: EditPlan,
+/// Scopes are `"Sheet"`, `"Sheet!B:D"` (columns) and `"Sheet!3:10"` (rows); quote a sheet name
+/// that contains `!`. The scopes of one call are simultaneous.
+#[pyclass(name = "Workbook", frozen, module = "sheetrs")]
+struct PyWorkbook {
+    path: PathBuf,
+    /// The folder that holds `path`, when it is a working copy; it goes with the last handle.
+    keep: Option<Arc<tempfile::TempDir>>,
+}
+
+impl PyWorkbook {
+    fn apply(&self, py: Python<'_>, operation: Operation) -> PyResult<Self> {
+        let mut plan = EditPlan::new();
+        plan.push(operation).map_err(invalid)?;
+        if plan.is_empty() {
+            return Ok(Self {
+                path: self.path.clone(),
+                keep: self.keep.clone(),
+            });
+        }
+        let folder = temporary_folder()?;
+        let output = folder
+            .path()
+            .join(format!("workbook.{}", extension_of(&self.path)?));
+        py.detach(|| plan.execute(&self.path, &output).map_err(to_py_err))?;
+        Ok(Self {
+            path: output,
+            keep: Some(folder),
+        })
+    }
 }
 
 #[pymethods]
-impl PyEditPlan {
-    #[new]
-    fn new(input: PathBuf) -> Self {
-        Self {
-            input,
-            plan: EditPlan::new(),
-        }
-    }
-
+impl PyWorkbook {
     /// Remove sheets by name.
     #[pyo3(signature = (*names))]
-    fn remove_sheets<'py>(
-        mut slf: PyRefMut<'py, Self>,
-        names: &Bound<'py, PyTuple>,
-    ) -> PyResult<PyRefMut<'py, Self>> {
-        for name in strings(names)? {
-            slf.plan.remove_sheet(name);
-        }
-        Ok(slf)
+    fn remove_sheets(&self, py: Python<'_>, names: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.apply(py, remove_sheets_op(names)?)
     }
 
     /// Remove defined names (and database ranges).
     #[pyo3(signature = (*names))]
-    fn remove_ranges<'py>(
-        mut slf: PyRefMut<'py, Self>,
-        names: &Bound<'py, PyTuple>,
-    ) -> PyResult<PyRefMut<'py, Self>> {
-        for name in strings(names)? {
-            slf.plan.remove_named_range(name);
-        }
-        Ok(slf)
+    fn remove_ranges(&self, py: Python<'_>, names: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.apply(py, remove_ranges_op(names)?)
     }
 
-    /// Replace formulas by their cached values in scopes: `"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"`.
+    /// Replace formulas by their cached values in the scopes.
     #[pyo3(signature = (*scopes))]
-    fn convert_to_values<'py>(
-        mut slf: PyRefMut<'py, Self>,
-        scopes: &Bound<'py, PyTuple>,
-    ) -> PyResult<PyRefMut<'py, Self>> {
-        for scope in self::scopes(scopes)? {
-            slf.plan.convert_to_values(scope);
-        }
-        Ok(slf)
+    fn convert_to_values(&self, py: Python<'_>, scopes: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.apply(py, convert_op(scopes)?)
     }
 
     /// Delete rows (`"Sheet!3:10"`, or `"Sheet!3"`); references to them become `#REF!`.
     #[pyo3(signature = (*scopes))]
-    fn delete_rows<'py>(
-        mut slf: PyRefMut<'py, Self>,
-        scopes: &Bound<'py, PyTuple>,
-    ) -> PyResult<PyRefMut<'py, Self>> {
-        for scope in self::scopes(scopes)? {
-            slf.plan.delete_rows(scope).map_err(invalid)?;
-        }
-        Ok(slf)
+    fn delete_rows(&self, py: Python<'_>, scopes: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.apply(py, delete_rows_op(scopes)?)
     }
 
     /// Delete columns (`"Sheet!B:D"`, or `"Sheet!B"`).
     #[pyo3(signature = (*scopes))]
-    fn delete_columns<'py>(
-        mut slf: PyRefMut<'py, Self>,
-        scopes: &Bound<'py, PyTuple>,
-    ) -> PyResult<PyRefMut<'py, Self>> {
-        for scope in self::scopes(scopes)? {
-            slf.plan.delete_columns(scope).map_err(invalid)?;
+    fn delete_columns(&self, py: Python<'_>, scopes: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.apply(py, delete_columns_op(scopes)?)
+    }
+
+    /// Mark the workbook so the application that opens it recalculates every formula.
+    fn recalc_on_open(&self, py: Python<'_>) -> PyResult<Self> {
+        self.apply(py, Operation::RecalculateOnOpen)
+    }
+
+    /// The same workbook as a `LazyWorkbook`, with no operations: what follows is recorded, not run.
+    fn lazy(&self) -> PyLazyWorkbook {
+        PyLazyWorkbook {
+            path: self.path.clone(),
+            keep: self.keep.clone(),
+            plan: EditPlan::new(),
         }
-        Ok(slf)
     }
 
-    /// Mark the output so the application that opens it recalculates every formula.
-    fn recalc_on_open(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
-        slf.plan.recalculate_on_open();
-        slf
+    /// Save the workbook to `path`, which must not be the file it was read from. Raises `OSError`
+    /// when it cannot be written.
+    fn write(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+        let same = std::fs::canonicalize(&path)
+            .ok()
+            .zip(std::fs::canonicalize(&self.path).ok())
+            .is_some_and(|(a, b)| a == b);
+        if same {
+            return Err(SheetrsError::new_err(format!(
+                "'{}' is the file this workbook is read from",
+                path.display()
+            )));
+        }
+        py.detach(|| std::fs::copy(&self.path, &path).map(|_| ()))?;
+        Ok(())
     }
 
-    /// The operations as they will be applied, as text: resolved (overlapping ranges merged,
-    /// repeats and scopes on removed sheets dropped) and in the order that gives the right result,
-    /// whatever the order they were added in.
+    fn __repr__(&self) -> String {
+        format!("Workbook({:?})", self.path.display().to_string())
+    }
+}
+
+/// A workbook scanned for editing: lazy mode. Nothing is read.
+///
+/// It has the methods of `Workbook` with the same meaning, each operation addressing the workbook
+/// as the previous ones leave it, but they only record the operation and return the plan that
+/// results (the one they were called on is not changed). The plan runs on `sink(path)`, which
+/// writes the file, or `collect()`, which gives a `Workbook`. It is planned then: the operations
+/// are grouped into the fewest passes that give what running them one at a time gives, each pass
+/// reading and writing the file once as a stream, so memory does not grow with the workbook.
+/// `explain()` shows the passes. An error of the workbook shows when the plan runs; one of the
+/// plan itself (an operation on a sheet an earlier one removed) when it is planned.
+#[pyclass(name = "LazyWorkbook", frozen, module = "sheetrs")]
+struct PyLazyWorkbook {
+    path: PathBuf,
+    keep: Option<Arc<tempfile::TempDir>>,
+    plan: EditPlan,
+}
+
+impl PyLazyWorkbook {
+    fn then(&self, operation: Operation) -> PyResult<Self> {
+        let mut plan = self.plan.clone();
+        plan.push(operation).map_err(invalid)?;
+        Ok(Self {
+            path: self.path.clone(),
+            keep: self.keep.clone(),
+            plan,
+        })
+    }
+}
+
+#[pymethods]
+impl PyLazyWorkbook {
+    /// Remove sheets by name.
+    #[pyo3(signature = (*names))]
+    fn remove_sheets(&self, names: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.then(remove_sheets_op(names)?)
+    }
+
+    /// Remove defined names (and database ranges).
+    #[pyo3(signature = (*names))]
+    fn remove_ranges(&self, names: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.then(remove_ranges_op(names)?)
+    }
+
+    /// Replace formulas by their cached values in the scopes.
+    #[pyo3(signature = (*scopes))]
+    fn convert_to_values(&self, scopes: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.then(convert_op(scopes)?)
+    }
+
+    /// Delete rows (`"Sheet!3:10"`, or `"Sheet!3"`); references to them become `#REF!`.
+    #[pyo3(signature = (*scopes))]
+    fn delete_rows(&self, scopes: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.then(delete_rows_op(scopes)?)
+    }
+
+    /// Delete columns (`"Sheet!B:D"`, or `"Sheet!B"`).
+    #[pyo3(signature = (*scopes))]
+    fn delete_columns(&self, scopes: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        self.then(delete_columns_op(scopes)?)
+    }
+
+    /// Mark the workbook so the application that opens it recalculates every formula.
+    fn recalc_on_open(&self) -> PyResult<Self> {
+        self.then(Operation::RecalculateOnOpen)
+    }
+
+    /// The operations as they were written, as text.
     #[getter]
     fn operations(&self) -> Vec<String> {
         self.plan
@@ -394,93 +505,97 @@ impl PyEditPlan {
             .collect()
     }
 
-    /// Apply the operations to the input in one pass and write `output`, which must not be the
-    /// input. The plan is not consumed: it can be saved again. Raises `OSError` when a file
-    /// cannot be read or written and `SheetrsError` when the operation fails (no output is left
-    /// behind) or the plan is empty.
-    fn save(&self, py: Python<'_>, output: PathBuf) -> PyResult<()> {
-        py.detach(|| self.plan.execute(&self.input, &output).map_err(to_py_err))
+    /// The passes over the file that run the plan, as text.
+    fn explain(&self) -> PyResult<String> {
+        self.plan.explain().map_err(invalid)
     }
 
-    fn __len__(&self) -> usize {
-        self.plan.operations().len()
+    /// Run the plan and write the result to `path`, which must not be the file it reads. No file
+    /// is left behind when it fails. Raises `OSError` when a file cannot be read or written and
+    /// `SheetrsError` when the workbook cannot be edited or the plan has no operations.
+    fn sink(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+        py.detach(|| self.plan.execute(&self.path, &path).map_err(to_py_err))
+    }
+
+    /// Run the plan and load the result: a `Workbook`.
+    fn collect(&self, py: Python<'_>) -> PyResult<PyWorkbook> {
+        let folder = temporary_folder()?;
+        let output = folder
+            .path()
+            .join(format!("workbook.{}", extension_of(&self.path)?));
+        py.detach(|| self.plan.execute(&self.path, &output).map_err(to_py_err))?;
+        Ok(PyWorkbook {
+            path: output,
+            keep: Some(folder),
+        })
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "Plan({:?}, {} operation(s))",
-            self.input.display(),
+            "LazyWorkbook({:?}, {} operation(s))",
+            self.path.display().to_string(),
             self.plan.operations().len()
         )
     }
 }
 
-/// Eager editing: write `output` from `input` with the operations given, now. It is
-/// `EditPlan(input)` with each argument added and `save(output)`; every argument is a list.
+/// Load a workbook for editing, eagerly: a `Workbook` whose operations run when called.
 ///
-/// - `remove_sheets`, `remove_ranges`: names to remove.
-/// - `convert_to_values`: scopes (`"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"`) whose formulas are
-///   replaced by their cached values.
-/// - `delete_rows` (`"Sheet!3:10"`), `delete_columns` (`"Sheet!B:D"`): of the input; references to
-///   them become `#REF!`.
-/// - `recalc_on_open`: the application that opens the output recalculates every formula.
-///
-/// Raises `ValueError` for a malformed scope and `SheetrsError` when the operation fails (no
-/// output is left behind) or nothing was asked.
+/// `source` is a path or the bytes of a workbook (then `extension` is required). The file is
+/// checked (it exists, it is a zip archive of a workbook); it is never modified, whatever is
+/// done with the `Workbook`. Raises `OSError` when it cannot be read.
 #[pyfunction]
-#[pyo3(signature = (
-    input,
-    output,
-    *,
-    remove_sheets=None,
-    remove_ranges=None,
-    convert_to_values=None,
-    delete_rows=None,
-    delete_columns=None,
-    recalc_on_open=false,
-))]
-#[allow(clippy::too_many_arguments)]
-fn edit(
+#[pyo3(signature = (source, *, extension=None))]
+fn read(
     py: Python<'_>,
-    input: PathBuf,
-    output: PathBuf,
-    remove_sheets: Option<Vec<String>>,
-    remove_ranges: Option<Vec<String>>,
-    convert_to_values: Option<Vec<String>>,
-    delete_rows: Option<Vec<String>>,
-    delete_columns: Option<Vec<String>>,
-    recalc_on_open: bool,
-) -> PyResult<()> {
-    fn parse(specs: Option<Vec<String>>) -> PyResult<Vec<ValueScope>> {
-        specs
-            .unwrap_or_default()
-            .iter()
-            .map(|spec| {
-                spec.parse::<ValueScope>()
-                    .map_err(|e| PyValueError::new_err(format!("invalid scope '{spec}': {e:#}")))
+    source: &Bound<'_, PyAny>,
+    extension: Option<&str>,
+) -> PyResult<PyWorkbook> {
+    match Source::from_py(source, extension)? {
+        Source::Path(path) => {
+            extension_of(&path)?;
+            py.detach(|| {
+                let file = std::fs::File::open(&path)?;
+                zip::ZipArchive::new(file)
+                    .map(|_| ())
+                    .map_err(|e| SheetrsError::new_err(format!("{}: {e}", path.display())))
+                    .map(|()| PyWorkbook { path, keep: None })
             })
-            .collect()
+        }
+        Source::Bytes(bytes, extension) => {
+            let extension = extension.to_lowercase();
+            if !EXTENSIONS.contains(&extension.as_str()) {
+                return Err(PyValueError::new_err(
+                    "`extension` is 'xlsx', 'xlsm' or 'ods'",
+                ));
+            }
+            zip::ZipArchive::new(Cursor::new(&bytes))
+                .map_err(|e| SheetrsError::new_err(format!("not a workbook: {e}")))?;
+            let folder = temporary_folder()?;
+            let path = folder.path().join(format!("workbook.{extension}"));
+            std::fs::write(&path, bytes)?;
+            Ok(PyWorkbook {
+                path,
+                keep: Some(folder),
+            })
+        }
     }
-    let mut plan = EditPlan::new();
-    for name in remove_sheets.unwrap_or_default() {
-        plan.remove_sheet(name);
+}
+
+/// Scan a workbook for editing, lazily: a `LazyWorkbook` that reads nothing until its plan runs.
+///
+/// `path` must exist and be an XLSX, XLSM or ODS file; that is all that is checked.
+#[pyfunction]
+fn scan(path: PathBuf) -> PyResult<PyLazyWorkbook> {
+    extension_of(&path)?;
+    if !path.is_file() {
+        return Err(std::io::Error::from(std::io::ErrorKind::NotFound).into());
     }
-    for name in remove_ranges.unwrap_or_default() {
-        plan.remove_named_range(name);
-    }
-    for scope in parse(convert_to_values)? {
-        plan.convert_to_values(scope);
-    }
-    for scope in parse(delete_rows)? {
-        plan.delete_rows(scope).map_err(invalid)?;
-    }
-    for scope in parse(delete_columns)? {
-        plan.delete_columns(scope).map_err(invalid)?;
-    }
-    if recalc_on_open {
-        plan.recalculate_on_open();
-    }
-    py.detach(|| plan.execute(&input, &output).map_err(to_py_err))
+    Ok(PyLazyWorkbook {
+        path,
+        keep: None,
+        plan: EditPlan::new(),
+    })
 }
 
 #[pymodule(gil_used = false)]
@@ -488,7 +603,9 @@ mod _sheetrs {
     use pyo3::prelude::*;
 
     #[pymodule_export]
-    use super::{PyEditPlan, PyLinter, PyViolation, SheetrsError, compute_stats, edit, lint};
+    use super::{
+        PyLazyWorkbook, PyLinter, PyViolation, PyWorkbook, SheetrsError, compute_stats, read, scan,
+    };
 
     #[pymodule_init]
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use sheetrs_edit::{EditPlan, writer};
+use sheetrs_edit::{EditPlan, Operation, writer};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -99,34 +99,28 @@ fn main() -> Result<()> {
     }
     let output_path = cli.output.unwrap();
 
-    // The operations of a run are applied together, in one pass over the file.
-    let mut plan = EditPlan::new();
-    for name in &cli.remove_sheets {
-        plan.remove_sheet(name);
-    }
-    for name in &cli.remove_ranges {
-        plan.remove_named_range(name);
-    }
-    for scope in cli.convert_to_values {
-        plan.convert_to_values(scope);
-    }
-    for scope in cli.delete_rows {
-        plan.delete_rows(scope)?;
-    }
-    for scope in cli.delete_cols {
-        plan.delete_columns(scope)?;
-    }
-    if cli.recalc_on_open {
-        plan.recalculate_on_open();
-    }
+    // The flags of a command are all written against the input file, in no order: `against_input`
+    // makes of them a plan of one pass, however many flags and in whatever order they came.
+    let plan = EditPlan::against_input([
+        Operation::RemoveSheets(cli.remove_sheets),
+        Operation::RemoveNamedRanges(cli.remove_ranges),
+        Operation::ConvertToValues(cli.convert_to_values),
+        Operation::DeleteRows(cli.delete_rows),
+        Operation::DeleteColumns(cli.delete_cols),
+    ])?;
+    let plan = if cli.recalc_on_open {
+        EditPlan::against_input(
+            plan.operations()
+                .iter()
+                .cloned()
+                .chain([Operation::RecalculateOnOpen]),
+        )?
+    } else {
+        plan
+    };
     if cli.dry_run {
-        println!(
-            "[DRY RUN] Operations on '{}', in the order they are applied:",
-            cli.file.display()
-        );
-        for operation in plan.operations() {
-            println!("  - {operation}");
-        }
+        println!("[DRY RUN] Operations on '{}':", cli.file.display());
+        print!("{}", plan.explain()?);
         println!("\nOutput would be: {}", output_path.display());
     } else {
         println!("Modifying '{}'...", cli.file.display());

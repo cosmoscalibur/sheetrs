@@ -1,18 +1,16 @@
 ### Added
 
 - Add `sheetrs-py`, the official Python bindings (PyO3, abi3 wheels for Python ≥ 3.10), organized
-  flat: `Linter` (validated configuration, its `lint` and `rules`) and `lint`, `stats`, and the two
-  editing modes, lazy (`EditPlan`: operations are collected and applied in one pass on `save`) and
-  eager (`edit(input, output, ...)`, the same operations given at once). A workbook is a path or
-  bytes; type stubs and a pytest suite included.
-- Add `sheetrs_edit::EditPlan` and `Operation`: the operations on a workbook, each written
-  against the input, resolved into a canonical order (`operations()`) and applied in one pass.
-  `sheetedit` builds its run with it. A plan's result does not depend on the order its operations
-  were added in and equals running its operations one per pass.
-
-- Add `sheetrs_linter::report` (`group_by_scope`, `ViolationRecord`, `violation_records`): the
-  findings grouped by book, sheet and cell and in a flat serializable form, shared by the
-  executable and the bindings.
+  flat: `Linter` (validated configuration, its `lint` and `rules`), `stats`, and editing in the
+  eager/lazy convention of dataframe libraries: `read` gives a `Workbook` (a working copy, each
+  operation runs when called) and `scan` a `LazyWorkbook` (nothing read, operations recorded, run
+  by `sink` or `collect`), with the same methods and the same sequential meaning. A workbook is a
+  path, bytes or a loaded `Workbook`; type stubs and a pytest suite included.
+- Add `sheetrs_edit::EditPlan` and `Operation`: a sequence of operations on a workbook, each on the
+  result of the previous one, planned by `passes()` into the fewest passes over the file that
+  give what running them one at a time gives (`explain()` shows them). `EditPlan::against_input`
+  is the declarative case `sheetedit` uses for its flags (one pass, in no order); `--dry-run`
+  prints the passes. Tests run generated sequences both ways in XLSX and ODS.
 - Add `lint_workbook_records` and `workbook_stats` to `sheetrs-wasm`: structured results besides
   the text reports (`get_rules_definition` is now `lint_rules`). Add `scripts/package-wasm.sh`,
   which builds the npm package.

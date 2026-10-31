@@ -48,11 +48,10 @@ it.
 
 #### How the operations of one command are planned
 
-Every operation is written against the **input** file, and the order in which they are given
-changes nothing. Run one after another as written they would not mean that: a deletion shifts
-every position below it, and a formula converted after the cells it reads were deleted has lost
-its result. So the command is resolved once into a canonical order, which is the only one the
-result is defined by and which is applied in a single pass:
+The flags of one command are all written against the **input** file, in no order: `--delete-rows
+"Model!3:4" "Model!7"` deletes rows 3, 4 and 7 of the file, and a `--convert-to-values` of the same
+command reads the file's rows too. The command is applied in a single pass over the file, in an
+order that does not depend on how the flags were written:
 
 1. formulas converted to values, while every cached result is still there (a conversion on a sheet
    that is removed goes with it);
@@ -67,17 +66,23 @@ result is defined by and which is applied in a single pass:
 The order has two kinds of dependency and no more: a conversion must read values that a deletion
 or a removal would lose, and the deletions of one sheet shift one another. Operations on
 different sheets do not depend on each other, because a reference moves only with the rows and
-columns of the sheet it names, so the order between sheets is free (they go by name, only so that
-the result never depends on a hash order). That holds because references across sheets are not
-supported (below).
+columns of the sheet it names, so the order between sheets is free. That holds because references
+across sheets are not supported (below). `--dry-run` prints the passes.
 
-The result equals running those steps one per pass, each on the output of the previous one, and it
-is the same on every run. `sheetrs_edit::EditPlan::operations` returns the resolved steps, and
-`--dry-run` prints them. The plan is a handful of bands and names; the file is not loaded: each
-worksheet is read and written as a stream, one cell (XLSX) or row (ODS) at a time, so the memory
-does not grow with the size of the workbook (measured at 13 MB from 200,000 to 1,600,000 rows).
-Only the parts that are small by nature are read whole (the workbook part, its relationships and,
-for a sheet whose cells move, its notes and drawings).
+**As a library** (`sheetrs_edit::EditPlan`), operations are a *sequence*, and each one addresses the
+workbook as the previous ones left it, as when they are run one at a time: after `delete_rows` of
+row 3, row 3 is what was row 4. `EditPlan::passes` plans the sequence into the fewest passes over
+the file that give what running them one at a time gives; operations that cannot share a pass
+(a conversion after another change, which must read what that change dropped; two deletions that
+touch, which the writer would see as one band) start a new one. The flags above are the
+declarative case, `EditPlan::against_input`, which is always one pass. Tests run generated
+sequences both ways, in XLSX and ODS, and compare the workbooks.
+
+Memory does not grow with the workbook: a pass reads and writes each worksheet as a stream, one
+cell (XLSX) or row (ODS) at a time, and the plan is a handful of bands and names (measured at
+13 MB from 200,000 to 1,600,000 rows). Only the parts that are small by nature are read whole (the
+workbook part, its relationships and, for a sheet whose cells move, its notes and drawings). A
+plan of several passes keeps the file between them in a temporary folder.
 
 #### References across sheets are not supported
 

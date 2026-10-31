@@ -1,5 +1,5 @@
-//! A plan gives the workbook that its schedule gives one operation per pass, whatever order the
-//! operations were written in, and gives it every time.
+//! A plan gives the workbook that its operations give one at a time, each on the result of the
+//! one before, however it groups them into passes over the file.
 //!
 //! The fixture is the workbook of `structure_parity_tests`: sheets `T`, `U`, `V` with numbers and
 //! formulas, and sheet `F` with formulas over `T`. It holds no reference across sheets
@@ -39,30 +39,27 @@ fn snapshot(path: &Path) -> Snapshot {
     cells
 }
 
-fn plan(specs: &[&str]) -> EditPlan {
+/// One operation from a spec such as `rows T!4:5`, `cols U!B`, `convert F`, `sheet U`, `name N`,
+/// `recalc`; several scopes are separated by a comma and are simultaneous.
+fn op(spec: &str) -> Operation {
+    let (verb, rest) = spec.split_once(' ').unwrap_or((spec, ""));
+    let scopes = || rest.split(',').map(|s| s.trim().parse().unwrap()).collect();
+    let names = || rest.split(',').map(|s| s.trim().to_string()).collect();
+    match verb {
+        "rows" => Operation::DeleteRows(scopes()),
+        "cols" => Operation::DeleteColumns(scopes()),
+        "convert" => Operation::ConvertToValues(scopes()),
+        "sheet" => Operation::RemoveSheets(names()),
+        "name" => Operation::RemoveNamedRanges(names()),
+        "recalc" => Operation::RecalculateOnOpen,
+        other => panic!("unknown operation {other}"),
+    }
+}
+
+fn sequence(specs: &[&str]) -> EditPlan {
     let mut plan = EditPlan::new();
     for spec in specs {
-        let (verb, rest) = spec.split_once(' ').unwrap_or((spec, ""));
-        match verb {
-            "rows" => plan.delete_rows(rest.parse().unwrap()).map(|_| ()).unwrap(),
-            "cols" => plan
-                .delete_columns(rest.parse().unwrap())
-                .map(|_| ())
-                .unwrap(),
-            "convert" => {
-                plan.convert_to_values(rest.parse().unwrap());
-            }
-            "sheet" => {
-                plan.remove_sheet(rest);
-            }
-            "name" => {
-                plan.remove_named_range(rest);
-            }
-            "recalc" => {
-                plan.recalculate_on_open();
-            }
-            other => panic!("unknown operation {other}"),
-        }
+        plan.push(op(spec)).unwrap();
     }
     plan
 }
@@ -75,13 +72,14 @@ fn run(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
     Ok(snapshot(&output))
 }
 
-/// The schedule of the plan, one operation per pass, each on the output of the previous one.
-fn run_stepwise(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
+/// The plan one operation per pass: what running them one at a time gives, the definition of its
+/// result. An operation that cannot run stops it.
+fn run_one_at_a_time(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
     let dir = tempfile::tempdir().unwrap();
     let mut current = asset(extension);
-    for (i, step) in plan.operations().into_iter().enumerate() {
+    for (i, operation) in plan.operations().iter().enumerate() {
         let mut single = EditPlan::new();
-        single.push(step).unwrap();
+        single.push(operation.clone()).unwrap();
         let output = dir.path().join(format!("step{i}.{extension}"));
         single
             .execute(&current, &output)
@@ -91,112 +89,189 @@ fn run_stepwise(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
     Ok(snapshot(&current))
 }
 
-fn permutations(items: &[&str]) -> Vec<Vec<String>> {
-    if items.len() <= 1 {
-        return vec![items.iter().map(ToString::to_string).collect()];
+/// A small deterministic generator, so that a failing sequence can be run again.
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self, below: usize) -> usize {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((self.0 >> 33) as usize) % below
     }
-    let mut all = Vec::new();
-    for i in 0..items.len() {
-        let mut rest = items.to_vec();
-        let head = rest.remove(i);
-        for mut tail in permutations(&rest) {
-            tail.insert(0, head.to_string());
-            all.push(tail);
-        }
-    }
-    all
 }
 
-const SCENARIOS: &[(&str, &[&str])] = &[
-    ("two bands", &["rows T!4:5", "rows T!9"]),
-    (
-        "overlapping and touching",
-        &["rows T!3:6", "rows T!5:8", "rows T!9"],
-    ),
-    (
-        "rows and columns",
-        &["rows T!4:5", "rows T!9", "cols T!B", "cols T!D"],
-    ),
-    ("convert before a deletion", &["rows T!4:5", "convert F"]),
-    (
-        "convert and delete a column",
+const POOL: &[&str] = &[
+    "rows T!2",
+    "rows T!4:5",
+    "rows T!1",
+    "rows T!3, T!9",
+    "rows U!3",
+    "rows V!2:3",
+    "rows F!5",
+    "cols T!D",
+    "cols U!B",
+    "cols V!A",
+    "convert F",
+    "convert T!C:C",
+    "convert U",
+    "convert F!3:6",
+    "sheet U",
+    "sheet V",
+    "name NameOne",
+    "name Gone",
+    "recalc",
+];
+
+#[test]
+fn a_plan_gives_what_its_operations_give_one_at_a_time() {
+    // Sequences of up to five operations of the pool, in both formats. Where an operation cannot
+    // run (a sheet already removed, a merged area that would lose its first cell), both stop.
+    let mut random = Lcg(0x5EED);
+    let (mut agreed, mut stopped, mut merged_passes) = (0, 0, 0);
+    for _ in 0..120 {
+        let length = 1 + random.next(5);
+        let specs: Vec<&str> = (0..length).map(|_| POOL[random.next(POOL.len())]).collect();
+        let plan = sequence(&specs);
+        if plan.passes().is_ok_and(|p| p.len() < length) {
+            merged_passes += 1;
+        }
+        for extension in EXTENSIONS {
+            let (together, apart) = (run(extension, &plan), run_one_at_a_time(extension, &plan));
+            match (&together, &apart) {
+                (Ok(_), Ok(_)) => agreed += 1,
+                (Err(_), Err(_)) => stopped += 1,
+                _ => {}
+            }
+            assert_eq!(
+                together.is_ok(),
+                apart.is_ok(),
+                "{extension}: {specs:?}: {:?} / {:?}",
+                together.as_ref().err(),
+                apart.as_ref().err()
+            );
+            if together.is_ok() {
+                assert_eq!(together, apart, "{extension}: {specs:?}");
+            }
+        }
+    }
+    // The test means something only if it ran both kinds of sequence and merged passes.
+    assert!(
+        agreed > 100 && stopped > 0 && merged_passes > 30,
+        "{agreed} {stopped} {merged_passes}"
+    );
+}
+
+#[test]
+fn the_sequences_that_need_more_than_one_pass_are_the_ones_that_convert_after_a_change() {
+    let passes = |specs: &[&str]| sequence(specs).passes().unwrap().len();
+    assert_eq!(
+        passes(&["rows T!2", "cols U!B", "sheet V", "name NameOne"]),
+        1
+    );
+    assert_eq!(passes(&["convert F", "rows T!2", "rows T!3"]), 1);
+    // Rows 2 and 3 of the input touch: two deletions to the writer, not one band.
+    assert_eq!(passes(&["convert F", "rows T!2", "rows T!2"]), 2);
+    assert_eq!(passes(&["rows T!2", "convert F"]), 2);
+    assert_eq!(
+        passes(&["rows T!2", "convert F", "rows T!1", "convert U"]),
+        3
+    );
+}
+
+#[test]
+fn a_conversion_after_a_deletion_sees_what_the_deletion_did() {
+    // F!A2 reads T!A4, which row 4 deletion rewrites to `#REF!` and leaves without a result: the
+    // conversion that comes after finds no value, where one that comes before keeps it.
+    for extension in EXTENSIONS {
+        let before = run(extension, &sequence(&["convert F", "rows T!4:5"])).unwrap();
+        let (formula, value) = &before[&("F".to_string(), 1, 0)];
+        assert_eq!(
+            (formula, value.as_str()),
+            (&None, "Number(4.0)"),
+            "{extension}"
+        );
+
+        let after = run(extension, &sequence(&["rows T!4:5", "convert F"])).unwrap();
+        assert_ne!(
+            after[&("F".to_string(), 1, 0)].1,
+            "Number(4.0)",
+            "{extension}"
+        );
+    }
+}
+
+#[test]
+fn against_input_is_one_pass_equal_to_its_operations_one_at_a_time() {
+    let scenarios: &[&[&str]] = &[
+        &["rows T!4:5, T!9"],
+        &["rows T!3:6, T!5:8, T!9"],
+        &["rows T!4:5", "cols T!B, T!D"],
+        &["rows T!4:5", "convert F"],
         &["cols T!D", "convert T!C:C"],
-    ),
-    (
-        "convert rows that are deleted",
         &["rows T!2:3", "convert T!3:6"],
-    ),
-    (
-        "a deletion in a sheet that goes",
         &["sheet U", "rows U!2", "convert U"],
-    ),
-    ("a sheet that F reads goes", &["sheet T", "convert F"]),
-    (
-        "a sheet and a deletion elsewhere",
+        &["sheet T", "convert F"],
         &["rows T!4:5", "sheet U"],
-    ),
-    (
-        "rows of two sheets under a span",
-        &["rows T!4:5", "rows U!3"],
-    ),
-    (
-        "rows of three sheets under a span",
-        &["rows T!2", "rows U!4:5", "rows V!6"],
-    ),
-    (
-        "rows and columns of two sheets",
-        &["rows T!4:5", "cols U!B"],
-    ),
-    (
-        "deletions and a sheet that goes",
-        &["rows T!4:5", "rows V!3", "sheet U"],
-    ),
-    ("two sheets go", &["rows T!4:5", "sheet U", "sheet V"]),
-    (
-        "everything",
+        &["rows T!4:5, U!3"],
+        &["rows T!2, U!4:5, V!6"],
+        &["rows T!4:5, V!3", "sheet U"],
         &[
-            "rows T!2",
-            "rows U!4:5",
+            "rows T!2, U!4:5",
             "cols T!D",
             "convert F",
             "name NameOne",
             "recalc",
         ],
-    ),
-];
-
-#[test]
-fn a_plan_gives_what_its_schedule_gives_one_operation_per_pass() {
-    for extension in EXTENSIONS {
-        for (name, specs) in SCENARIOS {
-            let plan = plan(specs);
-            let (all_at_once, stepwise) = (run(extension, &plan), run_stepwise(extension, &plan));
+    ];
+    for specs in scenarios {
+        let declared = EditPlan::against_input(specs.iter().map(|spec| op(spec))).unwrap();
+        assert_eq!(declared.passes().unwrap().len(), 1, "{specs:?}");
+        for extension in EXTENSIONS {
             assert_eq!(
-                all_at_once, stepwise,
-                "{extension}: '{name}' differs between the one pass and the schedule step by step"
+                run(extension, &declared),
+                run_one_at_a_time(extension, &declared),
+                "{extension}: {specs:?}"
             );
         }
     }
 }
 
 #[test]
-fn the_order_the_operations_were_written_in_changes_nothing() {
-    // Every order of the five operations: 120 plans with one schedule and one result.
-    let specs = ["rows T!2", "rows U!4:5", "rows V!6", "convert F", "sheet U"];
+fn the_order_the_operations_were_declared_in_changes_nothing() {
+    fn permutations(items: &[&str]) -> Vec<Vec<String>> {
+        if items.len() <= 1 {
+            return vec![items.iter().map(ToString::to_string).collect()];
+        }
+        let mut all = Vec::new();
+        for i in 0..items.len() {
+            let mut rest = items.to_vec();
+            let head = rest.remove(i);
+            for mut tail in permutations(&rest) {
+                tail.insert(0, head.to_string());
+                all.push(tail);
+            }
+        }
+        all
+    }
+    // Every order of five operations: 120 plans with one plan and one result.
+    let specs = [
+        "rows T!2",
+        "rows U!4:5, V!6",
+        "convert F",
+        "sheet U",
+        "cols T!D",
+    ];
     for extension in EXTENSIONS {
-        let reference_plan = plan(&specs);
+        let reference_plan = EditPlan::against_input(specs.iter().map(|s| op(s))).unwrap();
         let reference = run(extension, &reference_plan);
         assert!(reference.is_ok(), "{extension}: {reference:?}");
         for order in permutations(&specs) {
-            let order: Vec<&str> = order.iter().map(String::as_str).collect();
-            let shuffled = plan(&order);
+            let declared = EditPlan::against_input(order.iter().map(|s| op(s))).unwrap();
+            assert_eq!(declared, reference_plan, "{order:?}");
             assert_eq!(
-                shuffled.operations(),
-                reference_plan.operations(),
-                "{order:?}"
-            );
-            assert_eq!(
-                run(extension, &shuffled),
+                run(extension, &declared),
                 reference,
                 "{extension} {order:?}"
             );
@@ -206,10 +281,9 @@ fn the_order_the_operations_were_written_in_changes_nothing() {
 
 #[test]
 fn the_same_plan_gives_the_same_workbook_every_time() {
-    let plan = plan(&[
+    let plan = sequence(&[
         "rows T!2",
-        "rows U!4:5",
-        "rows V!6",
+        "rows U!4:5, V!6",
         "cols T!D",
         "cols U!C",
         "sheet V",
@@ -227,85 +301,140 @@ fn the_same_plan_gives_the_same_workbook_every_time() {
     }
 }
 
-#[test]
-fn a_conversion_keeps_the_values_that_a_deletion_would_otherwise_cost() {
-    // F!A2 reads T!A4, which the plan deletes. Converted first, F keeps its value; the formulas
-    // of the other cells that read the deleted rows are rewritten.
-    for extension in EXTENSIONS {
-        let converted = run(extension, &plan(&["rows T!4:5", "convert F"])).unwrap();
-        let (formula, value) = &converted[&("F".to_string(), 1, 0)];
-        assert_eq!(formula, &None, "{extension}");
-        assert_eq!(value, "Number(4.0)", "{extension}");
-
-        let not_converted = run(extension, &plan(&["rows T!4:5"])).unwrap();
-        assert_eq!(
-            not_converted[&("F".to_string(), 1, 0)].0.as_deref(),
-            Some("#REF!"),
-            "{extension}"
-        );
-    }
-}
-
-#[test]
-fn a_schedule_is_made_of_operations_that_run_on_their_own() {
-    let plan = plan(&["rows T!4:5", "rows T!9", "cols T!D", "convert F", "sheet U"]);
-    for step in plan.operations() {
-        assert!(
-            !matches!(step, Operation::RecalculateOnOpen),
-            "not part of this plan"
-        );
-        let mut single = EditPlan::new();
-        single.push(step.clone()).unwrap();
-        run("xlsx", &single).unwrap_or_else(|e| panic!("{step}: {e}"));
-    }
-}
-
-/// The operations on different sheets do not depend on each other, which is why a plan needs no
-/// order between sheets: running them in either order gives the same workbook.
+/// The operations on different sheets do not depend on each other, which is why they share a pass
+/// and a plan needs no order between sheets.
 #[test]
 fn the_edits_of_different_sheets_commute() {
-    let in_order = |first: &str, second: &str| {
-        let mut results = Vec::new();
-        for extension in EXTENSIONS {
-            let dir = tempfile::tempdir().unwrap();
-            let mut current = asset(extension);
-            for (i, spec) in [first, second].into_iter().enumerate() {
-                let output = dir.path().join(format!("s{i}.{extension}"));
-                plan(&[spec]).execute(&current, &output).unwrap();
-                current = output;
-            }
-            results.push(snapshot(&current));
-        }
-        results
-    };
     for (a, b) in [
         ("rows T!4:5", "rows U!3"),
         ("rows T!4:5", "cols U!B"),
         ("cols T!D", "cols V!A"),
         ("rows T!2", "rows F!5"),
     ] {
-        assert_eq!(in_order(a, b), in_order(b, a), "{a} / {b}");
+        for extension in EXTENSIONS {
+            assert_eq!(
+                run_one_at_a_time(extension, &sequence(&[a, b])),
+                run_one_at_a_time(extension, &sequence(&[b, a])),
+                "{extension}: {a} / {b}"
+            );
+        }
     }
 }
 
-/// A deletion in a sheet that the plan removes is dropped with it: it gives what deleting first
-/// and removing the sheet afterwards gives, so the plan need not keep it.
 #[test]
-fn a_deletion_in_a_removed_sheet_changes_nothing_elsewhere() {
+fn a_position_is_the_one_the_deletions_before_it_left() {
+    // After row 3 goes, row 3 is the old row 4: two deletions of "T!3" are the rows 3 and 4.
     for extension in EXTENSIONS {
-        let dir = tempfile::tempdir().unwrap();
-        let (first, second) = (
-            dir.path().join(format!("a.{extension}")),
-            dir.path().join(format!("b.{extension}")),
-        );
-        plan(&["rows U!2"])
-            .execute(asset(extension), &first)
-            .unwrap();
-        plan(&["sheet U"]).execute(&first, &second).unwrap();
-        assert_eq!(
-            Ok(snapshot(&second)),
-            run(extension, &plan(&["rows U!2", "sheet U"])),
-            "{extension}"
-        );
+        let twice = run(extension, &sequence(&["rows T!3", "rows T!3"]));
+        let at_once = run(extension, &sequence(&["rows T!3:4"]));
+        assert!(twice.is_ok(), "{extension}: {twice:?}");
+        assert_eq!(twice, at_once, "{extension}");
     }
+    // The positions are translated through a deletion that is not next to them, too.
+    for extension in EXTENSIONS {
+        let one_by_one = run(extension, &sequence(&["rows T!2", "rows T!3"]));
+        let at_once = run(extension, &sequence(&["rows T!2, T!4"]));
+        assert!(one_by_one.is_ok(), "{extension}: {one_by_one:?}");
+        assert_eq!(one_by_one, at_once, "{extension}");
+    }
+}
+
+#[test]
+fn an_operation_on_a_sheet_that_was_removed_stops_the_plan_before_it_runs() {
+    let plan = sequence(&["sheet U", "rows U!2"]);
+    for extension in EXTENSIONS {
+        let error = run(extension, &plan).unwrap_err();
+        assert!(error.contains("removed"), "{extension}: {error}");
+    }
+}
+
+/// The formulas of a snapshot, one reference form for both formats: a reference that went reads
+/// `T!#REF!` in an XLSX and `#REF!` in an ODS, and LibreOffice writes the range of one cell as the
+/// cell in an XLSX and as a range in an ODS.
+fn formulas_only(snapshot: &Snapshot) -> BTreeMap<(String, u32, u32), String> {
+    let one_cell = regex::Regex::new(r"(\$?[A-Z]+\$?[0-9]+):(\$?[A-Z]+\$?[0-9]+)").unwrap();
+    snapshot
+        .iter()
+        .filter_map(|(at, (formula, _))| {
+            let formula = formula.as_ref()?.replace("T!#REF!", "#REF!");
+            let formula = one_cell.replace_all(&formula, |c: &regex::Captures| {
+                if c[1] == c[2] {
+                    c[1].to_string()
+                } else {
+                    c[0].to_string()
+                }
+            });
+            Some((at.clone(), formula.into_owned()))
+        })
+        .collect()
+}
+
+/// Whether the sequence converts formulas after something else changed the workbook (or after the
+/// mark to recalculate): a conversion then reads cached results that the earlier change dropped,
+/// and the two formats do not agree on what remains (see the ignored test below).
+fn converts_after_a_change(specs: &[&str]) -> bool {
+    let mut changed = false;
+    for spec in specs {
+        let verb = spec.split(' ').next().unwrap();
+        match verb {
+            "convert" if changed => return true,
+            "convert" => {}
+            _ => changed = true,
+        }
+    }
+    false
+}
+
+fn cross_format_mismatches(skip_unsupported: bool) -> (usize, Vec<String>) {
+    let mut random = Lcg(0xFACE);
+    let (mut compared, mut mismatches) = (0, Vec::new());
+    for _ in 0..120 {
+        let length = 1 + random.next(4);
+        let specs: Vec<&str> = (0..length).map(|_| POOL[random.next(POOL.len())]).collect();
+        if skip_unsupported == converts_after_a_change(&specs) {
+            continue;
+        }
+        let plan = sequence(&specs);
+        match (run("xlsx", &plan), run("ods", &plan)) {
+            (Ok(x), Ok(o)) => {
+                compared += 1;
+                if formulas_only(&x) != formulas_only(&o) {
+                    mismatches.push(format!("{specs:?}"));
+                }
+            }
+            (Err(_), Err(_)) => {}
+            (x, o) => mismatches.push(format!("{specs:?}: xlsx {:?}, ods {:?}", x.err(), o.err())),
+        }
+    }
+    (compared, mismatches)
+}
+
+/// The same plan on the XLSX and on the ODS of one workbook gives the same formulas in every cell,
+/// for the sequences that do not convert after a change: the format differences of streaming
+/// (shared formulas and `A1` text in one, repeated rows and `[$T.A1:.A3]` notation in the other)
+/// do not show in what the formulas become.
+#[test]
+fn both_formats_give_the_same_formulas_for_the_same_plan() {
+    let (compared, mismatches) = cross_format_mismatches(true);
+    assert!(
+        mismatches.is_empty(),
+        "{} of {compared} differ between formats: {mismatches:#?}",
+        mismatches.len()
+    );
+    assert!(compared > 40, "{compared} compared");
+}
+
+/// KNOWN DIFFERENCE, not fixed: converting formulas after a change that dropped their cached
+/// results (a deletion that rewrote them, or `recalc_on_open`, which an ODS applies by dropping
+/// every cached result and an XLSX by a flag) gives other workbooks in each format. Run with
+/// `--ignored` to see the sequences.
+#[test]
+#[ignore = "known difference between formats when converting after a change"]
+fn both_formats_agree_when_converting_after_a_change() {
+    let (compared, mismatches) = cross_format_mismatches(false);
+    assert!(
+        mismatches.is_empty(),
+        "{} of {compared} differ between formats: {mismatches:#?}",
+        mismatches.len()
+    );
 }

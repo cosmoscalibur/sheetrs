@@ -2014,6 +2014,8 @@ dependencies = [
  "sheetrs-edit",
  "sheetrs-linter",
  "sheetrs-stats",
+ "tempfile",
+ "zip",
 ]
 
 [[package]]

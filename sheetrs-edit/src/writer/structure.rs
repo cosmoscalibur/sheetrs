@@ -117,6 +117,25 @@ impl Bands {
         Some((self.moved(first)?, self.moved(last)?))
     }
 
+    /// The index in the input of the row (or column) that is at `current` once the bands are
+    /// gone: what a position given after an earlier deletion refers to.
+    pub fn input_index(&self, current: u32) -> u32 {
+        let mut index = current;
+        for &(first, last) in &self.0 {
+            if first <= index {
+                index = index.saturating_add(last - first + 1);
+            } else {
+                break;
+            }
+        }
+        index
+    }
+
+    /// The bands as inclusive `(first, last)` ranges, in order.
+    pub fn ranges(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.0.iter().copied()
+    }
+
     /// The bands as `(first, count)`, the last one first.
     pub fn last_first(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
         self.0
