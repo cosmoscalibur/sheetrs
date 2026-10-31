@@ -247,7 +247,7 @@ over those libraries. Where code lives follows who uses it (see `ARCHITECTURE.md
 - `sheetrs-linter`: `rules` (`WalkerRule`, the registry and the catalog), `config`, `violation`,
   `report` (`group_by_scope`, `ViolationRecord`), `Linter`.
 - `sheetrs-stats`: `stats` (`WorkbookStats`).
-- `sheetrs-edit`: `writer` (`WorkbookModifications`, `ValueScope`, `modify_workbook`).
+- `sheetrs-edit`: `plan` (`EditPlan`, `Operation`: operations collected and applied in one pass), `writer` (`WorkbookModifications`, `ValueScope`, `modify_workbook`).
 
 Keep logic in the libraries and out of the executables and the bindings (`sheetrs-wasm`,
 `sheetrs-py`): an adapter converts arguments and results and nothing else, and what two adapters
@@ -257,7 +257,7 @@ updates its README (and the type stubs of `sheetrs-py`), and a new capability is
 bindings.
 
 Path dependencies between publishable crates carry a `version`
-(`sheetrs-core = { path = "../sheetrs-core", version = "0.3.3" }`) so that they can be published;
+(`sheetrs-core = { path = "../sheetrs-core", version = "0.4.0" }`) so that they can be published;
 `cargo set-version --workspace <version>` (cargo-edit) updates them with the workspace version.
 
 ### Backward Compatibility

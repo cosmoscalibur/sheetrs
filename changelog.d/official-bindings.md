@@ -1,8 +1,14 @@
 ### Added
 
 - Add `sheetrs-py`, the official Python bindings (PyO3, abi3 wheels for Python ≥ 3.10), organized
-  by tool: `sheetrs.linter` (`lint`, `rules`, `Violation`), `sheetrs.stats` (`compute`) and
-  `sheetrs.edit` (`modify`). A workbook is a path or bytes; type stubs and a pytest suite included.
+  by tool: `sheetrs.linter` (`Linter` with a validated configuration, its `lint` and `rules`, and
+  `lint`), `sheetrs.stats` (`compute`) and `sheetrs.edit`, which offers a lazy mode (`Plan`:
+  operations are collected and applied in one pass on `save`) and an eager one (a function per
+  operation). A workbook is a path or bytes; type stubs and a pytest suite included.
+- Add `sheetrs_edit::EditPlan` and `Operation`: the operations on a workbook, collected and
+  applied in one pass. `sheetedit` builds its run with it.
+- Add `Linter::try_with_config`, which rejects a configuration naming rules, categories or
+  parameters the linter does not know. `sheetlint` and both bindings use it.
 - Add `sheetrs_linter::report` (`group_by_scope`, `ViolationRecord`, `violation_records`): the
   findings grouped by book, sheet and cell and in a flat serializable form, shared by the
   executable and the bindings.
@@ -26,7 +32,7 @@
 - Path dependencies between the publishable crates carry a version, and the crates have keywords and
   categories, so they can be published to crates.io. `sheetrs-wasm` and `sheetrs-py` are not
   published.
-- All crates are at version 0.3.3.
+- All crates are at version 0.4.0.
 
 ### Fixed
 

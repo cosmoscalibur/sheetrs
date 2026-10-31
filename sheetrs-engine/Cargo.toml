@@ -19,7 +19,7 @@ name = "sheetrs-rt"
 path = "src/bin/sheetrs-rt.rs"
 
 [dependencies]
-sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.3" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
 bincode = "1.3"

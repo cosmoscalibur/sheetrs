@@ -59,14 +59,8 @@ fn main() -> Result<()> {
         }
     };
 
-    // Validate configuration
-    let valid_tokens = sheetrs_linter::rules::registry::get_all_valid_tokens();
-    config
-        .validate_rules(&valid_tokens)
-        .context("Invalid configuration")?;
-
-    // Create linter and run
-    let linter = Linter::with_config(config);
+    // Create linter (validating the configuration) and run
+    let linter = Linter::try_with_config(config).context("Invalid configuration")?;
 
     let (violations, workbook) = linter
         .lint_file_with_workbook(&cli.file)

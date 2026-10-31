@@ -11,7 +11,7 @@ categories.workspace = true
 description = "Shared kernel of the SheetRS suite: workbook model and XLSX/ODS readers"
 
 [dependencies]
-sheetrs-formula = { path = "../sheetrs-formula", version = "0.3.3" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
 
 serde.workspace = true
 anyhow.workspace = true

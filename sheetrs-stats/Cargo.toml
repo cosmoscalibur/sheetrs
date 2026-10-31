@@ -19,7 +19,7 @@ name = "sheetstats"
 path = "src/main.rs"
 
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core", version = "0.3.3" }
+sheetrs-core = { path = "../sheetrs-core", version = "0.4.0" }
 clap.workspace = true
 anyhow.workspace = true
 serde.workspace = true

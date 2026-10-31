@@ -1,4 +1,4 @@
-"""The linter (`sheetlint`): `lint` runs the rules, `rules` lists them."""
+"""The linter (`sheetlint`)."""
 
 import os
 from typing import Any, Literal, TypedDict
@@ -24,6 +24,25 @@ class Rule(TypedDict):
     name: str
     category: str
     default: bool
+    enabled: bool
+
+class Linter:
+    """The linter with a configuration validated at construction.
+
+    `config` is the TOML text of a `sheetlint.toml`, `config_path` the path of one (not both);
+    an unknown rule, category or parameter raises `ValueError`.
+    """
+
+    def __init__(
+        self,
+        *,
+        config: str | None = None,
+        config_path: str | os.PathLike[str] | None = None,
+    ) -> None: ...
+    def lint(self, source: Source, *, extension: str | None = None) -> list[Violation]:
+        """Lint a workbook given by path or as bytes (then `extension` is required)."""
+    def rules(self) -> list[Rule]:
+        """The rules ordered by id; `enabled` tells whether this configuration runs each one."""
 
 def lint(
     source: Source,
@@ -34,5 +53,3 @@ def lint(
 ) -> list[Violation]:
     """Lint a workbook given by path or as bytes (then `extension` is required)."""
 
-def rules() -> list[Rule]:
-    """The linter's rules, ordered by id."""

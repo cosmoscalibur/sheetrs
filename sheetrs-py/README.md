@@ -7,24 +7,39 @@ edit XLSX and ODS workbooks with the same engine as the `sheetlint`,
 ```python
 import sheetrs
 
-# Linter (sheetlint): violations ordered by book, sheet, cell and rule
-for v in sheetrs.linter.lint("book.xlsx", config_path="sheetlint.toml"):
+# Linter (sheetlint). The configuration is validated when the linter is built: an unknown
+# rule, category or parameter raises ValueError instead of being ignored.
+linter = sheetrs.linter.Linter(config_path="sheetlint.toml")
+for v in linter.lint("book.xlsx"):          # or bytes, with extension="ods"
     print(v.rule_id, v.severity, v.sheet, v.cell, v.message)
-sheetrs.linter.rules()   # the linter's rules
-
-# A workbook can also be given as bytes (the extension tells the format)
-sheetrs.linter.lint(data, extension="ods")
+linter.rules()      # [{"id", "name", "category", "default", "enabled"}, ...]
+sheetrs.linter.lint("book.xlsx")            # one-off, default configuration
 
 # Statistics (sheetstats): a dict, as `sheetstats --format json`
 stats = sheetrs.stats.compute("book.xlsx")
 
-# Editing (sheetedit): write a modified copy
-sheetrs.edit.modify("book.xlsx", "clean.xlsx",
-                    remove_sheets=["Secrets"], convert_to_values=["Report!B:D"])
+# Editing (sheetedit), lazy: collect operations, apply them in ONE pass over the file on save
+(sheetrs.edit.Plan("book.xlsx")
+    .remove_sheets("Secrets")
+    .convert_to_values("Report!B:D")
+    .delete_rows("Data!3:10")
+    .save("clean.xlsx"))
+
+# Editing, eager: one operation now, one pass each
+sheetrs.edit.remove_sheets("book.xlsx", "clean.xlsx", "Secrets")
 ```
 
-There is one submodule per tool, as there is one Rust crate per tool; the rules belong to the
-linter, so they are listed there.
+There is one submodule per tool, as there is one Rust crate per tool.
+
+- **Rules** belong to the linter. `Linter.rules()` is read-only: it lists the rules with the ids
+  and categories that `disabled_rules`/`enabled_rules` of the configuration accept, and whether
+  *this* linter's configuration runs each one. Rules are configured through the TOML, not through
+  that list.
+- **Lazy vs eager editing.** A `Plan` addresses the *input* workbook for every operation, however
+  the operations were added, and costs one read and one write of the file. Eager functions each
+  cost a pass; to chain them, pass the output of one as the input of the next, and each then sees
+  the result of the previous ones (rows deleted by one shift the rows the next addresses). Prefer
+  `Plan` unless an operation depends on the outcome of the one before it.
 
 Errors: `ValueError` (invalid configuration or scope), `OSError` (a file cannot
 be read), `sheetrs.SheetrsError` (a workbook cannot be parsed or written).

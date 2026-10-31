@@ -131,6 +131,8 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
   - `report`: `group_by_scope` (book → sheet → cell, one entry per sheet) and `ViolationRecord`
     (flat form for the bindings).
   - `Linter` runs the rules over a `Workbook` it is given; it reads nothing.
+    `Linter::try_with_config` validates the configuration (unknown rules, categories or
+    parameters are an error), so no adapter has to repeat the check.
   - `main.rs` and `formatter.rs`: arguments, colored text and streamed JSON.
 
 - **`sheetstats`** (crate `sheetrs-stats`):
@@ -145,6 +147,9 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
     formulas to values, deleting rows and columns) without fully rewriting the file.
   - `ValueScope` selects the cells to convert (a sheet, columns or rows) independently of the
     file format.
+  - `plan`: `EditPlan` and `Operation`, the operations on one workbook collected one at a time
+    and applied by `execute` in a single pass over the file (all of them address the input
+    workbook). `sheetedit` and the bindings build their runs with it.
   - `main.rs` handles arguments.
 
 ## 3. Bindings
@@ -159,8 +164,9 @@ next to `lint`, not as a separate service.
   `lint_rules`, `workbook_stats`) or the human text report out. Packaged for npm by
   `scripts/package-wasm.sh` (`wasm-bindgen --target web`, template in `sheetrs-wasm/npm`).
 - **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs` with one
-  submodule per tool (`sheetrs.linter.lint`/`rules`, `sheetrs.stats.compute`,
-  `sheetrs.edit.modify`) plus the `python/sheetrs` package (type stubs). The functions take a
+  submodule per tool (`sheetrs.linter.Linter`, `sheetrs.stats.compute`, `sheetrs.edit`)
+  plus the `python/sheetrs` package (type stubs). `edit` has two modes over the same
+  `EditPlan`: lazy (`Plan`, one pass on `save`) and eager (a function per operation). The functions take a
   path or bytes and release the GIL while they work. It is built by maturin, which enables the
   `extension-module` feature; the crate has no Rust test harness (it would have to link
   libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding crate is published to

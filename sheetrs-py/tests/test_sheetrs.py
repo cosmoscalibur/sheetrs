@@ -20,12 +20,35 @@ def test_version_is_the_workspace_version():
     assert (major + minor + patch).isdigit()
 
 
-def test_rules_catalog():
-    rules = sheetrs.linter.rules()
-    ids = [rule["id"] for rule in rules]
+def test_rules_catalog_reflects_the_configuration():
+    default = sheetrs.linter.Linter().rules()
+    ids = [rule["id"] for rule in default]
     assert ids == sorted(ids)
     assert {"ERR102", "CALC202", "REF301"} <= set(ids)
-    assert {"id", "name", "category", "default"} == set(rules[0])
+    assert {"id", "name", "category", "default", "enabled"} == set(default[0])
+    assert all(rule["enabled"] == rule["default"] for rule in default)
+
+    config = '[global]\ndisabled_rules = ["REF301", "CPX"]\n'
+    configured = {r["id"]: r for r in sheetrs.linter.Linter(config=config).rules()}
+    assert not configured["REF301"]["enabled"]
+    assert not any(r["enabled"] for r in configured.values() if r["category"] == "CPX")
+    assert configured["ERR102"]["enabled"] == configured["ERR102"]["default"]
+
+
+def test_unknown_rules_in_the_configuration_are_rejected():
+    with pytest.raises(ValueError, match="ERR1O2"):
+        sheetrs.linter.Linter(config='[global]\ndisabled_rules = ["ERR1O2"]\n')
+    with pytest.raises(ValueError, match="ERR1O2"):
+        sheetrs.linter.lint(
+            FIXTURES[0], config='[global]\ndisabled_rules = ["ERR1O2"]\n'
+        )
+
+
+def test_a_linter_is_reusable(workbook):
+    linter = sheetrs.linter.Linter()
+    first = [v.to_dict() for v in linter.lint(workbook)]
+    assert first == [v.to_dict() for v in linter.lint(workbook)]
+    assert first == [v.to_dict() for v in sheetrs.linter.lint(workbook)]
 
 
 def test_lint_returns_violations(workbook):
@@ -117,31 +140,88 @@ def test_stats_from_bytes(workbook):
     assert stats["sheets"] == sheetrs.stats.compute(workbook)["sheets"]
 
 
-def test_edit_removes_a_sheet(workbook, tmp_path):
-    names = [s["name"] for s in sheetrs.stats.compute(workbook)["sheets"]]
-    assert len(names) > 1
+def sheet_names(path):
+    return [s["name"] for s in sheetrs.stats.compute(path)["sheets"]]
+
+
+def test_lazy_plan_applies_everything_in_one_pass(workbook, tmp_path):
+    names = sheet_names(workbook)
+    assert len(names) > 2
     output = tmp_path / f"out{workbook.suffix}"
-    sheetrs.edit.modify(workbook, output, remove_sheets=[names[-1]])
-    left = [s["name"] for s in sheetrs.stats.compute(output)["sheets"]]
-    assert left == names[:-1]
+    plan = (
+        sheetrs.edit.Plan(workbook)
+        .remove_sheets(names[-1])
+        .remove_sheets(names[-2], names[-1])  # a repeat counts once
+        .recalc_on_open()
+    )
+    assert plan.operations == [
+        f"remove sheet {names[-1]}",
+        f"remove sheet {names[-2]}",
+        "recalculate when opened",
+    ]
+    assert len(plan) == 3
+    assert not output.exists()  # lazy: nothing ran yet
+    plan.save(output)
+    assert sheet_names(output) == names[:-2]
 
 
-def test_edit_never_overwrites_its_input(workbook):
-    with pytest.raises(sheetrs.SheetrsError):
-        sheetrs.edit.modify(workbook, workbook, recalc_on_open=True)
+def test_plan_can_be_saved_twice(workbook, tmp_path):
+    plan = sheetrs.edit.Plan(workbook).recalc_on_open()
+    for n in (1, 2):
+        plan.save(tmp_path / f"o{n}{workbook.suffix}")
+        assert (tmp_path / f"o{n}{workbook.suffix}").exists()
 
 
-def test_edit_rejects_a_malformed_scope(workbook, tmp_path):
+def test_empty_plan_does_not_save(workbook, tmp_path):
+    with pytest.raises(sheetrs.SheetrsError, match="No operations"):
+        sheetrs.edit.Plan(workbook).save(tmp_path / f"o{workbook.suffix}")
+
+
+def test_plan_validates_scopes_when_they_are_added(workbook):
     with pytest.raises(ValueError, match="scope"):
-        sheetrs.edit.modify(
-            workbook, tmp_path / f"o{workbook.suffix}", convert_to_values=["!A"]
-        )
+        sheetrs.edit.Plan(workbook).delete_rows("!A")
+
+
+def test_plan_never_overwrites_its_input(workbook):
+    with pytest.raises(sheetrs.SheetrsError):
+        sheetrs.edit.Plan(workbook).recalc_on_open().save(workbook)
+
+
+def test_plan_with_a_missing_input_fails_on_save(tmp_path):
+    plan = sheetrs.edit.Plan(tmp_path / "missing.xlsx").recalc_on_open()
+    with pytest.raises(FileNotFoundError):
+        plan.save(tmp_path / "out.xlsx")
+
+
+def test_eager_operations_run_at_once(workbook, tmp_path):
+    names = sheet_names(workbook)
+    output = tmp_path / f"out{workbook.suffix}"
+    sheetrs.edit.remove_sheets(workbook, output, names[-1])
+    assert sheet_names(output) == names[:-1]
+
+
+def test_eager_operations_chain_through_their_outputs(workbook, tmp_path):
+    names = sheet_names(workbook)
+    first = tmp_path / f"one{workbook.suffix}"
+    second = tmp_path / f"two{workbook.suffix}"
+    sheetrs.edit.remove_sheets(workbook, first, names[-1])
+    sheetrs.edit.remove_sheets(first, second, names[-2])
+    assert sheet_names(second) == names[:-2]
+
+
+def test_eager_scopes_are_validated(workbook, tmp_path):
+    with pytest.raises(ValueError, match="scope"):
+        sheetrs.edit.delete_columns(workbook, tmp_path / f"o{workbook.suffix}", "!A")
 
 
 def test_submodules_import_as_modules():
-    from sheetrs.edit import modify
-    from sheetrs.linter import Violation, lint, rules
+    from sheetrs.edit import Plan, remove_sheets
+    from sheetrs.linter import Linter, Violation, lint
     from sheetrs.stats import compute
 
-    assert callable(lint) and callable(rules) and callable(compute) and callable(modify)
-    assert Violation.__name__ == "Violation"
+    assert callable(lint) and callable(compute) and callable(remove_sheets)
+    assert (Plan.__name__, Linter.__name__, Violation.__name__) == (
+        "Plan",
+        "Linter",
+        "Violation",
+    )

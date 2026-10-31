@@ -13,9 +13,9 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core", version = "0.3.3" }
-sheetrs-linter = { path = "../sheetrs-linter", version = "0.3.3", default-features = false }
-sheetrs-stats = { path = "../sheetrs-stats", version = "0.3.3" }
+sheetrs-core = { path = "../sheetrs-core", version = "0.4.0" }
+sheetrs-linter = { path = "../sheetrs-linter", version = "0.4.0", default-features = false }
+sheetrs-stats = { path = "../sheetrs-stats", version = "0.4.0" }
 wasm-bindgen = "0.2"
 serde = { workspace = true }
 serde_json = "1.0.151"

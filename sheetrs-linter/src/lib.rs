@@ -43,7 +43,15 @@ impl Linter {
         Self::with_config(LinterConfig::default())
     }
 
-    /// Create a new linter with custom configuration
+    /// Create a linter, rejecting a configuration that names rules, categories or parameters the
+    /// linter does not know: a misspelled rule would otherwise be ignored without a word.
+    pub fn try_with_config(config: LinterConfig) -> Result<Self> {
+        config.validate_rules(&rules::registry::get_all_valid_tokens())?;
+        Ok(Self::with_config(config))
+    }
+
+    /// Create a new linter with custom configuration, as given (see
+    /// [`try_with_config`](Self::try_with_config) to validate it)
     pub fn with_config(config: LinterConfig) -> Self {
         let all_rule_ids: Vec<RuleId> = rules::registry::create_all_walker_rules(&config)
             .iter()
@@ -132,5 +140,28 @@ impl Linter {
 impl Default for Linter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_misspelled_rule_is_rejected_when_the_linter_is_built() {
+        let config = LinterConfig::from_toml("[global]\ndisabled_rules = [\"ERR1O2\"]\n").unwrap();
+        let error = Linter::try_with_config(config.clone())
+            .err()
+            .expect("rejected");
+        assert!(error.to_string().contains("ERR1O2"), "{error}");
+        // `with_config` takes the configuration as given.
+        let _ = Linter::with_config(config);
+    }
+
+    #[test]
+    fn known_rules_and_categories_are_accepted() {
+        let config =
+            LinterConfig::from_toml("[global]\ndisabled_rules = [\"ERR102\", \"CPX\"]\n").unwrap();
+        assert!(Linter::try_with_config(config).is_ok());
     }
 }

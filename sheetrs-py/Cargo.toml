@@ -22,10 +22,10 @@ doctest = false
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core", version = "0.3.3" }
-sheetrs-linter = { path = "../sheetrs-linter", version = "0.3.3" }
-sheetrs-edit = { path = "../sheetrs-edit", version = "0.3.3" }
-sheetrs-stats = { path = "../sheetrs-stats", version = "0.3.3" }
+sheetrs-core = { path = "../sheetrs-core", version = "0.4.0" }
+sheetrs-linter = { path = "../sheetrs-linter", version = "0.4.0" }
+sheetrs-edit = { path = "../sheetrs-edit", version = "0.4.0" }
+sheetrs-stats = { path = "../sheetrs-stats", version = "0.4.0" }
 pyo3 = { version = "0.30", features = ["abi3-py310"] }
 serde_json.workspace = true
 anyhow.workspace = true

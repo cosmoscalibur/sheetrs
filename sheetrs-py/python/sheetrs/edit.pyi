@@ -1,16 +1,42 @@
-"""Workbook modification (`sheetedit`)."""
+"""Workbook modification (`sheetedit`).
+
+Two modes:
+
+- **Lazy**: `Plan` collects operations and applies them all in a single pass over the file on
+  `save`. Every operation addresses the *input* workbook.
+- **Eager**: the functions of this module apply one operation immediately, one pass each. To
+  chain them, pass the output of one as the input of the next; each then sees the result of the
+  previous ones (rows deleted by one shift the rows the next addresses).
+
+Scopes are `"Sheet"`, `"Sheet!B:D"` (columns) and `"Sheet!3:10"` (rows); quote a sheet name that
+contains `!`.
+"""
 
 import os
+from typing import Self
 
-def modify(
-    input: str | os.PathLike[str],
-    output: str | os.PathLike[str],
-    *,
-    remove_sheets: list[str] | None = None,
-    remove_ranges: list[str] | None = None,
-    convert_to_values: list[str] | None = None,
-    delete_rows: list[str] | None = None,
-    delete_cols: list[str] | None = None,
-    recalc_on_open: bool = False,
-) -> None:
-    """Write a modified copy of `input` to `output` (it never overwrites its input)."""
+Path = str | os.PathLike[str]
+
+class Plan:
+    """Operations on one workbook, applied together on `save`."""
+
+    def __init__(self, input: Path) -> None: ...
+    def remove_sheets(self, *names: str) -> Self: ...
+    def remove_ranges(self, *names: str) -> Self: ...
+    def convert_to_values(self, *scopes: str) -> Self: ...
+    def delete_rows(self, *scopes: str) -> Self: ...
+    def delete_columns(self, *scopes: str) -> Self: ...
+    def recalc_on_open(self) -> Self: ...
+    @property
+    def operations(self) -> list[str]:
+        """The recorded operations in the order they were added, as text."""
+    def save(self, output: Path) -> None:
+        """Apply the operations in one pass and write `output` (never the input itself)."""
+    def __len__(self) -> int: ...
+
+def remove_sheets(input: Path, output: Path, *names: str) -> None: ...
+def remove_ranges(input: Path, output: Path, *names: str) -> None: ...
+def convert_to_values(input: Path, output: Path, *scopes: str) -> None: ...
+def delete_rows(input: Path, output: Path, *scopes: str) -> None: ...
+def delete_columns(input: Path, output: Path, *scopes: str) -> None: ...
+def recalc_on_open(input: Path, output: Path) -> None: ...

@@ -4,12 +4,18 @@ Python bindings of the SheetRS suite, one submodule per tool::
 
     import sheetrs
 
-    for violation in sheetrs.linter.lint("book.xlsx"):
+    linter = sheetrs.linter.Linter(config_path="sheetlint.toml")   # configuration is validated
+    for violation in linter.lint("book.xlsx"):
         print(violation.rule_id, violation.sheet, violation.cell, violation.message)
-    sheetrs.linter.rules()                       # the catalog of the linter's rules
+    linter.rules()                               # the rules and which of them this config runs
 
     sheetrs.stats.compute("book.xlsx")["total_formulas"]
-    sheetrs.edit.modify("book.xlsx", "clean.xlsx", remove_sheets=["Secrets"])
+
+    # lazy: collect operations, one pass over the file on save
+    (sheetrs.edit.Plan("book.xlsx").remove_sheets("Secrets").convert_to_values("Report!B:D")
+        .save("clean.xlsx"))
+    # eager: one operation now
+    sheetrs.edit.remove_sheets("book.xlsx", "clean.xlsx", "Secrets")
 """
 
 import sys as _sys

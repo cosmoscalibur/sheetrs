@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use sheetrs_edit::writer;
+use sheetrs_edit::{EditPlan, writer};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -99,20 +99,27 @@ fn main() -> Result<()> {
     }
     let output_path = cli.output.unwrap();
 
-    // Prepare modifications
-    use std::collections::HashSet;
-    let mut mods = writer::WorkbookModifications::default();
-
-    if !cli.remove_sheets.is_empty() {
-        mods.remove_sheets = Some(cli.remove_sheets.iter().cloned().collect::<HashSet<_>>());
+    // The operations of a run are applied together, in one pass over the file.
+    let mut plan = EditPlan::new();
+    for name in &cli.remove_sheets {
+        plan.remove_sheet(name);
     }
-    if !cli.remove_ranges.is_empty() {
-        mods.remove_named_ranges = Some(cli.remove_ranges.iter().cloned().collect::<HashSet<_>>());
+    for name in &cli.remove_ranges {
+        plan.remove_named_range(name);
     }
-    mods.convert_to_values = cli.convert_to_values;
-    mods.delete_rows = cli.delete_rows;
-    mods.delete_columns = cli.delete_cols;
-    mods.recalculate_on_open = cli.recalc_on_open;
+    for scope in cli.convert_to_values {
+        plan.convert_to_values(scope);
+    }
+    for scope in cli.delete_rows {
+        plan.delete_rows(scope);
+    }
+    for scope in cli.delete_cols {
+        plan.delete_columns(scope);
+    }
+    if cli.recalc_on_open {
+        plan.recalculate_on_open();
+    }
+    let mods = plan.to_modifications();
 
     if cli.dry_run {
         println!("[DRY RUN] Operations on '{}':", cli.file.display());

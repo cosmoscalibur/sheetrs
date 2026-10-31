@@ -1917,7 +1917,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-compiler"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "pprof",
  "serde",
@@ -1933,7 +1933,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-core"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -1949,7 +1949,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-edit"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -1964,7 +1964,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-engine"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "bincode",
  "fancy-regex",
@@ -1978,14 +1978,14 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-formula"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "sheetrs-core",
 ]
 
 [[package]]
 name = "sheetrs-linter"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2005,7 +2005,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-py"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "pyo3",
@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-stats"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2030,7 +2030,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-wasm"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.2.17",

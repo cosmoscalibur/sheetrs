@@ -2,25 +2,27 @@
 //!
 //! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports its submodules.
 //! There is one submodule per tool, as there is one crate per tool: the rules exist only as part
-//! of the linter, so the catalog is `linter.rules()`, next to `linter.lint()`.
+//! of the linter, so their catalog is `Linter.rules()`, next to the configuration it reflects.
 //!
-//! - `linter` (`sheetrs-linter`): `lint`, `rules`, `Violation`.
+//! - `linter` (`sheetrs-linter`): `Linter` (validated configuration, `lint`, `rules`), `lint`,
+//!   `Violation`.
 //! - `stats` (`sheetrs-stats`): `compute`.
-//! - `edit` (`sheetrs-edit`): `modify`.
+//! - `edit` (`sheetrs-edit`): `Plan` (lazy: operations collected, applied in one pass on `save`)
+//!   and one function per operation (eager: applied at once).
 //!
 //! A workbook is a path (`str`/`os.PathLike`) or its bytes. The functions release the GIL while
 //! they read and analyze a workbook.
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList};
+use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 use sheetrs_core::reader::{self, Workbook};
-use sheetrs_edit::writer::{self, ValueScope, WorkbookModifications};
+use sheetrs_edit::EditPlan;
+use sheetrs_edit::writer::ValueScope;
 use sheetrs_linter::report::{ViolationRecord, violation_records};
 use sheetrs_linter::rules::registry;
 use sheetrs_linter::{Linter, LinterConfig};
 use sheetrs_stats::stats::WorkbookStats;
-use std::collections::HashSet;
 use std::io::Cursor;
 use std::path::PathBuf;
 
@@ -161,15 +163,84 @@ impl From<ViolationRecord> for PyViolation {
     }
 }
 
-/// Lint a workbook.
+/// The linter, with a configuration that was validated when it was built.
 ///
-/// `source` is a path or the bytes of an XLSX/XLSM/ODS file (then `extension` is required).
 /// The configuration is the TOML text of a `sheetlint.toml` (`config`) or the path of one
-/// (`config_path`), not both; without either, the default rules run.
-/// Returns the violations ordered by scope (book, then sheet, then cell) and rule.
-///
-/// Raises `ValueError` for an invalid configuration, `OSError` when a file cannot be read and
-/// `SheetrsError` when the workbook cannot be parsed.
+/// (`config_path`), not both; without either, the default rules run. A rule, category or
+/// parameter the linter does not know is an error (`ValueError`), not something ignored.
+/// Build it once to lint many workbooks.
+#[pyclass(name = "Linter", frozen, module = "sheetrs.linter")]
+struct PyLinter {
+    linter: Linter,
+}
+
+#[pymethods]
+impl PyLinter {
+    #[new]
+    #[pyo3(signature = (*, config=None, config_path=None))]
+    fn new(config: Option<&str>, config_path: Option<PathBuf>) -> PyResult<Self> {
+        let config = match (config, config_path) {
+            (Some(_), Some(_)) => {
+                return Err(PyValueError::new_err(
+                    "give `config` or `config_path`, not both",
+                ));
+            }
+            (Some(text), None) => LinterConfig::from_toml(text),
+            (None, Some(path)) => LinterConfig::from_file(path),
+            (None, None) => Ok(LinterConfig::default()),
+        }
+        .map_err(|e| PyValueError::new_err(format!("invalid configuration: {e:#}")))?;
+        let linter = Linter::try_with_config(config)
+            .map_err(|e| PyValueError::new_err(format!("invalid configuration: {e:#}")))?;
+        Ok(Self { linter })
+    }
+
+    /// Lint a workbook, given by path or as the bytes of an XLSX/XLSM/ODS file (then `extension`
+    /// is required). Returns the violations ordered by scope (book, sheet, cell) and rule.
+    ///
+    /// Raises `OSError` when a file cannot be read and `SheetrsError` when the workbook cannot be
+    /// parsed.
+    #[pyo3(signature = (source, *, extension=None))]
+    fn lint(
+        &self,
+        py: Python<'_>,
+        source: &Bound<'_, PyAny>,
+        extension: Option<&str>,
+    ) -> PyResult<Vec<PyViolation>> {
+        let source = Source::from_py(source, extension)?;
+        py.detach(|| {
+            let workbook = source.read().map_err(to_py_err)?;
+            let violations = self.linter.lint_workbook(&workbook).map_err(to_py_err)?;
+            Ok(
+                violation_records(&violations, &workbook, self.linter.config())
+                    .into_iter()
+                    .map(PyViolation::from)
+                    .collect(),
+            )
+        })
+    }
+
+    /// The rules, ordered by id: a list of dicts with `id`, `name`, `category`, `default` (runs
+    /// without configuration) and `enabled` (runs with this linter's configuration).
+    ///
+    /// The ids and categories are what `disabled_rules` and `enabled_rules` accept.
+    fn rules<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let config = self.linter.config();
+        let list = PyList::empty(py);
+        for meta in registry::get_all_rule_metadata(config) {
+            let item = PyDict::new(py);
+            item.set_item("enabled", registry::is_rule_active(meta.id, config))?;
+            item.set_item("id", meta.id.as_str())?;
+            item.set_item("name", meta.name)?;
+            item.set_item("category", meta.category.as_str())?;
+            item.set_item("default", meta.is_default)?;
+            list.append(item)?;
+        }
+        Ok(list)
+    }
+}
+
+/// Lint a workbook with a one-off linter: `Linter(config=…, config_path=…).lint(source, …)`.
 #[pyfunction]
 #[pyo3(signature = (source, *, config=None, config_path=None, extension=None))]
 fn lint(
@@ -179,45 +250,7 @@ fn lint(
     config_path: Option<PathBuf>,
     extension: Option<&str>,
 ) -> PyResult<Vec<PyViolation>> {
-    let source = Source::from_py(source, extension)?;
-    let config = match (config, config_path) {
-        (Some(_), Some(_)) => {
-            return Err(PyValueError::new_err(
-                "give `config` or `config_path`, not both",
-            ));
-        }
-        (Some(text), None) => LinterConfig::from_toml(text),
-        (None, Some(path)) => LinterConfig::from_file(path),
-        (None, None) => Ok(LinterConfig::default()),
-    }
-    .map_err(|e| PyValueError::new_err(format!("invalid configuration: {e:#}")))?;
-
-    py.detach(|| {
-        let workbook = source.read().map_err(to_py_err)?;
-        let linter = Linter::with_config(config);
-        let violations = linter.lint_workbook(&workbook).map_err(to_py_err)?;
-        Ok(violation_records(&violations, &workbook, linter.config())
-            .into_iter()
-            .map(PyViolation::from)
-            .collect())
-    })
-}
-
-/// The lint rules: a list of dicts with `id`, `name`, `category` and `default` (whether the rule
-/// runs without configuration).
-#[pyfunction]
-#[pyo3(name = "rules")]
-fn lint_rules(py: Python<'_>) -> PyResult<Bound<'_, PyList>> {
-    let list = PyList::empty(py);
-    for meta in registry::get_all_rule_metadata(&LinterConfig::default()) {
-        let item = PyDict::new(py);
-        item.set_item("id", meta.id.as_str())?;
-        item.set_item("name", meta.name)?;
-        item.set_item("category", meta.category.as_str())?;
-        item.set_item("default", meta.is_default)?;
-        list.append(item)?;
-    }
-    Ok(list)
+    PyLinter::new(config, config_path)?.lint(py, source, extension)
 }
 
 /// Statistics of a workbook, as `sheetstats --format json` reports them: totals plus a
@@ -238,61 +271,247 @@ fn stats_compute<'py>(
     py.import("json")?.call_method1("loads", (json,))
 }
 
-/// Write a modified copy of the workbook at `input` to `output` (XLSX or ODS, by extension).
+fn strings(values: &Bound<'_, PyTuple>) -> PyResult<Vec<String>> {
+    values.extract()
+}
+
+fn scopes(values: &Bound<'_, PyTuple>) -> PyResult<Vec<ValueScope>> {
+    strings(values)?
+        .iter()
+        .map(|spec| {
+            spec.parse::<ValueScope>()
+                .map_err(|e| PyValueError::new_err(format!("invalid scope '{spec}': {e:#}")))
+        })
+        .collect()
+}
+
+/// Operations on one workbook, collected and applied together.
 ///
-/// - `remove_sheets`, `remove_ranges`: names to remove.
-/// - `convert_to_values`: scopes (`"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"`) whose formulas are
-///   replaced by their cached values.
-/// - `delete_rows` (`"Sheet!3:10"`), `delete_cols` (`"Sheet!B:D"`): in the coordinates of the
-///   input; references to them become `#REF!`.
-/// - `recalc_on_open`: the application that opens the output recalculates every formula.
+/// Lazy mode: each method records operations and returns the plan, so calls chain; nothing is
+/// read or written until `save(output)`, which applies all of them while it streams the file
+/// once. All the operations address the **input** workbook (its rows, columns and sheet names),
+/// whatever order they were added in; adding an operation twice counts once. A malformed scope
+/// raises `ValueError` where it is added.
 ///
-/// Raises `ValueError` for a malformed scope and `SheetrsError` when the operation fails (the
-/// output is not left behind).
-#[pyfunction]
-#[pyo3(signature = (
-    input,
-    output,
-    *,
-    remove_sheets=None,
-    remove_ranges=None,
-    convert_to_values=None,
-    delete_rows=None,
-    delete_cols=None,
-    recalc_on_open=false,
-))]
-#[allow(clippy::too_many_arguments)]
-#[pyo3(name = "modify")]
-fn edit_modify(
+/// For immediate execution, one pass per operation, see the functions of this module.
+#[pyclass(name = "Plan", module = "sheetrs.edit")]
+struct PyPlan {
+    input: PathBuf,
+    plan: EditPlan,
+}
+
+#[pymethods]
+impl PyPlan {
+    #[new]
+    fn new(input: PathBuf) -> Self {
+        Self {
+            input,
+            plan: EditPlan::new(),
+        }
+    }
+
+    /// Remove sheets by name.
+    #[pyo3(signature = (*names))]
+    fn remove_sheets<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        names: &Bound<'py, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        for name in strings(names)? {
+            slf.plan.remove_sheet(name);
+        }
+        Ok(slf)
+    }
+
+    /// Remove defined names (and database ranges).
+    #[pyo3(signature = (*names))]
+    fn remove_ranges<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        names: &Bound<'py, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        for name in strings(names)? {
+            slf.plan.remove_named_range(name);
+        }
+        Ok(slf)
+    }
+
+    /// Replace formulas by their cached values in scopes: `"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"`.
+    #[pyo3(signature = (*scopes))]
+    fn convert_to_values<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        scopes: &Bound<'py, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        for scope in self::scopes(scopes)? {
+            slf.plan.convert_to_values(scope);
+        }
+        Ok(slf)
+    }
+
+    /// Delete rows (`"Sheet!3:10"`, or `"Sheet!3"`); references to them become `#REF!`.
+    #[pyo3(signature = (*scopes))]
+    fn delete_rows<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        scopes: &Bound<'py, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        for scope in self::scopes(scopes)? {
+            slf.plan.delete_rows(scope);
+        }
+        Ok(slf)
+    }
+
+    /// Delete columns (`"Sheet!B:D"`, or `"Sheet!B"`).
+    #[pyo3(signature = (*scopes))]
+    fn delete_columns<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        scopes: &Bound<'py, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        for scope in self::scopes(scopes)? {
+            slf.plan.delete_columns(scope);
+        }
+        Ok(slf)
+    }
+
+    /// Mark the output so the application that opens it recalculates every formula.
+    fn recalc_on_open(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.plan.recalculate_on_open();
+        slf
+    }
+
+    /// The recorded operations, in the order they were added, as text.
+    #[getter]
+    fn operations(&self) -> Vec<String> {
+        self.plan
+            .operations()
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    /// Apply the operations to the input in one pass and write `output`, which must not be the
+    /// input. The plan is not consumed: it can be saved again. Raises `OSError` when a file
+    /// cannot be read or written and `SheetrsError` when the operation fails (no output is left
+    /// behind) or the plan is empty.
+    fn save(&self, py: Python<'_>, output: PathBuf) -> PyResult<()> {
+        py.detach(|| self.plan.execute(&self.input, &output).map_err(to_py_err))
+    }
+
+    fn __len__(&self) -> usize {
+        self.plan.operations().len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Plan({:?}, {} operation(s))",
+            self.input.display(),
+            self.plan.operations().len()
+        )
+    }
+}
+
+/// Eager mode: runs one operation on `input` now and writes `output`.
+fn run_eager(
     py: Python<'_>,
     input: PathBuf,
     output: PathBuf,
-    remove_sheets: Option<Vec<String>>,
-    remove_ranges: Option<Vec<String>>,
-    convert_to_values: Option<Vec<String>>,
-    delete_rows: Option<Vec<String>>,
-    delete_cols: Option<Vec<String>>,
-    recalc_on_open: bool,
+    add: impl FnOnce(&mut EditPlan) -> PyResult<()>,
 ) -> PyResult<()> {
-    fn scopes(specs: Option<Vec<String>>) -> PyResult<Vec<ValueScope>> {
-        specs
-            .unwrap_or_default()
-            .iter()
-            .map(|spec| {
-                spec.parse::<ValueScope>()
-                    .map_err(|e| PyValueError::new_err(format!("invalid scope '{spec}': {e:#}")))
-            })
-            .collect()
-    }
-    let modifications = WorkbookModifications {
-        remove_sheets: remove_sheets.map(|names| names.into_iter().collect::<HashSet<_>>()),
-        remove_named_ranges: remove_ranges.map(|names| names.into_iter().collect::<HashSet<_>>()),
-        convert_to_values: scopes(convert_to_values)?,
-        delete_rows: scopes(delete_rows)?,
-        delete_columns: scopes(delete_cols)?,
-        recalculate_on_open: recalc_on_open,
-    };
-    py.detach(|| writer::modify_workbook(&input, &output, &modifications).map_err(to_py_err))
+    let mut plan = EditPlan::new();
+    add(&mut plan)?;
+    py.detach(|| plan.execute(&input, &output).map_err(to_py_err))
+}
+
+/// Eager: write `output` without the sheets `names`.
+#[pyfunction]
+#[pyo3(signature = (input, output, *names), name = "remove_sheets")]
+fn edit_remove_sheets(
+    py: Python<'_>,
+    input: PathBuf,
+    output: PathBuf,
+    names: &Bound<'_, PyTuple>,
+) -> PyResult<()> {
+    run_eager(py, input, output, |plan| {
+        strings(names)?.into_iter().for_each(|n| {
+            plan.remove_sheet(n);
+        });
+        Ok(())
+    })
+}
+
+/// Eager: write `output` without the defined names `names`.
+#[pyfunction]
+#[pyo3(signature = (input, output, *names), name = "remove_ranges")]
+fn edit_remove_ranges(
+    py: Python<'_>,
+    input: PathBuf,
+    output: PathBuf,
+    names: &Bound<'_, PyTuple>,
+) -> PyResult<()> {
+    run_eager(py, input, output, |plan| {
+        strings(names)?.into_iter().for_each(|n| {
+            plan.remove_named_range(n);
+        });
+        Ok(())
+    })
+}
+
+/// Eager: write `output` with the formulas of `scopes` replaced by their cached values.
+#[pyfunction]
+#[pyo3(signature = (input, output, *scopes), name = "convert_to_values")]
+fn edit_convert_to_values(
+    py: Python<'_>,
+    input: PathBuf,
+    output: PathBuf,
+    scopes: &Bound<'_, PyTuple>,
+) -> PyResult<()> {
+    run_eager(py, input, output, |plan| {
+        self::scopes(scopes)?.into_iter().for_each(|s| {
+            plan.convert_to_values(s);
+        });
+        Ok(())
+    })
+}
+
+/// Eager: write `output` without the rows `scopes` (`"Sheet!3:10"`).
+#[pyfunction]
+#[pyo3(signature = (input, output, *scopes), name = "delete_rows")]
+fn edit_delete_rows(
+    py: Python<'_>,
+    input: PathBuf,
+    output: PathBuf,
+    scopes: &Bound<'_, PyTuple>,
+) -> PyResult<()> {
+    run_eager(py, input, output, |plan| {
+        self::scopes(scopes)?.into_iter().for_each(|s| {
+            plan.delete_rows(s);
+        });
+        Ok(())
+    })
+}
+
+/// Eager: write `output` without the columns `scopes` (`"Sheet!B:D"`).
+#[pyfunction]
+#[pyo3(signature = (input, output, *scopes), name = "delete_columns")]
+fn edit_delete_columns(
+    py: Python<'_>,
+    input: PathBuf,
+    output: PathBuf,
+    scopes: &Bound<'_, PyTuple>,
+) -> PyResult<()> {
+    run_eager(py, input, output, |plan| {
+        self::scopes(scopes)?.into_iter().for_each(|s| {
+            plan.delete_columns(s);
+        });
+        Ok(())
+    })
+}
+
+/// Eager: write `output` marked to be recalculated when opened.
+#[pyfunction]
+#[pyo3(name = "recalc_on_open")]
+fn edit_recalc_on_open(py: Python<'_>, input: PathBuf, output: PathBuf) -> PyResult<()> {
+    run_eager(py, input, output, |plan| {
+        plan.recalculate_on_open();
+        Ok(())
+    })
 }
 
 #[pymodule(gil_used = false)]
@@ -305,7 +524,7 @@ mod _sheetrs {
     #[pymodule]
     mod linter {
         #[pymodule_export]
-        use super::super::{PyViolation, lint, lint_rules};
+        use super::super::{PyLinter, PyViolation, lint};
     }
 
     #[pymodule]
@@ -317,7 +536,10 @@ mod _sheetrs {
     #[pymodule]
     mod edit {
         #[pymodule_export]
-        use super::super::edit_modify;
+        use super::super::{
+            PyPlan, edit_convert_to_values, edit_delete_columns, edit_delete_rows,
+            edit_recalc_on_open, edit_remove_ranges, edit_remove_sheets,
+        };
     }
 
     #[pymodule_init]
