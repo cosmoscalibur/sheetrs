@@ -117,6 +117,83 @@ impl fmt::Display for ValueScope {
     }
 }
 
+/// Rows of a sheet: `Sheet!3:10`, or `Sheet!7` for one. Bounds are 0-based and inclusive.
+///
+/// The type of the rows a deletion takes: one that is not a row range cannot be built, so no
+/// operation has to check it later.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RowRange {
+    pub sheet: String,
+    pub first: u32,
+    pub last: u32,
+}
+
+/// Columns of a sheet: `Sheet!B:D`, or `Sheet!B` for one. Bounds are 0-based and inclusive.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ColumnRange {
+    pub sheet: String,
+    pub first: u32,
+    pub last: u32,
+}
+
+impl FromStr for RowRange {
+    type Err = anyhow::Error;
+
+    fn from_str(spec: &str) -> Result<Self> {
+        match spec.parse::<ValueScope>()? {
+            ValueScope {
+                sheet,
+                target: ValueTarget::Rows(first, last),
+            } => Ok(Self { sheet, first, last }),
+            _ => bail!("'{spec}' is not a row range such as 'Sheet!3:10'"),
+        }
+    }
+}
+
+impl FromStr for ColumnRange {
+    type Err = anyhow::Error;
+
+    fn from_str(spec: &str) -> Result<Self> {
+        match spec.parse::<ValueScope>()? {
+            ValueScope {
+                sheet,
+                target: ValueTarget::Columns(first, last),
+            } => Ok(Self { sheet, first, last }),
+            _ => bail!("'{spec}' is not a column range such as 'Sheet!B:D'"),
+        }
+    }
+}
+
+impl From<RowRange> for ValueScope {
+    fn from(range: RowRange) -> Self {
+        Self {
+            sheet: range.sheet,
+            target: ValueTarget::Rows(range.first, range.last),
+        }
+    }
+}
+
+impl From<ColumnRange> for ValueScope {
+    fn from(range: ColumnRange) -> Self {
+        Self {
+            sheet: range.sheet,
+            target: ValueTarget::Columns(range.first, range.last),
+        }
+    }
+}
+
+impl fmt::Display for RowRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        ValueScope::from(self.clone()).fmt(f)
+    }
+}
+
+impl fmt::Display for ColumnRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        ValueScope::from(self.clone()).fmt(f)
+    }
+}
+
 /// Split a scope spec into its unquoted sheet name and optional target.
 fn split_scope(spec: &str) -> Result<(String, Option<&str>)> {
     let Some(quoted) = spec.strip_prefix('\'') else {

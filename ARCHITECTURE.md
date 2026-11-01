@@ -149,7 +149,11 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
     file format.
   - `EditPlan` and `Operation` (module `plan`, exported at the crate root): a **sequence** of
     operations on one workbook, each addressing the workbook as the previous ones left it (what
-    running them one at a time gives). `passes()` plans the sequence into the fewest passes over
+    running them one at a time gives). Rows and columns are typed (`RowRange`, `ColumnRange`, with
+    `FromStr`/`Display`), so a deletion with the wrong kind of range cannot be built; the plan is
+    a collection (`Extend`, `FromIterator`, `IntoIterator`). Marking the output to be recalculated
+    when opened is a property of the plan (`recalculate_on_open`), applied once in the last
+    pass, not an operation of the sequence. `passes()` plans the sequence into the fewest passes over
     the file that give the same workbook: deletions of one sheet and axis share a pass, with the
     later positions translated through the earlier deletions; deletions of different sheets and
     on rows vs columns, name and sheet removals and the recalculation mark commute; a conversion
@@ -176,13 +180,11 @@ next to `lint`, not as a separate service.
   `scripts/package-wasm.sh` (`wasm-bindgen --target web`, template in `sheetrs-wasm/npm`).
 - **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs`, re-exported flat
   by the `python/sheetrs` package (type stubs): `Linter` (with `Violation`, its result type),
-  `stats`, and editing in the eager/lazy convention of dataframe libraries: `read` gives a
-  `Workbook` (a working copy; each operation runs when called) and `scan` a `LazyWorkbook`
-  (nothing read; operations recorded; `sink`/`collect` run the plan). Both have the same methods
-  with the same sequential meaning, and are two ways to run one `sheetrs_edit::EditPlan`: the
-  eager one a pass per call, the lazy one the planned passes. The functions take a path, bytes or
-  a loaded `Workbook` and release the GIL while they work. It is built by maturin, which enables
-  the `extension-module` feature; the crate has no Rust test harness (it would have to link
+  `stats`, and `open`, which gives a `Workbook` to edit: the methods record operations on a
+  `sheetrs_edit::EditPlan` and `save` runs it. There is no eager mode: a workbook is streamed,
+  never loaded, so there is no model to apply an operation to before `save`. The functions take a
+  path or bytes and release the GIL while they work. It is built by maturin, which enables the
+  `extension-module` feature; the crate has no Rust test harness (it would have to link
   libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding crate is published to
   crates.io.
 

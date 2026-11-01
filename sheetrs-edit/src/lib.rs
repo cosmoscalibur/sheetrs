@@ -9,3 +9,4 @@ mod plan;
 pub mod writer;
 
 pub use plan::{EditPlan, Operation};
+pub use writer::{ColumnRange, RowRange, ValueScope};

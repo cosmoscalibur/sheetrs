@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use sheetrs_edit::{EditPlan, Operation, writer};
+use sheetrs_edit::{ColumnRange, EditPlan, Operation, RowRange, writer};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -30,11 +30,11 @@ struct Cli {
     /// Delete rows (`Sheet!3:10`, or `Sheet!3` for one), in the rows of the input file. The
     /// references to them become `#REF!` and the ranges around them shrink, as in LibreOffice
     #[arg(long, num_args = 1.., value_name = "ROWS")]
-    delete_rows: Vec<writer::ValueScope>,
+    delete_rows: Vec<RowRange>,
 
     /// Delete columns (`Sheet!B:D`, or `Sheet!B` for one), in the columns of the input file
     #[arg(long, num_args = 1.., value_name = "COLUMNS")]
-    delete_cols: Vec<writer::ValueScope>,
+    delete_cols: Vec<ColumnRange>,
 
     /// Mark the output so the application that opens it first recalculates every formula
     #[arg(long)]
@@ -101,23 +101,16 @@ fn main() -> Result<()> {
 
     // The flags of a command are all written against the input file, in no order: `against_input`
     // makes of them a plan of one pass, however many flags and in whatever order they came.
-    let plan = EditPlan::against_input([
+    let mut plan = EditPlan::against_input([
         Operation::RemoveSheets(cli.remove_sheets),
         Operation::RemoveNamedRanges(cli.remove_ranges),
         Operation::ConvertToValues(cli.convert_to_values),
         Operation::DeleteRows(cli.delete_rows),
         Operation::DeleteColumns(cli.delete_cols),
-    ])?;
-    let plan = if cli.recalc_on_open {
-        EditPlan::against_input(
-            plan.operations()
-                .iter()
-                .cloned()
-                .chain([Operation::RecalculateOnOpen]),
-        )?
-    } else {
-        plan
-    };
+    ]);
+    if cli.recalc_on_open {
+        plan.recalculate_on_open();
+    }
     if cli.dry_run {
         println!("[DRY RUN] Operations on '{}':", cli.file.display());
         print!("{}", plan.explain()?);

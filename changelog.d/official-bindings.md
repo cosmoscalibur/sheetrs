@@ -1,13 +1,13 @@
 ### Added
 
-- Add `sheetrs-py`, the official Python bindings (PyO3, abi3 wheels for Python ≥ 3.10), organized
-  flat: `Linter` (validated configuration, its `lint` and `rules`), `stats`, and editing in the
-  eager/lazy convention of dataframe libraries: `read` gives a `Workbook` (a working copy, each
-  operation runs when called) and `scan` a `LazyWorkbook` (nothing read, operations recorded, run
-  by `sink` or `collect`), with the same methods and the same sequential meaning. A workbook is a
-  path, bytes or a loaded `Workbook`; type stubs and a pytest suite included.
+- Add `sheetrs-py`, the official Python bindings (PyO3, abi3 wheels for Python ≥ 3.10), flat:
+  `Linter` (validated configuration, its `lint` and `rules`), `stats`, and `open` for editing:
+  `open(path)`, operations recorded on the `Workbook` that results, and `save(path)`, which runs
+  them. There is no eager mode: a workbook is streamed, never loaded. A workbook is a path or
+  bytes; type stubs and a pytest suite included.
 - Add `sheetrs_edit::EditPlan` and `Operation`: a sequence of operations on a workbook, each on the
-  result of the previous one, planned by `passes()` into the fewest passes over the file that
+  result of the previous one (rows and columns are typed `RowRange`/`ColumnRange`; the plan is a
+  collection; the mark to recalculate when opened is a property of the output, applied once), planned by `passes()` into the fewest passes over the file that
   give what running them one at a time gives (`explain()` shows them). `EditPlan::against_input`
   is the declarative case `sheetedit` uses for its flags (one pass, in no order); `--dry-run`
   prints the passes. Tests run generated sequences both ways in XLSX and ODS.

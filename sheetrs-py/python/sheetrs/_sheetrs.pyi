@@ -4,7 +4,7 @@ from typing import Any, Literal, TypedDict
 __version__: str
 
 Path = str | os.PathLike[str]
-Source = Path | bytes | Workbook
+Source = Path | bytes
 
 class SheetrsError(Exception):
     """A workbook could not be read, analyzed or written."""
@@ -42,7 +42,7 @@ class Linter:
         self, *, config: str | None = None, config_path: Path | None = None
     ) -> None: ...
     def lint(self, source: Source, *, extension: str | None = None) -> list[Violation]:
-        """Lint a workbook given by path, as bytes (then `extension` is required) or loaded."""
+        """Lint a workbook given by path or as bytes (then `extension` is required)."""
     def rules(self) -> list[Rule]:
         """The rules ordered by id; `enabled` tells whether this configuration runs each one."""
 
@@ -76,58 +76,37 @@ def stats(source: Source, *, extension: str | None = None) -> WorkbookStats:
     """Statistics of a workbook given by path or as bytes (`total_file_size` is 0 for bytes)."""
 
 class Workbook:
-    """A workbook loaded for editing: eager mode.
+    """A workbook to edit: the file and the operations recorded on it. Nothing is read until `save`.
 
-    It has a working copy of the file, and every operation runs when it is called, on the result
-    of the previous ones, and returns the `Workbook` that results (the one it was called on does
-    not change). The intermediate workbook can be linted or measured (`Linter.lint(workbook)`,
-    `stats(workbook)`), and a position is the one the earlier operations left.
+    Every method records an operation and returns the `Workbook` that results (the one it was
+    called on does not change), so calls chain and a workbook can be branched. Each operation
+    addresses the workbook as the previous ones leave it: after `delete_rows("T!3")`, `"T!3"` is
+    what was row 4. The scopes of one call are simultaneous: `delete_rows("T!3", "T!4")` deletes
+    two rows. `save` runs the operations in the fewest passes over the file that give what
+    running them one at a time gives; each pass reads and writes the file once, as a stream.
 
     Scopes are `"Sheet"`, `"Sheet!B:D"` (columns) and `"Sheet!3:10"` (rows); quote a sheet name
-    that contains `!`. The scopes of one call are simultaneous. Rows are deleted with a row range
-    and columns with a column range (`ValueError` otherwise).
+    that contains `!`. A malformed scope, or rows deleted with a column range, raises
+    `ValueError` where it is written; an error of the workbook (a missing sheet, a formula with a
+    3D reference, issue #75) shows at `save`.
     """
 
     def remove_sheets(self, *names: str) -> Workbook: ...
     def remove_ranges(self, *names: str) -> Workbook: ...
     def convert_to_values(self, *scopes: str) -> Workbook: ...
-    def delete_rows(self, *scopes: str) -> Workbook: ...
-    def delete_columns(self, *scopes: str) -> Workbook: ...
-    def recalc_on_open(self) -> Workbook: ...
-    def lazy(self) -> LazyWorkbook:
-        """The same workbook, lazily: what follows is recorded, not run."""
-    def write(self, path: Path) -> None:
-        """Save it to `path`, which must not be the file it was read from."""
-
-class LazyWorkbook:
-    """A workbook scanned for editing: lazy mode. Nothing is read.
-
-    The methods of `Workbook`, with the same meaning (each operation addresses the workbook as the
-    previous ones leave it), that record the operation and return the plan that results. The plan
-    runs on `sink` or `collect`, in the fewest passes over the file that give what running the
-    operations one at a time gives; `explain` shows them. A formula with a 3D reference
-    (`Sheet1:Sheet3!A1`) makes the run fail when rows, columns or sheets are deleted or removed
-    (issue #75).
-    """
-
-    def remove_sheets(self, *names: str) -> LazyWorkbook: ...
-    def remove_ranges(self, *names: str) -> LazyWorkbook: ...
-    def convert_to_values(self, *scopes: str) -> LazyWorkbook: ...
-    def delete_rows(self, *scopes: str) -> LazyWorkbook: ...
-    def delete_columns(self, *scopes: str) -> LazyWorkbook: ...
-    def recalc_on_open(self) -> LazyWorkbook: ...
+    def delete_rows(self, *rows: str) -> Workbook: ...
+    def delete_columns(self, *columns: str) -> Workbook: ...
     @property
     def operations(self) -> list[str]:
         """The operations as they were written, as text."""
     def explain(self) -> str:
-        """The passes over the file that run the plan, as text."""
-    def sink(self, path: Path) -> None:
-        """Run the plan and write the result to `path` (never the file it reads)."""
-    def collect(self) -> Workbook:
-        """Run the plan and load the result."""
+        """The passes over the file that run the operations, as text."""
+    def save(self, path: Path, *, recalc_on_open: bool = False) -> None:
+        """Run the operations and write the result to `path` (never the file it was opened from).
 
-def read(source: Path | bytes, *, extension: str | None = None) -> Workbook:
-    """Load a workbook for editing, eagerly. Bytes need `extension`. The file is never modified."""
+        `recalc_on_open` marks the saved file so the application that opens it recalculates every
+        formula: a property of the file, applied once, not an operation of the sequence.
+        """
 
-def scan(path: Path) -> LazyWorkbook:
-    """Scan a workbook for editing, lazily. Only the path and the extension are checked."""
+def open(source: Path | bytes, *, extension: str | None = None) -> Workbook:
+    """Open a workbook to edit. Bytes need `extension`. Only the path and extension are checked."""

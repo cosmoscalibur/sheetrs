@@ -39,27 +39,30 @@ fn snapshot(path: &Path) -> Snapshot {
     cells
 }
 
-/// One operation from a spec such as `rows T!4:5`, `cols U!B`, `convert F`, `sheet U`, `name N`,
-/// `recalc`; several scopes are separated by a comma and are simultaneous.
+/// One operation from a spec such as `rows T!4:5`, `cols U!B`, `convert F`, `sheet U`, `name N`;
+/// several ranges are separated by a comma and are simultaneous.
 fn op(spec: &str) -> Operation {
     let (verb, rest) = spec.split_once(' ').unwrap_or((spec, ""));
-    let scopes = || rest.split(',').map(|s| s.trim().parse().unwrap()).collect();
-    let names = || rest.split(',').map(|s| s.trim().to_string()).collect();
+    let parts = || rest.split(',').map(str::trim);
     match verb {
-        "rows" => Operation::DeleteRows(scopes()),
-        "cols" => Operation::DeleteColumns(scopes()),
-        "convert" => Operation::ConvertToValues(scopes()),
-        "sheet" => Operation::RemoveSheets(names()),
-        "name" => Operation::RemoveNamedRanges(names()),
-        "recalc" => Operation::RecalculateOnOpen,
+        "rows" => Operation::DeleteRows(parts().map(|s| s.parse().unwrap()).collect()),
+        "cols" => Operation::DeleteColumns(parts().map(|s| s.parse().unwrap()).collect()),
+        "convert" => Operation::ConvertToValues(parts().map(|s| s.parse().unwrap()).collect()),
+        "sheet" => Operation::RemoveSheets(parts().map(String::from).collect()),
+        "name" => Operation::RemoveNamedRanges(parts().map(String::from).collect()),
         other => panic!("unknown operation {other}"),
     }
 }
 
+/// A plan from specs; `recalc` marks the output, it is not an operation of the sequence.
 fn sequence(specs: &[&str]) -> EditPlan {
     let mut plan = EditPlan::new();
     for spec in specs {
-        plan.push(op(spec)).unwrap();
+        if *spec == "recalc" {
+            plan.recalculate_on_open();
+        } else {
+            plan.push(op(spec));
+        }
     }
     plan
 }
@@ -79,9 +82,18 @@ fn run_one_at_a_time(extension: &str, plan: &EditPlan) -> Result<Snapshot, Strin
     let mut current = asset(extension);
     for (i, operation) in plan.operations().iter().enumerate() {
         let mut single = EditPlan::new();
-        single.push(operation.clone()).unwrap();
+        single.push(operation.clone());
         let output = dir.path().join(format!("step{i}.{extension}"));
         single
+            .execute(&current, &output)
+            .map_err(|e| format!("{e:#}"))?;
+        current = output;
+    }
+    if plan.recalculates_on_open() {
+        let mut marked = EditPlan::new();
+        marked.recalculate_on_open();
+        let output = dir.path().join(format!("marked.{extension}"));
+        marked
             .execute(&current, &output)
             .map_err(|e| format!("{e:#}"))?;
         current = output;
@@ -217,16 +229,10 @@ fn against_input_is_one_pass_equal_to_its_operations_one_at_a_time() {
         &["rows T!4:5, U!3"],
         &["rows T!2, U!4:5, V!6"],
         &["rows T!4:5, V!3", "sheet U"],
-        &[
-            "rows T!2, U!4:5",
-            "cols T!D",
-            "convert F",
-            "name NameOne",
-            "recalc",
-        ],
+        &["rows T!2, U!4:5", "cols T!D", "convert F", "name NameOne"],
     ];
     for specs in scenarios {
-        let declared = EditPlan::against_input(specs.iter().map(|spec| op(spec))).unwrap();
+        let declared = EditPlan::against_input(specs.iter().map(|spec| op(spec)));
         assert_eq!(declared.passes().unwrap().len(), 1, "{specs:?}");
         for extension in EXTENSIONS {
             assert_eq!(
@@ -264,11 +270,11 @@ fn the_order_the_operations_were_declared_in_changes_nothing() {
         "cols T!D",
     ];
     for extension in EXTENSIONS {
-        let reference_plan = EditPlan::against_input(specs.iter().map(|s| op(s))).unwrap();
+        let reference_plan = EditPlan::against_input(specs.iter().map(|s| op(s)));
         let reference = run(extension, &reference_plan);
         assert!(reference.is_ok(), "{extension}: {reference:?}");
         for order in permutations(&specs) {
-            let declared = EditPlan::against_input(order.iter().map(|s| op(s))).unwrap();
+            let declared = EditPlan::against_input(order.iter().map(|s| op(s)));
             assert_eq!(declared, reference_plan, "{order:?}");
             assert_eq!(
                 run(extension, &declared),
@@ -369,16 +375,16 @@ fn formulas_only(snapshot: &Snapshot) -> BTreeMap<(String, u32, u32), String> {
         .collect()
 }
 
-/// Whether the sequence converts formulas after something else changed the workbook (or after the
-/// mark to recalculate): a conversion then reads cached results that the earlier change dropped,
-/// and the two formats do not agree on what remains (see the ignored test below).
+/// Whether the sequence converts formulas after something else changed the workbook: a conversion
+/// then reads cached results that the earlier change dropped, and the two formats do not agree on
+/// what remains (see the ignored test below).
 fn converts_after_a_change(specs: &[&str]) -> bool {
     let mut changed = false;
     for spec in specs {
         let verb = spec.split(' ').next().unwrap();
         match verb {
             "convert" if changed => return true,
-            "convert" => {}
+            "convert" | "recalc" => {}
             _ => changed = true,
         }
     }
@@ -424,10 +430,9 @@ fn both_formats_give_the_same_formulas_for_the_same_plan() {
     assert!(compared > 40, "{compared} compared");
 }
 
-/// KNOWN DIFFERENCE, not fixed: converting formulas after a change that dropped their cached
-/// results (a deletion that rewrote them, or `recalc_on_open`, which an ODS applies by dropping
-/// every cached result and an XLSX by a flag) gives other workbooks in each format. Run with
-/// `--ignored` to see the sequences.
+/// KNOWN DIFFERENCE, not fixed: converting formulas that an earlier deletion rewrote (and so left
+/// without a cached result) gives other workbooks in each format: the XLSX keeps every formula and
+/// the ODS loses the one of the last row. Run with `--ignored` to see the sequences.
 #[test]
 #[ignore = "known difference between formats when converting after a change"]
 fn both_formats_agree_when_converting_after_a_change() {

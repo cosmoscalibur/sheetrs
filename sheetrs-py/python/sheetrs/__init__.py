@@ -1,7 +1,7 @@
 """Lint, inspect and edit XLSX and ODS spreadsheets.
 
 Python bindings of the SheetRS suite (``sheetlint``, ``sheetstats``, ``sheetedit``). A workbook
-is a path, its bytes, or a ``Workbook`` already loaded::
+is a path or its bytes::
 
     import sheetrs
 
@@ -11,40 +11,30 @@ is a path, its bytes, or a ``Workbook`` already loaded::
 
     sheetrs.stats("book.xlsx")["total_formulas"]
 
-Editing has an eager and a lazy mode with the same methods; what differs is what is loaded and
-when it runs, as in dataframe libraries::
-
-    # eager: read() loads a working copy; each operation runs when it is called
-    wb = sheetrs.read("book.xlsx").remove_sheets("Secrets").delete_rows("Data!3:10")
-    linter.lint(wb)                      # the result can be inspected as it is
-    wb.write("clean.xlsx")
-
-    # lazy: scan() reads nothing; operations are recorded and run, in as few passes over the
-    # file as possible, by sink() or collect()
-    (sheetrs.scan("book.xlsx").remove_sheets("Secrets").delete_rows("Data!3:10")
-        .sink("clean.xlsx"))
+    # open, record operations, save: nothing is read until save(), which runs them over the
+    # file in as few passes as it can
+    (sheetrs.open("book.xlsx")
+        .remove_sheets("Secrets")
+        .delete_rows("Data!3:10")
+        .save("clean.xlsx"))
 """
 
 from ._sheetrs import (
-    LazyWorkbook,
     Linter,
     SheetrsError,
     Violation,
     Workbook,
     __version__,
-    read,
-    scan,
+    open,
     stats,
 )
 
 __all__ = [
-    "LazyWorkbook",
     "Linter",
     "SheetrsError",
     "Violation",
     "Workbook",
     "__version__",
-    "read",
-    "scan",
+    "open",
     "stats",
 ]
