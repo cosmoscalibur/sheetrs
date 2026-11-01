@@ -125,7 +125,7 @@ The deletion rewrites every sheet, because a formula of any sheet can read what 
 sheet does the same now that the references to it become `#REF!`. An XLSX sheet that names none of
 the sheets edited and holds no reference across sheets (`Sheet1:Sheet3!A1`, which spans sheets it
 does not name, and which `sheetedit` refuses: #75) is copied as it is after a scan of its text. `delete-rows` and `delete-columns`
-cut `INPUTS`, `delete-rows-columns` adds `--recalc-on-open`, and `structure-plan` removes a sheet
+cut `INPUTS`, `delete-rows-columns` cuts both (the plan marks the output to be recalculated by itself, as it does for every scenario that deletes), and `structure-plan` removes a sheet
 and a name too. Before this entry `remove-sheets` took 0.00s on the XLSX and 2.38s on the ODS,
 with 5 MB of RAM in both.
 
@@ -218,9 +218,12 @@ repository), and neither were `perf` or `/usr/bin/time`, so the entry does **not
 formulas: 50,000 rows for the linter, 200,000 and 1,600,000 for the statistics and the editor, and
 the ODS twin of the 50,000 and 200,000 ones, converted by LibreOffice), release builds (not the
 `profiling` profile), mean of 2 runs, CPU time (user + system) from `wait4`, peak RAM from the
-child's `ru_maxrss`. The linter runs with `scripts/benchmark.toml`. The editor's current tree runs
-with `--no-recalc-on-open` for the scenarios that delete (the plan now marks the output by default,
-which changes the file, as intended), so that the files are comparable.
+child's `ru_maxrss`. The linter runs with `scripts/benchmark.toml`. The plan marks the output to be
+recalculated when it deletes, which `develop` did not do, so the files of the scenarios that delete
+differ from `develop`'s by that mark. They were compared at the time of the measurement with the
+mark avoided (a flag that was removed afterwards: the mark is the plan's decision alone), and the
+timings are those of that run; the mark costs one flag in `workbook.xml` in an XLSX and the drop of
+the cached results in an ODS.
 
 | Scenario | develop CPU (s) | branch CPU (s) | Peak RAM (MB) | Output MD5 |
 |---|---|---|---|---|

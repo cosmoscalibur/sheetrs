@@ -51,11 +51,12 @@ What each name is:
   over the file that give what running the operations one at a time gives (a conversion after
   another change, and deletions that touch, need their own pass); each pass reads and writes the
   file once as a stream, so memory does not grow with the workbook. `explain()` shows the passes.
-- **Recalculation is the plan's decision.** When an operation leaves the cached results of
-  formulas stale (rows, columns, sheets or names removed), the plan marks the saved file so that
-  the application that opens it recalculates every formula, and puts the mark last, after every
-  operation. You do not ask for it; you can avoid it (`save(path, recalc_on_open=False)`, to keep
-  the cached results) or force it (`True`).
+- **Recalculation is the plan's decision, and there is no option for it.** When an operation leaves
+  the cached results of formulas stale (rows, columns, sheets or names removed), the plan marks the
+  saved file so that the application that opens it recalculates every formula, and puts the mark
+  last, after every operation. A plan that only converts formulas to values does not mark. It is
+  not asked for and it cannot be avoided: whoever does not know what a stale cached result is
+  would get a wrong file by choosing.
 - A scope that is malformed, or of the wrong kind (rows deleted with a column range), raises
   `ValueError` where it is written; an error of the workbook shows at `save`.
 - **3D references** (`Sheet1:Sheet3!A1`) are not supported: deleting rows or columns or removing

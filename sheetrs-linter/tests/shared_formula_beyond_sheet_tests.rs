@@ -43,7 +43,7 @@ fn the_reader_writes_a_ref_error_and_the_linter_reports_the_cell() {
         sheet.get_cell(0, 16_383).unwrap().as_formula(),
         Some("S!#REF!")
     );
-    let violations = Linter::new().lint_workbook(&book).unwrap();
+    let violations = Linter::new().lint_workbook(&book);
     assert!(
         violations.iter().any(|v| v.rule_id == RuleId::Err102),
         "{violations:?}"

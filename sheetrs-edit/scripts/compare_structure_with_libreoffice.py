@@ -123,7 +123,7 @@ def main(book):
         load = lambda path: desktop.loadComponentFromURL("file://" + os.path.abspath(path), "_blank", 0, props(Hidden=True))
         for label, args, native, *stops in OPERATIONS:
             out = tempfile.mktemp(suffix=extension)
-            run = subprocess.run([SHEETEDIT, book, *args, "--recalc-on-open", "-o", out], capture_output=True, text=True)
+            run = subprocess.run([SHEETEDIT, book, *args, "-o", out], capture_output=True, text=True)
             if run.returncode:
                 if stops and "which the file does not hold" in run.stderr:
                     print("STOP " + label)

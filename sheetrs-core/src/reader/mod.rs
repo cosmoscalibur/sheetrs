@@ -1,6 +1,6 @@
 //! Excel/ODS file reader using custom XML parsers
 
-use anyhow::{Context, Result};
+use crate::error::{Error, Result};
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -148,8 +148,10 @@ pub trait WorkbookReader {
 /// This function detects the file format based on extension and delegates to `read_workbook_from_reader`.
 pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
     let path_ref = path.as_ref();
-    let file = File::open(path_ref)
-        .with_context(|| format!("Failed to open file: {}", path_ref.display()))?;
+    let file = File::open(path_ref).map_err(|source| Error::Open {
+        path: path_ref.to_path_buf(),
+        source,
+    })?;
 
     // Extract file size from metadata (Parse-Dont-Validate)
     let file_size_bytes = std::fs::metadata(path_ref).map(|m| m.len()).unwrap_or(0);
@@ -168,8 +170,10 @@ pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
 /// [`read_workbook`] gives it. XLSX and ODS both stream their cells.
 pub fn read_workbook_into<P: AsRef<Path>>(path: P, sink: &mut dyn CellSink) -> Result<Workbook> {
     let path_ref = path.as_ref();
-    let file = File::open(path_ref)
-        .with_context(|| format!("Failed to open file: {}", path_ref.display()))?;
+    let file = File::open(path_ref).map_err(|source| Error::Open {
+        path: path_ref.to_path_buf(),
+        source,
+    })?;
     let file_size_bytes = std::fs::metadata(path_ref).map(|m| m.len()).unwrap_or(0);
     let extension = path_ref.extension().and_then(|s| s.to_str());
     let mut workbook = read_workbook_from_reader_into(file, extension, sink)?;
@@ -200,7 +204,7 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
     extension: Option<&str>,
     sink: &mut dyn CellSink,
 ) -> Result<Workbook> {
-    let mut archive = ZipArchive::new(reader).context("Failed to open zip archive")?;
+    let mut archive = ZipArchive::new(reader)?;
 
     let is_xlsx = extension
         .map(|s| s.eq_ignore_ascii_case("xlsx") || s.eq_ignore_ascii_case("xlsm"))
@@ -268,7 +272,9 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
             reader.read_properties()?,
         )
     } else {
-        return Err(anyhow::anyhow!("Unsupported or unrecognizable file format"));
+        return Err(Error::unsupported(
+            "Unsupported or unrecognizable file format",
+        ));
     };
 
     Ok(Workbook {

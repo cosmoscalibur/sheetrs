@@ -24,7 +24,7 @@ SCENARIOS=(
     "plan|--remove-sheets Tabla_Exogena --remove-ranges deuda --convert-to-values INPUTS"
     "delete-rows|--delete-rows INPUTS!10:20"
     "delete-columns|--delete-cols INPUTS!B:D"
-    "delete-rows-columns|--delete-rows INPUTS!10:20 --delete-cols INPUTS!B:D --recalc-on-open"
+    "delete-rows-columns|--delete-rows INPUTS!10:20 --delete-cols INPUTS!B:D"
     "structure-plan|--remove-sheets Tabla_Exogena --remove-ranges deuda --delete-rows INPUTS!10:20 --delete-cols INPUTS!B:D"
 )
 

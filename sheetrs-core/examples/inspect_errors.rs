@@ -1,4 +1,4 @@
-use anyhow::Result;
+use sheetrs_core::Result;
 use sheetrs_core::reader::read_workbook;
 use std::env;
 

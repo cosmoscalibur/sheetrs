@@ -7,7 +7,7 @@
 //! [`Workbook`], which only the tools that need every cell ask for.
 
 use super::{Workbook, read_workbook, read_workbook_from_reader};
-use anyhow::{Result, bail};
+use crate::error::{Error, Result};
 use std::fmt;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -43,7 +43,7 @@ impl Format {
 }
 
 impl FromStr for Format {
-    type Err = anyhow::Error;
+    type Err = Error;
 
     fn from_str(extension: &str) -> Result<Self> {
         match extension
@@ -54,7 +54,9 @@ impl FromStr for Format {
             "xlsx" => Ok(Self::Xlsx),
             "xlsm" => Ok(Self::Xlsm),
             "ods" => Ok(Self::Ods),
-            _ => bail!("'{extension}' is not an XLSX, XLSM or ODS workbook"),
+            _ => Err(Error::unsupported(format!(
+                "'{extension}' is not an XLSX, XLSM or ODS workbook"
+            ))),
         }
     }
 }
@@ -85,10 +87,10 @@ impl Source {
     pub fn from_file(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
         let Some(format) = Format::from_path(&path) else {
-            bail!(
+            return Err(Error::unsupported(format!(
                 "'{}' is not an XLSX, XLSM or ODS workbook (by its extension)",
                 path.display()
-            );
+            )));
         };
         Ok(Self::File { path, format })
     }
@@ -133,7 +135,7 @@ impl Source {
 }
 
 impl TryFrom<&Path> for Source {
-    type Error = anyhow::Error;
+    type Error = Error;
 
     fn try_from(path: &Path) -> Result<Self> {
         Self::from_file(path)
@@ -141,7 +143,7 @@ impl TryFrom<&Path> for Source {
 }
 
 impl TryFrom<PathBuf> for Source {
-    type Error = anyhow::Error;
+    type Error = Error;
 
     fn try_from(path: PathBuf) -> Result<Self> {
         Self::from_file(path)
@@ -149,7 +151,7 @@ impl TryFrom<PathBuf> for Source {
 }
 
 impl TryFrom<&str> for Source {
-    type Error = anyhow::Error;
+    type Error = Error;
 
     fn try_from(path: &str) -> Result<Self> {
         Self::from_file(path)
@@ -200,5 +202,31 @@ mod tests {
         assert!(!book.sheets.is_empty());
         assert!(source.to_string().contains("bytes of xlsx"));
         assert_eq!(source.clone(), source);
+    }
+
+    #[test]
+    fn the_errors_say_what_is_wrong_with_a_type() {
+        use crate::Error;
+        assert!(matches!(
+            "csv".parse::<Format>(),
+            Err(Error::Unsupported(_))
+        ));
+        assert!(matches!(
+            Source::from_file("notes.txt"),
+            Err(Error::Unsupported(_))
+        ));
+        // A missing file is an I/O failure that a caller can find by its source chain.
+        let error = Source::from_file("does/not/exist.xlsx")
+            .unwrap()
+            .read_workbook()
+            .unwrap_err();
+        assert!(matches!(&error, Error::Open { path, .. } if path.ends_with("exist.xlsx")));
+        let io = std::error::Error::source(&error)
+            .and_then(|e| e.downcast_ref::<std::io::Error>())
+            .expect("an I/O error is the cause");
+        assert_eq!(io.kind(), std::io::ErrorKind::NotFound);
+        // Bytes that are not a workbook are an archive error, not an I/O one.
+        let corrupt = Source::from_bytes(&b"not a zip"[..], Format::Xlsx).read_workbook();
+        assert!(matches!(corrupt, Err(Error::Archive(_))));
     }
 }

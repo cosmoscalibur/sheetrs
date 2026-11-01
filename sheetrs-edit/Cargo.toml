@@ -24,6 +24,7 @@ sheetrs-core = { path = "../sheetrs-core", version = "0.4.0" }
 sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
 clap.workspace = true
 anyhow.workspace = true
+thiserror.workspace = true
 zip.workspace = true
 quick-xml.workspace = true
 aho-corasick.workspace = true

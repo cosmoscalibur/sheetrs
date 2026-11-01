@@ -7,7 +7,7 @@ use super::xlsx_structure::{
     rewrite_vml, text_of,
 };
 use super::{ValueScope, WorkbookModifications, attribute, read_element_body, write_element};
-use anyhow::{Context, Result, bail};
+use crate::error::{Context, Error, Result};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
 use sheetrs_core::reader::parser_utils::{
@@ -67,7 +67,7 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
         .filter(|&i| removes_sheet(&sheets[i].name))
         .collect();
     if !sheets.is_empty() && removed_indices.len() == sheets.len() {
-        bail!("Cannot remove every sheet of the workbook");
+        return Err(Error::EverySheet);
     }
     let mut removed_targets = HashSet::new();
     let mut removed_parts = HashSet::new();
@@ -88,7 +88,10 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
         let sheet = sheets
             .iter()
             .find(|sheet| sheet.name == scope.sheet)
-            .with_context(|| format!("Sheet '{}' not found in {WORKBOOK_PART}", scope.sheet))?;
+            .ok_or_else(|| Error::SheetNotFound {
+                sheet: scope.sheet.clone(),
+                part: WORKBOOK_PART.to_string(),
+            })?;
         let part = workbook_part_name(sheet_target(sheet)?);
         value_scopes.entry(part).or_default().push(scope);
     }
@@ -607,7 +610,9 @@ fn refuse_what_is_not_adjusted<R: Read + Seek>(archive: &mut ZipArchive<R>) -> R
     for i in 0..archive.len() {
         let name = archive.by_index_raw(i)?.name().to_string();
         if name.starts_with("xl/pivotTables/") || name.starts_with("xl/pivotCache/") {
-            bail!("the workbook has pivot tables, whose sources are not adjusted yet");
+            return Err(Error::not_adjusted(
+                "the workbook has pivot tables, whose sources are not adjusted yet",
+            ));
         }
     }
     Ok(())
@@ -724,7 +729,7 @@ fn remove_content_type_overrides(xml: &str, remove: impl Fn(&str) -> bool) -> Re
             }
             Ok(Event::Eof) => break,
             Ok(e) => writer.write_event(e)?,
-            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {e}")),
+            Err(e) => return Err(Error::Xml(e)),
         }
         buf.clear();
     }
@@ -757,7 +762,7 @@ fn remove_relationships(xml: &str, remove: impl Fn(&str) -> bool) -> Result<Stri
             }
             Ok(Event::Eof) => break,
             Ok(e) => writer.write_event(e)?,
-            Err(e) => return Err(anyhow::anyhow!("Error parsing XML: {e}")),
+            Err(e) => return Err(Error::Xml(e)),
         }
         buf.clear();
     }
@@ -1166,20 +1171,22 @@ fn rewritten_formula(
         Some(_) if !formula.text.is_empty() => formula.text.clone(),
         Some(si) => match masters.get(&si) {
             Some(master) => shared_text(master, row, col, &s.sheet)?,
-            None => bail!(
-                "the cell {}{} of sheet '{}' shares a formula whose first cell is not in the file",
-                column_letters(col),
-                row + 1,
-                s.sheet
-            ),
+            None => {
+                return Err(Error::not_adjusted(format!(
+                    "the cell {}{} of sheet '{}' shares a formula whose first cell is not in the file",
+                    column_letters(col),
+                    row + 1,
+                    s.sheet
+                )));
+            }
         },
         None => formula.text.clone(),
     };
     if formula.kind.as_deref() == Some("dataTable") && s.changes_layout() {
-        bail!(
+        return Err(Error::not_adjusted(format!(
             "sheet '{}' has a data table, whose cells are not adjusted yet",
             s.sheet
-        );
+        )));
     }
     let rewritten = s
         .rewrite(&original)
@@ -1201,12 +1208,14 @@ fn rewritten_formula(
                         nr1 + 1
                     )
                 }
-                _ => bail!(
-                    "a deletion in sheet '{}' covers part of the array formula at {}{}",
-                    s.sheet,
-                    column_letters(c0),
-                    r0 + 1
-                ),
+                _ => {
+                    return Err(Error::not_adjusted(format!(
+                        "a deletion in sheet '{}' covers part of the array formula at {}{}",
+                        s.sheet,
+                        column_letters(c0),
+                        r0 + 1
+                    )));
+                }
             }
         } else {
             format!(
@@ -1239,12 +1248,12 @@ fn check_array_goes_whole(
     if formula.kind.as_deref() == Some("array") {
         let (r0, c0, r1, c1) = formula.range.unwrap_or((row, col, row, col));
         if s.plan.range(&s.sheet, r0, c0, r1, c1).is_some() {
-            bail!(
+            return Err(Error::not_adjusted(format!(
                 "a deletion in sheet '{}' covers part of the array formula at {}{}",
                 s.sheet,
                 column_letters(c0),
                 r0 + 1
-            );
+            )));
         }
     }
     Ok(())
@@ -1357,7 +1366,9 @@ fn write_formula_cell<W: Write>(
                 let (text, range) = match out {
                     FormulaOut::Plain(text) => (text, None),
                     FormulaOut::Array { text, range } => (text, Some(range)),
-                    FormulaOut::Keep => bail!("a formula to keep is not rewritten"),
+                    FormulaOut::Keep => {
+                        return Err(Error::malformed("a formula to keep is not rewritten"));
+                    }
                 };
                 let mut f = BytesStart::new("f");
                 if let Some(range) = range {

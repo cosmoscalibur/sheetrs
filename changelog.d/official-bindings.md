@@ -35,8 +35,8 @@
 
 - **Breaking:** `sheetedit` marks the output to be recalculated when it is opened whenever rows,
   columns, sheets or names are removed (their cached results are stale), as the last thing the
-  plan does; `--no-recalc-on-open` avoids it and `--recalc-on-open` forces it. In Rust,
-  `EditPlan::recalculation(Recalculation)`.
+  plan does, and **always by the plan's own decision**: the `--recalc-on-open` flag was removed,
+  and neither the library nor Python has an option for it.
 - **Breaking:** public names lose their `get_` prefix: `LinterConfig::param_int`, `param_str`,
   `param_array`, `param_float_array`, `param_bool`; `registry::rule_metadata`,
   `registry::valid_tokens`. Public types implement `Debug`; `RuleId`, `Operation`,

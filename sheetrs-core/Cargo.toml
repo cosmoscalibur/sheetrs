@@ -14,7 +14,7 @@ description = "Shared kernel of the SheetRS suite: workbook model and XLSX/ODS r
 sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
 
 serde.workspace = true
-anyhow.workspace = true
+thiserror.workspace = true
 quick-xml.workspace = true
 zip.workspace = true
 regex.workspace = true

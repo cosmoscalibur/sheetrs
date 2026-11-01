@@ -5,8 +5,10 @@
 //! their values, rows and columns deleted), without rewriting what it does not change.
 //! [`EditPlan`] collects the operations to run on one workbook and applies them in a single pass.
 
+mod error;
 mod plan;
 pub mod writer;
 
-pub use plan::{EditPlan, Operation, Recalculation};
+pub use error::{Error, Result, ScopeError};
+pub use plan::{EditPlan, Operation};
 pub use writer::{ColumnRange, RowRange, ValueScope};

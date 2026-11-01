@@ -3,7 +3,7 @@
 
 use super::structure::{Bands, StructureEdits, shape_depends_on_sizes};
 use super::{attribute, read_element_body};
-use anyhow::{Result, bail};
+use crate::error::{Error, Result};
 use quick_xml::events::{BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
 use sheetrs_core::reader::parser_utils::{
@@ -422,10 +422,10 @@ pub(super) fn handle_element<R: BufRead, W: Write>(
             if let (Some(_), Some((row, col, ..))) = (&kept, parse_cell_range(&range))
                 && (s.rows.contains(row) || s.cols.contains(col))
             {
-                bail!(
+                return Err(Error::not_adjusted(format!(
                     "a deletion in sheet '{}' removes the first cell of the merged area {range}, which stays",
                     s.sheet
-                );
+                )));
             }
             match kept {
                 Some(new) => {
@@ -539,10 +539,10 @@ pub(super) fn handle_element<R: BufRead, W: Write>(
             write(writer, element)?;
         }
         "legacyDrawingHF" | "tableParts" if layout => {
-            bail!(
+            return Err(Error::not_adjusted(format!(
                 "sheet '{}' has tables or header and footer images, whose positions are not adjusted yet",
                 s.sheet
-            );
+            )));
         }
         "formula" | "formula1" | "formula2" if is_start => {
             let body = read_element_body(reader, &name)?;

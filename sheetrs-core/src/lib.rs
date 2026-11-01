@@ -6,4 +6,7 @@
 //! and violations in `sheetrs-linter`, the metrics in `sheetrs-stats`, the modifications in
 //! `sheetrs-edit`, the compilation in `sheetrs-compiler`.
 
+mod error;
 pub mod reader;
+
+pub use error::{Error, Result};

@@ -1,6 +1,6 @@
 //! Configuration system for linter rules
 
-use anyhow::Result;
+use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -32,12 +32,8 @@ struct RawLinterConfig {
 
 impl<'de> Deserialize<'de> for LinterConfig {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let RawLinterConfig { global, sheets } = RawLinterConfig::deserialize(deserializer)?;
-        let config = Self { global, sheets };
-        config
-            .validate_rules(&crate::rules::registry::valid_tokens())
-            .map_err(serde::de::Error::custom)?;
-        Ok(config)
+        Self::from_raw(RawLinterConfig::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -48,8 +44,12 @@ impl LinterConfig {
     ///
     /// When the file cannot be read, or its content is not a valid configuration (see
     /// [`from_toml`](Self::from_toml)).
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let content = fs::read_to_string(path)?;
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let content = fs::read_to_string(path).map_err(|source| Error::File {
+            path: path.to_path_buf(),
+            source,
+        })?;
         Self::from_toml(&content)
     }
 
@@ -61,7 +61,12 @@ impl LinterConfig {
     /// does not know, puts `ALL` among the disabled rules, or gives a parameter a value outside
     /// its range.
     pub fn from_toml(content: &str) -> Result<Self> {
-        let config: LinterConfig = toml::from_str(content)?;
+        Self::from_raw(toml::from_str(content)?)
+    }
+
+    fn from_raw(RawLinterConfig { global, sheets }: RawLinterConfig) -> Result<Self> {
+        let config = Self { global, sheets };
+        config.validate_rules(&crate::rules::registry::valid_tokens())?;
         Ok(config)
     }
 
@@ -118,21 +123,23 @@ impl LinterConfig {
         // Validate global disabled rules (NO "ALL" allowed)
         for rule in &self.global.disabled_rules {
             if rule == "ALL" {
-                anyhow::bail!("Configuration error: 'ALL' is not allowed in global disabled_rules");
+                return Err(Error::AllDisabled);
             }
             if !valid_tokens.contains(rule) {
-                anyhow::bail!(
-                    "Configuration error: Unknown rule or category '{rule}' in global disabled_rules"
-                );
+                return Err(Error::UnknownRule {
+                    token: rule.clone(),
+                    place: "global disabled_rules".into(),
+                });
             }
         }
 
         // Validate global enabled rules
         for rule in &self.global.enabled_rules {
             if !valid_tokens.contains(rule) {
-                anyhow::bail!(
-                    "Configuration error: Unknown rule or category '{rule}' in global enabled_rules"
-                );
+                return Err(Error::UnknownRule {
+                    token: rule.clone(),
+                    place: "global enabled_rules".into(),
+                });
             }
         }
 
@@ -140,9 +147,10 @@ impl LinterConfig {
         for (sheet_name, sheet_config) in &self.sheets {
             for rule in &sheet_config.disabled_rules {
                 if !valid_tokens.contains(rule) {
-                    anyhow::bail!(
-                        "Configuration error: Unknown rule or category '{rule}' in sheet '{sheet_name}' disabled_rules"
-                    );
+                    return Err(Error::UnknownRule {
+                        token: rule.clone(),
+                        place: format!("sheet '{sheet_name}' disabled_rules"),
+                    });
                 }
             }
         }
@@ -166,9 +174,11 @@ impl LinterConfig {
                 if let Some(value) = params.get(*key)
                     && !value.as_integer().is_some_and(|n| n >= 1)
                 {
-                    anyhow::bail!(
-                        "Configuration error: '{key}' in {scope} must be a whole number of at least 1, got {value}"
-                    );
+                    return Err(Error::NotPositive {
+                        key,
+                        scope,
+                        value: value.to_string(),
+                    });
                 }
             }
         }
@@ -180,20 +190,21 @@ impl LinterConfig {
                 .as_array()
                 .and_then(|a| a.iter().map(|v| v.as_str()).collect());
             let Some(names) = names else {
-                anyhow::bail!(
-                    "Configuration error: '{key}' must be an array of feature names ({})",
-                    Self::FEATURES.join(", ")
-                );
+                return Err(Error::FeatureList {
+                    key,
+                    known: Self::FEATURES.join(", "),
+                });
             };
             for name in names {
                 if !Self::FEATURES
                     .iter()
                     .any(|f| f.eq_ignore_ascii_case(name.trim()))
                 {
-                    anyhow::bail!(
-                        "Configuration error: unknown feature '{name}' in '{key}' (known: {})",
-                        Self::FEATURES.join(", ")
-                    );
+                    return Err(Error::UnknownFeature {
+                        name: name.to_string(),
+                        key,
+                        known: Self::FEATURES.join(", "),
+                    });
                 }
             }
         }
@@ -421,6 +432,37 @@ mod tests {
             LinterConfig::from_toml("[global]\ndisabled_rules = [\"ERR102\", \"CPX\"]\n").is_ok()
         );
         assert!(LinterConfig::from_toml("").is_ok());
+    }
+
+    #[test]
+    fn a_configuration_error_says_what_is_wrong_with_a_type() {
+        use crate::Error;
+        let error =
+            LinterConfig::from_toml("[global]\ndisabled_rules = [\"ERR1O2\"]\n").unwrap_err();
+        assert!(
+            matches!(&error, Error::UnknownRule { token, place } if token == "ERR1O2" && place.contains("disabled")),
+            "{error:?}"
+        );
+        assert!(matches!(
+            LinterConfig::from_toml("[global]\ndisabled_rules = [\"ALL\"]\n"),
+            Err(Error::AllDisabled)
+        ));
+        assert!(matches!(
+            LinterConfig::from_toml("[global]\nref310_min_adjacent_data = 0\n"),
+            Err(Error::NotPositive { .. })
+        ));
+        assert!(matches!(
+            LinterConfig::from_toml("[global]\nenable_features = [\"NOPE\"]\n"),
+            Err(Error::UnknownFeature { .. })
+        ));
+        assert!(matches!(
+            LinterConfig::from_toml("global = 3"),
+            Err(Error::Syntax(_))
+        ));
+        assert!(matches!(
+            LinterConfig::from_file("does/not/exist.toml"),
+            Err(Error::File { .. })
+        ));
     }
 }
 

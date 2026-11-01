@@ -24,14 +24,15 @@
 //! - A conversion reads the values that every other change would have dropped or rewritten, so
 //!   it cannot move before one: a conversion after any other change starts a new pass.
 //!
-//! Whether the output is marked to be recalculated when it is opened is the plan's to decide
-//! ([`Recalculation`]), not something to remember to ask for. A deletion or a removal leaves the
+//! Whether the output is marked to be recalculated when it is opened is the plan's decision and
+//! nobody else's, and there is no way to ask for it or to avoid it: a person who does not know
+//! what a stale cached result is cannot be asked to choose. A deletion or a removal leaves the
 //! cached results of formulas that read what went (their text may not change, and so their value
 //! is stale), so a plan with one marks the output, as the last thing it does before the file is
 //! written: it changes how the file is opened, not what it holds, so it comes after every
 //! operation that reads and rewrites the content. (An ODS applies it by dropping every cached
-//! result; in the middle of a sequence it would change what a later conversion finds.) Whoever
-//! knows better can ask for the mark always or never.
+//! result; in the middle of a sequence it would change what a later conversion finds.) A plan that
+//! only converts formulas to the values they have changes no other result and does not mark.
 //!
 //! A plan that addresses a sheet an earlier operation removed is an error when it is planned.
 //!
@@ -39,9 +40,9 @@
 //! and names), and each pass streams the file once, rewriting each cell as it goes by. The memory
 //! of a pass does not depend on the size of the workbook.
 
+use crate::error::{Context, Error, Result};
 use crate::writer::structure::Bands;
 use crate::writer::{self, ColumnRange, RowRange, ValueScope, ValueTarget, WorkbookModifications};
-use anyhow::{Context, Result, bail};
 use sheetrs_core::reader::Source;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -97,25 +98,10 @@ impl Operation {
     }
 }
 
-/// Whether the output is marked so that the application that opens it recalculates every formula.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Recalculation {
-    /// The plan decides: it marks the output when an operation leaves cached results stale (rows,
-    /// columns, sheets or names removed), and leaves it alone otherwise.
-    #[default]
-    Auto,
-    /// Always mark it.
-    Always,
-    /// Never mark it, whatever the operations: the cached results are left as they are.
-    Never,
-}
-
-/// A sequence of operations on one workbook, and what to do about recalculation.
+/// A sequence of operations on one workbook.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EditPlan {
     operations: Vec<Operation>,
-    recalculation: Recalculation,
 }
 
 impl EditPlan {
@@ -162,25 +148,13 @@ impl EditPlan {
         self.push(Operation::DeleteColumns(columns.into_iter().collect()))
     }
 
-    /// Overrides what the plan decides about marking the output to be recalculated when opened
-    /// (see [`Recalculation`]).
-    pub fn recalculation(&mut self, recalculation: Recalculation) -> &mut Self {
-        self.recalculation = recalculation;
-        self
-    }
-
-    /// Whether the output will be marked to be recalculated when it is opened: what was asked for
-    /// or, by default, what the operations of the plan require.
-    #[must_use]
+    /// Whether the output will be marked to be recalculated when it is opened. The plan decides:
+    /// it does when an operation leaves cached results stale (rows, columns, sheets or names
+    /// removed), and it does not when the plan only converts formulas to values.
     pub fn marks_recalculation(&self) -> bool {
-        match self.recalculation {
-            Recalculation::Always => true,
-            Recalculation::Never => false,
-            Recalculation::Auto => self
-                .operations
-                .iter()
-                .any(|operation| !matches!(operation, Operation::ConvertToValues(_))),
-        }
+        self.operations
+            .iter()
+            .any(|operation| !matches!(operation, Operation::ConvertToValues(_)))
     }
 
     /// The plan for operations that are all written against the **input** workbook, in any order,
@@ -229,10 +203,10 @@ impl EditPlan {
         &self.operations
     }
 
-    /// Whether there is nothing to do: no operation, and no mark to recalculate asked for.
+    /// Whether there is nothing to do.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.operations.is_empty() && self.recalculation != Recalculation::Always
+        self.operations.is_empty()
     }
 
     /// The passes over the file that run the plan: the operations of each, normalized and in the
@@ -250,9 +224,10 @@ impl EditPlan {
         for operation in &self.operations {
             for sheet in sheets_of(operation) {
                 if removed.contains(sheet) {
-                    bail!(
-                        "'{operation}' addresses the sheet '{sheet}', which an earlier operation removed"
-                    );
+                    return Err(Error::RemovedSheet {
+                        operation: operation.to_string(),
+                        sheet: sheet.to_string(),
+                    });
                 }
             }
             if !current.admits(operation) {
@@ -303,14 +278,10 @@ impl EditPlan {
     /// reference, a change the writer cannot make faithfully).
     pub fn execute(&self, input: &Source, output: impl AsRef<Path>) -> Result<()> {
         if self.is_empty() {
-            bail!("No operations to apply");
+            return Err(Error::EmptyPlan);
         }
         let output = output.as_ref();
-        let mut passes = self.passes()?;
-        if passes.is_empty() {
-            // Only the mark to recalculate was asked for: one pass that does nothing else.
-            passes.push(Vec::new());
-        }
+        let passes = self.passes()?;
         let extension = input.format().extension();
         let folder = (passes.len() > 1 || input.path().is_none())
             .then(tempfile::tempdir)
@@ -713,11 +684,10 @@ mod tests {
     }
 
     #[test]
-    fn the_mark_can_be_forced_or_avoided_and_is_never_an_operation_of_the_sequence() {
+    fn the_mark_is_said_last_and_is_never_an_operation_or_a_pass() {
         let mut plan = EditPlan::new();
         plan.convert_to_values(scopes(&["F"]))
             .delete_rows(rows(&["T!3"]));
-        // It splits nothing and is in no pass; it is said apart, as the last thing.
         assert_eq!(plan.passes().unwrap().len(), 1);
         assert!(plan.marks_recalculation());
         assert!(
@@ -725,15 +695,11 @@ mod tests {
                 .unwrap()
                 .ends_with("recalculate when opened\n")
         );
-        plan.recalculation(Recalculation::Never);
-        assert!(!plan.marks_recalculation());
-        assert!(!plan.explain().unwrap().contains("recalculate"));
-        // Forced, it makes a plan of its own: the file is marked and nothing else changes.
-        let mut only_the_mark = EditPlan::new();
-        assert!(only_the_mark.is_empty());
-        only_the_mark.recalculation(Recalculation::Always);
-        assert!(!only_the_mark.is_empty());
-        assert!(only_the_mark.passes().unwrap().is_empty());
+        let mut converting = EditPlan::new();
+        converting.convert_to_values(scopes(&["F"]));
+        assert!(!converting.explain().unwrap().contains("recalculate"));
+        // Nothing to do is not a plan that marks the file.
+        assert!(EditPlan::new().is_empty());
     }
 
     #[test]
@@ -784,5 +750,46 @@ mod tests {
         let input = Source::from_file("in.xlsx").unwrap();
         let error = plan.execute(&input, "out.xlsx").unwrap_err();
         assert!(error.to_string().contains("No operations"));
+    }
+
+    #[test]
+    fn an_operation_on_a_removed_sheet_names_the_sheet_in_its_error() {
+        let mut plan = EditPlan::new();
+        plan.remove_sheets(["U"]).delete_rows(rows(&["U!2"]));
+        let error = plan.passes().unwrap_err();
+        assert!(
+            matches!(&error, Error::RemovedSheet { sheet, .. } if sheet == "U"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn the_errors_say_what_is_wrong_with_a_type_and_not_only_with_a_text() {
+        use crate::ScopeError;
+        assert!(matches!(
+            "S!B:D".parse::<RowRange>(),
+            Err(ScopeError::NotRows { .. })
+        ));
+        assert!(matches!(
+            "S!3".parse::<ColumnRange>(),
+            Err(ScopeError::NotColumns { .. })
+        ));
+        assert!(matches!(
+            "!A".parse::<ValueScope>(),
+            Err(ScopeError::MissingSheet { .. })
+        ));
+        assert!(matches!(
+            "'S".parse::<ValueScope>(),
+            Err(ScopeError::Unterminated { .. })
+        ));
+        assert!(matches!(
+            "'S'x".parse::<ValueScope>(),
+            Err(ScopeError::TrailingText { .. })
+        ));
+        let input = Source::from_file("in.xlsx").unwrap();
+        assert!(matches!(
+            EditPlan::new().execute(&input, "out.xlsx"),
+            Err(Error::EmptyPlan)
+        ));
     }
 }

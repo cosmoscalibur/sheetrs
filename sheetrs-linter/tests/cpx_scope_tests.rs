@@ -30,7 +30,6 @@ fn long_formula() -> String {
 fn lint(workbook: &Workbook) -> Vec<(RuleId, ViolationScope)> {
     Linter::new()
         .lint_workbook(workbook)
-        .unwrap()
         .into_iter()
         .map(|v| (v.rule_id, v.scope))
         .collect()

@@ -1,7 +1,7 @@
 //! Workbook and per-sheet statistics computed from the format-agnostic model.
 
-use anyhow::Result;
 use serde::Serialize;
+use sheetrs_core::Result;
 use sheetrs_core::reader::parser_utils::column_letters;
 use sheetrs_core::reader::{
     Cell, CellSink, Sheet, Source, Workbook, read_workbook_from_reader_into, read_workbook_into,

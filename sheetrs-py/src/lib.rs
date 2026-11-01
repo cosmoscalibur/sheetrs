@@ -17,7 +17,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 use sheetrs_core::reader::{Format, Source};
-use sheetrs_edit::{ColumnRange, EditPlan, Operation, Recalculation, RowRange, ValueScope};
+use sheetrs_edit::{ColumnRange, EditPlan, Operation, RowRange, ValueScope};
 use sheetrs_linter::report::{ViolationRecord, violation_records};
 use sheetrs_linter::rules::registry;
 use sheetrs_linter::{Linter, LinterConfig};
@@ -31,12 +31,18 @@ pyo3::create_exception!(
     "A workbook could not be read, analyzed or written."
 );
 
-/// An I/O failure becomes `OSError` (`FileNotFoundError`, …); anything else, `SheetrsError`.
-fn to_py_err(error: anyhow::Error) -> PyErr {
-    match error.downcast::<std::io::Error>() {
-        Ok(io) => io.into(),
-        Err(error) => SheetrsError::new_err(format!("{error:#}")),
+/// A failure of the file system anywhere in the chain of causes becomes `OSError`
+/// (`FileNotFoundError`, …), keeping its kind; anything else, `SheetrsError`. The message is the
+/// whole chain.
+fn to_py_err<E: std::error::Error + 'static>(error: E) -> PyErr {
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+    while let Some(current) = cause {
+        if let Some(io) = current.downcast_ref::<std::io::Error>() {
+            return PyErr::from(std::io::Error::new(io.kind(), error.to_string()));
+        }
+        cause = current.source();
     }
+    SheetrsError::new_err(error.to_string())
 }
 
 /// One finding of the linter.
@@ -159,7 +165,7 @@ impl PyLinter {
         let source = &source.source;
         py.detach(|| {
             let workbook = source.read_workbook().map_err(to_py_err)?;
-            let violations = self.linter.lint_workbook(&workbook).map_err(to_py_err)?;
+            let violations = self.linter.lint_workbook(&workbook);
             Ok(
                 violation_records(&violations, &workbook, self.linter.config())
                     .into_iter()
@@ -284,16 +290,6 @@ impl PyEditPlan {
         next.plan.push(operation);
         next
     }
-
-    fn with_recalculation(&self, recalc_on_open: Option<bool>) -> EditPlan {
-        let mut plan = self.plan.clone();
-        plan.recalculation(match recalc_on_open {
-            None => Recalculation::Auto,
-            Some(true) => Recalculation::Always,
-            Some(false) => Recalculation::Never,
-        });
-        plan
-    }
 }
 
 #[pymethods]
@@ -339,13 +335,10 @@ impl PyEditPlan {
     }
 
     /// The passes over the file that run the operations, as text, and the mark to recalculate
-    /// when the plan puts one last (`recalc_on_open` as in `save`). Raises `ValueError` for an
-    /// operation on a sheet that an earlier one removed.
-    #[pyo3(signature = (*, recalc_on_open=None))]
-    fn explain(&self, recalc_on_open: Option<bool>) -> PyResult<String> {
-        self.with_recalculation(recalc_on_open)
-            .explain()
-            .map_err(invalid)
+    /// when the plan puts one last. Raises `ValueError` for an operation on a sheet that an
+    /// earlier one removed.
+    fn explain(&self) -> PyResult<String> {
+        self.plan.explain().map_err(invalid)
     }
 
     /// Run the operations and write the workbook to `path`, which must not be the file it was
@@ -354,12 +347,10 @@ impl PyEditPlan {
     ///
     /// The plan decides whether the saved file is marked so that the application that opens it
     /// recalculates every formula, and puts the mark last: it does when an operation leaves the
-    /// cached results of formulas stale (rows, columns, sheets or names removed). `recalc_on_open`
-    /// overrides it: `False` never marks, `True` always does.
-    #[pyo3(signature = (path, *, recalc_on_open=None))]
-    fn save(&self, py: Python<'_>, path: PathBuf, recalc_on_open: Option<bool>) -> PyResult<()> {
-        let plan = self.with_recalculation(recalc_on_open);
-        py.detach(|| plan.execute(&self.source, &path).map_err(to_py_err))
+    /// cached results of formulas stale (rows, columns, sheets or names removed). There is no
+    /// option for it.
+    fn save(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+        py.detach(|| self.plan.execute(&self.source, &path).map_err(to_py_err))
     }
 
     fn __repr__(&self) -> String {
@@ -375,21 +366,22 @@ fn strings(values: &Bound<'_, PyTuple>) -> PyResult<Vec<String>> {
     values.extract()
 }
 
-fn invalid(error: anyhow::Error) -> PyErr {
-    PyValueError::new_err(format!("{error:#}"))
+fn invalid(error: impl std::fmt::Display) -> PyErr {
+    PyValueError::new_err(error.to_string())
 }
 
 /// Each argument parsed as `T` (`ValueScope`, `RowRange`, `ColumnRange`): a malformed one, or one
 /// of the wrong kind (rows deleted with a column range), is a `ValueError` where it is written.
 fn parse_all<T>(values: &Bound<'_, PyTuple>) -> PyResult<Vec<T>>
 where
-    T: std::str::FromStr<Err = anyhow::Error>,
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
 {
     strings(values)?
         .iter()
         .map(|spec| {
             spec.parse::<T>()
-                .map_err(|e| PyValueError::new_err(format!("invalid scope '{spec}': {e:#}")))
+                .map_err(|e| PyValueError::new_err(format!("invalid scope '{spec}': {e}")))
         })
         .collect()
 }

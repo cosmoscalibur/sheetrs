@@ -7,7 +7,7 @@
 use super::attribute;
 use super::structure::three_d_unsupported;
 use super::xlsx_structure::SheetStructure;
-use anyhow::{Result, bail};
+use crate::error::{Error, Result};
 use quick_xml::events::{BytesStart, Event};
 use sheetrs_formula::addr::{col_index, col_name, needs_quotes};
 use sheetrs_formula::ast::{CellAddr, ColAddr, Expr, RefArea, Reference, RowAddr};
@@ -305,7 +305,9 @@ pub(super) fn rewrite_cell_formula(s: &SheetStructure, formula: &str) -> Result<
         return Ok(None);
     }
     let Some(body) = formula.strip_prefix("of:=") else {
-        bail!("the formula '{formula}' is not in the OpenFormula syntax (of:=)");
+        return Err(Error::malformed(format!(
+            "the formula '{formula}' is not in the OpenFormula syntax (of:=)"
+        )));
     };
     Ok(rewrite_expression(s, body)?.map(|new| format!("of:={new}")))
 }

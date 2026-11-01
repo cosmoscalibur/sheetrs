@@ -112,15 +112,15 @@ class EditPlan:
     @property
     def operations(self) -> list[str]:
         """The operations as they were written, as text."""
-    def explain(self, *, recalc_on_open: bool | None = None) -> str:
+    def explain(self) -> str:
         """The passes over the file that run the operations, and the mark to recalculate."""
-    def save(self, path: Path, *, recalc_on_open: bool | None = None) -> None:
+    def save(self, path: Path) -> None:
         """Run the operations and write the result to `path` (never the file it was opened from).
 
         The plan decides whether the saved file is marked so that the application that opens it
         recalculates every formula, and puts the mark last: it does when an operation leaves the
-        cached results of formulas stale (rows, columns, sheets or names removed).
-        `recalc_on_open` overrides it: `False` never marks, `True` always does.
+        cached results of formulas stale (rows, columns, sheets or names removed). There is no
+        option for it.
         """
 
 def open(source: Path | bytes, *, extension: str | None = None) -> Source:

@@ -1,6 +1,6 @@
 //! XML parsing utilities for extracting metadata from XLSX files
 
-use anyhow::{Context, Result};
+use crate::error::{Context, Error, Result};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use std::collections::HashMap;
@@ -57,9 +57,9 @@ pub fn get_xlsx_sheet_path(
     }
 
     if rid.is_empty() {
-        return Err(anyhow::anyhow!(
+        return Err(Error::malformed(format!(
             "Sheet '{sheet_name}' not found in workbook.xml"
-        ));
+        )));
     }
 
     // 2. Resolve rId in xl/_rels/workbook.xml.rels
@@ -97,9 +97,9 @@ pub fn get_xlsx_sheet_path(
     }
 
     if target.is_empty() {
-        return Err(anyhow::anyhow!(
+        return Err(Error::malformed(format!(
             "Relationship '{rid}' not found for sheet '{sheet_name}'"
-        ));
+        )));
     }
 
     Ok(workbook_part_name(&target))
@@ -177,7 +177,7 @@ pub fn extract_defined_names_from_xlsx(
                 _ => {}
             },
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {e}")),
+            Err(e) => return Err(Error::malformed(format!("XML parsing error: {e}"))),
             _ => {}
         }
         buf.clear();
@@ -1789,7 +1789,7 @@ pub fn count_conditional_formatting(
             }
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(anyhow::anyhow!("XML parsing error: {e}"));
+                return Err(Error::malformed(format!("XML parsing error: {e}")));
             }
             _ => {}
         }
@@ -1857,7 +1857,7 @@ pub fn extract_hidden_sheets_from_xlsx(
                 in_sheets = false;
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {e}")),
+            Err(e) => return Err(Error::malformed(format!("XML parsing error: {e}"))),
             _ => {}
         }
         buf.clear();
@@ -1953,7 +1953,7 @@ pub fn extract_hidden_columns_rows_from_xlsx(
                 }
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {e}")),
+            Err(e) => return Err(Error::malformed(format!("XML parsing error: {e}"))),
             _ => {}
         }
         buf.clear();
@@ -2000,7 +2000,7 @@ pub fn extract_merged_cells_from_xlsx(
                 }
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow::anyhow!("XML parsing error: {e}")),
+            Err(e) => return Err(Error::malformed(format!("XML parsing error: {e}"))),
             _ => {}
         }
         buf.clear();

@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use anyhow::Result;
+use crate::error::Result;
 use quick_xml::escape::resolve_predefined_entity;
 use quick_xml::events::attributes::Attribute;
 use quick_xml::events::{BytesRef, Event};

@@ -9,7 +9,7 @@ mod xlsx_writer;
 pub use ods_writer::modify_workbook_ods;
 pub use xlsx_writer::modify_workbook_xlsx;
 
-use anyhow::{Result, bail};
+use crate::error::{Error, Result, ScopeError};
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -86,16 +86,20 @@ impl ValueScope {
 }
 
 impl FromStr for ValueScope {
-    type Err = anyhow::Error;
+    type Err = ScopeError;
 
-    fn from_str(spec: &str) -> Result<Self> {
+    fn from_str(spec: &str) -> Result<Self, ScopeError> {
         let (sheet, target) = split_scope(spec)?;
         if sheet.is_empty() {
-            bail!("missing sheet name in '{spec}'");
+            return Err(ScopeError::MissingSheet {
+                spec: spec.to_string(),
+            });
         }
         let target = match target {
-            Some(target) => parse_target(target)
-                .ok_or_else(|| anyhow::anyhow!("invalid columns or rows '{target}' in '{spec}'"))?,
+            Some(target) => parse_target(target).ok_or_else(|| ScopeError::InvalidTarget {
+                target: target.to_string(),
+                spec: spec.to_string(),
+            })?,
             None => ValueTarget::Sheet,
         };
         Ok(Self { sheet, target })
@@ -139,29 +143,33 @@ pub struct ColumnRange {
 }
 
 impl FromStr for RowRange {
-    type Err = anyhow::Error;
+    type Err = ScopeError;
 
-    fn from_str(spec: &str) -> Result<Self> {
+    fn from_str(spec: &str) -> Result<Self, ScopeError> {
         match spec.parse::<ValueScope>()? {
             ValueScope {
                 sheet,
                 target: ValueTarget::Rows(first, last),
             } => Ok(Self { sheet, first, last }),
-            _ => bail!("'{spec}' is not a row range such as 'Sheet!3:10'"),
+            _ => Err(ScopeError::NotRows {
+                spec: spec.to_string(),
+            }),
         }
     }
 }
 
 impl FromStr for ColumnRange {
-    type Err = anyhow::Error;
+    type Err = ScopeError;
 
-    fn from_str(spec: &str) -> Result<Self> {
+    fn from_str(spec: &str) -> Result<Self, ScopeError> {
         match spec.parse::<ValueScope>()? {
             ValueScope {
                 sheet,
                 target: ValueTarget::Columns(first, last),
             } => Ok(Self { sheet, first, last }),
-            _ => bail!("'{spec}' is not a column range such as 'Sheet!B:D'"),
+            _ => Err(ScopeError::NotColumns {
+                spec: spec.to_string(),
+            }),
         }
     }
 }
@@ -197,7 +205,7 @@ impl fmt::Display for ColumnRange {
 }
 
 /// Split a scope spec into its unquoted sheet name and optional target.
-fn split_scope(spec: &str) -> Result<(String, Option<&str>)> {
+fn split_scope(spec: &str) -> Result<(String, Option<&str>), ScopeError> {
     let Some(quoted) = spec.strip_prefix('\'') else {
         // An unquoted name keeps its `!` unless the text after the last `!`
         // is a valid target.
@@ -225,10 +233,15 @@ fn split_scope(spec: &str) -> Result<(String, Option<&str>)> {
         return match rest.strip_prefix('!') {
             Some(target) => Ok((sheet, Some(target))),
             None if rest.is_empty() => Ok((sheet, None)),
-            None => bail!("unexpected '{rest}' after quoted sheet name in '{spec}'"),
+            None => Err(ScopeError::TrailingText {
+                rest: rest.to_string(),
+                spec: spec.to_string(),
+            }),
         };
     }
-    bail!("unterminated quoted sheet name in '{spec}'")
+    Err(ScopeError::Unterminated {
+        spec: spec.to_string(),
+    })
 }
 
 /// Parse `B`, `B:D`, `3` or `3:10` into 0-based inclusive bounds.
@@ -286,7 +299,11 @@ fn read_element_body<R: BufRead>(
                 }
                 depth -= 1;
             }
-            Event::Eof => bail!("unexpected end of document inside <{name}>"),
+            Event::Eof => {
+                return Err(Error::malformed(format!(
+                    "unexpected end of document inside <{name}>"
+                )));
+            }
             _ => {}
         }
         body.push(event);
@@ -325,7 +342,7 @@ pub fn modify_workbook<P: AsRef<Path>>(
 
     // Creating the output truncates it before the input is read.
     if output.exists() && output.canonicalize()? == input.canonicalize()? {
-        bail!("Output file is the input file: {}", output.display());
+        return Err(Error::OutputIsInput(output.to_path_buf()));
     }
     let input_file = File::open(input)?;
     let output_file = File::create(output)?;
@@ -334,7 +351,7 @@ pub fn modify_workbook<P: AsRef<Path>>(
     let result = match input.extension().and_then(|s| s.to_str()) {
         Some("xlsx") => modify_workbook_xlsx(input_file, output_file, modifications),
         Some("ods") => modify_workbook_ods(input, output_file, modifications),
-        _ => anyhow::bail!("Unsupported file format"),
+        _ => return Err(Error::UnsupportedFormat),
     };
     // A failed command leaves no half-written file where the output was to be.
     if result.is_err() {

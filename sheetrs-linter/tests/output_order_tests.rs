@@ -12,7 +12,6 @@ fn lint_output(path: &str) -> Vec<String> {
     };
     Linter::new()
         .lint_workbook(&workbook)
-        .unwrap()
         .iter()
         .map(|v| format!("{:?} {} {}", v.scope, v.rule_id, v.format_message(&ctx)))
         .collect()

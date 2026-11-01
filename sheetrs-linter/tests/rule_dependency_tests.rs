@@ -50,7 +50,6 @@ fn lint(workbook: &Workbook, config: LinterConfig) -> Vec<(RuleId, String)> {
     let ctx = FormatContext { workbook };
     Linter::with_config(config)
         .lint_workbook(workbook)
-        .unwrap()
         .iter()
         .map(|v| {
             let line = format!("{:?} {}", v.scope, v.format_message(&ctx));

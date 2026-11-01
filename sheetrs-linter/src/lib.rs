@@ -12,16 +12,17 @@
 //!   every renderer (the executable, the bindings).
 
 pub mod config;
+mod error;
 pub mod report;
 pub mod rules;
 pub mod violation;
 
-use anyhow::Result;
 use sheetrs_core::reader;
 use std::collections::HashSet;
 use std::path::Path;
 
 pub use config::LinterConfig;
+pub use error::{Error, Result};
 pub use violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
 
 use rules::walker::WorkbookWalker;
@@ -71,26 +72,35 @@ impl Linter {
     }
 
     /// Lint a spreadsheet file and return violations
-    pub fn lint_file<P: AsRef<Path>>(&self, path: P) -> Result<Vec<Violation>> {
+    ///
+    /// # Errors
+    ///
+    /// When the workbook cannot be read.
+    pub fn lint_file(&self, path: impl AsRef<Path>) -> sheetrs_core::Result<Vec<Violation>> {
         let workbook = reader::read_workbook(path)?;
-        self.lint_workbook(&workbook)
+        Ok(self.lint_workbook(&workbook))
     }
 
     /// Lint a spreadsheet file and return both violations and workbook
     ///
     /// This is useful when the consumer needs to resolve sheet indices
     /// to sheet names for display purposes.
-    pub fn lint_file_with_workbook<P: AsRef<Path>>(
+    ///
+    /// # Errors
+    ///
+    /// When the workbook cannot be read.
+    pub fn lint_file_with_workbook(
         &self,
-        path: P,
-    ) -> Result<(Vec<Violation>, reader::Workbook)> {
+        path: impl AsRef<Path>,
+    ) -> sheetrs_core::Result<(Vec<Violation>, reader::Workbook)> {
         let workbook = reader::read_workbook(path)?;
-        let violations = self.lint_workbook(&workbook)?;
+        let violations = self.lint_workbook(&workbook);
         Ok((violations, workbook))
     }
 
     /// Lint a workbook and return violations
-    pub fn lint_workbook(&self, workbook: &reader::Workbook) -> Result<Vec<Violation>> {
+    #[must_use]
+    pub fn lint_workbook(&self, workbook: &reader::Workbook) -> Vec<Violation> {
         let mut violations = Vec::new();
 
         let walker_rules =
@@ -123,7 +133,7 @@ impl Linter {
         // rule's emission order.
         violations.sort();
 
-        Ok(violations)
+        violations
     }
 
     /// Get a reference to the linter configuration

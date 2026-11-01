@@ -256,28 +256,42 @@ def test_operations_are_sequential_and_the_scopes_of_a_call_are_simultaneous(
     assert stats_of(other, "c") != stats_of(at_once, "d")
 
 
-def test_the_plan_marks_the_saved_file_for_recalculation_when_it_leaves_stale_results(
+def is_marked_for_recalculation(path):
+    """The mark: a flag in an XLSX; in an ODS, the formulas have no cached result left."""
+    with ZipFile(path) as z:
+        if path.suffix == ".xlsx":
+            return b'fullCalcOnLoad="1"' in z.read("xl/workbook.xml")
+        content = z.read("content.xml").decode()
+    formulas = [c for c in content.split("<table:table-cell")[1:] if "table:formula=" in c]
+    return bool(formulas) and not any("office:value-type" in c.split(">")[0] for c in formulas)
+
+
+def test_the_plan_always_decides_the_mark_for_recalculation_and_there_is_no_option(
     structure, tmp_path
 ):
-    def saved(plan, name, **options):
+    def saved(plan, name):
         out = tmp_path / f"{name}{structure.suffix}"
-        plan.save(out, **options)
-        return out.read_bytes()
+        plan.save(out)
+        return out
 
     source = sheetrs.open(structure)
+    # Deleting leaves stale results, so the plan marks the file; nobody has to ask for it.
     deleting = source.delete_rows("T!4:5")
-    # Deleting leaves stale results, so the plan marks the file without being asked; the user may
-    # avoid the mark, and may force it where the plan would not mark.
     assert "recalculate when opened" in deleting.explain()
-    assert saved(deleting, "auto") != saved(deleting, "never", recalc_on_open=False)
-    assert saved(deleting, "auto") == saved(deleting, "always", recalc_on_open=True)
-    assert "recalculate" not in deleting.explain(recalc_on_open=False)
+    assert is_marked_for_recalculation(saved(deleting, "deleting"))
+    # Converting changes no other result: no mark.
     converting = source.convert_to_values("F")
-    assert "recalculate" not in converting.explain()  # converting changes no other result
-    assert saved(converting, "c-auto") == saved(converting, "c-never", recalc_on_open=False)
-    assert saved(converting, "c-auto") != saved(converting, "c-always", recalc_on_open=True)
-    # The mark is never one of the operations the user wrote.
-    assert "recalculate" not in "".join(deleting.operations)
+    assert "recalculate" not in converting.explain()
+    assert not is_marked_for_recalculation(saved(converting, "converting"))
+    # The mark goes last, after everything, so a conversion that comes before is not affected.
+    both = source.convert_to_values("F").delete_rows("T!4:5")
+    assert "recalculate" in both.explain()
+    assert "recalculate" not in "".join(both.operations)
+    # And it cannot be asked for or avoided: a user who does not know what it is cannot choose.
+    with pytest.raises(TypeError):
+        deleting.save(tmp_path / f"x{structure.suffix}", recalc_on_open=False)
+    with pytest.raises(TypeError):
+        deleting.explain(recalc_on_open=True)
 
 
 def test_explain_shows_the_passes_and_a_conversion_after_a_change_needs_another(structure):

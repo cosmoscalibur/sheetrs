@@ -7,7 +7,7 @@
 //! move when the other axis changes.
 
 use super::{ValueScope, ValueTarget};
-use anyhow::{Context, Result, bail};
+use crate::error::{Error, Result, ScopeError};
 use sheetrs_formula::edit::Edit;
 use sheetrs_formula::parse::parse_spanned;
 use std::collections::{HashMap, HashSet};
@@ -148,19 +148,19 @@ impl Bands {
 /// The error of a deletion that removes the rows (or columns) above the cell a shape is anchored
 /// to together with that cell. LibreOffice places the shape then by its size and the size of the
 /// rows (or columns), which are not in the file.
-pub(super) fn shape_depends_on_sizes(sheet: &str) -> anyhow::Error {
-    anyhow::anyhow!(
-        "a deletion in sheet '{sheet}' removes a cell that a shape is anchored to together with the rows or columns before it: LibreOffice places the shape by its size and the height of the rows (or width of the columns), which the file does not hold"
-    )
+pub(super) fn shape_depends_on_sizes(sheet: &str) -> Error {
+    Error::ShapeDependsOnSizes {
+        sheet: sheet.to_string(),
+    }
 }
 
 /// The error of a command that meets a 3D reference (a span of sheets, `Sheet1:Sheet3!A1`) while it
 /// deletes rows or columns or removes sheets: what the reference becomes is not implemented, and
 /// leaving it as it is would be a wrong formula without a word.
-pub(super) fn three_d_unsupported(formula: &str) -> anyhow::Error {
-    anyhow::anyhow!(
-        "the formula '{formula}' holds a 3D reference (a span of sheets such as Sheet1:Sheet3!A1), which is not supported yet when rows or columns are deleted or sheets are removed (https://github.com/cosmoscalibur/sheetrs/issues/75)"
-    )
+pub(super) fn three_d_unsupported(formula: &str) -> Error {
+    Error::ThreeDReference {
+        formula: formula.to_string(),
+    }
 }
 
 /// Finds, in text read in pieces, a reference across sheets: a `:` followed by a sheet name and
@@ -269,7 +269,10 @@ impl StructureEdits {
                     Some(sheets) => sheets
                         .iter()
                         .find(|name| **name == scope.sheet)
-                        .with_context(|| format!("Sheet '{}' not found", scope.sheet))?,
+                        .ok_or_else(|| Error::SheetNotFound {
+                            sheet: scope.sheet.clone(),
+                            part: "the workbook".to_string(),
+                        })?,
                     None => &scope.sheet,
                 };
                 if removed_sheets.contains(name) {
@@ -282,8 +285,18 @@ impl StructureEdits {
                     (ValueTarget::Columns(first, last), false) => {
                         cols.entry(name.clone()).or_default().push((first, last));
                     }
-                    _ if want_rows => bail!("'{scope}' is not a row range such as 'Sheet!3:10'"),
-                    _ => bail!("'{scope}' is not a column range such as 'Sheet!B:D'"),
+                    _ if want_rows => {
+                        return Err(ScopeError::NotRows {
+                            spec: scope.to_string(),
+                        }
+                        .into());
+                    }
+                    _ => {
+                        return Err(ScopeError::NotColumns {
+                            spec: scope.to_string(),
+                        }
+                        .into());
+                    }
                 }
             }
         }
@@ -431,8 +444,10 @@ impl StructureEdits {
         source: &str,
         home_sheet: &str,
     ) -> Result<Option<String>> {
-        let formula =
-            parse_spanned(source).map_err(|e| anyhow::anyhow!("cannot read '{source}': {e}"))?;
+        let formula = parse_spanned(source).map_err(|e| Error::Formula {
+            formula: source.to_string(),
+            message: e.to_string(),
+        })?;
         if formula.has_three_d() {
             return Err(three_d_unsupported(source));
         }

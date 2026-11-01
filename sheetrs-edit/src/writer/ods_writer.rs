@@ -10,7 +10,7 @@ use super::xlsx_writer::replace_names;
 use super::{
     ValueScope, ValueTarget, WorkbookModifications, attribute, read_element_body, write_element,
 };
-use anyhow::{Context, Result, bail};
+use crate::error::{Context, Error, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 use std::collections::HashSet;
@@ -143,7 +143,7 @@ fn modify_content_xml<R: BufRead, W: Write>(
                     | "table:scenario"
             )
         {
-            bail!(
+            return Err(Error::not_adjusted(format!(
                 "the document has {} (`{}`), whose ranges are not adjusted yet",
                 match e.name().as_ref() {
                     "table:data-pilot-table" => "pivot tables",
@@ -152,7 +152,7 @@ fn modify_content_xml<R: BufRead, W: Write>(
                     _ => "scenarios",
                 },
                 e.name().as_ref()
-            );
+            )));
         }
         match event {
             Event::Start(e) if e.name().as_ref() == "table:table" => {
@@ -329,7 +329,7 @@ fn modify_content_xml<R: BufRead, W: Write>(
     }
 
     if removed_sheets > 0 && kept_sheets.is_empty() {
-        bail!("Cannot remove every sheet of the workbook");
+        return Err(Error::EverySheet);
     }
     for scope in modifications
         .convert_to_values
@@ -338,7 +338,10 @@ fn modify_content_xml<R: BufRead, W: Write>(
         .chain(&modifications.delete_columns)
     {
         if !kept_sheets.contains(&scope.sheet) && !removes_sheet(&scope.sheet) {
-            bail!("Sheet '{}' not found in {CONTENT_PART}", scope.sheet);
+            return Err(Error::SheetNotFound {
+                sheet: scope.sheet.clone(),
+                part: CONTENT_PART.to_string(),
+            });
         }
     }
 
@@ -846,10 +849,10 @@ fn check_merged_area(
     let cols = repeat_count(cell, "table:number-columns-spanned")?;
     let rows = repeat_count(cell, "table:number-rows-spanned")?;
     if (cols > 1 || rows > 1) && s.rows.kept_in(row, rows) > 0 && s.cols.kept_in(col, cols) > 0 {
-        bail!(
+        return Err(Error::not_adjusted(format!(
             "a deletion in sheet '{}' removes the first cell of a merged area that stays",
             s.sheet
-        );
+        )));
     }
     Ok(())
 }
@@ -944,10 +947,10 @@ fn write_cells<W: Write>(
             && (s.cols.kept_in(col, matrix_cols) != matrix_cols
                 || s.rows.kept_in(row, matrix_rows) != matrix_rows)
         {
-            bail!(
+            return Err(Error::not_adjusted(format!(
                 "a deletion in sheet '{}' covers part of an array formula",
                 s.sheet
-            );
+            )));
         }
         // Array formulas convert only when one scope covers their whole range,
         // since their other cells hold no formula of their own.

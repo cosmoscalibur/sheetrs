@@ -154,9 +154,9 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
     running them one at a time gives). Rows and columns are typed (`RowRange`, `ColumnRange`, with
     `FromStr`/`Display`), so a deletion with the wrong kind of range cannot be built; the plan is
     a collection (`Extend`, `FromIterator`, `IntoIterator`). Marking the output to be recalculated
-    when opened is the plan's decision (`Recalculation`: `Auto` marks it when an operation leaves
-    stale cached results, `Always`, `Never`), applied once in the last pass, not an operation of
-    the sequence. `passes()` plans the sequence into the fewest passes over
+    when opened is the plan's decision alone (`marks_recalculation`: it does when an operation
+    leaves stale cached results, and there is no option to ask for it or avoid it), applied once
+    in the last pass, not an operation of the sequence. `passes()` plans the sequence into the fewest passes over
     the file that give the same workbook: deletions of one sheet and axis share a pass, with the
     later positions translated through the earlier deletions; deletions of different sheets and
     on rows vs columns, name and sheet removals and the recalculation mark commute; a conversion

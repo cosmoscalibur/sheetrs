@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use sheetrs_core::reader::Source;
-use sheetrs_edit::{ColumnRange, EditPlan, Operation, Recalculation, RowRange, writer};
+use sheetrs_edit::{ColumnRange, EditPlan, Operation, RowRange, writer};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -37,17 +37,6 @@ struct Cli {
     #[arg(long, num_args = 1.., value_name = "COLUMNS")]
     delete_cols: Vec<ColumnRange>,
 
-    /// Mark the output so the application that opens it first recalculates every formula, even
-    /// when no operation leaves a stale result. Without this flag the plan decides: it marks the
-    /// output when rows, columns, sheets or names are removed
-    #[arg(long, conflicts_with = "no_recalc_on_open")]
-    recalc_on_open: bool,
-
-    /// Never mark the output to be recalculated when it is opened, whatever the operations: the
-    /// cached results are left as they are
-    #[arg(long)]
-    no_recalc_on_open: bool,
-
     /// List all named ranges with their values and status
     #[arg(long)]
     list_ranges: bool,
@@ -69,7 +58,6 @@ fn main() -> Result<()> {
         || !cli.convert_to_values.is_empty()
         || !cli.delete_rows.is_empty()
         || !cli.delete_cols.is_empty()
-        || cli.recalc_on_open
         || cli.list_ranges;
 
     if !has_ops {
@@ -109,18 +97,13 @@ fn main() -> Result<()> {
 
     // The flags of a command are all written against the input file, in no order: `against_input`
     // makes of them a plan of one pass, however many flags and in whatever order they came.
-    let mut plan = EditPlan::against_input([
+    let plan = EditPlan::against_input([
         Operation::RemoveSheets(cli.remove_sheets),
         Operation::RemoveNamedRanges(cli.remove_ranges),
         Operation::ConvertToValues(cli.convert_to_values),
         Operation::DeleteRows(cli.delete_rows),
         Operation::DeleteColumns(cli.delete_cols),
     ]);
-    plan.recalculation(match (cli.recalc_on_open, cli.no_recalc_on_open) {
-        (true, _) => Recalculation::Always,
-        (_, true) => Recalculation::Never,
-        _ => Recalculation::Auto,
-    });
     if cli.dry_run {
         println!("[DRY RUN] Operations on '{}':", cli.file.display());
         print!("{}", plan.explain()?);

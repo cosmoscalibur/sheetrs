@@ -78,14 +78,15 @@ touch, which the writer would see as one band) start a new one. The flags above 
 declarative case, `EditPlan::against_input`, which is always one pass. Tests run generated
 sequences both ways, in XLSX and ODS, and compare the workbooks.
 
-**Recalculation is decided by the plan.** Deleting rows or columns, or removing sheets or names,
-leaves the cached results of formulas that read what went (their text may not change, so their
-value is stale). A plan with one of them marks the output to be recalculated when it is opened,
-as the last thing it does, after every operation (an ODS applies the mark by dropping every cached
-result, which in the middle of a sequence would change what a later conversion finds). A plan
-that only converts formulas to values changes no other result and does not mark. `--recalc-on-open`
-forces the mark and `--no-recalc-on-open` avoids it (to keep the cached results); in Rust,
-`EditPlan::recalculation(Recalculation::{Auto, Always, Never})`.
+**Recalculation is decided by the plan, with no option for it.** Deleting rows or columns, or
+removing sheets or names, leaves the cached results of formulas that read what went (their text
+may not change, so their value is stale). A plan with one of them marks the output to be
+recalculated when it is opened, as the last thing it does, after every operation (an ODS applies
+the mark by dropping every cached result, which in the middle of a sequence would change what a
+later conversion finds). A plan that only converts formulas to values changes no other result and
+does not mark. The mark cannot be asked for or avoided, in the command line (`--recalc-on-open`
+was removed) or in the library: whoever does not know what a stale cached result is would get a
+wrong file by choosing.
 
 Memory does not grow with the workbook: a pass reads and writes each worksheet as a stream, one
 cell (XLSX) or row (ODS) at a time, and the plan is a handful of bands and names (measured at
@@ -100,8 +101,7 @@ ends, which ties the sheets together: what a deletion in one of them does to it,
 several deletions in different sheets act, are not implemented (issue #75). A command that deletes
 rows or columns or removes sheets in a workbook with a formula that holds one (in a cell, a name, a validation or a chart)
 **stops with an error that names the issue**, and writes nothing, instead of leaving the reference
-wrong. Commands that move nothing (`--convert-to-values`, `--remove-ranges`, `--recalc-on-open`)
-are not affected.
+wrong. Commands that move nothing (`--convert-to-values`, `--remove-ranges`) are not affected.
 
 #### Delete rows and columns
 
@@ -130,11 +130,11 @@ breaks, the anchors of shapes and the series of the charts of an XLSX, and the d
 print ranges of an ODS. A formula whose text changes loses its cached result, which
 is no longer valid; one that does not change keeps it.
 
-- `--recalc-on-open` makes the application that opens the file compute every formula (XLSX:
-  `fullCalcOnLoad` in `workbook.xml`, which Excel and LibreOffice clear when they save; ODS has no
-  such marker, so the cached results of the formulas are dropped). Without it the cached results
-  that stay are the ones the file had, and a formula that depends on the deleted cells without
-  changing its text (`SUM(A:A)`) keeps a result that is out of date.
+- The output is marked to be recalculated when it is opened, by the plan and without a flag, when
+  rows, columns, sheets or names were removed (XLSX: `fullCalcOnLoad` in `workbook.xml`, which
+  Excel and LibreOffice clear when they save; ODS has no such marker, so the cached results of the
+  formulas are dropped). Without the mark, a formula that depends on the deleted cells without
+  changing its text (`SUM(A:A)`) would keep a result that is out of date.
 - A deletion stops with an error when it cannot be made right. In both formats: it covers part of
   an array formula, removes the first cell of a merged area that stays, or removes the cell a
   shape is anchored to together with the rows (or columns) before it, because LibreOffice then

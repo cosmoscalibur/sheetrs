@@ -6,7 +6,8 @@
 //! (`Sheet1:Sheet3!A1`), which are not supported (issue #75).
 
 use sheetrs_core::reader::{Source, read_workbook};
-use sheetrs_edit::{EditPlan, Operation, Recalculation};
+use sheetrs_edit::writer::{WorkbookModifications, modify_workbook};
+use sheetrs_edit::{EditPlan, Operation};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -54,16 +55,11 @@ fn op(spec: &str) -> Operation {
     }
 }
 
-/// A plan from specs. `recalc` and `norecalc` are not operations: they override what the plan
-/// decides about marking the output (which by default it marks when something is removed).
+/// A plan from specs.
 fn sequence(specs: &[&str]) -> EditPlan {
     let mut plan = EditPlan::new();
     for spec in specs {
-        match *spec {
-            "recalc" => plan.recalculation(Recalculation::Always),
-            "norecalc" => plan.recalculation(Recalculation::Never),
-            spec => plan.push(op(spec)),
-        };
+        plan.push(op(spec));
     }
     plan
 }
@@ -76,31 +72,49 @@ fn run(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
     Ok(snapshot(&output))
 }
 
-/// The plan one operation per pass: what running them one at a time gives, the definition of its
-/// result. An operation that cannot run stops it.
+/// What one operation asks of the writer.
+fn modifications(operation: &Operation) -> WorkbookModifications {
+    let mut mods = WorkbookModifications::default();
+    match operation {
+        Operation::RemoveSheets(names) => {
+            mods.remove_sheets = Some(names.iter().cloned().collect())
+        }
+        Operation::RemoveNamedRanges(names) => {
+            mods.remove_named_ranges = Some(names.iter().cloned().collect());
+        }
+        Operation::ConvertToValues(scopes) => mods.convert_to_values.clone_from(scopes),
+        Operation::DeleteRows(rows) => {
+            mods.delete_rows = rows.iter().cloned().map(Into::into).collect()
+        }
+        Operation::DeleteColumns(columns) => {
+            mods.delete_columns = columns.iter().cloned().map(Into::into).collect();
+        }
+        _ => unreachable!("an operation the tests do not know"),
+    }
+    mods
+}
+
+/// The plan one operation per pass, straight through the writer: what running them one at a time
+/// gives, the definition of its result. The mark to recalculate, which the plan decides, is one
+/// more pass at the end. An operation that cannot run stops it.
 fn run_one_at_a_time(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
     let dir = tempfile::tempdir().unwrap();
     let mut current = asset(extension);
-    for (i, operation) in plan.operations().iter().enumerate() {
-        // Each step on its own, without the mark: the plan marks the output once, at the end.
-        let mut single = EditPlan::new();
-        single
-            .push(operation.clone())
-            .recalculation(Recalculation::Never);
-        let output = dir.path().join(format!("step{i}.{extension}"));
-        single
-            .execute(&Source::from_file(&current).unwrap(), &output)
-            .map_err(|e| format!("{e:#}"))?;
+    let mut step = |mods: &WorkbookModifications, name: String| {
+        let output = dir.path().join(format!("{name}.{extension}"));
+        modify_workbook(&current, &output, mods).map_err(|e| format!("{e:#}"))?;
         current = output;
+        Ok::<(), String>(())
+    };
+    for (i, operation) in plan.operations().iter().enumerate() {
+        step(&modifications(operation), format!("step{i}"))?;
     }
     if plan.marks_recalculation() {
-        let mut marked = EditPlan::new();
-        marked.recalculation(Recalculation::Always);
-        let output = dir.path().join(format!("marked.{extension}"));
-        marked
-            .execute(&Source::from_file(&current).unwrap(), &output)
-            .map_err(|e| format!("{e:#}"))?;
-        current = output;
+        let marked = WorkbookModifications {
+            recalculate_on_open: true,
+            ..Default::default()
+        };
+        step(&marked, "marked".to_string())?;
     }
     Ok(snapshot(&current))
 }
@@ -137,8 +151,6 @@ const POOL: &[&str] = &[
     "sheet V",
     "name NameOne",
     "name Gone",
-    "recalc",
-    "norecalc",
 ];
 
 #[test]
