@@ -12,17 +12,18 @@
 //!    engine and keep only the resulting constants. What remains is the
 //!    minimal run-time computation.
 
-use crate::addr::{self, CellRef, Rect};
-use crate::engine::{ConstSource, Engine};
-use crate::fastmap::{FastMap, FastSet};
+use crate::error::{Error, Result};
 use crate::formula::{self, ParseCtx};
 use crate::graph::{self, Csr};
-use crate::ir::{
+use crate::model::{Model, ModelCell};
+use sheetrs_engine::addr::{self, CellRef, Rect};
+use sheetrs_engine::engine::{ConstSource, Engine};
+use sheetrs_engine::fastmap::{FastMap, FastSet};
+use sheetrs_engine::ir::{
     Binding, BuildInfo, BuildOptions, CellDef, CellKind, Expr, Meta, Program, Queryable,
 };
-use crate::model::{Model, ModelCell};
-use crate::options::{DateSystem, EngineOptions, Iteration, Locale, Search};
-use crate::value::Value;
+use sheetrs_engine::options::{DateSystem, EngineOptions, Iteration, Locale, Search};
+use sheetrs_engine::value::Value;
 use std::collections::{BTreeSet, HashSet};
 
 /// A cell or range declared as input or output.
@@ -100,16 +101,16 @@ impl Features {
     /// # Errors
     ///
     /// When a name is not one of the known features.
-    pub fn parse(names: &[String]) -> Result<Self, String> {
+    pub fn parse(names: &[String]) -> Result<Self> {
         let mut f = Self::default();
         for n in names {
             match n.trim().to_ascii_uppercase().as_str() {
                 "LONGTEXT" => f.longtext = true,
                 other => {
-                    return Err(format!(
-                        "unknown feature `{other}` in enable_features (known: {})",
-                        Self::NAMES.join(", ")
-                    ));
+                    return Err(Error::UnknownFeature {
+                        name: other.to_string(),
+                        known: Self::NAMES,
+                    });
                 }
             }
         }
@@ -186,19 +187,8 @@ pub struct Report {
     pub function_uses: std::collections::BTreeMap<String, usize>,
 }
 
-#[derive(Debug)]
-pub struct CompileError(pub String);
-
-impl std::fmt::Display for CompileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for CompileError {}
-
-fn err<T>(msg: impl Into<String>) -> Result<T, CompileError> {
-    Err(CompileError(msg.into()))
+fn err<T>(msg: impl Into<String>) -> Result<T> {
+    Err(Error::Compile(msg.into()))
 }
 
 const MAX_BINDING_CELLS: u64 = 10_000_000;
@@ -208,7 +198,7 @@ const MAX_BINDING_CELLS: u64 = 10_000_000;
 /// # Errors
 ///
 /// When `target` is not a name or an address of the model, or names a sheet it does not have.
-pub fn resolve_target(model: &Model, target: &str) -> Result<Rect, CompileError> {
+pub fn resolve_target(model: &Model, target: &str) -> Result<Rect> {
     let (sheet, tail) = addr::split_sheet(target.trim());
     let sheet_id = match &sheet {
         Some(n) => model.sheet_id(n),
@@ -239,7 +229,7 @@ pub fn resolve_target(model: &Model, target: &str) -> Result<Rect, CompileError>
 /// an input holds constants (an input with a value keeps it as its default, and
 /// one without is simply empty), and an output covers at least one value or
 /// formula.
-fn check_bindings(model: &Model, spec: &Spec) -> Result<(), CompileError> {
+fn check_bindings(model: &Model, spec: &Spec) -> Result<()> {
     let label = |b: &BindingSpec| match &b.name {
         Some(n) => format!("`{n}` ({})", b.target),
         None => format!("`{}`", b.target),
@@ -391,7 +381,8 @@ fn lower_chunk(
                     model.settings.string_ref_excel.unwrap_or(true),
                 );
                 if c.array
-                    && let Some(id) = crate::functions::lookup(crate::ir::Ns::Core, "_ARRAY")
+                    && let Some(id) =
+                        sheetrs_engine::functions::lookup(sheetrs_engine::ir::Ns::Core, "_ARRAY")
                 {
                     e = Expr::Call(id, vec![e]);
                 }
@@ -400,7 +391,7 @@ fn lower_chunk(
                     Expr::Unknown(call) => {
                         let name = &call.0;
                         out.unsupported.insert(name.to_string());
-                        if crate::functions::in_catalogue(name) {
+                        if sheetrs_engine::functions::in_catalogue(name) {
                             out.missing.entry(name.to_string()).or_insert(at);
                         }
                         *out.function_uses.entry(name.to_string()).or_default() += 1;
@@ -409,7 +400,7 @@ fn lower_chunk(
                         let name = id.def().name;
                         if name == "TEXT"
                             && let Some(Expr::Const(Value::Text(code))) = args.get(1)
-                            && crate::format::has_foreign_language_tag(code)
+                            && sheetrs_engine::format::has_foreign_language_tag(code)
                         {
                             out.options.push((
                                 at,
@@ -453,7 +444,7 @@ fn lower_chunk(
 /// # Panics
 ///
 /// When a thread that lowers formulas panics.
-pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileError> {
+pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
     let t0 = std::time::Instant::now();
     if model.from_file
         && let Some(what) = [
@@ -539,7 +530,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
 
     trace(&t0, "parsed formulas");
     if !model.unsupported_options.is_empty() && !spec.inspect {
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "the workbook uses an option this engine does not support, so it cannot replace LibreOffice for it: {}",
             model.unsupported_options.join("; ")
         )));
@@ -554,10 +545,13 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                     .sheets
                     .get(at.sheet as usize)
                     .map_or("?", String::as_str);
-                format!("{sheet}!{} `{f}` ({why})", crate::addr::a1(at.row, at.col))
+                format!(
+                    "{sheet}!{} `{f}` ({why})",
+                    sheetrs_engine::addr::a1(at.row, at.col)
+                )
             })
             .collect();
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "{} formula(s) use syntax this engine does not support, so it cannot replace LibreOffice for the workbook; first: {}",
             syntax.len(),
             list.join("; ")
@@ -573,10 +567,13 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                     .sheets
                     .get(at.sheet as usize)
                     .map_or("?", String::as_str);
-                format!("{sheet}!{}: {what}", crate::addr::a1(at.row, at.col))
+                format!(
+                    "{sheet}!{}: {what}",
+                    sheetrs_engine::addr::a1(at.row, at.col)
+                )
             })
             .collect();
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "{} formula(s) use an option this engine does not support, so it cannot replace LibreOffice for the workbook; first: {}",
             options.len(),
             list.join("; ")
@@ -593,11 +590,11 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                 format!(
                     "{name} ({}x, first at {sheet}!{})",
                     report.function_uses.get(name).copied().unwrap_or(0),
-                    crate::addr::a1(at.row, at.col)
+                    sheetrs_engine::addr::a1(at.row, at.col)
                 )
             })
             .collect();
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "the workbook calls {} function(s) of LibreOffice that this engine does not implement, so it cannot replace LibreOffice for it: {}",
             missing.len(),
             list.join(", ")
@@ -937,7 +934,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                             .sheets
                             .get(a.sheet as usize)
                             .map_or("?", String::as_str);
-                        format!("{sheet}!{}", crate::addr::a1(a.row, a.col))
+                        format!("{sheet}!{}", sheetrs_engine::addr::a1(a.row, a.col))
                     })
                     .collect();
                 msgs.push(format!(
@@ -946,7 +943,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                     list.join(", ")
                 ));
             }
-            return Err(CompileError(msgs.join("; ")));
+            return Err(Error::Compile(msgs.join("; ")));
         }
         for (d, &v) in tmp.cells.iter().zip(&handed) {
             report.formulas_folded += 1;
@@ -1190,7 +1187,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                 {
                     match code_text(code, model, &lookup) {
                         None => unknown.push((d.at, "TEXT has a format code that depends on data that changes, which may name a language the engine has no names for".into())),
-                        Some(t) if crate::format::has_foreign_language_tag(&t) => {
+                        Some(t) if sheetrs_engine::format::has_foreign_language_tag(&t) => {
                             bad.push((d.at, format!("the code `{t}` names a language the engine has no month and day names for")));
                         }
                         Some(_) => {}
@@ -1274,11 +1271,12 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
 /// # Errors
 ///
 /// When `SOURCE_DATE_EPOCH` is set and is not a number of seconds.
-pub fn build_time() -> Result<String, String> {
+pub fn build_time() -> Result<String> {
     let seconds = match std::env::var("SOURCE_DATE_EPOCH") {
-        Ok(value) => value.trim().parse::<i64>().map_err(|_| {
-            format!("SOURCE_DATE_EPOCH must be a number of seconds since 1970, not `{value}`")
-        })?,
+        Ok(value) => value
+            .trim()
+            .parse::<i64>()
+            .map_err(|_| Error::BuildTime(value.clone()))?,
         Err(_) => std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs().cast_signed()),

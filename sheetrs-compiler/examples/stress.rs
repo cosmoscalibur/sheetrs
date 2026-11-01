@@ -1,7 +1,8 @@
 //! Scale check: `cargo run --release --example stress`.
 use serde_json::json;
 use sheetrs_compiler::compile::QueryLevel;
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, Value, compile};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile};
+use sheetrs_engine::{Overrides, Value};
 use std::time::Instant;
 
 fn time<T>(label: &str, f: impl FnOnce() -> T) -> T {

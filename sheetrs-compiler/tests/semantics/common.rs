@@ -1,5 +1,6 @@
 use serde_json::{Value as Json, json};
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Program, Report, Spec, Value, compile};
+use sheetrs_compiler::{BindingSpec, Model, Report, Spec, compile};
+use sheetrs_engine::{Overrides, Program, Value};
 
 pub fn spec(ins: &[&str], outs: &[&str]) -> Spec {
     Spec {

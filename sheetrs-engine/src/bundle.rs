@@ -6,6 +6,7 @@
 //! constants (see [`crate::consts`]), then the trailer: magic, size of the program, size of the
 //! blocks.
 
+use crate::Error;
 use crate::consts::{self, ConstIndex, StoredConsts};
 use crate::ir::Program;
 use serde::{Deserialize, Serialize};
@@ -34,14 +35,13 @@ struct Packed {
 /// # Errors
 ///
 /// When the runtime cannot be read or the executable cannot be written.
-pub fn write_executable(program: &mut Program, runtime: &Path, out: &Path) -> Result<(), String> {
+pub fn write_executable(program: &mut Program, runtime: &Path, out: &Path) -> crate::Result<()> {
     let (index, blocks) = consts::split(program, consts::MIN_STORED)?;
     let skeleton = bincode::serialize(&PackedRef {
         program,
         consts: &index,
-    })
-    .map_err(|e| e.to_string())?;
-    let mut bytes = std::fs::read(runtime).map_err(|e| format!("{}: {e}", runtime.display()))?;
+    })?;
+    let mut bytes = std::fs::read(runtime).map_err(|e| Error::io(runtime, e))?;
     // A runtime that already carries a payload is stripped first.
     if let Some(len) = payload_len(&bytes) {
         bytes.truncate(bytes.len() - len);
@@ -51,14 +51,14 @@ pub fn write_executable(program: &mut Program, runtime: &Path, out: &Path) -> Re
     bytes.extend_from_slice(MAGIC);
     bytes.extend_from_slice(&(skeleton.len() as u64).to_le_bytes());
     bytes.extend_from_slice(&(blocks.len() as u64).to_le_bytes());
-    let mut f = File::create(out).map_err(|e| format!("{}: {e}", out.display()))?;
-    f.write_all(&bytes).map_err(|e| e.to_string())?;
+    let mut f = File::create(out).map_err(|e| Error::io(out, e))?;
+    f.write_all(&bytes).map_err(|e| Error::io(out, e))?;
     drop(f);
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(out, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Error::io(out, e))?;
     }
     Ok(())
 }

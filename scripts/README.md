@@ -204,11 +204,11 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
-### Crate reorganization, edit plan and recalculation (this branch)
+### Crate reorganization, editor and recalculation (this branch)
 
 The linter, the statistics and the editor moved between crates (`sheetrs-core` keeps the model and
 the readers; the rules and the writer moved to `sheetrs-linter` and `sheetrs-edit`), `sheetedit`
-runs its flags through `EditPlan`, and the writer got the fix of the shape/note paragraph in ODS.
+runs its flags through `Editor`, and the writer got the fix of the shape/note paragraph in ODS.
 None of it should cost anything; this entry checks it against `develop` (`57c4c37`) in one
 session.
 

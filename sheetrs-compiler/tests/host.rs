@@ -1,6 +1,7 @@
 //! `INFO` and `CELL("filename")` say what the build fixes, or else the machine and the program.
 
-use sheetrs_compiler::{Model, Spec, Value, compile};
+use sheetrs_compiler::{Model, Spec, compile};
+use sheetrs_engine::Value;
 use sheetrs_engine::options::Host;
 use sheetrs_engine::run::Overrides;
 

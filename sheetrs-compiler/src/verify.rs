@@ -5,12 +5,13 @@
 //! the inputs the file holds (its defaults), and comparing is the check of
 //! fidelity on a real model.
 
-use crate::addr::{self, CellRef, Rect};
-use crate::compile::{BindingSpec, CompileError, Spec, compile};
-use crate::engine::Engine;
+use crate::compile::{BindingSpec, Spec, compile};
+use crate::error::{Error, Result};
 use crate::model::Model;
-use crate::run::Overrides;
-use crate::value::{ErrorKind, Value};
+use sheetrs_engine::addr::{self, CellRef, Rect};
+use sheetrs_engine::engine::Engine;
+use sheetrs_engine::run::Overrides;
+use sheetrs_engine::value::{ErrorKind, Value};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Clone)]
@@ -132,7 +133,7 @@ pub fn verify(
     spec: &Spec,
     opts: &Options,
     reference: Option<&Model>,
-) -> Result<Verification, CompileError> {
+) -> Result<Verification> {
     let selected: Vec<u16> = (0..model.sheets.len() as u16)
         .filter(|&i| {
             opts.sheets.is_empty()
@@ -143,7 +144,7 @@ pub fn verify(
         })
         .collect();
     if selected.is_empty() {
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "none of the sheets {:?} exists (sheets: {})",
             opts.sheets,
             model.sheets.join(", ")
@@ -281,7 +282,7 @@ mod tests {
             &mut m,
             "B3",
             "A1/0",
-            Value::Error(crate::value::ErrorKind::Value),
+            Value::Error(sheetrs_engine::value::ErrorKind::Value),
         ); // wrong error
         cached(&mut m, "B4", "A9", Value::Number(0.0)); // blank reference holds 0
         cached(&mut m, "B5", "NOW()", Value::Number(1.0)); // not comparable

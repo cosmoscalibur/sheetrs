@@ -1,7 +1,8 @@
 //! Cost of text comparison on a large workbook: `cargo run --release -p sheetrs-compiler
 //! --example bench_text -- FILE` (the file of the `timing` example: `Data!I` holds
 //! 600 000 labels, `Data!K` formulas).
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, compile, loader};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile, loader};
+use sheetrs_engine::Overrides;
 use std::time::Instant;
 
 fn main() {

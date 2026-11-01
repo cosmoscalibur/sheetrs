@@ -41,7 +41,7 @@ class Linter:
         self, *, config: str | None = None, config_path: Path | None = None
     ) -> None: ...
     def lint(self, source: Source) -> list[Violation]:
-        """Lint the workbook of a `Source` (the result of `open`)."""
+        """Lint the workbook of a `Source` (the result of `sheetrs.open`)."""
     def rules(self) -> list[Rule]:
         """The rules ordered by id; `enabled` tells whether this configuration runs each one."""
 
@@ -75,28 +75,22 @@ class Source:
     """The input of every tool: a reference to a workbook (a file, or its bytes), made by `open`.
 
     It reads nothing and is not a navigable model of the workbook: the tools read it when they
-    run, and the same `Source` can be given to several. `Linter.lint(source)` analyzes it,
-    `stats()` measures it, and the operations start an `EditPlan`. It has no `save`: a workbook
-    is saved once something has been done to it.
+    run, and the same `Source` can be given to several. It has no behavior of its own:
+    `Linter.lint(source)`, `stats.collect(source)` and `Editor(source)` take it.
     """
 
-    def stats(self) -> WorkbookStats:
-        """Statistics of the workbook (`total_file_size` is 0 for a workbook given as bytes)."""
-    def remove_sheets(self, *names: str) -> EditPlan: ...
-    def remove_ranges(self, *names: str) -> EditPlan: ...
-    def convert_to_values(self, *scopes: str) -> EditPlan: ...
-    def delete_rows(self, *rows: str) -> EditPlan: ...
-    def delete_columns(self, *columns: str) -> EditPlan: ...
+def collect(source: Source) -> WorkbookStats:
+    """Statistics of the workbook (`total_file_size` is 0 for a workbook given as bytes)."""
 
-class EditPlan:
-    """Operations on a workbook, and the way to save them.
+class Editor:
+    """The changes to make to a workbook, and the way to save them.
 
-    Every method adds an operation and returns the `EditPlan` that results (the one it was called
-    on does not change), so calls chain and a plan can be branched. Each operation addresses the
-    workbook as the previous ones leave it: after `delete_rows("T!3")`, `"T!3"` is what was row 4.
-    The scopes of one call are simultaneous: `delete_rows("T!3", "T!4")` deletes two rows. `save`
-    runs the operations in the fewest passes over the file that give what running them one at a
-    time gives; each pass reads and writes the file once, as a stream.
+    Made for a `Source`; every method adds a change and returns the editor, so calls chain. Each
+    change addresses the workbook as the previous ones leave it: after `delete_rows("T!3")`,
+    `"T!3"` is what was row 4. The scopes of one call are simultaneous: `delete_rows("T!3",
+    "T!4")` deletes two rows. `save` runs the changes in the fewest passes over the file that
+    give what running them one at a time gives; each pass reads and writes the file once, as a
+    stream. `explain` says what `save` will do.
 
     Scopes are `"Sheet"`, `"Sheet!B:D"` (columns) and `"Sheet!3:10"` (rows); quote a sheet name
     that contains `!`. A malformed scope, or rows deleted with a column range, raises
@@ -104,21 +98,19 @@ class EditPlan:
     3D reference, issue #75) shows at `save`.
     """
 
-    def remove_sheets(self, *names: str) -> EditPlan: ...
-    def remove_ranges(self, *names: str) -> EditPlan: ...
-    def convert_to_values(self, *scopes: str) -> EditPlan: ...
-    def delete_rows(self, *rows: str) -> EditPlan: ...
-    def delete_columns(self, *columns: str) -> EditPlan: ...
-    @property
-    def operations(self) -> list[str]:
-        """The operations as they were written, as text."""
+    def __init__(self, source: Source) -> None: ...
+    def remove_sheets(self, *names: str) -> Editor: ...
+    def remove_ranges(self, *names: str) -> Editor: ...
+    def convert_to_values(self, *scopes: str) -> Editor: ...
+    def delete_rows(self, *rows: str) -> Editor: ...
+    def delete_columns(self, *columns: str) -> Editor: ...
     def explain(self) -> str:
-        """The passes over the file that run the operations, and the mark to recalculate."""
+        """What `save` will do: the passes over the file, and the mark to recalculate."""
     def save(self, path: Path) -> None:
-        """Run the operations and write the result to `path` (never the file it was opened from).
+        """Run the changes and write the result to `path` (never the file it was opened from).
 
-        The plan decides whether the saved file is marked so that the application that opens it
-        recalculates every formula, and puts the mark last: it does when an operation leaves the
+        The editor decides whether the saved file is marked so that the application that opens it
+        recalculates every formula, and puts the mark last: it does when a change leaves the
         cached results of formulas stale (rows, columns, sheets or names removed). There is no
         option for it.
         """

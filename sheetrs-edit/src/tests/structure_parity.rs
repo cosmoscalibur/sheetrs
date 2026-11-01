@@ -2,8 +2,8 @@
 //! (`sheetrs-edit/scripts/gen_structure_fixtures.py`) gives the same formulas. The expectations are
 //! what `LibreOffice` 26.8 gave for the same deletion, asked through UNO.
 
+use crate::writer::{ValueScope, WorkbookModifications, modify_workbook};
 use sheetrs_core::reader::read_workbook;
-use sheetrs_edit::writer::{ValueScope, WorkbookModifications, modify_workbook};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 

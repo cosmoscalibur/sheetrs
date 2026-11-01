@@ -5,9 +5,9 @@
 //! formulas, and sheet `F` with formulas over `T`. It holds no reference across sheets
 //! (`Sheet1:Sheet3!A1`), which are not supported (issue #75).
 
+use crate::plan::{Operation, Plan};
+use crate::writer::{ValueTarget, WorkbookModifications, modify_workbook};
 use sheetrs_core::reader::{Source, read_workbook};
-use sheetrs_edit::writer::{WorkbookModifications, modify_workbook};
-use sheetrs_edit::{EditPlan, Operation};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -56,15 +56,63 @@ fn op(spec: &str) -> Operation {
 }
 
 /// A plan from specs.
-fn sequence(specs: &[&str]) -> EditPlan {
-    let mut plan = EditPlan::new();
+fn sequence(specs: &[&str]) -> Plan {
+    let mut plan = Plan::new();
     for spec in specs {
         plan.push(op(spec));
     }
     plan
 }
 
-fn run(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
+/// The plan for operations that are all written against the **input** workbook, in any order,
+/// as a command line gives them: they are grouped by kind into the order of a pass, so the
+/// plan has one pass whatever the order they came in, and the same operations give the same
+/// plan. This is the declarative counterpart of the sequence: the same operations given as a
+/// sequence would need their positions translated by whoever wrote them.
+fn declared(operations: impl IntoIterator<Item = Operation>) -> Plan {
+    fn unique<T: PartialEq>(into: &mut Vec<T>, from: Vec<T>) {
+        for item in from {
+            if !into.contains(&item) {
+                into.push(item);
+            }
+        }
+    }
+    let (mut converts, mut rows, mut columns) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut names, mut sheets) = (Vec::new(), Vec::new());
+    for operation in operations {
+        match operation {
+            Operation::ConvertToValues(scopes) => unique(&mut converts, scopes),
+            Operation::DeleteRows(ranges) => unique(&mut rows, ranges),
+            Operation::DeleteColumns(ranges) => unique(&mut columns, ranges),
+            Operation::RemoveNamedRanges(n) => names.extend(n),
+            Operation::RemoveSheets(n) => sheets.extend(n),
+        }
+    }
+    names.sort();
+    names.dedup();
+    sheets.sort();
+    sheets.dedup();
+    converts.sort_by_key(|scope| (scope.sheet.clone(), target_key(scope.target)));
+    rows.sort();
+    columns.sort();
+    let mut plan = Plan::new();
+    plan.convert_to_values(converts)
+        .delete_rows(rows)
+        .delete_columns(columns)
+        .remove_named_ranges(names)
+        .remove_sheets(sheets);
+    plan
+}
+
+fn target_key(target: ValueTarget) -> (u8, u32, u32) {
+    match target {
+        ValueTarget::Sheet => (0, 0, 0),
+        ValueTarget::Columns(first, last) => (1, first, last),
+        ValueTarget::Rows(first, last) => (2, first, last),
+    }
+}
+
+fn run(extension: &str, plan: &Plan) -> Result<Snapshot, String> {
     let dir = tempfile::tempdir().unwrap();
     let output = dir.path().join(format!("out.{extension}"));
     plan.execute(&Source::from_file(asset(extension)).unwrap(), &output)
@@ -89,7 +137,6 @@ fn modifications(operation: &Operation) -> WorkbookModifications {
         Operation::DeleteColumns(columns) => {
             mods.delete_columns = columns.iter().cloned().map(Into::into).collect();
         }
-        _ => unreachable!("an operation the tests do not know"),
     }
     mods
 }
@@ -97,7 +144,7 @@ fn modifications(operation: &Operation) -> WorkbookModifications {
 /// The plan one operation per pass, straight through the writer: what running them one at a time
 /// gives, the definition of its result. The mark to recalculate, which the plan decides, is one
 /// more pass at the end. An operation that cannot run stops it.
-fn run_one_at_a_time(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
+fn run_one_at_a_time(extension: &str, plan: &Plan) -> Result<Snapshot, String> {
     let dir = tempfile::tempdir().unwrap();
     let mut current = asset(extension);
     let mut step = |mods: &WorkbookModifications, name: String| {
@@ -249,7 +296,7 @@ fn against_input_is_one_pass_equal_to_its_operations_one_at_a_time() {
         &["rows T!2, U!4:5", "cols T!D", "convert F", "name NameOne"],
     ];
     for specs in scenarios {
-        let declared = EditPlan::against_input(specs.iter().map(|spec| op(spec)));
+        let declared = declared(specs.iter().map(|spec| op(spec)));
         assert_eq!(declared.passes().unwrap().len(), 1, "{specs:?}");
         for extension in EXTENSIONS {
             assert_eq!(
@@ -287,11 +334,11 @@ fn the_order_the_operations_were_declared_in_changes_nothing() {
         "cols T!D",
     ];
     for extension in EXTENSIONS {
-        let reference_plan = EditPlan::against_input(specs.iter().map(|s| op(s)));
+        let reference_plan = declared(specs.iter().map(|s| op(s)));
         let reference = run(extension, &reference_plan);
         assert!(reference.is_ok(), "{extension}: {reference:?}");
         for order in permutations(&specs) {
-            let declared = EditPlan::against_input(order.iter().map(|s| op(s)));
+            let declared = declared(order.iter().map(|s| op(s)));
             assert_eq!(declared, reference_plan, "{order:?}");
             assert_eq!(
                 run(extension, &declared),

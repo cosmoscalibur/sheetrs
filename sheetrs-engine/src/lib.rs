@@ -19,6 +19,7 @@ pub mod consts;
 pub mod dates;
 pub mod datetext;
 pub mod engine;
+mod error;
 pub mod fastmap;
 pub mod format;
 pub mod functions;
@@ -31,6 +32,7 @@ pub mod regex_subset;
 pub mod run;
 pub mod value;
 
+pub use error::{Error, Result};
 pub use ir::Program;
 pub use run::Overrides;
 pub use value::Value;

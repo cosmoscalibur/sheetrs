@@ -1,9 +1,10 @@
 use crate::common::*;
 use serde_json::{Value as Json, json};
 use sheetrs_compiler::BindingSpec;
-use sheetrs_compiler::ir::CellKind;
-use sheetrs_compiler::options::Iteration;
-use sheetrs_compiler::{Overrides, Spec};
+use sheetrs_compiler::Spec;
+use sheetrs_engine::Overrides;
+use sheetrs_engine::ir::CellKind;
+use sheetrs_engine::options::Iteration;
 
 fn model() -> sheetrs_compiler::Model {
     sheet(&[
@@ -63,7 +64,7 @@ fn unknown_and_malformed_inputs_are_rejected() {
         )
         .unwrap_err();
     assert!(
-        e.0.contains("unknown input `nope`") && e.0.contains("Sheet1!A1"),
+        e.to_string().contains("unknown input `nope`") && e.to_string().contains("Sheet1!A1"),
         "{e}"
     );
     assert!(
@@ -111,7 +112,7 @@ fn range_bindings_use_json_matrices() {
             &sheetrs_engine::run::Overrides::default(),
         )
         .unwrap_err();
-    assert!(e.0.contains("expects 3"), "{e}");
+    assert!(e.to_string().contains("expects 3"), "{e}");
 }
 
 #[test]
@@ -333,7 +334,7 @@ fn volatile_functions_are_not_folded() {
 fn program_roundtrips_through_json() {
     let (p, _) = build(&model(), &spec(&["A1"], &["C2"]));
     let text = serde_json::to_string(&p).unwrap();
-    let q: sheetrs_compiler::Program = serde_json::from_str(&text).unwrap();
+    let q: sheetrs_engine::Program = serde_json::from_str(&text).unwrap();
     assert_eq!(p, q);
     let o = Overrides::default();
     assert_eq!(
@@ -360,15 +361,15 @@ fn defined_names_bind_and_parse() {
 #[test]
 fn bad_targets_fail_early() {
     let e = sheetrs_compiler::compile(&model(), &spec(&["Nope!A1"], &["C2"])).unwrap_err();
-    assert!(e.0.contains("cannot resolve"));
+    assert!(e.to_string().contains("cannot resolve"));
     let e = sheetrs_compiler::compile(&model(), &spec(&["A1", "A1"], &["C2"])).unwrap_err();
-    assert!(e.0.contains("declared twice"));
+    assert!(e.to_string().contains("declared twice"));
 }
 
 #[test]
 fn query_levels_keep_progressively_more() {
-    use sheetrs_compiler::Program;
     use sheetrs_compiler::compile::QueryLevel;
+    use sheetrs_engine::Program;
     let mut m = sheet(&[
         ("A1", json!(2)),
         ("B1", json!("=A1*10")),
@@ -406,7 +407,7 @@ fn query_levels_keep_progressively_more() {
     assert!(
         ask(&p, &none, &["C1"])
             .unwrap_err()
-            .0
+            .to_string()
             .contains("outputs = declared")
     );
 
@@ -445,7 +446,7 @@ fn query_levels_keep_progressively_more() {
             &none,
             &sheetrs_engine::run::Overrides::default(),
             &["A1:C1".into()],
-            sheetrs_compiler::run::MajorDimension::Columns,
+            sheetrs_engine::run::MajorDimension::Columns,
         )
         .unwrap();
     assert_eq!(cols[0]["values"], json!([[2], [20], [21]]));
@@ -471,7 +472,7 @@ fn requests_are_inputs_and_ranges() {
         };
         build(&m, &s).0
     };
-    let call = |p: &sheetrs_compiler::Program, r: Json| {
+    let call = |p: &sheetrs_engine::Program, r: Json| {
         p.handle(&r, &sheetrs_engine::run::Overrides::default())
     };
 
@@ -499,13 +500,15 @@ fn requests_are_inputs_and_ranges() {
         (json!({"majorDimension": "DIAGONAL"}), "majorDimension"),
         (json!([1]), "JSON object"),
     ] {
-        let e = call(&p, req.clone()).unwrap_err().0;
+        let e = call(&p, req.clone()).unwrap_err().to_string();
         assert!(e.contains(want), "{req}: {e}");
     }
 
     // `any` has no default answer: ranges are required.
     let p = build_at(QueryLevel::Any);
-    let e = call(&p, json!({"inputs": {"a": 3}})).unwrap_err().0;
+    let e = call(&p, json!({"inputs": {"a": 3}}))
+        .unwrap_err()
+        .to_string();
     assert!(e.contains("must list `ranges`"), "{e}");
     assert_eq!(
         call(&p, json!({"inputs": {"a": 3}, "ranges": ["B1:C1"]})).unwrap(),
@@ -515,8 +518,8 @@ fn requests_are_inputs_and_ranges() {
 
 #[test]
 fn settings_sheet_errors_and_defaults() {
-    use sheetrs_compiler::Value;
     use sheetrs_compiler::config::Config;
+    use sheetrs_engine::Value;
     let mut m = sheet(&[("A1", json!(1)), ("B1", json!("=A1+1"))]);
     let s = m.add_sheet("settings");
     for (c, h) in ["key", "value", "description", "meta_type"]
@@ -528,7 +531,7 @@ fn settings_sheet_errors_and_defaults() {
     m.set(s, "A2", Value::text("version"));
     m.set(s, "D2", Value::text("info"));
     // Declared outputs are mandatory when the sheet exists.
-    let e = Config::default().spec(&m).unwrap_err().0;
+    let e = Config::default().spec(&m).unwrap_err().to_string();
     assert!(e.contains("declares no output"), "{e}");
     // ... unless the caller asks for ranges.
     let any = Config {
@@ -558,7 +561,7 @@ fn settings_sheet_errors_and_defaults() {
             sheetrs_engine::run::MajorDimension::default(),
         )
         .unwrap_err()
-        .0;
+        .to_string();
     assert!(e.contains("cannot be read"), "{e}");
 }
 
@@ -585,7 +588,7 @@ fn declarations_are_validated_together() {
         ),
     )
     .unwrap_err()
-    .0;
+    .to_string();
     assert!(
         e.contains("input `b` (B1:B2) holds formulas in B1, B2"),
         "{e}"
@@ -618,7 +621,7 @@ fn macros_are_refused_unless_strict_is_off() {
     use sheetrs_compiler::config::Config;
     let mut m = sheet(&[("A1", json!(1)), ("B1", json!("=A1+1"))]);
     m.macros = true;
-    let strict = Config::default().spec(&m).unwrap_err().0;
+    let strict = Config::default().spec(&m).unwrap_err().to_string();
     assert!(
         strict.contains("macros") && strict.contains("--no-strict"),
         "{strict}"
@@ -713,7 +716,7 @@ fn a_one_cell_array_formula_over_a_range_shows_its_first_element() {
     m.cells.insert(
         sheetrs_engine::addr::CellRef::new(0, 0, 2),
         sheetrs_compiler::model::ModelCell {
-            value: sheetrs_compiler::Value::Empty,
+            value: sheetrs_engine::Value::Empty,
             formula: Some("A1:B2".into()),
             array: true,
         },
@@ -729,13 +732,15 @@ fn a_one_cell_array_formula_over_a_range_shows_its_first_element() {
 #[test]
 fn an_xlsx_is_read_by_its_format_and_computed_like_any_other_file() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/assets/loan.xlsx");
-    let m = sheetrs_compiler::loader::load(&path).unwrap();
+    let m =
+        sheetrs_compiler::loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap())
+            .unwrap();
     // The format decides what the file carries: an XLSX has no case-sensitivity setting and
     // its dates count from 1899-12-30 unless it says `date1904`.
     assert!(m.from_xlsx);
     assert_eq!(
         m.date_system,
-        sheetrs_compiler::options::DateSystem::NULL_1899
+        sheetrs_engine::options::DateSystem::NULL_1899
     );
     assert_eq!(m.settings.string_ref_excel, Some(true));
 }
@@ -977,7 +982,9 @@ fn a_shared_formula_moved_outside_the_sheet_builds_and_is_a_ref_error() {
         ),
     )
     .unwrap();
-    let m = sheetrs_compiler::loader::load(&path).unwrap();
+    let m =
+        sheetrs_compiler::loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap())
+            .unwrap();
     let (p, _) = build(&m, &spec(&[], &["XFC1", "XFD1"]));
     let out = p
         .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())

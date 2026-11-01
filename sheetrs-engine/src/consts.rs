@@ -63,7 +63,7 @@ type Block = Vec<(u32, u32, Value)>;
 /// # Errors
 ///
 /// When the constants cannot be split off the program.
-pub fn split(program: &mut Program, min: usize) -> Result<(ConstIndex, Vec<u8>), String> {
+pub fn split(program: &mut Program, min: usize) -> crate::Result<(ConstIndex, Vec<u8>)> {
     let total = program
         .cells
         .iter()
@@ -117,16 +117,16 @@ pub fn split(program: &mut Program, min: usize) -> Result<(ConstIndex, Vec<u8>),
         let sh = index
             .sheets
             .get_mut(sheet as usize)
-            .ok_or("a constant lies on a sheet the program does not list")?;
+            .ok_or(crate::Error::ConstantOnUnknownSheet)?;
         let block: Vec<(u32, u32, &Value)> = consts[i..j]
             .iter()
             .map(|(at, v)| (at.row, at.col, v))
             .collect();
-        let encoded = bincode::serialize(&block).map_err(|e| e.to_string())?;
+        let encoded = bincode::serialize(&block)?;
         sh.blocks.push(BlockRef {
             row0: consts[i].0.row,
             offset: bytes.len() as u64,
-            len: u32::try_from(encoded.len()).map_err(|_| "a block of constants is too big")?,
+            len: u32::try_from(encoded.len()).map_err(|_| crate::Error::BlockTooBig)?,
         });
         for (at, _) in &consts[i..j] {
             sh.extent.0 = sh.extent.0.max(at.row + 1);

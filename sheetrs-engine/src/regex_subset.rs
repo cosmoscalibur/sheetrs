@@ -43,7 +43,24 @@ struct Parser {
     at: usize,
 }
 
-type R<T> = Result<T, String>;
+/// A construct of a pattern that is outside the subset, described as the text says it.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct Unsupported(String);
+
+impl From<&str> for Unsupported {
+    fn from(what: &str) -> Self {
+        Self(what.to_string())
+    }
+}
+
+impl From<String> for Unsupported {
+    fn from(what: String) -> Self {
+        Self(what)
+    }
+}
+
+type R<T> = Result<T, Unsupported>;
 
 const MAX_REPEAT: u32 = 1000;
 
@@ -182,11 +199,11 @@ impl Parser {
                 's' => Node::Space(false),
                 'S' => Node::Space(true),
                 p if p.is_ascii_punctuation() => Node::Lit(p),
-                other => return Err(format!("the escape `\\{other}`")),
+                other => return Err(format!("the escape `\\{other}`").into()),
             },
             '^' | '$' => return Err("an anchor (`^`, `$`)".into()),
             '*' | '+' | '?' | '{' => return Err("a repetition with nothing to repeat".into()),
-            ']' | '}' => return Err(format!("a lone `{c}`")),
+            ']' | '}' => return Err(format!("a lone `{c}`").into()),
             c => Node::Lit(c),
         })
     }
@@ -221,7 +238,7 @@ impl Parser {
                         continue;
                     }
                     p if p.is_ascii_punctuation() => p,
-                    other => return Err(format!("the escape `\\{other}` in a set")),
+                    other => return Err(format!("the escape `\\{other}` in a set").into()),
                 },
                 c => c,
             };
@@ -237,7 +254,7 @@ impl Parser {
                 let end = match self.next().ok_or("a set that is not closed")? {
                     '\\' => match self.next().ok_or("a `\\` at the end")? {
                         p if p.is_ascii_punctuation() => p,
-                        other => return Err(format!("the escape `\\{other}` in a range")),
+                        other => return Err(format!("the escape `\\{other}` in a range").into()),
                     },
                     '[' => return Err("a set inside a set".into()),
                     e => e,
@@ -368,7 +385,7 @@ fn write(n: &Node, out: &mut String, captures: bool) {
 /// # Errors
 ///
 /// When `pattern` uses a construct outside the subset.
-pub fn translate(pattern: &str) -> Result<String, String> {
+pub fn translate(pattern: &str) -> R<String> {
     translate_with(pattern, false)
 }
 
@@ -377,11 +394,11 @@ pub fn translate(pattern: &str) -> Result<String, String> {
 /// # Errors
 ///
 /// When `pattern` uses a construct outside the subset.
-pub fn translate_capturing(pattern: &str) -> Result<String, String> {
+pub fn translate_capturing(pattern: &str) -> R<String> {
     translate_with(pattern, true)
 }
 
-fn translate_with(pattern: &str, captures: bool) -> Result<String, String> {
+fn translate_with(pattern: &str, captures: bool) -> R<String> {
     let mut p = Parser {
         chars: pattern.chars().collect(),
         at: 0,

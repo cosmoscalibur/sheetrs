@@ -7,10 +7,10 @@
 //! decisions start: which sheet a reference means, which function a name is in
 //! what a defined name expands to.
 
-use crate::addr::{self, CellRef, Rect};
-use crate::functions;
-use crate::ir::{BinOp, Expr, Ns, UnOp};
-use crate::value::{Array, ErrorKind, Value};
+use sheetrs_engine::addr::{self, CellRef, Rect};
+use sheetrs_engine::functions;
+use sheetrs_engine::ir::{BinOp, Expr, Ns, UnOp};
+use sheetrs_engine::value::{Array, ErrorKind, Value};
 use sheetrs_formula::ast;
 use std::collections::HashMap;
 use std::sync::Arc;

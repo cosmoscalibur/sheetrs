@@ -11,12 +11,13 @@
 //! Everything is listed by the executable's `--meta`, after the properties of the
 //! document (`document`) and before the defined names it can read (`name`).
 
-use crate::addr;
-use crate::compile::{CompileError, resolve_target};
-use crate::ir::Meta;
+use crate::compile::resolve_target;
+use crate::error::{Error, Result};
 use crate::model::Model;
-use crate::run::value_to_json;
-use crate::value::Value;
+use sheetrs_engine::addr;
+use sheetrs_engine::ir::Meta;
+use sheetrs_engine::run::value_to_json;
+use sheetrs_engine::value::Value;
 use std::collections::{BTreeMap, HashMap};
 
 pub const DEFAULT_SHEET: &str = "settings";
@@ -43,10 +44,10 @@ fn text(v: &Value) -> String {
 /// The range a settings row points at. It must start with the sheet (or be a
 /// sheet or a defined name): an address with no sheet depends on which sheet is
 /// first, and the settings sheet is not the place to guess.
-fn resolve_reference(model: &Model, reference: &str) -> Result<crate::addr::Rect, CompileError> {
+fn resolve_reference(model: &Model, reference: &str) -> Result<sheetrs_engine::addr::Rect> {
     let r = reference.trim();
     if r.is_empty() {
-        return Err(CompileError("`value` must hold the range".into()));
+        return Err(Error::Settings("`value` must hold the range".into()));
     }
     if let Some(id) = model.sheet_id(r) {
         let used = model.cells.keys().filter(|a| a.sheet == id).fold(
@@ -56,13 +57,13 @@ fn resolve_reference(model: &Model, reference: &str) -> Result<crate::addr::Rect
             },
         );
         return used
-            .map(|(rows, cols)| crate::addr::Rect::new(id, 0, 0, rows, cols))
-            .ok_or_else(|| CompileError(format!("sheet `{r}` is empty")));
+            .map(|(rows, cols)| sheetrs_engine::addr::Rect::new(id, 0, 0, rows, cols))
+            .ok_or_else(|| Error::Settings(format!("sheet `{r}` is empty")));
     }
     let (sheet, _) = addr::split_sheet(r);
     let is_name = model.names.keys().any(|k| addr::same_name(k, r));
     if sheet.is_none() && !is_name {
-        return Err(CompileError(format!(
+        return Err(Error::Settings(format!(
             "`{r}` must start with the sheet (`Sheet1!{r}`), or be a sheet or a defined name"
         )));
     }
@@ -75,14 +76,12 @@ fn resolve_reference(model: &Model, reference: &str) -> Result<crate::addr::Rect
 /// # Errors
 ///
 /// When the settings part of the document cannot be read.
-pub fn read(
-    model: &Model,
-    name: &str,
-    required: bool,
-) -> Result<Option<SheetSettings>, CompileError> {
+pub fn read(model: &Model, name: &str, required: bool) -> Result<Option<SheetSettings>> {
     let Some(sheet) = model.sheet_id(name) else {
         return if required {
-            Err(CompileError(format!("settings sheet `{name}` not found")))
+            Err(Error::Settings(format!(
+                "settings sheet `{name}` not found"
+            )))
         } else {
             Ok(None)
         };
@@ -95,7 +94,7 @@ pub fn read(
     }
     let at = |m: &str| format!("settings sheet `{name}`: {m}");
     let Some(header) = rows.get(&0) else {
-        return Err(CompileError(at(
+        return Err(Error::Settings(at(
             "the first row must hold the headers key, value, description, meta_type",
         )));
     };
@@ -106,7 +105,7 @@ pub fn read(
             .map(|(c, _)| *c)
     };
     let (Some(kc), Some(tc)) = (col("key"), col("meta_type")) else {
-        return Err(CompileError(at(
+        return Err(Error::Settings(at(
             "the headers `key` and `meta_type` are required in the first row",
         )));
     };
@@ -127,7 +126,7 @@ pub fn read(
         }
         let line = row + 1;
         if key.is_empty() {
-            return Err(CompileError(at(&format!("row {line} needs a `key`"))));
+            return Err(Error::Settings(at(&format!("row {line} needs a `key`"))));
         }
         // A row without a type is free metadata of the category `extra`.
         let meta_type = if meta_type.is_empty() {
@@ -140,9 +139,9 @@ pub fn read(
         if matches!(meta_type.as_str(), "input" | "output") {
             let reference = value.map(|v| text(v)).unwrap_or_default();
             let rect = resolve_reference(model, &reference)
-                .map_err(|e| CompileError(at(&format!("row {line}: {e}"))))?;
+                .map_err(|e| Error::Settings(at(&format!("row {line}: {e}"))))?;
             if rect.sheet == sheet {
-                return Err(CompileError(at(&format!(
+                return Err(Error::Settings(at(&format!(
                     "row {line}: `{reference}` lies in the settings sheet"
                 ))));
             }
@@ -155,7 +154,7 @@ pub fn read(
             list.push((key.clone(), reference));
         }
         if let Some((first, kind)) = seen.insert(key.to_lowercase(), (line, meta_type.clone())) {
-            return Err(CompileError(at(&format!(
+            return Err(Error::Settings(at(&format!(
                 "row {line}: `{key}` is already defined in row {first} (as {kind}); a key names one input, output or field"
             ))));
         }
@@ -172,7 +171,7 @@ pub fn read(
                     .then_some("a defined name or table")
             })
         {
-            return Err(CompileError(at(&format!(
+            return Err(Error::Settings(at(&format!(
                 "row {line}: `{key}` is also {what} of the workbook; keys cannot coincide with them"
             ))));
         }
@@ -245,7 +244,7 @@ mod tests {
             read(m, "settings", false)
         };
         // A bare address is refused; a sheet name or a defined name is not.
-        let e = with(&mut m, "B1:B3").unwrap_err().0;
+        let e = with(&mut m, "B1:B3").unwrap_err().to_string();
         assert!(e.contains("must start with the sheet"), "{e}");
         assert!(with(&mut m, "Total").is_ok());
         assert!(with(&mut m, "Data").is_ok());
@@ -294,8 +293,9 @@ mod tests {
             };
             compile(&m, &spec).unwrap().0.meta
         };
-        let kinds =
-            |meta: &[crate::ir::Meta]| meta.iter().map(|r| r.meta_type.clone()).collect::<Vec<_>>();
+        let kinds = |meta: &[sheetrs_engine::ir::Meta]| {
+            meta.iter().map(|r| r.meta_type.clone()).collect::<Vec<_>>()
+        };
         let declared = meta_of(QueryLevel::Declared);
         assert_eq!(
             kinds(&declared),
@@ -326,7 +326,9 @@ mod tests {
             ("Version", "info"),
             ("RATE", "x"),
         ] {
-            let e = row5(&mut model(), key, "Data!B2", kind).unwrap_err().0;
+            let e = row5(&mut model(), key, "Data!B2", kind)
+                .unwrap_err()
+                .to_string();
             assert!(
                 e.contains("row 5") && e.contains("already defined in row"),
                 "{e}"
@@ -340,7 +342,9 @@ mod tests {
             ("Settings", "a sheet"),
             ("TOTAL", "a defined name or table"),
         ] {
-            let e = row5(&mut m, key, "Data!B2", "input").unwrap_err().0;
+            let e = row5(&mut m, key, "Data!B2", "input")
+                .unwrap_err()
+                .to_string();
             assert!(e.contains(what), "{e}");
         }
         assert!(row5(&mut m, "other", "Data!B2", "output").is_ok());

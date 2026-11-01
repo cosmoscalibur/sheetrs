@@ -1,5 +1,5 @@
+use crate::writer::{ValueScope, ValueTarget, WorkbookModifications, modify_workbook};
 use sheetrs_core::reader::{CellValue, read_workbook};
-use sheetrs_edit::writer::{ValueScope, ValueTarget, WorkbookModifications, modify_workbook};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::fs::File;

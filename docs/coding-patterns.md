@@ -246,8 +246,18 @@ over those libraries. Where code lives follows who uses it (see `ARCHITECTURE.md
   workbook model; code used by one tool belongs to that tool's crate.
 - `sheetrs-linter`: `rules` (`WalkerRule`, the registry and the catalog), `config`, `violation`,
   `report` (`group_by_scope`, `ViolationRecord`), `Linter`.
-- `sheetrs-stats`: `stats` (`WorkbookStats`).
-- `sheetrs-edit`: `plan` (`EditPlan`, `Operation`: a sequence of operations, each on the result of the previous one, planned by `passes()` into the fewest passes over the file), `writer` (`WorkbookModifications`, `ValueScope`, `modify_workbook`).
+- `sheetrs-stats`: `collect(&Source)` and its result `WorkbookStats`.
+- `sheetrs-edit`: `Editor` (made for a `Source`; changes in order, each on the result of the previous one; `save` plans them into the fewest passes over the file and `explain` says how), `RowRange`, `ColumnRange`, `ValueScope`. The planner and the writer are private: the editor is the one way in.
+- `sheetrs-engine` and `sheetrs-compiler`: each has its own `Error` (typed, `thiserror`). The compiler builds a `Model` from a `Source` (`loader::load`) and does not re-export the engine: what is the engine's is imported from `sheetrs_engine`.
+
+**Interface convention (every crate and binding).** The tool is the subject and takes the
+`Source`; `Source` has no behavior of its own, because the core cannot depend on the tools. A tool
+is an object when it has a configuration or accumulates state (`Linter::with_config(..).lint(&source)`,
+`Editor::new(&source)...save(path)`) and a function when it has neither
+(`sheetrs_stats::collect(&source)`). Python lays its package out as the crates are
+(`sheetrs.linter`, `sheetrs.stats`, `sheetrs.edit`; `open` and `Source` at the top, which is
+core's); there is no facade crate, since each tool has its own executable and use. A new tool
+follows the rule instead of choosing a shape of its own.
 
 Keep logic in the libraries and out of the executables and the bindings (`sheetrs-wasm`,
 `sheetrs-py`): an adapter converts arguments and results and nothing else, and what two adapters

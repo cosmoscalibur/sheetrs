@@ -3,11 +3,7 @@
 use serde::Serialize;
 use sheetrs_core::Result;
 use sheetrs_core::reader::parser_utils::column_letters;
-use sheetrs_core::reader::{
-    Cell, CellSink, Sheet, Source, Workbook, read_workbook_from_reader_into, read_workbook_into,
-};
-use std::io::{Read, Seek};
-use std::path::Path;
+use sheetrs_core::reader::{Cell, CellSink, Sheet, Source, Workbook};
 
 /// Statistics for the whole workbook.
 #[derive(Debug, Serialize)]
@@ -62,7 +58,7 @@ pub(crate) struct Tally {
 /// Counts the cells of each sheet as the reader hands them over, so the workbook's cells are never
 /// held in memory.
 #[derive(Debug, Default)]
-pub struct StatsSink {
+pub(crate) struct StatsSink {
     sheets: Vec<Tally>,
 }
 
@@ -93,47 +89,23 @@ impl StatsSink {
     }
 }
 
+/// The statistics of the workbook `source` refers to, counted in a single streaming pass: the
+/// cells are tallied as they are read and not kept, so the memory used does not depend on the
+/// size of the workbook. There is nothing to configure, so this is a function and not an object.
+///
+/// # Errors
+///
+/// When the workbook cannot be read (see [`Source::read_workbook`]).
+pub fn collect(source: &Source) -> Result<WorkbookStats> {
+    let mut sink = StatsSink::default();
+    let workbook = source.read_workbook_into(&mut sink)?;
+    Ok(WorkbookStats::from_workbook(&workbook, &sink))
+}
+
 impl WorkbookStats {
-    /// The statistics of the workbook file at `path`, read in a single streaming pass.
-    ///
-    /// # Errors
-    ///
-    /// When the file cannot be read.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let mut sink = StatsSink::default();
-        let workbook = read_workbook_into(path, &mut sink)?;
-        Ok(Self::from_workbook(&workbook, &sink))
-    }
-
-    /// The statistics of a workbook given as a [`Source`], read in a single streaming pass.
-    ///
-    /// # Errors
-    ///
-    /// When the workbook cannot be read (see [`Source::read_workbook`]).
-    pub fn from_source(source: &Source) -> Result<Self> {
-        match source {
-            Source::File { path, .. } => Self::from_path(path),
-            Source::Bytes { data, format } => {
-                Self::from_reader(std::io::Cursor::new(data), Some(format.extension()))
-            }
-        }
-    }
-
-    /// The statistics of a workbook read from `reader`; `extension` (`xlsx`, `xlsm`, `ods`) tells
-    /// its format. The reported file size is 0: a reader does not know it.
-    ///
-    /// # Errors
-    ///
-    /// When the workbook cannot be read.
-    pub fn from_reader<R: Read + Seek>(reader: R, extension: Option<&str>) -> Result<Self> {
-        let mut sink = StatsSink::default();
-        let workbook = read_workbook_from_reader_into(reader, extension, &mut sink)?;
-        Ok(Self::from_workbook(&workbook, &sink))
-    }
-
     /// The statistics of `workbook`, whose cells were counted by `sink` while it was read.
     #[must_use]
-    pub fn from_workbook(workbook: &Workbook, sink: &StatsSink) -> Self {
+    pub(crate) fn from_workbook(workbook: &Workbook, sink: &StatsSink) -> Self {
         let sheets: Vec<SheetStats> = workbook
             .sheets
             .iter()
@@ -335,5 +307,45 @@ mod tests {
     fn percentage_of_zero_total_is_zero() {
         assert_eq!(percentage(5, 0), 0.0);
         assert_eq!(percentage(1, 4), 25.0);
+    }
+
+    #[test]
+    fn collect_gives_the_same_sheets_from_a_file_and_from_bytes() {
+        let tests = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests");
+        for (name, bytes, format) in [
+            (
+                "minimal_test.xlsx",
+                TEST_XLSX,
+                sheetrs_core::reader::Format::Xlsx,
+            ),
+            (
+                "minimal_test.ods",
+                TEST_ODS,
+                sheetrs_core::reader::Format::Ods,
+            ),
+        ] {
+            let file = Source::from_file(tests.join(name)).unwrap();
+            let by_file = collect(&file).unwrap();
+            let by_bytes = collect(&Source::from_bytes(bytes, format)).unwrap();
+            assert_eq!(
+                serde_json::to_value(&by_file.sheets).unwrap(),
+                serde_json::to_value(&by_bytes.sheets).unwrap(),
+                "{name}"
+            );
+            assert_eq!(by_file.total_formulas, by_bytes.total_formulas);
+            assert_eq!(by_bytes.total_file_size, 0, "bytes carry no size");
+            assert!(by_file.total_file_size > 0);
+        }
+    }
+
+    #[test]
+    fn collect_reports_a_workbook_that_cannot_be_read_with_a_typed_error() {
+        let corrupt = Source::from_bytes(&b"not a zip"[..], sheetrs_core::reader::Format::Xlsx);
+        assert!(collect(&corrupt).is_err());
+        let missing = Source::from_file("tests/does-not-exist.xlsx").unwrap();
+        assert!(matches!(
+            collect(&missing),
+            Err(sheetrs_core::Error::Open { .. })
+        ));
     }
 }

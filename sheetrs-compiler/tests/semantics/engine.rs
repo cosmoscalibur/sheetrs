@@ -221,7 +221,7 @@ fn dates_and_date_systems() {
     assert_eq!(calc("DATE(1900,3,1)-DATE(1900,2,28)"), json!(1));
 
     let mut s = spec(&[], &["A1"]);
-    s.date_system = Some(sheetrs_compiler::options::DateSystem::NULL_1904);
+    s.date_system = Some(sheetrs_engine::options::DateSystem::NULL_1904);
     let mut m = sheetrs_compiler::Model::new();
     let sh = m.add_sheet("Sheet1");
     m.set_formula(sh, "A1", "DATE(2024,1,1)");
@@ -343,7 +343,7 @@ fn match_over_a_range_wants_a_vector_and_a_known_type() {
     let r = p
         .execute(
             &serde_json::Value::Null,
-            &sheetrs_compiler::Overrides::default(),
+            &sheetrs_engine::Overrides::default(),
         )
         .unwrap();
     assert_eq!(r["Sheet1!A1"], err("#VALUE!"));

@@ -3,8 +3,8 @@
 //! appends; a lookup is two array reads and a search in a row's few columns, with no hashing and
 //! no table to grow, and a range read walks neighbouring memory.
 
-use crate::addr::CellRef;
 use crate::model::ModelCell;
+use sheetrs_engine::addr::CellRef;
 use sheetrs_formula::grid::Grid;
 use std::ops::Index;
 
@@ -93,7 +93,7 @@ impl Index<&CellRef> for CellStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::Value;
+    use sheetrs_engine::value::Value;
 
     fn cell(n: f64) -> ModelCell {
         ModelCell {

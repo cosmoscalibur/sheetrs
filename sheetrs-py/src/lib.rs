@@ -1,15 +1,16 @@
 //! Python bindings for the `SheetRS` suite.
 //!
-//! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports it, flat.
+//! The extension module is `sheetrs._sheetrs`, flat; the `sheetrs` package presents it as the
+//! crates are laid out: `sheetrs` (core: `open`, `Source`, `SheetrsError`), `sheetrs.linter`,
+//! `sheetrs.stats` and `sheetrs.edit`.
 //!
 //! `open` gives the input of every tool: a [`Source`], a reference to a workbook that reads
-//! nothing and is not a model of it. Each tool takes it:
+//! nothing and is not a model of it, and without behavior of its own. The tool is the subject and
+//! takes it, as in Rust:
 //!
-//! - `Linter.lint(source)`: the linter, with a configuration validated when it is built, and the
-//!   catalog of its rules (they exist only as part of the linter).
-//! - `Source.stats()`: the statistics of the workbook.
-//! - `Source.remove_sheets(...)` and the other operations give an `EditPlan`, to which more are
-//!   added and which is `save`d; a `Source` has no `save`: opening is not editing.
+//! - `Linter(...).lint(source)`: an object, because it has a configuration.
+//! - `stats.collect(source)`: a function, because there is nothing to configure.
+//! - `Editor(source).delete_rows(...).save(path)`: an object, because it accumulates changes.
 //!
 //! The functions release the GIL while they read and analyze a workbook.
 
@@ -17,11 +18,10 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 use sheetrs_core::reader::{Format, Source};
-use sheetrs_edit::{ColumnRange, EditPlan, Operation, RowRange, ValueScope};
+use sheetrs_edit::{ColumnRange, Editor, RowRange, ValueScope};
 use sheetrs_linter::report::{ViolationRecord, violation_records};
 use sheetrs_linter::rules::registry;
 use sheetrs_linter::{Linter, LinterConfig};
-use sheetrs_stats::WorkbookStats;
 use std::path::PathBuf;
 
 pyo3::create_exception!(
@@ -46,7 +46,7 @@ fn to_py_err<E: std::error::Error + 'static>(error: E) -> PyErr {
 }
 
 /// One finding of the linter.
-#[pyclass(name = "Violation", frozen, module = "sheetrs")]
+#[pyclass(name = "Violation", frozen, module = "sheetrs.linter")]
 #[derive(Clone)]
 struct PyViolation {
     #[pyo3(get)]
@@ -130,7 +130,7 @@ impl From<ViolationRecord> for PyViolation {
 /// (`config_path`), not both; without either, the default rules run. A rule, category or
 /// parameter the linter does not know is an error (`ValueError`), not something ignored.
 /// Build it once to lint many workbooks.
-#[pyclass(name = "Linter", frozen, module = "sheetrs")]
+#[pyclass(name = "Linter", frozen, module = "sheetrs.linter")]
 struct PyLinter {
     linter: Linter,
 }
@@ -156,8 +156,8 @@ impl PyLinter {
         })
     }
 
-    /// Lint the workbook of a `Source` (the result of `open`). Returns the violations ordered by
-    /// scope (book, sheet, cell) and rule.
+    /// Lint the workbook of a `Source` (the result of `sheetrs.open`). Returns the violations
+    /// ordered by scope (book, sheet, cell) and rule.
     ///
     /// Raises `OSError` when a file cannot be read and `SheetrsError` when the workbook cannot be
     /// parsed.
@@ -198,168 +198,142 @@ impl PyLinter {
 /// The input of every tool: a reference to a workbook (a file, or its bytes), made by `open`.
 ///
 /// It reads nothing and is not a model of the workbook: the tools read it when they run, and the
-/// same `Source` can be given to several. `Linter.lint(source)` analyzes it, `stats()` measures
-/// it, and the operations (`remove_sheets`, `delete_rows`, ...) start an `EditPlan`. It has no
-/// `save`: a workbook is saved once something has been done to it.
+/// same `Source` can be given to several. It has no behavior of its own: `Linter.lint(source)`,
+/// `stats.collect(source)` and `Editor(source)` are the tools that take it.
 #[pyclass(name = "Source", frozen, module = "sheetrs")]
 struct PySource {
     source: Source,
 }
 
-impl PySource {
-    fn plan(&self, operation: Operation) -> PyEditPlan {
-        let mut plan = EditPlan::new();
-        plan.push(operation);
-        PyEditPlan {
-            source: self.source.clone(),
-            plan,
-        }
-    }
-}
-
 #[pymethods]
 impl PySource {
-    /// Statistics of the workbook, as `sheetstats --format json` reports them: totals plus a
-    /// `sheets` list with one dict per sheet. The file size is 0 for a workbook given as bytes.
-    fn stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let computed = py.detach(|| WorkbookStats::from_source(&self.source).map_err(to_py_err))?;
-        let json =
-            serde_json::to_string(&computed).map_err(|e| SheetrsError::new_err(e.to_string()))?;
-        py.import("json")?.call_method1("loads", (json,))
-    }
-
-    /// Start an `EditPlan` that removes sheets by name.
-    #[pyo3(signature = (*names))]
-    fn remove_sheets(&self, names: &Bound<'_, PyTuple>) -> PyResult<PyEditPlan> {
-        Ok(self.plan(Operation::RemoveSheets(strings(names)?)))
-    }
-
-    /// Start an `EditPlan` that removes defined names (and database ranges).
-    #[pyo3(signature = (*names))]
-    fn remove_ranges(&self, names: &Bound<'_, PyTuple>) -> PyResult<PyEditPlan> {
-        Ok(self.plan(Operation::RemoveNamedRanges(strings(names)?)))
-    }
-
-    /// Start an `EditPlan` that replaces formulas by their cached values in the scopes.
-    #[pyo3(signature = (*scopes))]
-    fn convert_to_values(&self, scopes: &Bound<'_, PyTuple>) -> PyResult<PyEditPlan> {
-        Ok(self.plan(Operation::ConvertToValues(parse_all::<ValueScope>(scopes)?)))
-    }
-
-    /// Start an `EditPlan` that deletes rows (`"Sheet!3:10"`, or `"Sheet!3"`).
-    #[pyo3(signature = (*rows))]
-    fn delete_rows(&self, rows: &Bound<'_, PyTuple>) -> PyResult<PyEditPlan> {
-        Ok(self.plan(Operation::DeleteRows(parse_all::<RowRange>(rows)?)))
-    }
-
-    /// Start an `EditPlan` that deletes columns (`"Sheet!B:D"`, or `"Sheet!B"`).
-    #[pyo3(signature = (*columns))]
-    fn delete_columns(&self, columns: &Bound<'_, PyTuple>) -> PyResult<PyEditPlan> {
-        Ok(self.plan(Operation::DeleteColumns(parse_all::<ColumnRange>(columns)?)))
-    }
-
     fn __repr__(&self) -> String {
         format!("Source({})", self.source)
     }
 }
 
-/// Operations on a workbook, and the way to save them.
+/// The statistics of the workbook of a `Source`, as `sheetstats --format json` reports them:
+/// totals plus a `sheets` list with one dict per sheet. The file size is 0 for a workbook given
+/// as bytes. Raises `OSError` when a file cannot be read and `SheetrsError` when the workbook
+/// cannot be parsed.
+#[pyfunction]
+#[pyo3(name = "collect")]
+fn collect_stats<'py>(py: Python<'py>, source: &PySource) -> PyResult<Bound<'py, PyAny>> {
+    let source = &source.source;
+    let computed = py.detach(|| sheetrs_stats::collect(source).map_err(to_py_err))?;
+    let json =
+        serde_json::to_string(&computed).map_err(|e| SheetrsError::new_err(e.to_string()))?;
+    py.import("json")?.call_method1("loads", (json,))
+}
+
+/// The changes to make to a workbook, and the way to save them.
 ///
-/// Every method adds an operation and returns the `EditPlan` that results (the one it was called
-/// on is not changed), so calls chain and a plan can be branched. Each operation addresses the
-/// workbook **as the previous ones leave it**: after `delete_rows("T!3")`, `"T!3"` is what was
-/// row 4. The scopes of one call are simultaneous: `delete_rows("T!3", "T!4")` deletes two rows.
-/// Nothing is read until `save(path)`, which runs the operations, planned into the fewest passes
-/// over the file that give what running them one at a time gives; each pass reads and writes the
-/// file once as a stream, so memory does not grow with the workbook. `explain()` shows the passes.
+/// An editor is made for a `Source` and collects changes: every method adds one and returns the
+/// editor, so calls chain. Each change addresses the workbook **as the previous ones leave it**:
+/// after `delete_rows("T!3")`, `"T!3"` is what was row 4. The scopes of one call are simultaneous:
+/// `delete_rows("T!3", "T!4")` deletes two rows. Nothing is read until `save(path)`, which runs
+/// the changes in the fewest passes over the file that give what running them one at a time
+/// gives; each pass reads and writes the file once as a stream, so memory does not grow with the
+/// workbook. `explain()` says what `save` will do.
 ///
 /// A scope that is malformed, or of the wrong kind (rows deleted with a column range), raises
 /// `ValueError` where it is written. An error of the workbook (a sheet that does not exist, a 3D
 /// reference, a file that cannot be read) shows when it is saved. Scopes are `"Sheet"`,
 /// `"Sheet!B:D"` (columns) and `"Sheet!3:10"` (rows); quote a sheet name that contains `!`.
-#[pyclass(name = "EditPlan", frozen, module = "sheetrs")]
-#[derive(Clone)]
-struct PyEditPlan {
-    source: Source,
-    plan: EditPlan,
-}
-
-impl PyEditPlan {
-    fn then(&self, operation: Operation) -> Self {
-        let mut next = self.clone();
-        next.plan.push(operation);
-        next
-    }
+#[pyclass(name = "Editor", module = "sheetrs.edit")]
+struct PyEditor {
+    editor: Editor,
 }
 
 #[pymethods]
-impl PyEditPlan {
+impl PyEditor {
+    #[new]
+    fn new(source: &PySource) -> Self {
+        Self {
+            editor: Editor::new(&source.source),
+        }
+    }
+
     /// Remove sheets by name.
     #[pyo3(signature = (*names))]
-    fn remove_sheets(&self, names: &Bound<'_, PyTuple>) -> PyResult<Self> {
-        Ok(self.then(Operation::RemoveSheets(strings(names)?)))
+    fn remove_sheets<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        names: &Bound<'_, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.editor.remove_sheets(strings(names)?);
+        Ok(slf)
     }
 
     /// Remove defined names (and database ranges).
     #[pyo3(signature = (*names))]
-    fn remove_ranges(&self, names: &Bound<'_, PyTuple>) -> PyResult<Self> {
-        Ok(self.then(Operation::RemoveNamedRanges(strings(names)?)))
+    fn remove_ranges<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        names: &Bound<'_, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.editor.remove_named_ranges(strings(names)?);
+        Ok(slf)
     }
 
     /// Replace formulas by their cached values in the scopes.
     #[pyo3(signature = (*scopes))]
-    fn convert_to_values(&self, scopes: &Bound<'_, PyTuple>) -> PyResult<Self> {
-        Ok(self.then(Operation::ConvertToValues(parse_all::<ValueScope>(scopes)?)))
+    fn convert_to_values<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        scopes: &Bound<'_, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.editor
+            .convert_to_values(parse_all::<ValueScope>(scopes)?);
+        Ok(slf)
     }
 
     /// Delete rows (`"Sheet!3:10"`, or `"Sheet!3"`); references to them become `#REF!`.
     #[pyo3(signature = (*rows))]
-    fn delete_rows(&self, rows: &Bound<'_, PyTuple>) -> PyResult<Self> {
-        Ok(self.then(Operation::DeleteRows(parse_all::<RowRange>(rows)?)))
+    fn delete_rows<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        rows: &Bound<'_, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.editor.delete_rows(parse_all::<RowRange>(rows)?);
+        Ok(slf)
     }
 
     /// Delete columns (`"Sheet!B:D"`, or `"Sheet!B"`).
     #[pyo3(signature = (*columns))]
-    fn delete_columns(&self, columns: &Bound<'_, PyTuple>) -> PyResult<Self> {
-        Ok(self.then(Operation::DeleteColumns(parse_all::<ColumnRange>(columns)?)))
+    fn delete_columns<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        columns: &Bound<'_, PyTuple>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.editor
+            .delete_columns(parse_all::<ColumnRange>(columns)?);
+        Ok(slf)
     }
 
-    /// The operations as they were written, as text.
-    #[getter]
-    fn operations(&self) -> Vec<String> {
-        self.plan
-            .operations()
-            .iter()
-            .map(ToString::to_string)
-            .collect()
-    }
-
-    /// The passes over the file that run the operations, as text, and the mark to recalculate
-    /// when the plan puts one last. Raises `ValueError` for an operation on a sheet that an
-    /// earlier one removed.
+    /// What `save` will do: the passes over the file that run the changes, one change per line,
+    /// and the mark to recalculate when there is one. Raises `ValueError` for a change on a sheet
+    /// that an earlier one removed.
     fn explain(&self) -> PyResult<String> {
-        self.plan.explain().map_err(invalid)
+        self.editor.explain().map_err(invalid)
     }
 
-    /// Run the operations and write the workbook to `path`, which must not be the file it was
+    /// Run the changes and write the workbook to `path`, which must not be the file it was
     /// opened from. No file is left behind when it fails. Raises `OSError` when a file cannot be
-    /// read or written and `SheetrsError` when the workbook cannot be edited.
+    /// read or written and `SheetrsError` when the workbook cannot be edited (including when
+    /// there are no changes).
     ///
-    /// The plan decides whether the saved file is marked so that the application that opens it
-    /// recalculates every formula, and puts the mark last: it does when an operation leaves the
+    /// The editor decides whether the saved file is marked so that the application that opens it
+    /// recalculates every formula, and puts the mark last: it does when a change leaves the
     /// cached results of formulas stale (rows, columns, sheets or names removed). There is no
     /// option for it.
     #[allow(clippy::needless_pass_by_value)] // pyo3 hands over an owned argument
     fn save(&self, py: Python<'_>, path: std::borrow::Cow<'_, std::path::Path>) -> PyResult<()> {
-        py.detach(|| self.plan.execute(&self.source, &path).map_err(to_py_err))
+        py.detach(|| self.editor.save(&path).map_err(to_py_err))
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "EditPlan({}, {} operation(s))",
-            self.source,
-            self.plan.operations().len()
-        )
+        let marks = if self.editor.is_empty() {
+            "no changes"
+        } else {
+            "changes"
+        };
+        format!("Editor({marks})")
     }
 }
 
@@ -420,7 +394,9 @@ mod _sheetrs {
     use pyo3::prelude::*;
 
     #[pymodule_export]
-    use super::{PyEditPlan, PyLinter, PySource, PyViolation, SheetrsError, open_workbook};
+    use super::{
+        PyEditor, PyLinter, PySource, PyViolation, SheetrsError, collect_stats, open_workbook,
+    };
 
     #[pymodule_init]
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -1,8 +1,9 @@
 //! Locale-dependent behavior: alphabet order, text dates, number text.
 
 use serde_json::{Value as Json, json};
-use sheetrs_compiler::options::Locale;
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, compile};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile};
+use sheetrs_engine::Overrides;
+use sheetrs_engine::options::Locale;
 
 fn eval(locale: Locale, formula: &str) -> Json {
     let mut m = Model::new();

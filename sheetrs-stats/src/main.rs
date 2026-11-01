@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
+use sheetrs_core::reader::Source;
 use sheetrs_stats::{WorkbookStats, percentage};
 use std::path::PathBuf;
 
@@ -30,7 +31,8 @@ enum OutputFormat {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let stats = WorkbookStats::from_path(&cli.file)
+    let stats = Source::from_file(&cli.file)
+        .and_then(|source| sheetrs_stats::collect(&source))
         .with_context(|| format!("Failed to read file: {}", cli.file.display()))?;
 
     match cli.format {

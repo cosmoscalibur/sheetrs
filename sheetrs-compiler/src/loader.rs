@@ -5,47 +5,60 @@
 //! separators to the Excel syntax, so the only format knowledge left here is
 //! the syntax of function names.
 
-use crate::addr::CellRef;
 use crate::cellstore::CellStore;
+use crate::error::{Error, Result};
 use crate::model::{Model, ModelCell, ModelSettings};
-use crate::options::{DateSystem, Iteration, Search, SearchMode};
-use crate::value::{ErrorKind, Value};
-use sheetrs_core::reader::{CellValue, DocumentSettings, Workbook};
+use sheetrs_core::reader::{CellValue, DocumentSettings, Format, Source, Workbook};
+use sheetrs_engine::addr::CellRef;
+use sheetrs_engine::options::{DateSystem, Iteration, Search, SearchMode};
+use sheetrs_engine::value::{ErrorKind, Value};
 use std::fmt::Write as _;
 use std::path::Path;
 
+/// The model of the workbook `source` refers to: its cells go straight into the model as the reader
+/// finds them, with no workbook of cells built first.
+///
 /// # Errors
 ///
 /// When the workbook cannot be read.
-pub fn load(path: &Path) -> Result<Model, String> {
-    let ods = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("ods"));
-    // The cells go straight into the model's map as the reader finds them: no workbook of
-    // cells is built first. What the file carries (settings, names) comes with the workbook
-    // the reader returns, whose sheets are empty.
+pub fn load(source: &Source) -> Result<Model> {
+    let ods = source.format() == Format::Ods;
     let mut sink = ModelSink::default();
-    let wb = sheetrs_core::reader::read_workbook_into(path, &mut sink)
-        .map_err(|e| format!("{}: {e:#}", path.display()))?;
+    // What the file carries (settings, names) comes with the workbook the reader returns, whose
+    // sheets are empty.
+    let wb = source
+        .read_workbook_into(&mut sink)
+        .map_err(|error| Error::Workbook {
+            what: source.to_string(),
+            source: error,
+        })?;
     // The file's format decides how it is read (settings the document carries, names,
     // reference syntax); what computes it is LibreOffice's behavior.
     let mut m = assemble(wb, ods, sink.cells);
     m.from_xlsx = !ods;
-    m.file_name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+    m.file_name = source
+        .path()
+        .and_then(Path::file_name)
+        .map(|n| n.to_string_lossy().into_owned());
     m.source = sheetrs_engine::ir::SourceInfo {
         file: m.file_name.clone().unwrap_or_default(),
         format: if ods { "ods" } else { "xlsx" }.to_string(),
-        sha256: sha256_of(path).map_err(|e| format!("{}: {e}", path.display()))?,
+        sha256: sha256_of(source)?,
     };
     Ok(m)
 }
 
-/// SHA-256 of the file, in hexadecimal.
-fn sha256_of(path: &Path) -> std::io::Result<String> {
+/// SHA-256 of the workbook, in hexadecimal.
+fn sha256_of(source: &Source) -> Result<String> {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    std::io::copy(&mut std::fs::File::open(path)?, &mut hasher)?;
+    match source {
+        Source::File { path, .. } => {
+            let mut file = std::fs::File::open(path).map_err(|e| Error::io(path, e))?;
+            std::io::copy(&mut file, &mut hasher).map_err(|e| Error::io(path, e))?;
+        }
+        Source::Bytes { data, .. } => hasher.update(data),
+    }
     Ok(hasher
         .finalize()
         .iter()
@@ -254,7 +267,7 @@ fn ods_name(def: &str) -> String {
                 None => return def.to_string(),
             }
         };
-        if crate::addr::parse_area(cell).is_none() {
+        if sheetrs_engine::addr::parse_area(cell).is_none() {
             return def.to_string();
         }
         sheet = sheet.or(name);

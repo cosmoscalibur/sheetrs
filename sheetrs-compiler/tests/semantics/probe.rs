@@ -4,10 +4,11 @@
 //! Excel are pinned below.
 
 use serde_json::{Value as Json, json};
-use sheetrs_compiler::addr::CellRef;
-use sheetrs_compiler::options::SearchMode;
-use sheetrs_compiler::value::Value;
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, compile, loader};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile, loader};
+use sheetrs_engine::Overrides;
+use sheetrs_engine::addr::CellRef;
+use sheetrs_engine::options::SearchMode;
+use sheetrs_engine::value::Value;
 use std::path::Path;
 
 /// Probes the engine deliberately does not reproduce, with the reason.
@@ -66,7 +67,7 @@ fn reproduces(file: &str, expect: impl Fn(&Model)) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(file);
-    let m = loader::load(&path).unwrap();
+    let m = loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap()).unwrap();
     expect(&m);
     let calc = m.sheet_id("Calc").unwrap();
     let n = m

@@ -31,7 +31,7 @@ Python package (see [Distribution](#distribution)):
 | Executables | GitHub release assets (`sheetrs-vX.Y.Z-<target>`) | `sheetlint`, `sheetstats`, `sheetedit`, `sheetc`, `sheetrs-rt` |
 | Rust libraries | `sheetrs-linter` (rules, configuration, violations), `sheetrs-stats`, `sheetrs-edit`, `sheetrs-core` (workbook model and readers, shared by all), `sheetrs-formula`, `sheetrs-engine`, `sheetrs-compiler` | The same code the executables run |
 | WebAssembly | `sheetrs-wasm` (npm tarball in the release) | Lint and statistics in the browser, structured and text output |
-| Python | `sheetrs` (wheels and sdist in the release; [sheetrs-py](sheetrs-py/README.md)) | `open` → `Source` (`Linter.lint`, `stats`, editing → `EditPlan.save`) |
+| Python | `sheetrs` (wheels and sdist in the release; [sheetrs-py](sheetrs-py/README.md)) | `open` → `Source`, taken by `linter.Linter`, `stats.collect` and `edit.Editor` |
 
 ### Python
 
@@ -41,13 +41,13 @@ pip install sheetrs          # or the wheel from the GitHub release
 
 ```python
 import sheetrs
+from sheetrs import edit, linter, stats
 
 source = sheetrs.open("book.xlsx")          # a reference; nothing is read
-for v in sheetrs.Linter(config_path="sheetlint.toml").lint(source):
+for v in linter.Linter(config_path="sheetlint.toml").lint(source):
     print(v.rule_id, v.sheet, v.cell, v.message)
-print(source.stats()["total_formulas"])
-# the operations on a source make an EditPlan, which has save()
-source.remove_sheets("Secrets").delete_rows("Data!3:10").save("clean.xlsx")
+print(stats.collect(source)["total_formulas"])
+edit.Editor(source).remove_sheets("Secrets").delete_rows("Data!3:10").save("clean.xlsx")
 ```
 
 Wheels are `abi3` (Python ≥ 3.10). Details in [sheetrs-py/README.md](sheetrs-py/README.md).

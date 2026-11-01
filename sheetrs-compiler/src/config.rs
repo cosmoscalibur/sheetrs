@@ -21,7 +21,8 @@
 //! collation, ...) is `LibreOffice`'s behavior. The date system, iteration and search
 //! settings come from the document.
 
-use crate::compile::{BindingSpec, CompileError, Features, QueryLevel, Spec};
+use crate::compile::{BindingSpec, Features, QueryLevel, Spec};
+use crate::error::{Error, Result};
 use crate::locale::{self, LocaleOverride};
 use crate::model::Model;
 use crate::settings;
@@ -110,12 +111,12 @@ impl Config {
     /// # Errors
     ///
     /// When a target of the configuration cannot be resolved against `model`.
-    pub fn spec(&self, model: &Model) -> Result<Spec, CompileError> {
+    pub fn spec(&self, model: &Model) -> Result<Spec> {
         let mut spec = self.base_spec(model)?;
         let name = self.settings.as_deref().unwrap_or(settings::DEFAULT_SHEET);
         if let Some(s) = settings::read(model, name, self.settings.is_some())? {
             if s.outputs.is_empty() && spec.query == QueryLevel::Declared {
-                return Err(CompileError(format!(
+                return Err(Error::Config(format!(
                     "settings sheet `{name}` declares no output; add `output` rows or build with outputs = \"any\""
                 )));
             }
@@ -141,11 +142,11 @@ impl Config {
     /// # Errors
     ///
     /// When a target of the configuration cannot be resolved against `model`.
-    pub fn base_spec(&self, model: &Model) -> Result<Spec, CompileError> {
+    pub fn base_spec(&self, model: &Model) -> Result<Spec> {
         let query = match self.outputs.as_deref() {
             None => QueryLevel::Declared,
             Some(s) => QueryLevel::parse(s).ok_or_else(|| {
-                CompileError(format!("outputs must be declared, named or any, got `{s}`"))
+                Error::Config(format!("outputs must be declared, named or any, got `{s}`"))
             })?,
         };
         let mut spec = Spec {
@@ -155,19 +156,18 @@ impl Config {
             host: self.host.clone().unwrap_or_default(),
             features: match &self.enable_features {
                 None => Features::default(),
-                Some(names) => Features::parse(names).map_err(CompileError)?,
+                Some(names) => Features::parse(names)?,
             },
             query,
             ..Spec::default()
         };
         let loc = self.locale.clone().unwrap_or_default();
-        let (l, notes) =
-            locale::from_tag(loc.tag.as_deref().unwrap_or("en"), &loc).map_err(CompileError)?;
+        let (l, notes) = locale::from_tag(loc.tag.as_deref().unwrap_or("en"), &loc)?;
         spec.locale = Some(l);
         spec.notes = notes;
         if model.macros {
             if self.strict.unwrap_or(true) {
-                return Err(CompileError(
+                return Err(Error::Config(
                     "the workbook contains macros, which are never run, so what depends on them would differ; \
                      build with --no-strict (strict = false) to compile anyway"
                         .into(),
@@ -186,15 +186,18 @@ impl Config {
 /// # Errors
 ///
 /// When `text` is not a valid configuration; the message names `origin`.
-pub fn parse(text: &str, origin: &str) -> Result<Config, String> {
-    toml::from_str(text).map_err(|e| format!("{origin}: {e}"))
+pub fn parse(text: &str, origin: &str) -> Result<Config> {
+    toml::from_str(text).map_err(|source| Error::Toml {
+        origin: origin.to_string(),
+        source,
+    })
 }
 
 /// # Errors
 ///
 /// When the file cannot be read or is not a valid configuration.
-pub fn load(path: &Path) -> Result<Config, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+pub fn load(path: &Path) -> Result<Config> {
+    let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
     parse(&text, &path.display().to_string())
 }
 
@@ -254,6 +257,6 @@ mod feature_tests {
         );
         assert!(!spec("enable_features = []").unwrap().features.longtext);
         let err = spec("enable_features = [\"NOPE\"]").unwrap_err();
-        assert!(err.0.contains("unknown feature `NOPE`"), "{err}");
+        assert!(err.to_string().contains("unknown feature `NOPE`"), "{err}");
     }
 }

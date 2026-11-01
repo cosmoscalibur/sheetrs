@@ -4,9 +4,10 @@
 //! formulas alone, from both container formats.
 
 use serde_json::Value as Json;
-use sheetrs_compiler::addr::CellRef;
-use sheetrs_compiler::value::Value;
-use sheetrs_compiler::{BindingSpec, Overrides, Spec, compile, loader};
+use sheetrs_compiler::{BindingSpec, Spec, compile, loader};
+use sheetrs_engine::Overrides;
+use sheetrs_engine::addr::CellRef;
+use sheetrs_engine::value::Value;
 use std::path::Path;
 
 /// Formulas where the oracle itself cannot be compared as is (the reference is
@@ -41,7 +42,7 @@ fn ods_errors(twin: &str) -> std::collections::HashSet<String> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(twin);
-    let model = loader::load(&path).unwrap();
+    let model = loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap()).unwrap();
     let calc = model.sheet_id("Calc").unwrap();
     model
         .cells
@@ -65,7 +66,7 @@ fn check_rows(file: &str, locale: &str, min_rows: usize) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(file);
-    let model = loader::load(&path).unwrap();
+    let model = loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap()).unwrap();
     let calc = model.sheet_id("Calc").unwrap();
     let mut rows: Vec<u32> = model
         .cells

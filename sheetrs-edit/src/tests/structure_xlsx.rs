@@ -3,7 +3,7 @@
 //! UNO: `Rows.removeByIndex`, `Columns.removeByIndex`, `Sheets.removeByName` and
 //! `NamedRanges.removeByName`).
 
-use sheetrs_edit::writer::{ValueScope, WorkbookModifications, modify_workbook};
+use crate::writer::{ValueScope, WorkbookModifications, modify_workbook};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::io::{Read, Write};

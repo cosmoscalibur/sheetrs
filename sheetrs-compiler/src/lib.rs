@@ -14,6 +14,7 @@
 pub mod cellstore;
 pub mod compile;
 pub mod config;
+mod error;
 pub mod formula;
 pub mod graph;
 #[cfg(feature = "load")]
@@ -24,12 +25,6 @@ pub mod recalc;
 pub mod settings;
 pub mod verify;
 
-// The engine's modules under their usual paths, so `sheetrs_compiler::ir::Ns`
-// and `crate::value::Value` keep working.
-pub use sheetrs_engine::{
-    Overrides, Program, Value, addr, bundle, cli, coerce, dates, engine, fastmap, format,
-    functions, ir, matching, options, run, value,
-};
-
 pub use compile::{BindingSpec, Features, Report, Spec, compile};
+pub use error::{Error, Result};
 pub use model::Model;

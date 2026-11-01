@@ -22,6 +22,7 @@ path = "src/bin/sheetrs-rt.rs"
 sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
+thiserror.workspace = true
 bincode = "1.3"
 fancy-regex.workspace = true
 icu_collator = "2"

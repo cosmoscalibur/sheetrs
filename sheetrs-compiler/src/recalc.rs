@@ -1,6 +1,7 @@
 //! A full recalculation by `LibreOffice`, to compare the engine with: the values a
 //! file caches may come from another version or from a calculation that never ran.
 
+use crate::error::{Error, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -11,9 +12,9 @@ use std::process::Command;
 /// # Errors
 ///
 /// When `LibreOffice` is not available, fails, or does not write the recalculated file.
-pub fn recalculate(file: &Path, locale: &str, dir: &Path) -> Result<PathBuf, String> {
+pub fn recalculate(file: &Path, locale: &str, dir: &Path) -> Result<PathBuf> {
     let profile = dir.join("profile");
-    std::fs::create_dir_all(profile.join("user")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(profile.join("user")).map_err(|e| Error::io(&profile, e))?;
     let setting = |path: &str, name: &str, value: &str| {
         format!(
             "<item oor:path=\"{path}\"><prop oor:name=\"{name}\" oor:op=\"fuse\"><value>{value}</value></prop></item>"
@@ -34,11 +35,12 @@ pub fn recalculate(file: &Path, locale: &str, dir: &Path) -> Result<PathBuf, Str
             "0"
         ),
     );
-    std::fs::write(profile.join("user").join("registrymodifications.xcu"), xcu)
-        .map_err(|e| e.to_string())?;
+    let registry = profile.join("user").join("registrymodifications.xcu");
+    std::fs::write(&registry, xcu).map_err(|e| Error::io(registry, e))?;
     let soffice = std::env::var("SOFFICE").unwrap_or_else(|_| "soffice".into());
-    let copy = dir.join(file.file_name().ok_or("no file name")?);
-    std::fs::copy(file, &copy).map_err(|e| format!("{}: {e}", file.display()))?;
+    let no_name = || Error::Recalculation(format!("{} has no file name", file.display()));
+    let copy = dir.join(file.file_name().ok_or_else(no_name)?);
+    std::fs::copy(file, &copy).map_err(|e| Error::io(file, e))?;
     let out = Command::new(&soffice)
         .arg(format!(
             "-env:UserInstallation=file://{}",
@@ -48,18 +50,18 @@ pub fn recalculate(file: &Path, locale: &str, dir: &Path) -> Result<PathBuf, Str
         .arg(dir.join("out"))
         .arg(&copy)
         .output()
-        .map_err(|e| format!("cannot run `{soffice}` (set SOFFICE): {e}"))?;
+        .map_err(|e| Error::Recalculation(format!("cannot run `{soffice}` (set SOFFICE): {e}")))?;
     if !out.status.success() {
-        return Err(format!(
+        return Err(Error::Recalculation(format!(
             "{soffice} failed: {}",
             String::from_utf8_lossy(&out.stderr)
-        ));
+        )));
     }
     let ods = dir
         .join("out")
-        .join(copy.file_stem().ok_or("no file name")?)
+        .join(copy.file_stem().ok_or_else(no_name)?)
         .with_extension("ods");
     ods.exists()
         .then_some(ods)
-        .ok_or_else(|| "LibreOffice produced no ODS".to_string())
+        .ok_or_else(|| Error::Recalculation("LibreOffice produced no ODS".into()))
 }

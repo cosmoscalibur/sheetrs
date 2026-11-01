@@ -2,7 +2,8 @@
 //! same results through the same engine.
 
 use serde_json::Value as Json;
-use sheetrs_compiler::{Overrides, Spec, compile, loader};
+use sheetrs_compiler::{Spec, compile, loader};
+use sheetrs_engine::Overrides;
 use std::path::Path;
 
 fn results(file: &str) -> Json {
@@ -13,7 +14,7 @@ fn results(file: &str) -> Json {
     } else {
         manifest.join("tests/assets").join(file)
     };
-    let mut model = loader::load(&path).unwrap();
+    let mut model = loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap()).unwrap();
     // LibreOffice reads a bare `#REF!` of an XLSX formula as an unknown name; that import
     // quirk is not what this test compares (the readers), so both are read alike.
     model.from_xlsx = false;
@@ -72,7 +73,7 @@ fn reading_straight_into_the_model_matches_reading_the_workbook() {
     for path in files {
         // A workbook that cannot be read (a macro file, a damaged one) fails the same way twice.
         let wb = sheetrs_core::reader::read_workbook(&path);
-        let direct = loader::load(&path);
+        let direct = loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap());
         let (Ok(wb), Ok(direct)) = (wb, direct) else {
             continue;
         };

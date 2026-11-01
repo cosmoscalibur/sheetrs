@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use sheetrs_core::reader::Source;
-use sheetrs_edit::{ColumnRange, EditPlan, Operation, RowRange, writer};
+use sheetrs_edit::{ColumnRange, Editor, RowRange, ValueScope};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -26,7 +26,7 @@ struct Cli {
     /// Replace formulas by their cached values in a sheet (`Sheet`), columns
     /// (`Sheet!B:D`) or rows (`Sheet!3:10`)
     #[arg(long, num_args = 1.., value_name = "SCOPE")]
-    convert_to_values: Vec<writer::ValueScope>,
+    convert_to_values: Vec<ValueScope>,
 
     /// Delete rows (`Sheet!3:10`, or `Sheet!3` for one), in the rows of the input file. The
     /// references to them become `#REF!` and the ranges around them shrink, as in `LibreOffice`
@@ -95,22 +95,25 @@ fn main() -> Result<()> {
     }
     let output_path = cli.output.unwrap();
 
-    // The flags of a command are all written against the input file, in no order: `against_input`
-    // makes of them a plan of one pass, however many flags and in whatever order they came.
-    let plan = EditPlan::against_input([
-        Operation::RemoveSheets(cli.remove_sheets),
-        Operation::RemoveNamedRanges(cli.remove_ranges),
-        Operation::ConvertToValues(cli.convert_to_values),
-        Operation::DeleteRows(cli.delete_rows),
-        Operation::DeleteColumns(cli.delete_cols),
-    ]);
+    // The flags of a command are all written against the input file, in no order. Applied in this
+    // order (conversions, rows, columns, names, sheets) they are one pass, however many flags
+    // there are and in whatever order they came.
+    let source = Source::from_file(&cli.file)?;
+    let mut editor = Editor::new(&source);
+    editor
+        .convert_to_values(cli.convert_to_values)
+        .delete_rows(cli.delete_rows)
+        .delete_columns(cli.delete_cols)
+        .remove_named_ranges(cli.remove_ranges)
+        .remove_sheets(cli.remove_sheets);
     if cli.dry_run {
         println!("[DRY RUN] Operations on '{}':", cli.file.display());
-        print!("{}", plan.explain()?);
+        print!("{}", editor.explain()?);
         println!("\nOutput would be: {}", output_path.display());
     } else {
         println!("Modifying '{}'...", cli.file.display());
-        plan.execute(&Source::from_file(&cli.file)?, &output_path)
+        editor
+            .save(&output_path)
             .with_context(|| "Failed to modify workbook")?;
 
         println!("✓ Successfully modified workbook");

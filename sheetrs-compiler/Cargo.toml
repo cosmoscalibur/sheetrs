@@ -33,6 +33,7 @@ sheetrs-core = { path = "../sheetrs-core", version = "0.4.0", default-features =
 sha2 = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
+thiserror.workspace = true
 toml.workspace = true
 pprof = { version = "0.14", optional = true, default-features = false, features = ["flamegraph"] }
 

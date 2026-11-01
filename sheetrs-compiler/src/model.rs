@@ -2,10 +2,10 @@
 //! the compiler consumes. Formulas stay as text until compilation, once all
 //! sheet and defined names are known.
 
-use crate::addr::{self, CellRef};
 use crate::cellstore::CellStore;
-use crate::options::{DateSystem, Iteration, Search};
-use crate::value::Value;
+use sheetrs_engine::addr::{self, CellRef};
+use sheetrs_engine::options::{DateSystem, Iteration, Search};
+use sheetrs_engine::value::Value;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -134,7 +134,7 @@ impl Model {
     pub fn sheet_id(&self, name: &str) -> Option<u16> {
         self.sheets
             .iter()
-            .position(|s| crate::addr::same_name(s, name))
+            .position(|s| sheetrs_engine::addr::same_name(s, name))
             .map(|i| i as u16)
     }
 }

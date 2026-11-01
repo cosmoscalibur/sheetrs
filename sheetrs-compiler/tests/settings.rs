@@ -2,17 +2,16 @@
 //! two-digit-year window, document language.
 
 use serde_json::{Value as Json, json};
-use sheetrs_compiler::options::{Iteration, SearchMode};
-use sheetrs_compiler::{BindingSpec, Overrides, Spec, compile, loader};
+use sheetrs_compiler::{BindingSpec, Spec, compile, loader};
+use sheetrs_engine::Overrides;
+use sheetrs_engine::options::{Iteration, SearchMode};
 use std::path::Path;
 
 fn load(name: &str) -> sheetrs_compiler::Model {
-    loader::load(
-        &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/assets")
-            .join(name),
-    )
-    .unwrap()
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/assets")
+        .join(name);
+    loader::load(&sheetrs_core::reader::Source::from_file(path).unwrap()).unwrap()
 }
 
 fn loop_values(model: &sheetrs_compiler::Model, spec: Spec) -> Vec<Json> {
@@ -58,7 +57,7 @@ fn iteration_off_in_the_document_means_circular_errors() {
 
 #[test]
 fn file_defined_settings_cannot_be_overridden() {
-    use sheetrs_compiler::options::{DateSystem, Search};
+    use sheetrs_engine::options::{DateSystem, Search};
     let on = load("circular_on.ods");
     let cases: Vec<(Spec, &str)> = vec![
         (
@@ -96,7 +95,7 @@ fn file_defined_settings_cannot_be_overridden() {
     for (spec, what) in cases {
         let e = compile(&on, &spec).unwrap_err();
         assert!(
-            e.0.contains(what) && e.0.contains("defined by the document"),
+            e.to_string().contains(what) && e.to_string().contains("defined by the document"),
             "{e}"
         );
     }
@@ -150,7 +149,7 @@ fn document_language_is_information_only() {
     );
     // The locale (regional settings) is what decides: es → January 3rd.
     let es = Spec {
-        locale: Some(sheetrs_compiler::options::Locale::es_es()),
+        locale: Some(sheetrs_engine::options::Locale::es_es()),
         ..Spec::default()
     };
     let (v, diags) = eval(es);

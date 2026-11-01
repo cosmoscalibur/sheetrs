@@ -1,9 +1,12 @@
 //! `sheetc`: build, run and inspect spreadsheet programs.
 
-use sheetrs_compiler::cli::{self, Args, parse_overrides};
 use sheetrs_compiler::config::{self, Config};
 use sheetrs_compiler::locale::LocaleOverride;
-use sheetrs_compiler::{Model, Program, Spec, bundle, compile, loader};
+use sheetrs_compiler::{Model, Spec, compile, loader};
+use sheetrs_core::reader::Source;
+use sheetrs_engine::Program;
+use sheetrs_engine::bundle;
+use sheetrs_engine::cli::{self, Args, parse_overrides};
 use std::path::{Path, PathBuf};
 
 const HELP: &str = "\
@@ -134,8 +137,26 @@ impl From<String> for Fail {
     }
 }
 
+impl From<sheetrs_compiler::Error> for Fail {
+    fn from(e: sheetrs_compiler::Error) -> Self {
+        Self::Run(e.to_string())
+    }
+}
+
+/// A wrong command line is a usage error (exit 2); the rest failed while running.
+impl From<sheetrs_engine::Error> for Fail {
+    fn from(e: sheetrs_engine::Error) -> Self {
+        match e {
+            sheetrs_engine::Error::Usage(message) => Self::Usage(message),
+            other => Self::Run(other.to_string()),
+        }
+    }
+}
+
 fn load_model(path: &str) -> Result<Model, Fail> {
-    loader::load(Path::new(path)).map_err(Fail::Run)
+    Ok(loader::load(
+        &Source::from_file(path).map_err(|e| Fail::Run(e.to_string()))?,
+    )?)
 }
 
 /// Command-line configuration over the file's: `--config`, or `sheetc.toml`
@@ -181,10 +202,10 @@ fn spec_for(
         .map(PathBuf::from)
         .or_else(|| config::discover(Path::new(file)));
     let base = match path {
-        Some(p) => config::load(&p).map_err(Fail::Run)?,
+        Some(p) => config::load(&p)?,
         None => Config::default(),
     };
-    cli.over(base).spec(model).map_err(|e| Fail::Run(e.0))
+    Ok(cli.over(base).spec(model)?)
 }
 
 fn print_report(r: &sheetrs_compiler::Report, p: &Program) {
@@ -245,8 +266,8 @@ fn build(mut args: Args) -> Result<i32, Fail> {
     stage(&t0, "read workbook");
     let spec = spec_for(cli, explicit, file, &model)?;
     let t1 = std::time::Instant::now();
-    let (mut program, report) = compile(&model, &spec).map_err(|e| Fail::Run(e.0))?;
-    program.build.built_at = sheetrs_compiler::compile::build_time().map_err(Fail::Run)?;
+    let (mut program, report) = compile(&model, &spec)?;
+    program.build.built_at = sheetrs_compiler::compile::build_time()?;
     stage(&t1, "compile (total)");
     print_report(&report, &program);
     if let Some(p) = emit {
@@ -266,7 +287,7 @@ fn build(mut args: Args) -> Result<i32, Fail> {
         if rt.exists() { rt } else { me }
     };
     let t2 = std::time::Instant::now();
-    bundle::write_executable(&mut program, &runtime, &out).map_err(Fail::Run)?;
+    bundle::write_executable(&mut program, &runtime, &out)?;
     stage(&t2, "write executable");
     eprintln!("wrote {}", out.display());
     // The process ends here: freeing millions of cells one by one would only delay it.
@@ -303,8 +324,8 @@ fn run(mut args: Args) -> Result<i32, Fail> {
     } else {
         let model = load_model(file)?;
         let spec = spec_for(cli, explicit, file, &model)?;
-        let (mut p, report) = compile(&model, &spec).map_err(|e| Fail::Run(e.0))?;
-        p.build.built_at = sheetrs_compiler::compile::build_time().map_err(Fail::Run)?;
+        let (mut p, report) = compile(&model, &spec)?;
+        p.build.built_at = sheetrs_compiler::compile::build_time()?;
         print_report(&report, &p);
         p
     };
@@ -329,7 +350,9 @@ fn calc(mut args: Args) -> Result<i32, Fail> {
             sheetrs_compiler::locale::from_tag(
                 tag.as_deref().unwrap_or("en"),
                 &LocaleOverride::default(),
-            )?
+            )
+            // A locale given on the command line that is not valid is a usage error.
+            .map_err(|e| Fail::Usage(e.to_string()))?
             .0,
         ),
         now: o.now,
@@ -337,17 +360,15 @@ fn calc(mut args: Args) -> Result<i32, Fail> {
         host: o.host.clone(),
         ..Spec::default()
     };
-    let (program, report) = compile(&m, &spec).map_err(|e| Fail::Run(e.0))?;
+    let (program, report) = compile(&m, &spec)?;
     for d in &program.diagnostics {
         eprintln!("diagnostic: {d}");
     }
     let _ = report;
-    let out = program
-        .execute(
-            &serde_json::Value::Null,
-            &sheetrs_compiler::Overrides::default(),
-        )
-        .map_err(|e| Fail::Run(e.0))?;
+    let out = program.execute(
+        &serde_json::Value::Null,
+        &sheetrs_engine::Overrides::default(),
+    )?;
     println!("{}", out["Sheet1!A1"]);
     Ok(0)
 }
@@ -376,7 +397,7 @@ fn inspect(mut args: Args) -> Result<i32, Fail> {
             &model,
         )?
     };
-    let (program, report) = compile(&model, &spec).map_err(|e| Fail::Run(e.0))?;
+    let (program, report) = compile(&model, &spec)?;
     println!("sheets: {}", model.sheets.join(", "));
     println!("date system: {:?}", model.date_system);
     println!(
@@ -465,20 +486,16 @@ fn verify(mut args: Args) -> Result<i32, Fail> {
         .map(PathBuf::from)
         .or_else(|| config::discover(Path::new(file)));
     let base = match path {
-        Some(p) => config::load(&p).map_err(Fail::Run)?,
+        Some(p) => config::load(&p)?,
         None => Config::default(),
     };
-    let spec = cli
-        .over(base)
-        .base_spec(&model)
-        .map_err(|e| Fail::Run(e.0))?;
+    let spec = cli.over(base).base_spec(&model)?;
     // `--recalc`: the values to compare with come from a LibreOffice recalculation
     // of the file, under the locale the program is built for.
     let reference = if recalc {
         let tag = spec.locale.as_ref().map_or("en-US", |l| l.tag.as_str());
         let dir = std::env::temp_dir().join(format!("sheetc-recalc-{}", std::process::id()));
-        let ods =
-            sheetrs_compiler::recalc::recalculate(Path::new(file), tag, &dir).map_err(Fail::Run)?;
+        let ods = sheetrs_compiler::recalc::recalculate(Path::new(file), tag, &dir)?;
         let loaded = load_model(&ods.to_string_lossy());
         let _ = std::fs::remove_dir_all(&dir);
         Some(loaded?)
@@ -495,8 +512,7 @@ fn verify(mut args: Args) -> Result<i32, Fail> {
             abs_tolerance,
         },
         reference.as_ref(),
-    )
-    .map_err(|e| Fail::Run(e.0))?;
+    )?;
     println!(
         "{:<28} {:>9} {:>9} {:>9} {:>9} {:>9}",
         "sheet", "formulas", "match", "differ", "volatile", "unparsed"

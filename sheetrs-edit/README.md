@@ -69,18 +69,28 @@ different sheets do not depend on each other, because a reference moves only wit
 columns of the sheet it names, so the order between sheets is free. That holds because references
 across sheets are not supported (below). `--dry-run` prints the passes.
 
-**As a library** (`sheetrs_edit::EditPlan`), operations are a *sequence*, and each one addresses the
-workbook as the previous ones left it, as when they are run one at a time: after `delete_rows` of
-row 3, row 3 is what was row 4. `EditPlan::passes` plans the sequence into the fewest passes over
-the file that give what running them one at a time gives; operations that cannot share a pass
-(a conversion after another change, which must read what that change dropped; two deletions that
-touch, which the writer would see as one band) start a new one. The flags above are the
-declarative case, `EditPlan::against_input`, which is always one pass. Tests run generated
+**As a library** (`sheetrs_edit::Editor`), an editor is made for a `Source` and collects changes in
+order, and each one addresses the workbook as the previous ones left it, as when they are run one
+at a time: after `delete_rows` of row 3, row 3 is what was row 4. `save(output)` plans the sequence
+into the fewest passes over the file that give what running them one at a time gives; changes that
+cannot share a pass (a conversion after another change, which must read what that change dropped;
+two deletions that touch, which the writer would see as one band) start a new one, and
+`explain()` says what `save` will do. The flags above are the same changes applied in a fixed order
+(conversions, rows, columns, names, sheets), which is always one pass whatever order the flags
+came in. The planner and the writer are not part of the API: the editor is. Tests run generated
 sequences both ways, in XLSX and ODS, and compare the workbooks.
 
-**Recalculation is decided by the plan, with no option for it.** Deleting rows or columns, or
+```rust
+let source = Source::from_file("in.xlsx")?;
+Editor::new(&source)
+    .delete_rows(["Data!3:10".parse()?])
+    .remove_sheets(["Scratch"])
+    .save("out.xlsx")?;
+```
+
+**Recalculation is decided by the editor, with no option for it.** Deleting rows or columns, or
 removing sheets or names, leaves the cached results of formulas that read what went (their text
-may not change, so their value is stale). A plan with one of them marks the output to be
+may not change, so their value is stale). An editor with one of them marks the output to be
 recalculated when it is opened, as the last thing it does, after every operation (an ODS applies
 the mark by dropping every cached result, which in the middle of a sequence would change what a
 later conversion finds). A plan that only converts formulas to values changes no other result and

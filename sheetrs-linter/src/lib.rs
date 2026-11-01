@@ -17,9 +17,8 @@ pub mod report;
 pub mod rules;
 pub mod violation;
 
-use sheetrs_core::reader;
+use sheetrs_core::reader::{self, Source};
 use std::collections::HashSet;
-use std::path::Path;
 
 pub use config::LinterConfig;
 pub use error::{Error, Result};
@@ -71,34 +70,17 @@ impl Linter {
         }
     }
 
-    /// Lint a spreadsheet file and return violations
+    /// Lints the workbook `source` refers to.
     ///
     /// # Errors
     ///
     /// When the workbook cannot be read.
-    pub fn lint_file(&self, path: impl AsRef<Path>) -> sheetrs_core::Result<Vec<Violation>> {
-        let workbook = reader::read_workbook(path)?;
-        Ok(self.lint_workbook(&workbook))
+    pub fn lint(&self, source: &Source) -> sheetrs_core::Result<Vec<Violation>> {
+        Ok(self.lint_workbook(&source.read_workbook()?))
     }
 
-    /// Lint a spreadsheet file and return both violations and workbook
-    ///
-    /// This is useful when the consumer needs to resolve sheet indices
-    /// to sheet names for display purposes.
-    ///
-    /// # Errors
-    ///
-    /// When the workbook cannot be read.
-    pub fn lint_file_with_workbook(
-        &self,
-        path: impl AsRef<Path>,
-    ) -> sheetrs_core::Result<(Vec<Violation>, reader::Workbook)> {
-        let workbook = reader::read_workbook(path)?;
-        let violations = self.lint_workbook(&workbook);
-        Ok((violations, workbook))
-    }
-
-    /// Lint a workbook and return violations
+    /// Lints a workbook already read, for a caller that needs the model too (to name the sheets of
+    /// the violations, for example) or that read it from somewhere a [`Source`] cannot describe.
     #[must_use]
     pub fn lint_workbook(&self, workbook: &reader::Workbook) -> Vec<Violation> {
         let mut violations = Vec::new();
@@ -146,5 +128,33 @@ impl Linter {
 impl Default for Linter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sheetrs_core::reader::Format;
+
+    const XLSX: &[u8] = include_bytes!("../../tests/minimal_test.xlsx");
+
+    #[test]
+    fn lint_takes_a_source_and_gives_what_linting_its_workbook_gives() {
+        let source = Source::from_bytes(XLSX, Format::Xlsx);
+        let linter = Linter::new();
+        let workbook = source.read_workbook().unwrap();
+        assert_eq!(
+            linter.lint(&source).unwrap(),
+            linter.lint_workbook(&workbook)
+        );
+    }
+
+    #[test]
+    fn lint_reports_a_workbook_that_cannot_be_read_with_the_core_error() {
+        let missing = Source::from_file("does-not-exist.xlsx").unwrap();
+        assert!(matches!(
+            Linter::new().lint(&missing),
+            Err(sheetrs_core::Error::Open { .. })
+        ));
     }
 }

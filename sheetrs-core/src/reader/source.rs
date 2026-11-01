@@ -6,7 +6,10 @@
 //! hand to several tools. It is not a navigable model of the workbook: that is
 //! [`Workbook`], which only the tools that need every cell ask for.
 
-use super::{Workbook, read_workbook, read_workbook_from_reader};
+use super::{
+    CellSink, Workbook, read_workbook, read_workbook_from_reader, read_workbook_from_reader_into,
+    read_workbook_into,
+};
 use crate::error::{Error, Result};
 use std::fmt;
 use std::io::Cursor;
@@ -129,6 +132,21 @@ impl Source {
             Self::File { path, .. } => read_workbook(path),
             Self::Bytes { data, format } => {
                 read_workbook_from_reader(Cursor::new(data), Some(format.extension()))
+            }
+        }
+    }
+
+    /// Streams the cells of the workbook into `sink` as they are read, without keeping them: the
+    /// model it returns holds what is not a cell (sheet names, defined names, sizes).
+    ///
+    /// # Errors
+    ///
+    /// As [`read_workbook`](Self::read_workbook).
+    pub fn read_workbook_into(&self, sink: &mut dyn CellSink) -> Result<Workbook> {
+        match self {
+            Self::File { path, .. } => read_workbook_into(path, sink),
+            Self::Bytes { data, format } => {
+                read_workbook_from_reader_into(Cursor::new(data), Some(format.extension()), sink)
             }
         }
     }

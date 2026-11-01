@@ -1927,6 +1927,7 @@ dependencies = [
  "sheetrs-engine",
  "sheetrs-formula",
  "tempfile",
+ "thiserror 2.0.21",
  "toml",
  "zip",
 ]
@@ -1975,6 +1976,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sheetrs-formula",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

@@ -3,9 +3,9 @@
 //! The operations are written as a sequence, and each one addresses the workbook **as the previous
 //! ones left it**: after `delete_rows("S!3")`, row 3 is what was row 4. That is what running them
 //! one at a time gives, and it is the meaning of a plan. Running them one at a time costs a read
-//! and a write of the file each. [`EditPlan::passes`] resolves the sequence into the fewest passes
-//! that give the same workbook, and [`EditPlan::execute`] runs those. Nothing is read until
-//! `execute`: a plan is built, inspected ([`EditPlan::explain`]) and run, once or several times.
+//! and a write of the file each. [`Plan::passes`] resolves the sequence into the fewest passes
+//! that give the same workbook, and [`Plan::execute`] runs those. Nothing is read until
+//! `execute`: a plan is built, inspected ([`Plan::explain`]) and run, once or several times.
 //!
 //! One pass applies what its operations ask in the order the writer does, all against the input
 //! of that pass: formulas converted to values first, then, in each sheet, the rows and then the
@@ -42,7 +42,7 @@
 
 use crate::error::{Context, Error, Result};
 use crate::writer::structure::Bands;
-use crate::writer::{self, ColumnRange, RowRange, ValueScope, ValueTarget, WorkbookModifications};
+use crate::writer::{self, ColumnRange, RowRange, ValueScope, WorkbookModifications};
 use sheetrs_core::reader::Source;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -51,8 +51,7 @@ use std::path::Path;
 /// One operation on a workbook, on the workbook as the operations before it leave it. The
 /// ranges of one operation are simultaneous: `DeleteRows(["S!3", "S!4"])` deletes two rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Operation {
+pub(crate) enum Operation {
     /// Remove the sheets of these names.
     RemoveSheets(Vec<String>),
     /// Remove the defined names (or database ranges).
@@ -100,25 +99,25 @@ impl Operation {
 
 /// A sequence of operations on one workbook.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct EditPlan {
+pub(crate) struct Plan {
     operations: Vec<Operation>,
 }
 
-impl EditPlan {
+impl Plan {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Adds an operation after the ones there are. An operation with nothing in it is not added.
-    pub fn push(&mut self, operation: Operation) -> &mut Self {
+    pub(crate) fn push(&mut self, operation: Operation) -> &mut Self {
         if !operation.is_empty() {
             self.operations.push(operation);
         }
         self
     }
 
-    pub fn remove_sheets(
+    pub(crate) fn remove_sheets(
         &mut self,
         names: impl IntoIterator<Item = impl Into<String>>,
     ) -> &mut Self {
@@ -127,7 +126,7 @@ impl EditPlan {
         ))
     }
 
-    pub fn remove_named_ranges(
+    pub(crate) fn remove_named_ranges(
         &mut self,
         names: impl IntoIterator<Item = impl Into<String>>,
     ) -> &mut Self {
@@ -136,15 +135,21 @@ impl EditPlan {
         ))
     }
 
-    pub fn convert_to_values(&mut self, scopes: impl IntoIterator<Item = ValueScope>) -> &mut Self {
+    pub(crate) fn convert_to_values(
+        &mut self,
+        scopes: impl IntoIterator<Item = ValueScope>,
+    ) -> &mut Self {
         self.push(Operation::ConvertToValues(scopes.into_iter().collect()))
     }
 
-    pub fn delete_rows(&mut self, rows: impl IntoIterator<Item = RowRange>) -> &mut Self {
+    pub(crate) fn delete_rows(&mut self, rows: impl IntoIterator<Item = RowRange>) -> &mut Self {
         self.push(Operation::DeleteRows(rows.into_iter().collect()))
     }
 
-    pub fn delete_columns(&mut self, columns: impl IntoIterator<Item = ColumnRange>) -> &mut Self {
+    pub(crate) fn delete_columns(
+        &mut self,
+        columns: impl IntoIterator<Item = ColumnRange>,
+    ) -> &mut Self {
         self.push(Operation::DeleteColumns(columns.into_iter().collect()))
     }
 
@@ -152,61 +157,21 @@ impl EditPlan {
     /// it does when an operation leaves cached results stale (rows, columns, sheets or names
     /// removed), and it does not when the plan only converts formulas to values.
     #[must_use]
-    pub fn marks_recalculation(&self) -> bool {
+    pub(crate) fn marks_recalculation(&self) -> bool {
         self.operations
             .iter()
             .any(|operation| !matches!(operation, Operation::ConvertToValues(_)))
     }
 
-    /// The plan for operations that are all written against the **input** workbook, in any order,
-    /// as a command line gives them: they are grouped by kind into the order of a pass, so the
-    /// plan has one pass whatever the order they came in, and the same operations give the same
-    /// plan. This is the declarative counterpart of the sequence: the same operations given as a
-    /// sequence would need their positions translated by whoever wrote them.
-    pub fn against_input(operations: impl IntoIterator<Item = Operation>) -> Self {
-        fn unique<T: PartialEq>(into: &mut Vec<T>, from: Vec<T>) {
-            for item in from {
-                if !into.contains(&item) {
-                    into.push(item);
-                }
-            }
-        }
-        let (mut converts, mut rows, mut columns) = (Vec::new(), Vec::new(), Vec::new());
-        let (mut names, mut sheets) = (Vec::new(), Vec::new());
-        for operation in operations {
-            match operation {
-                Operation::ConvertToValues(scopes) => unique(&mut converts, scopes),
-                Operation::DeleteRows(ranges) => unique(&mut rows, ranges),
-                Operation::DeleteColumns(ranges) => unique(&mut columns, ranges),
-                Operation::RemoveNamedRanges(n) => names.extend(n),
-                Operation::RemoveSheets(n) => sheets.extend(n),
-            }
-        }
-        names.sort();
-        names.dedup();
-        sheets.sort();
-        sheets.dedup();
-        converts.sort_by_key(|scope| (scope.sheet.clone(), target_key(scope.target)));
-        rows.sort();
-        columns.sort();
-        let mut plan = Self::new();
-        plan.convert_to_values(converts)
-            .delete_rows(rows)
-            .delete_columns(columns)
-            .remove_named_ranges(names)
-            .remove_sheets(sheets);
-        plan
-    }
-
     /// The operations as they were written.
-    #[must_use]
-    pub fn operations(&self) -> &[Operation] {
+    #[cfg(test)]
+    pub(crate) fn operations(&self) -> &[Operation] {
         &self.operations
     }
 
     /// Whether there is nothing to do.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.operations.is_empty()
     }
 
@@ -218,7 +183,7 @@ impl EditPlan {
     /// # Errors
     ///
     /// When an operation addresses a sheet that an earlier one removed.
-    pub fn passes(&self) -> Result<Vec<Vec<Operation>>> {
+    pub(crate) fn passes(&self) -> Result<Vec<Vec<Operation>>> {
         let mut passes = Vec::new();
         let mut current = Pass::default();
         let mut removed: BTreeSet<String> = BTreeSet::new();
@@ -250,7 +215,7 @@ impl EditPlan {
     /// # Errors
     ///
     /// As [`passes`](Self::passes).
-    pub fn explain(&self) -> Result<String> {
+    pub(crate) fn explain(&self) -> Result<String> {
         use std::fmt::Write as _;
         let passes = self.passes()?;
         let mut out = String::new();
@@ -277,7 +242,7 @@ impl EditPlan {
     /// When the plan is empty or cannot be planned ([`passes`](Self::passes)), when a file cannot
     /// be read or written, or when a pass fails (a sheet that does not exist, a formula with a 3D
     /// reference, a change the writer cannot make faithfully).
-    pub fn execute(&self, input: &Source, output: impl AsRef<Path>) -> Result<()> {
+    pub(crate) fn execute(&self, input: &Source, output: impl AsRef<Path>) -> Result<()> {
         if self.is_empty() {
             return Err(Error::EmptyPlan);
         }
@@ -310,55 +275,6 @@ impl EditPlan {
             current = target;
         }
         Ok(())
-    }
-}
-
-impl Extend<Operation> for EditPlan {
-    fn extend<T: IntoIterator<Item = Operation>>(&mut self, operations: T) {
-        for operation in operations {
-            self.push(operation);
-        }
-    }
-}
-
-impl FromIterator<Operation> for EditPlan {
-    fn from_iter<T: IntoIterator<Item = Operation>>(operations: T) -> Self {
-        let mut plan = Self::new();
-        plan.extend(operations);
-        plan
-    }
-}
-
-impl IntoIterator for EditPlan {
-    type Item = Operation;
-    type IntoIter = std::vec::IntoIter<Operation>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.operations.into_iter()
-    }
-}
-
-impl EditPlan {
-    /// The operations in order.
-    pub fn iter(&self) -> std::slice::Iter<'_, Operation> {
-        self.operations.iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a EditPlan {
-    type Item = &'a Operation;
-    type IntoIter = std::slice::Iter<'a, Operation>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-fn target_key(target: ValueTarget) -> (u8, u32, u32) {
-    match target {
-        ValueTarget::Sheet => (0, 0, 0),
-        ValueTarget::Columns(first, last) => (1, first, last),
-        ValueTarget::Rows(first, last) => (2, first, last),
     }
 }
 
@@ -515,7 +431,7 @@ impl Pass {
                 })
                 .collect()
         };
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.convert_to_values(self.converts)
             .delete_rows(
                 bands(self.rows)
@@ -577,7 +493,7 @@ mod tests {
 
     #[test]
     fn an_operation_with_nothing_in_it_is_not_added() {
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.remove_sheets(Vec::<String>::new())
             .convert_to_values([])
             .delete_rows([])
@@ -586,24 +502,9 @@ mod tests {
     }
 
     #[test]
-    fn a_plan_is_collected_and_iterated_like_a_collection() {
-        let plan: EditPlan = [
-            Operation::RemoveSheets(vec!["A".into()]),
-            Operation::DeleteRows(rows(&["T!3"])),
-        ]
-        .into_iter()
-        .collect();
-        let mut extended = EditPlan::default();
-        extended.extend(plan.clone());
-        assert_eq!(extended, plan);
-        assert_eq!((&plan).into_iter().count(), 2);
-        assert_eq!(plan.into_iter().count(), 2);
-    }
-
-    #[test]
     fn later_positions_are_those_the_earlier_deletions_left() {
         // After row 3 goes, row 4 of the input is the new row 3, and 6 is the new 5.
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.delete_rows(rows(&["T!3"]))
             .delete_rows(rows(&["T!4"]))
             .delete_rows(rows(&["T!10"]));
@@ -616,21 +517,21 @@ mod tests {
     #[test]
     fn deletions_that_touch_are_not_one_band_to_the_writer_so_they_do_not_share_a_pass() {
         // Row 3 twice are the input's rows 3 and 4, which touch: one operation at a time.
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.delete_rows(rows(&["T!3"])).delete_rows(rows(&["T!3"]));
         assert_eq!(
             described(&plan.passes().unwrap()),
             [["delete rows T!3:3"], ["delete rows T!3:3"]]
         );
         // Written together they are one deletion.
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.delete_rows(rows(&["T!3", "T!4"]));
         assert_eq!(described(&plan.passes().unwrap()), [["delete rows T!3:4"]]);
     }
 
     #[test]
     fn deletions_names_and_sheets_share_a_pass_and_a_conversion_before_them_too() {
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.convert_to_values(scopes(&["F"]))
             .delete_columns(columns(&["T!D"]))
             .delete_rows(rows(&["U!2:3"]))
@@ -650,7 +551,7 @@ mod tests {
 
     #[test]
     fn a_conversion_after_a_change_starts_a_new_pass() {
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.delete_rows(rows(&["T!3"]))
             .convert_to_values(scopes(&["F"]))
             .delete_rows(rows(&["T!1"]));
@@ -666,8 +567,8 @@ mod tests {
 
     #[test]
     fn the_plan_marks_the_output_for_recalculation_when_an_operation_leaves_stale_results() {
-        let marks = |build: &dyn Fn(&mut EditPlan)| {
-            let mut plan = EditPlan::new();
+        let marks = |build: &dyn Fn(&mut Plan)| {
+            let mut plan = Plan::new();
             build(&mut plan);
             plan.marks_recalculation()
         };
@@ -693,7 +594,7 @@ mod tests {
 
     #[test]
     fn the_mark_is_said_last_and_is_never_an_operation_or_a_pass() {
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.convert_to_values(scopes(&["F"]))
             .delete_rows(rows(&["T!3"]));
         assert_eq!(plan.passes().unwrap().len(), 1);
@@ -703,16 +604,16 @@ mod tests {
                 .unwrap()
                 .ends_with("recalculate when opened\n")
         );
-        let mut converting = EditPlan::new();
+        let mut converting = Plan::new();
         converting.convert_to_values(scopes(&["F"]));
         assert!(!converting.explain().unwrap().contains("recalculate"));
         // Nothing to do is not a plan that marks the file.
-        assert!(EditPlan::new().is_empty());
+        assert!(Plan::new().is_empty());
     }
 
     #[test]
     fn an_operation_on_a_removed_sheet_is_an_error_when_planned() {
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.remove_sheets(["U"]).delete_rows(rows(&["U!2"]));
         let error = plan.passes().unwrap_err().to_string();
         assert!(
@@ -722,38 +623,8 @@ mod tests {
     }
 
     #[test]
-    fn against_input_gives_one_pass_whatever_the_order() {
-        let build = |order: &[usize]| {
-            let ops = [
-                Operation::RemoveSheets(vec!["U".into()]),
-                Operation::DeleteRows(rows(&["T!8:9"])),
-                Operation::ConvertToValues(scopes(&["F"])),
-                Operation::DeleteRows(rows(&["T!2", "V!6"])),
-                Operation::DeleteColumns(columns(&["T!D"])),
-                Operation::RemoveNamedRanges(vec!["N".into()]),
-            ];
-            EditPlan::against_input(order.iter().map(|&i| ops[i].clone()))
-        };
-        let one = build(&[0, 1, 2, 3, 4, 5]);
-        let other = build(&[5, 4, 3, 2, 1, 0]);
-        assert_eq!(one, other);
-        let passes = one.passes().unwrap();
-        assert_eq!(passes.len(), 1);
-        assert_eq!(
-            described(&passes),
-            [[
-                "convert formulas to values in F",
-                "delete rows T!2:2, T!8:9, V!6:6",
-                "delete columns T!D:D",
-                "remove named ranges N",
-                "remove sheets U",
-            ]]
-        );
-    }
-
-    #[test]
     fn an_empty_plan_has_no_passes_and_does_not_execute() {
-        let plan = EditPlan::new();
+        let plan = Plan::new();
         assert!(plan.passes().unwrap().is_empty());
         let input = Source::from_file("in.xlsx").unwrap();
         let error = plan.execute(&input, "out.xlsx").unwrap_err();
@@ -762,7 +633,7 @@ mod tests {
 
     #[test]
     fn an_operation_on_a_removed_sheet_names_the_sheet_in_its_error() {
-        let mut plan = EditPlan::new();
+        let mut plan = Plan::new();
         plan.remove_sheets(["U"]).delete_rows(rows(&["U!2"]));
         let error = plan.passes().unwrap_err();
         assert!(
@@ -796,7 +667,7 @@ mod tests {
         ));
         let input = Source::from_file("in.xlsx").unwrap();
         assert!(matches!(
-            EditPlan::new().execute(&input, "out.xlsx"),
+            Plan::new().execute(&input, "out.xlsx"),
             Err(Error::EmptyPlan)
         ));
     }

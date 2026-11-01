@@ -2,25 +2,15 @@
 
 use crate::addr::{CellRef, Rect};
 use crate::engine::{ConstSource, Engine};
+use crate::error::{Error, Result};
 use crate::ir::{Binding, Program, Queryable};
 use crate::options::EngineOptions;
 use crate::value::{ErrorKind, Value};
 use serde_json::{Map, Number, Value as Json};
 use std::sync::Arc;
 
-#[derive(Debug)]
-pub struct RunError(pub String);
-
-impl std::fmt::Display for RunError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for RunError {}
-
-fn fail<T>(msg: impl Into<String>) -> Result<T, RunError> {
-    Err(RunError(msg.into()))
+fn fail<T>(msg: impl Into<String>) -> Result<T> {
+    Err(Error::Request(msg.into()))
 }
 
 /// Run-time choices. Only what a file cannot say and a build did not fix is
@@ -79,7 +69,7 @@ impl Program {
     /// # Errors
     ///
     /// When an input is not one of the program, or the program fails.
-    pub fn execute(&self, inputs: &Json, o: &Overrides) -> Result<Json, RunError> {
+    pub fn execute(&self, inputs: &Json, o: &Overrides) -> Result<Json> {
         self.execute_over(None, inputs, o)
     }
 
@@ -93,7 +83,7 @@ impl Program {
         base: Option<&dyn ConstSource>,
         inputs: &Json,
         o: &Overrides,
-    ) -> Result<Json, RunError> {
+    ) -> Result<Json> {
         let mut engine = self.start(base, inputs, o)?;
         Ok(self.declared_outputs(&mut engine))
     }
@@ -112,7 +102,7 @@ impl Program {
         o: &Overrides,
         ranges: &[String],
         dim: MajorDimension,
-    ) -> Result<Json, RunError> {
+    ) -> Result<Json> {
         self.query_over(None, inputs, o, ranges, dim)
     }
 
@@ -128,7 +118,7 @@ impl Program {
         o: &Overrides,
         ranges: &[String],
         dim: MajorDimension,
-    ) -> Result<Json, RunError> {
+    ) -> Result<Json> {
         let targets = ranges
             .iter()
             .map(|t| self.resolve(base, t))
@@ -166,7 +156,7 @@ impl Program {
     /// # Errors
     ///
     /// When the request is not valid or the program fails.
-    pub fn handle(&self, request: &Json, o: &Overrides) -> Result<Json, RunError> {
+    pub fn handle(&self, request: &Json, o: &Overrides) -> Result<Json> {
         self.handle_over(None, request, o)
     }
 
@@ -180,7 +170,7 @@ impl Program {
         base: Option<&dyn ConstSource>,
         request: &Json,
         o: &Overrides,
-    ) -> Result<Json, RunError> {
+    ) -> Result<Json> {
         let empty = Map::new();
         let req = match request {
             Json::Object(m) => m,
@@ -198,10 +188,9 @@ impl Program {
         let inputs = req.get("inputs").unwrap_or(&Json::Null);
         let dim = match req.get("majorDimension") {
             None => MajorDimension::Rows,
-            Some(j) => j
-                .as_str()
-                .and_then(MajorDimension::parse)
-                .ok_or_else(|| RunError("majorDimension must be \"ROWS\" or \"COLUMNS\"".into()))?,
+            Some(j) => j.as_str().and_then(MajorDimension::parse).ok_or_else(|| {
+                Error::Request("majorDimension must be \"ROWS\" or \"COLUMNS\"".into())
+            })?,
         };
         let ranges: Option<Vec<String>> = match req.get("ranges") {
             None => None,
@@ -209,7 +198,7 @@ impl Program {
                 a.iter()
                     .map(|v| v.as_str().map(str::to_string))
                     .collect::<Option<_>>()
-                    .ok_or_else(|| RunError("`ranges` must be an array of strings".into()))?,
+                    .ok_or_else(|| Error::Request("`ranges` must be an array of strings".into()))?,
             ),
             Some(_) => return fail("`ranges` must be a non-empty array of strings"),
         };
@@ -229,7 +218,7 @@ impl Program {
         base: Option<&'p dyn ConstSource>,
         input: &Json,
         o: &Overrides,
-    ) -> Result<Engine<'p>, RunError> {
+    ) -> Result<Engine<'p>> {
         let opts = self.effective_options(o);
         let mut engine = match base {
             Some(b) => Engine::with_base(self, opts, b),
@@ -272,7 +261,7 @@ impl Program {
     /// Resolve what a caller asked for against what the program can answer: a
     /// declared output's name, a defined name (levels `named` and `any`), or a
     /// range (`Sheet1!B2:C9`, `Sheet1!A:A`; open-ended ones end at the used area).
-    fn resolve(&self, base: Option<&dyn ConstSource>, text: &str) -> Result<Target, RunError> {
+    fn resolve(&self, base: Option<&dyn ConstSource>, text: &str) -> Result<Target> {
         let text = text.trim();
         let same = crate::addr::same_name;
         let names: &[Binding] = match &self.queryable {
@@ -372,7 +361,7 @@ fn matrix(e: &mut Engine, r: &Rect, dim: MajorDimension) -> Json {
     }
 }
 
-fn scalar_in(j: &Json, name: &str) -> Result<Value, RunError> {
+fn scalar_in(j: &Json, name: &str) -> Result<Value> {
     Ok(match j {
         Json::Null => Value::Empty,
         Json::Bool(b) => Value::Bool(*b),
@@ -394,7 +383,7 @@ fn scalar_in(j: &Json, name: &str) -> Result<Value, RunError> {
     })
 }
 
-fn bind_input(b: &Binding, j: &Json) -> Result<Vec<(CellRef, Value)>, RunError> {
+fn bind_input(b: &Binding, j: &Json) -> Result<Vec<(CellRef, Value)>> {
     let r = &b.rect;
     let (rows, cols) = (r.rows() as usize, r.cols() as usize);
     let at = |i: usize, k: usize| CellRef::new(r.sheet, r.r0 + i as u32, r.c0 + k as u32);

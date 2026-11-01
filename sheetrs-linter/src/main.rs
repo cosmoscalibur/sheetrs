@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
+use sheetrs_core::reader::Source;
 use sheetrs_linter::{Linter, LinterConfig, Severity};
 use std::path::PathBuf;
 
@@ -61,9 +62,10 @@ fn main() -> Result<()> {
 
     let linter = Linter::with_config(config);
 
-    let (violations, workbook) = linter
-        .lint_file_with_workbook(&cli.file)
+    let workbook = Source::from_file(&cli.file)
+        .and_then(|source| source.read_workbook())
         .with_context(|| format!("Failed to lint file: {}", cli.file.display()))?;
+    let violations = linter.lint_workbook(&workbook);
 
     // Filter violations if needed
     let violations: Vec<_> = if cli.errors_only {

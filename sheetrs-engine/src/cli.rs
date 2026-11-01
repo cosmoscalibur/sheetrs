@@ -1,5 +1,6 @@
 //! Command-line plumbing shared by the compiler binary and the runtime stub.
 
+use crate::Error;
 use crate::consts::StoredConsts;
 use crate::engine::ConstSource;
 use crate::ir::Program;
@@ -25,7 +26,7 @@ impl Args {
     /// # Errors
     ///
     /// When the flag is present without a value.
-    pub fn value(&mut self, name: &str) -> Result<Option<String>, String> {
+    pub fn value(&mut self, name: &str) -> crate::Result<Option<String>> {
         let eq = format!("{name}=");
         if let Some(i) = self.0.iter().position(|a| a.starts_with(&eq)) {
             return Ok(Some(self.0.remove(i)[eq.len()..].to_string()));
@@ -35,7 +36,7 @@ impl Args {
                 self.0.remove(i);
                 Ok(Some(self.0.remove(i)))
             }
-            Some(_) => Err(format!("{name} needs a value")),
+            Some(_) => Err(Error::Usage(format!("{name} needs a value"))),
             None => Ok(None),
         }
     }
@@ -43,7 +44,7 @@ impl Args {
     /// # Errors
     ///
     /// When a flag is present without a value.
-    pub fn values(&mut self, name: &str) -> Result<Vec<String>, String> {
+    pub fn values(&mut self, name: &str) -> crate::Result<Vec<String>> {
         let mut out = Vec::new();
         while let Some(v) = self.value(name)? {
             out.push(v);
@@ -55,7 +56,7 @@ impl Args {
 /// # Errors
 ///
 /// When `s` is not a date system.
-pub fn parse_date_system(s: &str) -> Result<DateSystem, String> {
+pub fn parse_date_system(s: &str) -> crate::Result<DateSystem> {
     match s {
         "1904" => Ok(DateSystem::NULL_1904),
         "1900" => Ok(DateSystem::NULL_1900),
@@ -68,9 +69,9 @@ pub fn parse_date_system(s: &str) -> Result<DateSystem, String> {
             {
                 return Ok(sys);
             }
-            Err(format!(
+            Err(Error::Usage(format!(
                 "--date-system must be 1899, 1900, 1904 or a null date YYYY-MM-DD, got `{s}`"
-            ))
+            )))
         }
     }
 }
@@ -80,7 +81,7 @@ pub fn parse_date_system(s: &str) -> Result<DateSystem, String> {
 /// # Errors
 ///
 /// When an iteration flag has a value that does not parse.
-pub fn parse_iteration(args: &mut Args) -> Result<Option<Iteration>, String> {
+pub fn parse_iteration(args: &mut Args) -> crate::Result<Option<Iteration>> {
     if args.flag("--iterate") {
         return Ok(Some(Iteration::default()));
     }
@@ -90,12 +91,12 @@ pub fn parse_iteration(args: &mut Args) -> Result<Option<Iteration>, String> {
     let (n, eps) = v.split_once(',').unwrap_or((&v, ""));
     let max_iterations = n
         .parse()
-        .map_err(|_| format!("bad --iterate count `{n}`"))?;
+        .map_err(|_| Error::Usage(format!("bad --iterate count `{n}`")))?;
     let max_change = if eps.is_empty() {
         Iteration::default().max_change
     } else {
         eps.parse()
-            .map_err(|_| format!("bad --iterate epsilon `{eps}`"))?
+            .map_err(|_| Error::Usage(format!("bad --iterate epsilon `{eps}`")))?
     };
     let it = Iteration {
         max_iterations,
@@ -115,7 +116,7 @@ pub struct ModelFlags {
 /// # Errors
 ///
 /// When a flag has no value or a value that does not parse.
-pub fn parse_model_flags(args: &mut Args) -> Result<ModelFlags, String> {
+pub fn parse_model_flags(args: &mut Args) -> crate::Result<ModelFlags> {
     let mut f = ModelFlags::default();
     if let Some(v) = args.value("--date-system")? {
         f.date_system = Some(parse_date_system(&v)?);
@@ -133,17 +134,17 @@ pub const FILE_DEFINED_FLAGS: [&str; 4] =
 /// # Errors
 ///
 /// When a flag has no value or a value that does not parse.
-pub fn parse_overrides(args: &mut Args) -> Result<Overrides, String> {
+pub fn parse_overrides(args: &mut Args) -> crate::Result<Overrides> {
     for f in FILE_DEFINED_FLAGS {
         if args
             .0
             .iter()
             .any(|a| a == f || a.starts_with(&format!("{f}=")))
         {
-            return Err(format!(
+            return Err(Error::Usage(format!(
                 "{f} is defined by the document (date system, iteration and search settings come from the file); \
                  it is not a command-line option here"
-            ));
+            )));
         }
     }
     let mut o = Overrides::default();
@@ -152,19 +153,22 @@ pub fn parse_overrides(args: &mut Args) -> Result<Overrides, String> {
         .iter()
         .any(|a| a == "--locale" || a.starts_with("--locale="))
     {
-        return Err(
+        return Err(Error::Usage(
             "the locale is fixed when the program is built (`--locale` or `[locale]` in the build configuration)"
                 .into(),
-        );
+        ));
     }
     if let Some(v) = args.value("--now")? {
         o.now = Some(
             v.parse()
-                .map_err(|_| format!("bad --now `{v}` (serial number)"))?,
+                .map_err(|_| Error::Usage(format!("bad --now `{v}` (serial number)")))?,
         );
     }
     if let Some(v) = args.value("--seed")? {
-        o.rand_seed = Some(v.parse().map_err(|_| format!("bad --seed `{v}`"))?);
+        o.rand_seed = Some(
+            v.parse()
+                .map_err(|_| Error::Usage(format!("bad --seed `{v}`")))?,
+        );
     }
     o.host = crate::options::Host {
         system: args.value("--system")?,
@@ -176,20 +180,20 @@ pub fn parse_overrides(args: &mut Args) -> Result<Overrides, String> {
     Ok(o)
 }
 
-fn read_input(path: Option<&str>) -> Result<serde_json::Value, String> {
+fn read_input(path: Option<&str>) -> crate::Result<serde_json::Value> {
     let mut text = String::new();
     match path {
         Some("-") | None => {
             std::io::stdin()
                 .read_to_string(&mut text)
-                .map_err(|e| e.to_string())?;
+                .map_err(Error::Stdin)?;
         }
-        Some(p) => text = std::fs::read_to_string(p).map_err(|e| format!("{p}: {e}"))?,
+        Some(p) => text = std::fs::read_to_string(p).map_err(|e| Error::io(p, e))?,
     }
     if text.trim().is_empty() {
         return Ok(serde_json::Value::Null);
     }
-    serde_json::from_str(&text).map_err(|e| format!("invalid JSON input: {e}"))
+    Ok(serde_json::from_str(&text)?)
 }
 
 pub const RUNTIME_HELP: &str = "\
@@ -214,7 +218,7 @@ Options:
   locale is fixed when the program is built)";
 
 /// Add the ranges of the command line to the request's own.
-fn with_ranges(request: serde_json::Value, extra: &[String]) -> Result<serde_json::Value, String> {
+fn with_ranges(request: serde_json::Value, extra: &[String]) -> crate::Result<serde_json::Value> {
     use serde_json::Value;
     if extra.is_empty() {
         return Ok(request);
@@ -222,12 +226,16 @@ fn with_ranges(request: serde_json::Value, extra: &[String]) -> Result<serde_jso
     let mut m = match request {
         Value::Null => serde_json::Map::new(),
         Value::Object(m) => m,
-        _ => return Err("the request must be a JSON object".into()),
+        _ => return Err(Error::Request("the request must be a JSON object".into())),
     };
     let mut list = match m.remove("ranges") {
         None => Vec::new(),
         Some(Value::Array(a)) => a,
-        Some(_) => return Err("`ranges` must be an array of strings".into()),
+        Some(_) => {
+            return Err(Error::Request(
+                "`ranges` must be an array of strings".into(),
+            ));
+        }
     };
     list.extend(extra.iter().cloned().map(Value::String));
     m.insert("ranges".into(), Value::Array(list));
@@ -264,15 +272,15 @@ pub fn run_program(program: &Program, consts: Option<&StoredConsts>, mut args: A
     let meta = args.flag("--meta");
     let input = match args.value("--input") {
         Ok(v) => v,
-        Err(e) => return usage_error(&e),
+        Err(e) => return usage_error(&e.to_string()),
     };
     let cli_ranges = match args.values("--range") {
         Ok(v) => v,
-        Err(e) => return usage_error(&e),
+        Err(e) => return usage_error(&e.to_string()),
     };
     let overrides = match parse_overrides(&mut args) {
         Ok(o) => o,
-        Err(e) => return usage_error(&e),
+        Err(e) => return usage_error(&e.to_string()),
     };
     if let Some(extra) = args.0.first() {
         return usage_error(&format!("unexpected argument `{extra}`\n{RUNTIME_HELP}"));
@@ -293,11 +301,8 @@ pub fn run_program(program: &Program, consts: Option<&StoredConsts>, mut args: A
         println!("{}", show(&meta_json(program)));
         return 0;
     }
-    let answer = |j: serde_json::Value| {
-        program
-            .handle_over(base, &with_ranges(j, &cli_ranges)?, &overrides)
-            .map_err(|e| e.0)
-    };
+    let answer =
+        |j: serde_json::Value| program.handle_over(base, &with_ranges(j, &cli_ranges)?, &overrides);
     if serve {
         let stdin = std::io::stdin();
         let mut out = std::io::stdout().lock();
@@ -307,9 +312,9 @@ pub fn run_program(program: &Program, consts: Option<&StoredConsts>, mut args: A
                 continue;
             }
             let reply = serde_json::from_str::<serde_json::Value>(&line)
-                .map_err(|e| format!("invalid JSON input: {e}"))
+                .map_err(Error::from)
                 .and_then(answer)
-                .unwrap_or_else(|e| serde_json::json!({ "error_message": e }));
+                .unwrap_or_else(|e| serde_json::json!({ "error_message": e.to_string() }));
             let _ = writeln!(out, "{}", serde_json::to_string(&reply).unwrap_or_default());
             let _ = out.flush();
         }

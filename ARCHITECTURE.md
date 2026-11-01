@@ -140,32 +140,36 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
 - **`sheetstats`** (crate `sheetrs-stats`):
   - Focuses on aggregating metrics.
   - Uses the same `Workbook` model but collects different data points (counts, distributions).
-  - `stats.rs` (`WorkbookStats::from_path`/`from_reader`) computes workbook and per-sheet
-    metrics and is what the bindings call; `main.rs` handles arguments and output.
+  - `stats.rs`: `collect(&Source)` computes workbook and per-sheet metrics in one streaming pass
+    and is what the bindings call; it is a function because there is nothing to configure.
+    `main.rs` handles arguments and output.
 
 - **`sheetedit`** (crate `sheetrs-edit`):
-  - `writer`: `xlsx_writer.rs` and `ods_writer.rs` apply the same `WorkbookModifications` to each
-    format, stream-editing the archive with `zip` and `quick-xml` (removing sheets, converting
-    formulas to values, deleting rows and columns) without fully rewriting the file.
+  - The writer stream-edits the archive with `zip` and `quick-xml` (removing sheets, converting
+    formulas to values, deleting rows and columns) without fully rewriting the file, applying the
+    same changes to each format.
   - `ValueScope` selects the cells to convert (a sheet, columns or rows) independently of the
     file format.
-  - `EditPlan` and `Operation` (module `plan`, exported at the crate root): a **sequence** of
-    operations on one workbook, each addressing the workbook as the previous ones left it (what
-    running them one at a time gives). Rows and columns are typed (`RowRange`, `ColumnRange`, with
-    `FromStr`/`Display`), so a deletion with the wrong kind of range cannot be built; the plan is
-    a collection (`Extend`, `FromIterator`, `IntoIterator`). Marking the output to be recalculated
-    when opened is the plan's decision alone (`marks_recalculation`: it does when an operation
-    leaves stale cached results, and there is no option to ask for it or avoid it), applied once
-    in the last pass, not an operation of the sequence. `passes()` plans the sequence into the fewest passes over
-    the file that give the same workbook: deletions of one sheet and axis share a pass, with the
-    later positions translated through the earlier deletions; deletions of different sheets and
-    on rows vs columns, name and sheet removals and the recalculation mark commute; a conversion
-    after another change, and two deletions that touch (which the writer would take for one
-    band), start a new pass. `against_input()` is the declarative case (a command line: all
-    written against the input, in no order), always one pass. A pass is applied by the writer in
-    the order defined once in `StructureEdits::edits`. A test generates sequences and compares
-    the plan with the operations run one at a time, in both formats. A reference that spans
-    sheets would tie sheets together, and is refused (issue #75).
+  - `Editor` (module `editor`, the API of the crate): made for a `Source`, it collects changes
+    in order, each addressing the workbook as the previous ones left it (what running them one
+    at a time gives), and `save` runs them. Rows and columns are typed (`RowRange`,
+    `ColumnRange`, with `FromStr`/`Display`), so a deletion with the wrong kind of range cannot
+    be built. Marking the output to be recalculated when opened is the editor's decision alone
+    (`marks_recalculation`: it does when a change leaves stale cached results, and there is no
+    option to ask for it or avoid it), applied once in the last pass.
+  - `plan` (private): the planner behind `Editor`, pure logic with no I/O. `passes()` plans the
+    sequence into the fewest passes over the file that give the same workbook: deletions of one
+    sheet and axis share a pass, with the later positions translated through the earlier
+    deletions; deletions of different sheets and on rows vs columns, name and sheet removals and
+    the recalculation mark commute; a conversion after another change, and two deletions that
+    touch (which the writer would take for one band), start a new pass. The `sheetedit` flags
+    are all written against the input, in no order: applied as conversions, rows, columns,
+    names, sheets they are one pass. A pass is applied by the writer in the order defined once
+    in `StructureEdits::edits`. A test generates sequences and compares the plan with the
+    operations run one at a time, in both formats. A reference that spans sheets would tie
+    sheets together, and is refused (issue #75).
+  - `writer` (private): `xlsx_writer.rs` and `ods_writer.rs` are the mechanism of a pass; neither
+    the writer nor the plan is public, so the editor is the one way in.
   - The writer streams: each pass reads and writes every worksheet event by event, and the plan
     is a few bands and names, so memory does not depend on the size of the workbook.
   - `main.rs` handles arguments.
@@ -174,23 +178,23 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
 
 The bindings are adapters: they convert arguments and results and hold no analysis logic. What
 they present comes from the tool libraries (`sheetrs_linter::report`, `sheetrs_stats`,
-`sheetrs_edit::writer`), so every surface reports the same findings. The API of a binding is
+`sheetrs_edit::Editor`), so every surface reports the same findings. The API of a binding is
 organized by tool, as the crates are: the rules are a part of the linter, so they are offered
 next to `lint`, not as a separate service.
 
 - **`sheetrs-wasm`** (`cdylib`, wasm-bindgen): bytes in, structured values (`lint_workbook_records`,
   `lint_rules`, `workbook_stats`) or the human text report out. Packaged for npm by
   `scripts/package-wasm.sh` (`wasm-bindgen --target web`, template in `sheetrs-wasm/npm`).
-- **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs`, re-exported flat
-  by the `python/sheetrs` package (type stubs). `open` makes a `Source`, the Python face of
-  `sheetrs_core::reader::Source`: a reference to a workbook that reads nothing, with no `save`.
-  The tools take it: `Linter.lint(source)` (with `Violation`, its result type), `Source.stats()`,
-  and the operations on it, which make an `EditPlan` over a `sheetrs_edit::EditPlan` and are the
-  only objects with `save`. There is no eager mode: a workbook is streamed, never loaded. The
-  functions release the GIL while they work. It is built by maturin, which enables the
-  `extension-module` feature; the crate has no Rust test harness (it would have to link
-  libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding crate is published to
-  crates.io.
+- **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs`, presented by
+  the `python/sheetrs` package as the crates are laid out (type stubs): `sheetrs` (core: `open`,
+  `Source`, `SheetrsError`), `sheetrs.linter` (`Linter`, `Violation`), `sheetrs.stats`
+  (`collect`), `sheetrs.edit` (`Editor`). `Source` is the Python face of
+  `sheetrs_core::reader::Source`: a reference to a workbook that reads nothing, with no behavior.
+  The tool is the subject and takes it, as in Rust. There is no eager mode: a workbook is
+  streamed, never loaded. The functions release the GIL while they work. It is built by maturin,
+  which enables the `extension-module` feature; the crate has no Rust test harness (it would have
+  to link libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding crate is
+  published to crates.io.
 
 ## Design Principles
 

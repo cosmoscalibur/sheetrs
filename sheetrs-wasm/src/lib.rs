@@ -1,11 +1,10 @@
 use serde::Serialize;
-use sheetrs_core::reader::{Workbook, read_workbook_from_reader};
+use sheetrs_core::reader::{Format, Source, Workbook};
 use sheetrs_linter::report::{group_by_scope, violation_records};
 use sheetrs_linter::rules::registry;
 use sheetrs_linter::{FormatContext, Linter, LinterConfig, Severity, Violation};
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::io::Cursor;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -43,6 +42,24 @@ pub fn lint_rules() -> Result<JsValue, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
 }
 
+/// The workbook of the bytes a page hands over, whose format its extension names.
+fn source_of(file_data: &[u8], extension: &str) -> Result<Source, JsValue> {
+    let format: Format = extension
+        .parse()
+        .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
+    Ok(Source::from_bytes(file_data, format))
+}
+
+/// The configuration of the text of a `sheetlint.toml`; the default rules when it is empty.
+fn config_of(config_toml: &str) -> Result<LinterConfig, JsValue> {
+    if config_toml.trim().is_empty() {
+        Ok(LinterConfig::default())
+    } else {
+        LinterConfig::from_toml(config_toml)
+            .map_err(|e| JsValue::from_str(&format!("Config error: {e}")))
+    }
+}
+
 /// # Errors
 ///
 /// A message when the workbook cannot be read or the configuration is not valid.
@@ -52,16 +69,10 @@ pub fn lint_workbook(
     extension: &str,
     config_toml: &str,
 ) -> Result<String, JsValue> {
-    let cursor = Cursor::new(file_data);
-    let workbook = read_workbook_from_reader(cursor, Some(extension))
+    let workbook = source_of(file_data, extension)?
+        .read_workbook()
         .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
-
-    let config = if config_toml.trim().is_empty() {
-        LinterConfig::default()
-    } else {
-        LinterConfig::from_toml(config_toml)
-            .map_err(|e| JsValue::from_str(&format!("Config error: {e}")))?
-    };
+    let config = config_of(config_toml)?;
 
     let linter = Linter::with_config(config.clone());
     let violations = linter.lint_workbook(&workbook);
@@ -90,15 +101,10 @@ pub fn lint_workbook_records(
     extension: &str,
     config_toml: &str,
 ) -> Result<JsValue, JsValue> {
-    let workbook = read_workbook_from_reader(Cursor::new(file_data), Some(extension))
+    let workbook = source_of(file_data, extension)?
+        .read_workbook()
         .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
-    let config = if config_toml.trim().is_empty() {
-        LinterConfig::default()
-    } else {
-        LinterConfig::from_toml(config_toml)
-            .map_err(|e| JsValue::from_str(&format!("Config error: {e}")))?
-    };
-    let linter = Linter::with_config(config);
+    let linter = Linter::with_config(config_of(config_toml)?);
     let violations = linter.lint_workbook(&workbook);
     serde_wasm_bindgen::to_value(&violation_records(&violations, &workbook, linter.config()))
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
@@ -112,7 +118,7 @@ pub fn lint_workbook_records(
 /// A message when the workbook cannot be read or the result cannot be serialized.
 #[wasm_bindgen]
 pub fn workbook_stats(file_data: &[u8], extension: &str) -> Result<JsValue, JsValue> {
-    let stats = sheetrs_stats::WorkbookStats::from_reader(Cursor::new(file_data), Some(extension))
+    let stats = sheetrs_stats::collect(&source_of(file_data, extension)?)
         .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
     serde_wasm_bindgen::to_value(&stats)
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
@@ -218,8 +224,8 @@ fn format_violation(
 /// A message when the workbook cannot be read.
 #[wasm_bindgen]
 pub fn get_workbook_stats(file_data: &[u8], extension: &str) -> Result<String, JsValue> {
-    let cursor = Cursor::new(file_data);
-    let workbook = read_workbook_from_reader(cursor, Some(extension))
+    let workbook = source_of(file_data, extension)?
+        .read_workbook()
         .map_err(|e| JsValue::from_str(&format!("Reader error: {e}")))?;
 
     let mut output = String::new();

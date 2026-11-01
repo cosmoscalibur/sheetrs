@@ -3,7 +3,8 @@
 
 use serde_json::{Value as Json, json};
 use sheetrs_compiler::compile::QueryLevel;
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, Value, compile};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile};
+use sheetrs_engine::{Overrides, Value};
 use std::io::Write;
 use std::process::{Command, Stdio};
 

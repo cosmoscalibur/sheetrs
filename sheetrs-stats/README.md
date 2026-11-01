@@ -23,11 +23,15 @@ sheetstats <FILE> [OPTIONS]
 The crate is also a library, used by the Python and WASM bindings:
 
 ```rust
-let stats = sheetrs_stats::WorkbookStats::from_path("book.xlsx")?;
+use sheetrs_core::reader::Source;
+
+let source = Source::from_file("book.xlsx")?;   // or Source::from_bytes(data, Format::Xlsx)
+let stats = sheetrs_stats::collect(&source)?;
 println!("{} formulas in {} sheets", stats.total_formulas, stats.total_sheets);
 ```
 
-`WorkbookStats::from_reader` takes any `Read + Seek` and the format's extension.
+`collect` is a function and not an object because there is nothing to configure; it counts the
+cells as they are read and keeps none, so its memory does not depend on the size of the workbook.
 
 ## Metrics Reported
 
