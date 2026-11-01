@@ -47,7 +47,7 @@ static COLUMN_PATTERN: LazyLock<Regex> =
 static ROW_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b\d+:\d+\b").expect("REF307 row regex must compile"));
 
-/// Per-sheet cell collection: sheet_index → Vec<(row, col, is_column)>.
+/// Per-sheet cell collection: `sheet_index` → Vec<(row, col, `is_column`)>.
 type SheetCellMap = HashMap<u16, Vec<(u32, u32, bool)>>;
 
 /// Rule that detects whole-column (e.g., A:A) or whole-row (e.g., 1:1) references.
@@ -78,7 +78,7 @@ impl Default for WholeColumnRowRefsRule {
 pub struct WholeRefData {
     /// `true` for whole-column, `false` for whole-row.
     pub is_column: bool,
-    /// Bounding box of violating cells (start_row, start_col, end_row, end_col).
+    /// Bounding box of violating cells (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 

@@ -218,6 +218,7 @@ fn print_ref(r: &OdsRef) -> String {
 /// The ODS notation of the reference `content` (the text between `[` and `]`) once the plan is
 /// applied: `Some(None)` when it is gone (`#REF!`), `Some(Some(text))` when it changes, `None`
 /// when it stays or is not a reference this reads.
+#[allow(clippy::option_option)] // three outcomes named above, told apart by every caller
 fn adjusted(s: &SheetStructure, content: &str) -> Result<Option<Option<String>>> {
     let Some(parsed) = parse_ref(content) else {
         return Ok(None);
@@ -352,7 +353,7 @@ pub(super) fn adjust_range_list(s: &SheetStructure, value: &str) -> Result<Optio
     Ok((!kept.is_empty()).then(|| kept.join(" ")))
 }
 
-/// The shapes of a cell with the `table:end-cell-address` of each moved as LibreOffice moves the
+/// The shapes of a cell with the `table:end-cell-address` of each moved as `LibreOffice` moves the
 /// cell of a shape that resizes with its cells: to the place of that cell, or to its own index
 /// when the cell goes.
 pub(super) fn move_end_anchors<'a>(events: &[Event<'a>], s: &SheetStructure) -> Vec<Event<'a>> {

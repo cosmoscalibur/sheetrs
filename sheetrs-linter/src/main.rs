@@ -88,10 +88,8 @@ fn main() -> Result<()> {
     // Exit with appropriate code
     let exit_code = if violations.is_empty() {
         0
-    } else if violations.iter().any(|v| v.severity == Severity::Error) {
-        1
     } else {
-        0 // Only warnings, still exit 0
+        i32::from(violations.iter().any(|v| v.severity == Severity::Error))
     };
 
     std::process::exit(exit_code);

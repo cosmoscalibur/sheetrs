@@ -6,7 +6,7 @@ use crate::locale_data::{DEFAULT_REGION, LOCALES};
 use serde::{Deserialize, Serialize};
 
 /// The null date: the date of serial 0, on the real calendar (no 1900-02-29, negative serials
-/// allowed). LibreOffice stores it per document and any date is allowed; the usual ones are
+/// allowed). `LibreOffice` stores it per document and any date is allowed; the usual ones are
 /// 1899-12-30 (its default, and what an XLSX gets unless it says `date1904`), 1900-01-01 and
 /// 1904-01-01.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,6 +21,7 @@ impl DateSystem {
     pub const NULL_1904: Self = Self { null_date: -24_107 };
 
     /// The system whose serial 0 is the given calendar date.
+    #[must_use]
     pub fn from_ymd(y: i64, m: i64, d: i64) -> Option<Self> {
         let ok = (1..=12).contains(&m) && (1..=dates::days_in_month(y, m)).contains(&d);
         ok.then(|| Self {
@@ -29,6 +30,7 @@ impl DateSystem {
     }
 
     /// The null date as `(year, month, day)`.
+    #[must_use]
     pub fn ymd(self) -> (i64, i64, i64) {
         dates::civil_from_days(self.null_date)
     }
@@ -88,7 +90,7 @@ pub struct Search {
 }
 
 impl Search {
-    /// What LibreOffice sets when it imports an XLSX: wildcards, whole cell, case-insensitive.
+    /// What `LibreOffice` sets when it imports an XLSX: wildcards, whole cell, case-insensitive.
     pub const XLSX_IMPORT: Self = Self {
         mode: SearchMode::Wildcards,
         whole_cell: true,
@@ -102,7 +104,7 @@ impl Default for Search {
     }
 }
 
-/// A locale of the generated table (`locale_data.rs`), as LibreOffice reports it.
+/// A locale of the generated table (`locale_data.rs`), as `LibreOffice` reports it.
 #[derive(Debug)]
 pub struct LocaleRow {
     pub tag: &'static str,
@@ -139,7 +141,7 @@ pub struct Locale {
     pub lcid: u16,
     pub date_order: DateOrder,
     /// First year of the 100-year window for two-digit years in text dates and
-    /// (LibreOffice) `DATE`: 1930 makes 30–99 → 19xx and 00–29 → 20xx.
+    /// (`LibreOffice`) `DATE`: 1930 makes 30–99 → 19xx and 00–29 → 20xx.
     pub two_digit_year_start: u16,
     pub decimal: char,
     pub group: char,
@@ -170,6 +172,7 @@ fn owned<const N: usize>(a: [&str; N]) -> [String; N] {
 }
 
 impl Locale {
+    #[must_use]
     pub fn from_row(r: &LocaleRow) -> Self {
         Self {
             tag: r.tag.into(),
@@ -201,6 +204,7 @@ impl Locale {
 
     /// The row of the table for a tag: `es-CO` itself, or a bare language (`es`) as its
     /// default region.
+    #[must_use]
     pub fn row(tag: &str) -> Option<&'static LocaleRow> {
         let norm = tag.replace('_', "-");
         let (lang, region) = match norm.split_once('-') {
@@ -219,14 +223,17 @@ impl Locale {
     }
 
     /// The row whose language id is `lcid` (`[$-407]`): the locale a format code names.
+    #[must_use]
     pub fn row_by_lcid(lcid: u16) -> Option<&'static LocaleRow> {
         LOCALES.iter().find(|r| r.lcid == lcid)
     }
 
+    #[must_use]
     pub fn en_us() -> Self {
         Self::by_tag("en-US").unwrap_or_else(|| unreachable!("en-US is in the table"))
     }
 
+    #[must_use]
     pub fn es_es() -> Self {
         Self::by_tag("es-ES").unwrap_or_else(|| unreachable!("es-ES is in the table"))
     }
@@ -284,7 +291,7 @@ pub struct EngineOptions {
     /// Text criteria and pattern settings.
     pub search: Search,
     /// `INDIRECT` reads `Sheet!A1` (Excel A1); false: `Sheet.A1` (Calc A1, a document
-    /// created in LibreOffice).
+    /// created in `LibreOffice`).
     pub string_ref_excel: bool,
     /// Fixed value (serial number) for `NOW()`/`TODAY()`; the system clock
     /// when `None`.
@@ -312,11 +319,13 @@ impl Default for EngineOptions {
 
 impl EngineOptions {
     /// What reading a text as a date needs: the null date and the clock.
+    #[must_use]
     pub fn date_ctx(&self) -> crate::datetext::DateCtx {
         crate::datetext::DateCtx::new(self.date_system, self.now)
     }
 
     /// Current date-time as a serial number in the configured date system.
+    #[must_use]
     pub fn now_serial(&self) -> f64 {
         self.now.unwrap_or_else(|| {
             let secs = std::time::SystemTime::now()

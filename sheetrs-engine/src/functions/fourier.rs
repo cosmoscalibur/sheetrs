@@ -1,7 +1,7 @@
-//! `FOURIER`, with the transforms of LibreOffice (`sc/source/core/tool/interpr3.cxx`): the
+//! `FOURIER`, with the transforms of `LibreOffice` (`sc/source/core/tool/interpr3.cxx`): the
 //! radix-2 transform for lengths that are a power of 2, Bluestein's for the other lengths and a
 //! packed transform for real input of even length, each with the twiddle factors it computes, so
-//! that the digits are LibreOffice's. The results are checked against the oracle
+//! that the digits are `LibreOffice`'s. The results are checked against the oracle
 //! (`tests/assets/semantics.*`).
 
 use std::f64::consts::PI;
@@ -16,12 +16,12 @@ const DOMAIN: ErrorKind = ErrorKind::Domain;
 
 /// The least power of two that is not below `n`, and its logarithm.
 fn round_up_pow2(n: usize) -> (usize, usize) {
-    let bits = (usize::BITS - n.leading_zeros()) as usize;
+    let bits = n.bit_width() as usize;
     let pow2 = if bits == 0 { 0 } else { 1usize << (bits - 1) };
-    if pow2 != n {
-        (if pow2 != 0 { pow2 << 1 } else { 1 }, bits)
-    } else {
+    if pow2 == n {
         (n, bits - 1)
+    } else {
+        (if pow2 != 0 { pow2 << 1 } else { 1 }, bits)
     }
 }
 
@@ -365,7 +365,7 @@ fn transform(mut data: Vec<f64>, real: bool, o: &Options) -> Vec<f64> {
     data
 }
 
-/// A text that LibreOffice reads as a flag or a number: `TRUE` and `FALSE`, or the number it holds.
+/// A text that `LibreOffice` reads as a flag or a number: `TRUE` and `FALSE`, or the number it holds.
 fn text_flag(e: &Engine, t: &str) -> Option<f64> {
     if t.eq_ignore_ascii_case("TRUE") {
         Some(1.0)
@@ -377,7 +377,7 @@ fn text_flag(e: &Engine, t: &str) -> Option<f64> {
 }
 
 /// The value of an argument that is a flag or a number: a text that is neither is 0 for the
-/// optional arguments (which LibreOffice reads without complaint) and an error for the grouping.
+/// optional arguments (which `LibreOffice` reads without complaint) and an error for the grouping.
 fn flag(e: &mut Engine, a: &[Value], i: usize, optional: bool) -> Res<Option<f64>> {
     match a.get(i) {
         None | Some(Value::Empty) => Ok(None),

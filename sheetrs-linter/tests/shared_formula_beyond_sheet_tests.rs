@@ -1,4 +1,4 @@
-//! A shared formula whose cell would read a reference outside the sheet: LibreOffice computes
+//! A shared formula whose cell would read a reference outside the sheet: `LibreOffice` computes
 //! `#REF!` there. The reader writes `Sheet!#REF!` in the formula, and the linter reports the error
 //! cell.
 

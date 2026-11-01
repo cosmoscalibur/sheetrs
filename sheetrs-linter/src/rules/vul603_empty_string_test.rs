@@ -42,7 +42,7 @@ static LEN_ZERO_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"LEN\s*\([^)]+\)\s*(=|<>|>|<)\s*0").expect("VUL603 LEN zero regex must compile")
 });
 
-/// Per-sheet cell collection: sheet_index → Vec<(row, col)>.
+/// Per-sheet cell collection: `sheet_index` → Vec<(row, col)>.
 type SheetCellMap = HashMap<u16, Vec<(u32, u32)>>;
 
 /// Rule that detects inefficient empty string tests in formulas.
@@ -71,7 +71,7 @@ impl Default for EmptyStringTestRule {
 /// Incident data for VUL603.
 #[derive(Debug)]
 pub struct EmptyStringTestData {
-    /// Bounding box of violating cells (start_row, start_col, end_row, end_col).
+    /// Bounding box of violating cells (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 

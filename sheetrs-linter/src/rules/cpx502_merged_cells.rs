@@ -32,7 +32,7 @@ pub struct MergedCellsRule;
 /// Incident data for CPX502.
 #[derive(Debug)]
 pub struct MergedCellsData {
-    /// Range as (start_row, start_col, end_row, end_col).
+    /// Range as (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 

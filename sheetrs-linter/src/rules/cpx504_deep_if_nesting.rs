@@ -1,4 +1,4 @@
-//! CPX504: Deep IF nesting (primary emitter of the CPX5xx formula-complexity chain)
+//! CPX504: Deep IF nesting (primary emitter of the `CPX5xx` formula-complexity chain)
 //!
 //! Deeply nested `IF` calls are hard to read, test and change; a lookup table, `IFS` or `SWITCH`
 //! usually states the same logic better. This module also evaluates, for each formula cell, the whole
@@ -50,7 +50,9 @@ use crate::violation::{
 use sheetrs_core::reader::{Cell, Sheet};
 
 /// Rule that detects deeply nested IF statements and serves as the
-/// primary emitter for the CPX5xx formula-complexity dependency chain.
+/// primary emitter for the `CPX5xx` formula-complexity dependency chain.
+// The fields are the parameters of the rules the configuration names (`max_if_nesting`, …).
+#[allow(clippy::struct_field_names)]
 #[derive(Debug)]
 pub struct DeepIfNestingRule {
     /// Maximum allowed IF nesting depth (CPX504).
@@ -248,11 +250,7 @@ fn count_operators(formula: &str) -> usize {
     let mut count: usize = 0;
     let bytes = formula.as_bytes();
     let len = bytes.len();
-    let mut i = if !bytes.is_empty() && bytes[0] == b'=' {
-        1
-    } else {
-        0
-    };
+    let mut i = usize::from(!bytes.is_empty() && bytes[0] == b'=');
     let mut in_string = false;
 
     while i < len {
@@ -269,14 +267,13 @@ fn count_operators(formula: &str) -> usize {
         }
 
         match ch {
-            b'+' | b'-' | b'*' | b'/' | b'^' | b'&' => count += 1,
+            b'+' | b'-' | b'*' | b'/' | b'^' | b'&' | b'=' => count += 1,
             b'<' | b'>' => {
                 count += 1;
                 if i + 1 < len && matches!(bytes[i + 1], b'=' | b'>') {
                     i += 1;
                 }
             }
-            b'=' => count += 1,
             _ => {}
         }
         i += 1;
@@ -292,11 +289,7 @@ fn count_references(formula: &str) -> usize {
     let mut count: usize = 0;
     let bytes = formula.as_bytes();
     let len = bytes.len();
-    let mut i = if !bytes.is_empty() && bytes[0] == b'=' {
-        1
-    } else {
-        0
-    };
+    let mut i = usize::from(!bytes.is_empty() && bytes[0] == b'=');
     let mut in_string = false;
 
     while i < len {
@@ -364,7 +357,7 @@ impl WalkerRule for DeepIfNestingRule {
         RuleCategory::Complexity
     }
 
-    /// Evaluates the CPX5xx dependency chain for one formula cell.
+    /// Evaluates the `CPX5xx` dependency chain for one formula cell.
     fn on_cell(
         &mut self,
         sheet: &Sheet,

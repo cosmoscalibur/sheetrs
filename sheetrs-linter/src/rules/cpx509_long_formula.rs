@@ -3,7 +3,7 @@
 //! A very long formula is difficult to read, review and change, whatever it contains.
 //!
 //! This rule is emitted by [`cpx504_deep_if_nesting`](super::cpx504_deep_if_nesting), which evaluates
-//! the whole CPX5xx chain for each cell. The walker rule in this module does nothing and is
+//! the whole `CPX5xx` chain for each cell. The walker rule in this module does nothing and is
 //! registered only so that CPX509 can be enabled or disabled.
 //!
 //! # Reports

@@ -35,13 +35,13 @@ pub(super) fn register(r: &mut Reg) {
         num(if n % 2 == 1 {
             v[n / 2]
         } else {
-            (v[n / 2 - 1] + v[n / 2]) / 2.0
+            f64::midpoint(v[n / 2 - 1], v[n / 2])
         })
     });
     r.eager("LARGE", 2, 2, |e, a| nth(e, a, true));
     r.eager("SMALL", 2, 2, |e, a| nth(e, a, false));
     r.eager("STDEV", 1, VAR, |e, a| {
-        variance(e, a, true).map(|v| v.sqrt()).and_then(num)
+        variance(e, a, true).map(f64::sqrt).and_then(num)
     });
     r.eager("VAR", 1, VAR, |e, a| variance(e, a, true).and_then(num));
     r.eager("COUNT", 1, VAR, count);
@@ -185,17 +185,16 @@ impl Criterion {
                 if rest.is_empty() && matches!(op, Cmp::Eq | Cmp::Ne) {
                     return Ok(Self::Blank(op != Cmp::Ne));
                 }
-                match coerce::parse_number(rest, &e.opts.locale, e.opts.date_ctx()) {
-                    Some(n) => Ok(Self::Num(op, n)),
-                    None => {
-                        let s = e.opts.search;
-                        Ok(Self::Text(
-                            op,
-                            Matcher::new(rest, &s, s.whole_cell),
-                            rest.to_string(),
-                            false,
-                        ))
-                    }
+                if let Some(n) = coerce::parse_number(rest, &e.opts.locale, e.opts.date_ctx()) {
+                    Ok(Self::Num(op, n))
+                } else {
+                    let s = e.opts.search;
+                    Ok(Self::Text(
+                        op,
+                        Matcher::new(rest, &s, s.whole_cell),
+                        rest.to_string(),
+                        false,
+                    ))
                 }
             }
             _ => Err(ErrorKind::Value),
@@ -275,7 +274,7 @@ fn matching(conds: &[(Arc<Array>, Criterion)], coll: &Coll) -> Res<Vec<usize>> {
 }
 
 /// The values a conditional aggregate adds up. A reference is read cell by cell
-/// and only where the conditions hold, as LibreOffice and Excel do: a sum range
+/// and only where the conditions hold, as `LibreOffice` and Excel do: a sum range
 /// may contain the formula that is summing it as long as that cell is not selected.
 enum Values {
     Cells(Rect),

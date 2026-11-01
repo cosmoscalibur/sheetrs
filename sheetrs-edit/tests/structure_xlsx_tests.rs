@@ -1,5 +1,5 @@
 //! Deleting rows and columns of an XLSX, and removing sheets and names, with the references to
-//! them adjusted as LibreOffice 26.8 does (the expectations are what it gave when asked through
+//! them adjusted as `LibreOffice` 26.8 does (the expectations are what it gave when asked through
 //! UNO: `Rows.removeByIndex`, `Columns.removeByIndex`, `Sheets.removeByName` and
 //! `NamedRanges.removeByName`).
 
@@ -29,14 +29,15 @@ fn sheet(name: &'static str, rows: String) -> Sheet {
 
 /// `n` rows with the number `r` in column A and `10 r` in column B.
 fn number_rows(n: u32) -> String {
-    (1..=n)
-        .map(|r| {
-            format!(
-                r#"<row r="{r}" spans="1:2"><c r="A{r}"><v>{r}</v></c><c r="B{r}"><v>{}</v></c></row>"#,
-                r * 10
-            )
-        })
-        .collect()
+    (1..=n).fold(String::new(), |mut out, r| {
+        write!(
+            out,
+            r#"<row r="{r}" spans="1:2"><c r="A{r}"><v>{r}</v></c><c r="B{r}"><v>{}</v></c></row>"#,
+            r * 10
+        )
+        .unwrap();
+        out
+    })
 }
 
 /// Rows with a formula in column A (`99` cached) for each text.
@@ -44,13 +45,15 @@ fn formula_rows(formulas: &[&str]) -> String {
     formulas
         .iter()
         .enumerate()
-        .map(|(i, f)| {
-            format!(
+        .fold(String::new(), |mut out, (i, f)| {
+            write!(
+                out,
                 r#"<row r="{0}"><c r="A{0}"><f>{f}</f><v>99</v></c></row>"#,
                 i + 1
             )
+            .unwrap();
+            out
         })
-        .collect()
 }
 
 fn write_xlsx(path: &Path, sheets: &[Sheet], names: &str, extra: &[(&str, &str)]) {
@@ -686,14 +689,14 @@ fn anchor_rows_after_deleting_rows_4_and_5(edit_as: &str, anchors: &[(u32, u32)]
     let input = dir.path().join("in.xlsx");
     let mut t = sheet("T", number_rows(15));
     t.after = r#"<drawing r:id="rId1"/>"#.into();
-    let drawing: String = anchors
-        .iter()
-        .map(|(from, to)| {
-            format!(
-                r#"<xdr:twoCellAnchor{edit_as}><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{from}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{to}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:sp/></xdr:twoCellAnchor>"#
-            )
-        })
-        .collect();
+    let drawing: String = anchors.iter().fold(String::new(), |mut out, (from, to)| {
+        write!(
+            out,
+            r"<xdr:twoCellAnchor{edit_as}><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{from}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{to}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:sp/></xdr:twoCellAnchor>"
+        )
+        .unwrap();
+        out
+    });
     let drawing = format!(
         r#"<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">{drawing}</xdr:wsDr>"#
     );
@@ -723,7 +726,7 @@ fn anchor_rows_after_deleting_rows_4_and_5(edit_as: &str, anchors: &[(u32, u32)]
 }
 
 /// A shape that resizes with its cells has its bottom corner follow its cell, and one that does not
-/// keeps its size in rows (what LibreOffice 26.8 gave for each).
+/// keeps its size in rows (what `LibreOffice` 26.8 gave for each).
 #[test]
 fn the_corners_of_a_shape_follow_their_cells_when_it_resizes_with_them() {
     // From row 3 to 8 (1-based 4 to 9): rows 4-5 go.

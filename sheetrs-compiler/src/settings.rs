@@ -71,6 +71,10 @@ fn resolve_reference(model: &Model, reference: &str) -> Result<crate::addr::Rect
 
 /// Read the settings sheet called `name`. A missing sheet is an error only when
 /// `required` (the caller named it), since the default name is optional.
+///
+/// # Errors
+///
+/// When the settings part of the document cannot be read.
 pub fn read(
     model: &Model,
     name: &str,

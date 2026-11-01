@@ -42,12 +42,38 @@ aho-corasick = "1.1.4"
 sha2 = "0.10"
 
 [workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
 manual_let_else = "warn"
 uninlined_format_args = "warn"
 collection_is_never_read = "warn"
 significant_drop_tightening = "warn"
-cast_possible_wrap = "warn"
 format_push_string = "warn"
+
+# Pedantic lints allowed on purpose, each for a reason that holds across the workspace:
+# - cast_*: cell coordinates are bounded by the format limits (1,048,576 rows, 16,384 columns)
+#   and spreadsheet numbers are `f64` by definition, so index/number conversions are the domain,
+#   not an accident. A checked conversion at every site would hide the few that matter.
+# - float_cmp: Excel compares numbers exactly (`=A1=B1`), and the engine reproduces that.
+# - many_single_char_names, similar_names: the formulas and statistics are written with the
+#   names of their mathematical definitions.
+# - too_many_lines: the function evaluators and the parsers are flat `match`es over a closed
+#   set of cases, which splitting would only scatter.
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+float_cmp = "allow"
+many_single_char_names = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+# - assert_is_empty: wants `assert_eq!(x, [] as [T; 0])` so a failure prints the value; the
+#   element type is ambiguous at every site, so each would need a type spelled out for no gain
+#   in tests where the failing case is already named by the test.
+assert_is_empty = "allow"
+# - items_after_statements: a helper `fn` or `const` that only one block uses sits next to that
+#   block, where it is read, instead of at the top of a function it has nothing to do with.
+items_after_statements = "allow"
 
 # Benchmarks and profiling: fat LTO measures the fully optimized build, at a
 # build cost not paid by everyday release builds.

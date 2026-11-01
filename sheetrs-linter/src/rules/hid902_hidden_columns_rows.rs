@@ -42,20 +42,25 @@ pub struct HiddenColumnsRowsRule;
 /// Incident data for HID902.
 #[derive(Debug)]
 pub struct HiddenColumnsRowsData {
-    /// Hidden column ranges: (start_col, end_col), 0-based, inclusive.
+    /// Hidden column ranges: (`start_col`, `end_col`), 0-based, inclusive.
     pub columns: Vec<(u32, u32)>,
-    /// Hidden row ranges: (start_row, end_row), 0-based, inclusive.
+    /// Hidden row ranges: (`start_row`, `end_row`), 0-based, inclusive.
     pub rows: Vec<(u32, u32)>,
 }
 
 impl ViolationData for HiddenColumnsRowsData {
     fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
-        if !self.columns.is_empty() {
-            let strs: Vec<String> = self.columns.iter().map(format_column_range).collect();
-            format!("Hidden columns: {}", strs.join(", "))
-        } else {
-            let strs: Vec<String> = self.rows.iter().map(format_row_range).collect();
+        if self.columns.is_empty() {
+            let strs: Vec<String> = self.rows.iter().copied().map(format_row_range).collect();
             format!("Hidden rows: {}", strs.join(", "))
+        } else {
+            let strs: Vec<String> = self
+                .columns
+                .iter()
+                .copied()
+                .map(format_column_range)
+                .collect();
+            format!("Hidden columns: {}", strs.join(", "))
         }
     }
 
@@ -125,7 +130,7 @@ fn merge_ranges(ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
 }
 
 /// Format column range (e.g., "A:C" or "A")
-fn format_column_range(&(start, end): &(u32, u32)) -> String {
+fn format_column_range((start, end): (u32, u32)) -> String {
     if start == end {
         return column_letters(start).to_string();
     }
@@ -133,7 +138,7 @@ fn format_column_range(&(start, end): &(u32, u32)) -> String {
 }
 
 /// Format row range (e.g., "1:3" or "1")
-fn format_row_range(&(start, end): &(u32, u32)) -> String {
+fn format_row_range((start, end): (u32, u32)) -> String {
     // Convert to 1-based
     if start == end {
         return (start + 1).to_string();
@@ -152,7 +157,7 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: Default::default(),
+            cells: sheetrs_core::reader::Grid::default(),
             hidden_columns: vec![(0, 1), (2, 2), (5, 5)], // A:B, C, F
             ..Default::default()
         };
@@ -171,7 +176,7 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: Default::default(),
+            cells: sheetrs_core::reader::Grid::default(),
             hidden_rows: vec![(10, 11), (0, 2), (1, 1)], // 11:12, 1:3, 2
             ..Default::default()
         };

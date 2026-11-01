@@ -73,7 +73,7 @@ fn test_cpx_violations_sorted_by_sheet_then_cell() {
     }
 }
 
-/// Every rule of the CPX5xx cascade and CPX507 reports the formula cell.
+/// Every rule of the `CPX5xx` cascade and CPX507 reports the formula cell.
 #[test]
 fn test_cpx504_to_cpx509_report_cell_scope() {
     let cases: [(RuleId, String); 6] = [

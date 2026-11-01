@@ -23,7 +23,7 @@
 //!   prefix, outside its quoted text: that prefix marks a function newer than the file format, and
 //!   the error only shows that the application that saved the file did not know it, so the cache
 //!   does not prove a mistake. A cell that reads such a cell and holds `#NAME?` itself is excluded
-//!   too. Exception: `_xlfn._LONGTEXT(…)` is not an Excel function (LibreOffice 26.2 wrote a text
+//!   too. Exception: `_xlfn._LONGTEXT(…)` is not an Excel function (`LibreOffice` 26.2 wrote a text
 //!   literal of more than 255 characters as pieces joined by it), so its `#NAME?` is reported
 //!   unless the `LONGTEXT` feature is enabled (see Parameters).
 //! - Errors that are not stored in the file: nothing is recalculated, so a formula whose saved

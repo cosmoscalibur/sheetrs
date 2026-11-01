@@ -1,5 +1,5 @@
 //! The byte and width functions of text: `LENB`, `LEFTB`, `RIGHTB`, `MIDB`, `FINDB`, `SEARCHB`,
-//! `REPLACEB`, `ASC` and `JIS`. LibreOffice counts a character as one or two bytes by a table of
+//! `REPLACEB`, `ASC` and `JIS`. `LibreOffice` counts a character as one or two bytes by a table of
 //! its own (`width_data.rs`, generated from it), whatever the language of the document, and a
 //! double-byte character that a cut splits becomes a space.
 

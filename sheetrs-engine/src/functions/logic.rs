@@ -162,6 +162,7 @@ pub(super) fn register(r: &mut Reg) {
 
 /// `IFERROR`/`IFNA`: evaluate the first argument, fall back to the second when
 /// it is an error accepted by `catches`.
+#[allow(clippy::unnecessary_wraps)] // same fallible signature as its siblings, which share call sites
 fn guard(e: &mut Engine, a: &[Expr], catches: fn(ErrorKind) -> bool) -> Res<Value> {
     let v = e.eval(&a[0]);
     let probe = match &v {

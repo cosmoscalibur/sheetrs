@@ -1,6 +1,6 @@
 //! The continuous and discrete distributions beyond the normal one: gamma, chi-square, t, F,
 //! beta, log-normal, Weibull, hypergeometric, negative binomial and the tests and intervals built
-//! on them. Arguments outside a function's domain are `Domain` (LibreOffice's `Err:502`), as the
+//! on them. Arguments outside a function's domain are `Domain` (`LibreOffice`'s `Err:502`), as the
 //! oracle (`tests/assets/semantics.*`) has them.
 
 use super::math_ext::{norm_cdf, norm_inv};
@@ -15,12 +15,12 @@ use std::f64::consts::PI;
 
 const DOMAIN: ErrorKind = ErrorKind::Domain;
 
-/// A value of the incomplete gamma function, or `Domain` where LibreOffice does not converge.
+/// A value of the incomplete gamma function, or `Domain` where `LibreOffice` does not converge.
 fn converged(v: f64) -> Res<f64> {
     if v.is_nan() { Err(DOMAIN) } else { Ok(v) }
 }
 
-/// The density of the chi-square distribution as LibreOffice computes it: the logarithm form for a
+/// The density of the chi-square distribution as `LibreOffice` computes it: the logarithm form for a
 /// large `df * x`, the product of the terms otherwise.
 fn chisq_pdf(x: f64, df: f64) -> f64 {
     if df * x > 1_391_000.0 {
@@ -43,7 +43,7 @@ fn chisq_pdf(x: f64, df: f64) -> f64 {
     }
 }
 
-/// The shape of a t, F or beta distribution: what LibreOffice computes accurately.
+/// The shape of a t, F or beta distribution: what `LibreOffice` computes accurately.
 fn shape(x: f64) -> Res<()> {
     if x > 1e7 {
         crate::notes::note(crate::notes::BETA_LARGE);
@@ -53,7 +53,7 @@ fn shape(x: f64) -> Res<()> {
     }
 }
 
-/// `invert_increasing` of a function that may not converge (`NaN`): then LibreOffice's iteration
+/// `invert_increasing` of a function that may not converge (`NaN`): then `LibreOffice`'s iteration
 /// fails as well.
 fn invert_checked(f: impl Fn(f64) -> f64, target: f64) -> Res<f64> {
     let bad = std::cell::Cell::new(false);
@@ -77,7 +77,7 @@ fn cumulative(e: &mut Engine, a: &[Value], i: usize) -> Res<bool> {
     }
 }
 
-/// The argument as a whole number (LibreOffice cuts the degrees of freedom and the counts).
+/// The argument as a whole number (`LibreOffice` cuts the degrees of freedom and the counts).
 fn whole(e: &mut Engine, a: &[Value], i: usize) -> Res<f64> {
     Ok(e.num(&a[i])?.floor())
 }
@@ -114,10 +114,10 @@ fn t_two(t: f64, df: f64) -> f64 {
 }
 
 fn t_pdf(t: f64, df: f64) -> f64 {
-    (ln_gamma((df + 1.0) / 2.0)
+    (ln_gamma(f64::midpoint(df, 1.0))
         - ln_gamma(df / 2.0)
         - 0.5 * (df * PI).ln()
-        - (df + 1.0) / 2.0 * (t * t / df).ln_1p())
+        - f64::midpoint(df, 1.0) * (t * t / df).ln_1p())
     .exp()
 }
 
@@ -168,7 +168,7 @@ fn f_pdf(x: f64, d1: f64, d2: f64) -> f64 {
         };
     }
     ((d1 / 2.0) * (d1 / d2).ln() + (d1 / 2.0 - 1.0) * x.ln()
-        - (d1 + d2) / 2.0 * (d1 * x / d2).ln_1p()
+        - f64::midpoint(d1, d2) * (d1 * x / d2).ln_1p()
         - ln_beta(d1 / 2.0, d2 / 2.0))
     .exp()
 }
@@ -227,9 +227,10 @@ fn numbers_of(e: &mut Engine, v: &Value) -> Res<Vec<f64>> {
 }
 
 /// The numbers of a range with its shape; text and empty cells are not numbers.
+#[allow(clippy::unnecessary_wraps)] // same fallible signature as its siblings, which share call sites
 fn grid(e: &mut Engine, v: &Value) -> Res<(usize, usize, Vec<Value>)> {
     let a = e.array_of(v.clone());
-    Ok((a.rows as usize, a.cols as usize, a.data.to_vec()))
+    Ok((a.rows as usize, a.cols as usize, a.data.clone()))
 }
 
 pub(crate) fn register(r: &mut Reg) {

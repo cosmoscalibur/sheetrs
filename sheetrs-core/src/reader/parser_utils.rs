@@ -27,7 +27,7 @@ pub fn parse_cell_ref(cell_ref: &str) -> Option<(u32, u32)> {
     Some((row.saturating_sub(1), col))
 }
 
-/// Parse a cell range like "A1:B2" into (start_row, start_col, end_row, end_col)
+/// Parse a cell range like "A1:B2" into (`start_row`, `start_col`, `end_row`, `end_col`)
 ///
 /// # Arguments
 ///
@@ -85,8 +85,9 @@ pub fn column_letters(index: u32) -> impl fmt::Display {
             }
             index = index / 26 - 1;
         }
-        let letters = std::str::from_utf8(&letters[start..]).expect("column letters are ASCII");
-        f.write_str(letters)
+        letters[start..]
+            .iter()
+            .try_for_each(|&b| fmt::Write::write_char(f, char::from(b)))
     })
 }
 
@@ -94,11 +95,19 @@ pub fn column_letters(index: u32) -> impl fmt::Display {
 ///
 /// Applies XML 1.0 attribute-value normalization: literal tabs and line breaks
 /// become spaces, while character references such as `&#10;` are kept.
+///
+/// # Errors
+///
+/// When the attribute value cannot be unescaped.
 pub fn attr_value<'a>(attr: &Attribute<'a>) -> quick_xml::Result<Cow<'a, str>> {
     attr.normalized_value(XmlVersion::Implicit1_0)
 }
 
 /// Read text content from an XML node
+///
+/// # Errors
+///
+/// When the XML is malformed.
 pub fn read_text_node<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {
     let mut buf = Vec::new();
     let mut text = String::new();
@@ -107,8 +116,7 @@ pub fn read_text_node<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Str
             Event::Text(e) => text.push_str(&e),
             Event::CData(e) => text.push_str(&e),
             Event::GeneralRef(e) => push_general_ref(&mut text, &e)?,
-            Event::End(_) => break,
-            Event::Eof => break,
+            Event::End(_) | Event::Eof => break,
             _ => {}
         }
         buf.clear();
@@ -122,6 +130,10 @@ pub fn read_text_node<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Str
 /// apart from the surrounding `Event::Text`, so every reader that collects
 /// element text must route references through here. References to entities
 /// other than the predefined XML ones are kept verbatim.
+///
+/// # Errors
+///
+/// When the reference is not a known entity or character reference.
 pub fn push_general_ref(text: &mut String, reference: &BytesRef) -> Result<()> {
     if let Some(ch) = reference.resolve_char_ref()? {
         text.push(ch);
@@ -197,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_column_conversion_round_trip_out_of_range() {
-        for index in [16384, 18277, 18278, 475253, 475254, u32::MAX - 1] {
+        for index in [16384, 18277, 18278, 475_253, 475_254, u32::MAX - 1] {
             let letters = column_letters(index).to_string();
             assert_eq!(column_letters_to_index(&letters), Some(index), "{letters}");
         }

@@ -59,8 +59,7 @@ impl ViolationData for NumericTextCalcData {
             .workbook
             .sheets
             .get(sheet_idx as usize)
-            .map(|s| s.name.as_str())
-            .unwrap_or("?");
+            .map_or("?", |s| s.name.as_str());
         format!(
             "Formula references numeric text cell: {}!{}. Convert text to number.",
             sheet_name,

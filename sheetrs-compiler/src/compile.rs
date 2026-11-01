@@ -35,6 +35,7 @@ pub struct BindingSpec {
 }
 
 impl BindingSpec {
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         Self {
             target: s.trim().to_string(),
@@ -42,6 +43,7 @@ impl BindingSpec {
         }
     }
 
+    #[must_use]
     pub fn named(name: &str, target: &str) -> Self {
         Self {
             target: target.trim().to_string(),
@@ -81,10 +83,10 @@ pub struct Spec {
 }
 
 /// Optional compatibility behaviours, resolved while the program is built. All are off by default:
-/// each one reads a formula differently from the reference (LibreOffice 26.8), so the user opts in.
+/// each one reads a formula differently from the reference (`LibreOffice` 26.8), so the user opts in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Features {
-    /// `_xlfn._LONGTEXT(…)` with constant text arguments: LibreOffice 26.2 wrote a text literal of
+    /// `_xlfn._LONGTEXT(…)` with constant text arguments: `LibreOffice` 26.2 wrote a text literal of
     /// more than 255 characters as pieces joined by it. The pieces are joined into one literal.
     pub longtext: bool,
 }
@@ -94,6 +96,10 @@ impl Features {
     pub const NAMES: &'static [&'static str] = &["LONGTEXT"];
 
     /// The features of an `enable_features` list (names in any case); only those listed are on.
+    ///
+    /// # Errors
+    ///
+    /// When a name is not one of the known features.
     pub fn parse(names: &[String]) -> Result<Self, String> {
         let mut f = Self::default();
         for n in names {
@@ -124,6 +130,7 @@ pub enum QueryLevel {
 }
 
 impl QueryLevel {
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "declared" => Some(Self::Declared),
@@ -144,7 +151,7 @@ impl Default for Spec {
             locale: None,
             search: None,
             now: None,
-            host: Default::default(),
+            host: sheetrs_engine::options::Host::default(),
             rand_seed: None,
             fold: true,
             query: QueryLevel::Declared,
@@ -172,7 +179,7 @@ pub struct Report {
     /// A reference computed at run time forced the whole workbook to be kept.
     pub dynamic_refs: bool,
     pub unsupported: BTreeSet<String>,
-    /// Warnings of the build (text outside the scripts the collation orders as LibreOffice does…).
+    /// Warnings of the build (text outside the scripts the collation orders as `LibreOffice` does…).
     pub warnings: Vec<String>,
     /// Every function called in the workbook's formulas and how many times
     /// (including the ones the engine does not implement).
@@ -197,6 +204,10 @@ fn err<T>(msg: impl Into<String>) -> Result<T, CompileError> {
 const MAX_BINDING_CELLS: u64 = 10_000_000;
 
 /// Resolve a user-facing target to a rectangle.
+///
+/// # Errors
+///
+/// When `target` is not a name or an address of the model, or names a sheet it does not have.
 pub fn resolve_target(model: &Model, target: &str) -> Result<Rect, CompileError> {
     let (sheet, tail) = addr::split_sheet(target.trim());
     let sheet_id = match &sheet {
@@ -309,6 +320,7 @@ struct Flags {
 }
 
 /// The peak resident memory of the process so far, in MB, where `/proc` reports it.
+#[must_use]
 pub fn peak_rss_mb() -> Option<u64> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
     let kb = status
@@ -341,7 +353,7 @@ struct Lowered {
     cached: FastMap<CellRef, Value>,
     diags: Vec<String>,
     unsupported: BTreeSet<String>,
-    /// Functions of LibreOffice the engine lacks, with the first cell that calls each.
+    /// Functions of `LibreOffice` the engine lacks, with the first cell that calls each.
     missing: std::collections::BTreeMap<String, CellRef>,
     /// Formulas whose syntax the parser does not read: the cell, the formula and why.
     syntax: Vec<(CellRef, String, String)>,
@@ -420,7 +432,7 @@ fn lower_chunk(
             // references, `#` spills…): the build stops, see `compile`.
             Err(e) => {
                 out.diags.push(format!("unsupported syntax ({e})"));
-                out.syntax.push((at, f.to_string(), e.to_string()));
+                out.syntax.push((at, f.clone(), e.to_string()));
             }
         }
         let sheet = model
@@ -434,6 +446,13 @@ fn lower_chunk(
     out
 }
 
+/// # Errors
+///
+/// When the document defines a setting that the spec overrides, or the model cannot be compiled (an unknown name, a reference that cannot be resolved, a formula that does not parse).
+///
+/// # Panics
+///
+/// When a thread that lowers formulas panics.
 pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileError> {
     let t0 = std::time::Instant::now();
     if model.from_file
@@ -495,7 +514,8 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             .map(|h| h.join().expect("a lowering thread panicked"))
             .collect()
     });
-    let mut missing: std::collections::BTreeMap<String, CellRef> = Default::default();
+    let mut missing: std::collections::BTreeMap<String, CellRef> =
+        std::collections::BTreeMap::default();
     let mut syntax: Vec<(CellRef, String, String)> = Vec::new();
     let mut options: Vec<(CellRef, String)> = Vec::new();
     for part in lowered {
@@ -723,7 +743,8 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
     trace(&t0, "bindings");
     let n = formulas.len();
     let (ats, mut kinds): (Vec<CellRef>, Vec<CellKind>) = formulas.into_iter().unzip();
-    let mut ids: FastMap<CellRef, u32> = FastMap::with_capacity_and_hasher(n, Default::default());
+    let mut ids: FastMap<CellRef, u32> =
+        FastMap::with_capacity_and_hasher(n, std::hash::BuildHasherDefault::default());
     let mut by_sheet: Vec<Vec<u32>> = vec![Vec::new(); model.sheets.len().max(1)];
     for (i, at) in ats.iter().enumerate() {
         ids.insert(*at, i as u32);
@@ -756,7 +777,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
     let mut stack = roots;
     let mut all = false;
     while let Some(v) = stack.pop() {
-        if g.seen(&mut visited, v) {
+        if Lazy::seen(&mut visited, v) {
             continue;
         }
         cone.push(v);
@@ -890,7 +911,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             queryable: Queryable::Declared,
             meta: Vec::new(),
             diagnostics: Vec::new(),
-            build: Default::default(),
+            build: BuildInfo::default(),
         };
         let mut eng = Engine::with_base(&tmp, opts.clone(), &view);
         eng.run();
@@ -1249,6 +1270,10 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
 /// The moment of a build in UTC (`2026-10-30T12:00:00Z`): `SOURCE_DATE_EPOCH` (seconds since 1970)
 /// when it is set, so that a build can be repeated exactly; else the clock. A value that is not a
 /// number of seconds is an error: a build that was meant to repeat must not silently use the clock.
+///
+/// # Errors
+///
+/// When `SOURCE_DATE_EPOCH` is set and is not a number of seconds.
 pub fn build_time() -> Result<String, String> {
     let seconds = match std::env::var("SOURCE_DATE_EPOCH") {
         Ok(value) => value.trim().parse::<i64>().map_err(|_| {
@@ -1464,7 +1489,7 @@ impl Lazy<'_> {
         self.kinds.len() as u32
     }
 
-    fn seen(&self, visited: &mut Vec<bool>, v: u32) -> bool {
+    fn seen(visited: &mut Vec<bool>, v: u32) -> bool {
         if visited.len() <= v as usize {
             visited.resize(v as usize + 1, false);
         }

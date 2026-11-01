@@ -33,7 +33,7 @@ use std::collections::HashMap;
 /// Rule that identifies legacy CSE array formulas.
 #[derive(Debug)]
 pub struct LegacyArrayRule {
-    /// Per-sheet collected cells: sheet_index → Vec<(row, col)>.
+    /// Per-sheet collected cells: `sheet_index` → Vec<(row, col)>.
     sheet_cells: HashMap<u16, Vec<(u32, u32)>>,
 }
 
@@ -55,7 +55,7 @@ impl Default for LegacyArrayRule {
 /// Incident data for VUL605.
 #[derive(Debug)]
 pub struct LegacyArrayData {
-    /// Bounding box of the CSE array range (start_row, start_col, end_row, end_col).
+    /// Bounding box of the CSE array range (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 

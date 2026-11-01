@@ -58,7 +58,7 @@ pub struct Workbook {
 pub struct IterationSettings {
     /// Whether iteration is switched on.
     pub enabled: bool,
-    /// Maximum number of iterations (Excel and LibreOffice default: 100).
+    /// Maximum number of iterations (Excel and `LibreOffice` default: 100).
     pub max_iterations: u32,
     /// Maximum change between iterations (default: 0.001).
     pub max_change: f64,
@@ -85,7 +85,7 @@ pub struct DocumentSettings {
     pub use_regular_expressions: Option<bool>,
     /// Search criteria may use `*`/`?`/`~` wildcards (ODS `table:use-wildcards`).
     pub use_wildcards: Option<bool>,
-    /// The date of serial 0 as `(year, month, day)` (ODS `table:null-date`; LibreOffice
+    /// The date of serial 0 as `(year, month, day)` (ODS `table:null-date`; `LibreOffice`
     /// stores any date). An XLSX states only `date1904`.
     pub null_date: Option<(i64, u32, u32)>,
     /// First year of the 100-year window for two-digit years (ODS `table:null-year`).
@@ -114,7 +114,7 @@ impl Workbook {
     /// Get sheet name by index
     ///
     /// Returns the sheet name for a given 0-based index.
-    /// This is useful for resolving ViolationScope which stores sheet_index.
+    /// This is useful for resolving `ViolationScope` which stores `sheet_index`.
     #[must_use]
     pub fn sheet_name_by_index(&self, sheet_index: u16) -> Option<&str> {
         self.sheets
@@ -140,15 +140,15 @@ pub struct Sheet {
     pub sheet_index: u16,
     /// Map of cell coordinates (row, col) to Cell data. 0-based indexing.
     pub cells: Grid<Cell>,
-    /// The used range of the sheet: (max_row, max_col) inclusive. 0-based.
+    /// The used range of the sheet: (`max_row`, `max_col`) inclusive. 0-based.
     pub used_range: Option<(u32, u32)>, // (rows, cols)
-    /// Hidden column ranges: (start_col, end_col), 0-based, inclusive.
+    /// Hidden column ranges: (`start_col`, `end_col`), 0-based, inclusive.
     /// Ranges are in source order and may be adjacent or overlap.
     pub hidden_columns: Vec<(u32, u32)>,
-    /// Hidden row ranges: (start_row, end_row), 0-based, inclusive.
+    /// Hidden row ranges: (`start_row`, `end_row`), 0-based, inclusive.
     /// Ranges are in source order and may be adjacent or overlap.
     pub hidden_rows: Vec<(u32, u32)>,
-    /// Merged cell ranges: (start_row, start_col, end_row, end_col), 0-based, inclusive
+    /// Merged cell ranges: (`start_row`, `start_col`, `end_row`, `end_col`), 0-based, inclusive
     pub merged_cells: Vec<(u32, u32, u32, u32)>,
     /// Error message if there was an error parsing formulas for this sheet
     pub formula_parsing_error: Option<String>,

@@ -35,7 +35,7 @@ use sheetrs_core::reader::{Cell, Sheet};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
-/// Deprecated function entries: (deprecated_name, replacement_name).
+/// Deprecated function entries: (`deprecated_name`, `replacement_name`).
 const DEPRECATED_FUNCTIONS: &[(&str, &str)] = &[
     ("CONCATENATE", "CONCAT / TEXTJOIN"), // Excel 2019
     ("LOOKUP", "XLOOKUP / INDEX+MATCH"),  // Excel 365
@@ -62,7 +62,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
         .collect()
 });
 
-/// Per-sheet cell collection: sheet_index → Vec<(func_index, row, col)>.
+/// Per-sheet cell collection: `sheet_index` → Vec<(`func_index`, row, col)>.
 type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
 
 /// Rule that detects usage of deprecated functions.
@@ -93,7 +93,7 @@ impl Default for DeprecatedFuncRule {
 pub struct DeprecatedFuncData {
     /// Index into `DEPRECATED_FUNCTIONS` list.
     pub func_index: u8,
-    /// Bounding box of violating cells (start_row, start_col, end_row, end_col).
+    /// Bounding box of violating cells (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 

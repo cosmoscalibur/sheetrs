@@ -118,7 +118,7 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: Default::default(),
+            cells: sheetrs_core::reader::Grid::default(),
             used_range: None,
             ..Default::default()
         };
@@ -155,7 +155,7 @@ mod tests {
         };
 
         let violations = collect_violations(|out| {
-            BrokenNamedRangesRule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+            BrokenNamedRangesRule.on_workbook_start(&workbook, &mut LinterContext::default(), out);
         });
         let names: Vec<_> = violations
             .iter()

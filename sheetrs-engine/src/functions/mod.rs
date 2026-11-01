@@ -88,7 +88,7 @@ const LIFTED: &[&str] = &[
     "CONCATENATE",
 ];
 
-/// Functions whose arguments outside the domain are `#NUM!` in LibreOffice
+/// Functions whose arguments outside the domain are `#NUM!` in `LibreOffice`
 /// (`Err:502` for the rest, which the readers translate to `#VALUE!`); found with
 /// the oracle (`tests/assets/semantics.ods`).
 pub const LO_DOMAIN_NUM: &[&str] = &["ASIN", "ACOS", "POWER"];
@@ -106,6 +106,8 @@ pub enum Imp {
     Lazy(LazyFn),
 }
 
+// One flag per behaviour of a function that the compiler and the engine read separately.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct FuncDef {
     pub ns: Ns,
@@ -192,6 +194,7 @@ impl FuncDef {
     }
 }
 
+#[must_use]
 pub fn table() -> &'static [FuncDef] {
     &REGISTRY.0
 }
@@ -256,12 +259,14 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
 });
 
 /// The function `name` (uppercase) of exactly this namespace.
+#[must_use]
 pub fn lookup_in(ns: Ns, name: &str) -> Option<FuncId> {
     REGISTRY.1.get(&(ns, name)).map(|&i| FuncId(i))
 }
 
 /// Resolve `name` (uppercase) written in `ns`: that namespace first, then `core`, then any other
 /// (a formula that leaves out a prefix the function needs still finds it). `None`: unknown.
+#[must_use]
 pub fn lookup(ns: Ns, name: &str) -> Option<FuncId> {
     lookup_in(ns, name)
         .or_else(|| lookup_in(Ns::Core, name))
@@ -274,6 +279,7 @@ pub fn lookup(ns: Ns, name: &str) -> Option<FuncId> {
 
 /// The namespace an XLSX gives a name it writes without `_xlfn.`, where that is not `core`
 /// (`CEILING` is Excel's, `FDIST` the legacy one).
+#[must_use]
 pub fn xlsx_bare(name: &str) -> Option<Ns> {
     namespaces::XLSX_BARE
         .iter()
@@ -281,8 +287,9 @@ pub fn xlsx_bare(name: &str) -> Option<Ns> {
         .map(|&(_, ns)| ns)
 }
 
-/// Whether LibreOffice has a function of this name (uppercase, without prefix): see
+/// Whether `LibreOffice` has a function of this name (uppercase, without prefix): see
 /// `namespaces::CATALOGUE`. A function it has and the engine does not implement stops the build.
+#[must_use]
 pub fn in_catalogue(name: &str) -> bool {
     namespaces::CATALOGUE.binary_search(&name).is_ok()
 }
@@ -311,6 +318,7 @@ pub(crate) fn num(n: f64) -> Res<Value> {
 
 /// Round half away from zero at `digits` decimal places on the 15 significant
 /// digits of `x` (the way spreadsheets round).
+#[must_use]
 pub fn round_decimal(x: f64, digits: i32) -> f64 {
     math::round_dec(x, digits, math::Mode::Nearest)
 }

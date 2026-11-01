@@ -1,6 +1,22 @@
 //! Rule registry for managing and creating rule instances
 
-use super::*;
+use super::{
+    RuleCategory, WalkerRule, calc201_hardcoded_values, calc202_circular_references,
+    calc203_double_operator, calc204_approximate_lookup, calc205_double_count, cpx501_sheet_counts,
+    cpx502_merged_cells, cpx503_excessive_conditional_formatting, cpx504_deep_if_nesting,
+    cpx505_deep_formula_nesting, cpx506_many_operations, cpx507_multiple_sheet_ref,
+    cpx508_many_references, cpx509_long_formula, dat701_sheet_names, dat702_numeric_formats,
+    dat703_date_formats, dat704_long_text, dat705_unnecessary_space, dat706_numeric_text_calc,
+    err101_broken_named_ranges, err102_error_cells, err103_ref_to_error, ext801_external_workbook,
+    ext802_web_urls, file1001_large_file_size, file1002_old_spreadsheet, file1003_date_system_1904,
+    hid901_hidden_worksheet, hid902_hidden_columns_rows, int401_interrupted_by_data,
+    ref301_unused_named_ranges, ref302_duplicate_names, ref303_empty_sheets,
+    ref304_large_used_range, ref305_blank_rows_columns, ref306_unused_sheets,
+    ref307_whole_column_row_refs, ref309_ref_to_empty_cell, ref310_longer_ref_expected,
+    vba1101_has_macros, vul601_duplicate_formulas, vul602_volatile_functions,
+    vul603_empty_string_test, vul604_error_prone_functions, vul605_legacy_array,
+    vul606_deprecated_func,
+};
 use crate::config::LinterConfig;
 use crate::violation::RuleId;
 use int401_interrupted_by_data::{InterruptionKind, InterruptionRule};
@@ -240,7 +256,10 @@ pub fn rule_providers(id: RuleId) -> &'static [RuleId] {
 /// or not its providers are enabled: `reported` plus their providers, in the
 /// order of `all`.
 #[must_use]
-pub fn run_rule_ids(all: &[RuleId], reported: &HashSet<RuleId>) -> Vec<RuleId> {
+pub fn run_rule_ids(
+    all: &[RuleId],
+    reported: &HashSet<RuleId, impl std::hash::BuildHasher>,
+) -> Vec<RuleId> {
     let providers: HashSet<RuleId> = reported
         .iter()
         .flat_map(|&id| rule_providers(id))

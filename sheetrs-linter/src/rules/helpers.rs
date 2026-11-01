@@ -213,16 +213,13 @@ pub fn extract_args(formula: &str, paren_pos: usize) -> Option<Vec<String>> {
 #[must_use]
 pub fn parse_formula_range(range_str: &str) -> Option<(u32, u32, u32, u32)> {
     let cell = |s: &str| sheetrs_formula::addr::parse_cell(s).map(|(row, col, ..)| (row, col));
-    match range_str.split_once(':') {
-        Some((start, end)) => {
-            let (sr, sc) = cell(start)?;
-            let (er, ec) = cell(end)?;
-            Some((sr, sc, er, ec))
-        }
-        None => {
-            let (r, c) = cell(range_str)?;
-            Some((r, c, r, c))
-        }
+    if let Some((start, end)) = range_str.split_once(':') {
+        let (sr, sc) = cell(start)?;
+        let (er, ec) = cell(end)?;
+        Some((sr, sc, er, ec))
+    } else {
+        let (r, c) = cell(range_str)?;
+        Some((r, c, r, c))
     }
 }
 
@@ -230,7 +227,7 @@ pub fn parse_formula_range(range_str: &str) -> Option<(u32, u32, u32, u32)> {
 mod tests {
     use super::*;
 
-    /// The limits of LibreOffice 26.8: column `XFD` and row 1,048,576. A token beyond them or on
+    /// The limits of `LibreOffice` 26.8: column `XFD` and row 1,048,576. A token beyond them or on
     /// row 0 is a name, as `=A0` and `=XFE1` are `#NAME?` there.
     #[test]
     fn test_parse_cell_coords_accepts_only_cells_of_a_sheet() {
@@ -448,10 +445,15 @@ pub struct FormulaLinks {
 pub fn formula_links(
     formula: &str,
     current_sheet: u16,
-    sheet_indexes: &HashMap<String, u16>,
+    sheet_indexes: &HashMap<String, u16, impl std::hash::BuildHasher>,
 ) -> Option<FormulaLinks> {
     use sheetrs_formula::ast::Expr;
-    fn walk(e: &Expr, current: u16, indexes: &HashMap<String, u16>, out: &mut FormulaLinks) {
+    fn walk(
+        e: &Expr,
+        current: u16,
+        indexes: &HashMap<String, u16, impl std::hash::BuildHasher>,
+        out: &mut FormulaLinks,
+    ) {
         match e {
             Expr::Ref(r) => match &r.sheet {
                 None => out.sheets.push(current),
@@ -527,7 +529,7 @@ pub fn mask_quoted(formula: &str) -> std::borrow::Cow<'_, str> {
 pub struct FutureCalls {
     /// The formula calls some function written with the `_xlfn.` or `_xlws.` prefix.
     pub any: bool,
-    /// One of them is `_xlfn._LONGTEXT(`, which is not an Excel function: LibreOffice 26.2 wrote a
+    /// One of them is `_xlfn._LONGTEXT(`, which is not an Excel function: `LibreOffice` 26.2 wrote a
     /// text literal of more than 255 characters as pieces joined by it.
     pub longtext: bool,
 }

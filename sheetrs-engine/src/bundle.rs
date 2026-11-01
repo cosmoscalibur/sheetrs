@@ -30,6 +30,10 @@ struct Packed {
 
 /// Write the executable: `runtime` plus `program`. The constants of a big program leave it for the
 /// blocks of the payload, so `program` is left without them.
+///
+/// # Errors
+///
+/// When the runtime cannot be read or the executable cannot be written.
 pub fn write_executable(program: &mut Program, runtime: &Path, out: &Path) -> Result<(), String> {
     let (index, blocks) = consts::split(program, consts::MIN_STORED)?;
     let skeleton = bincode::serialize(&PackedRef {
@@ -82,6 +86,7 @@ pub struct Embedded {
 }
 
 /// The program embedded in the running executable, if any.
+#[must_use]
 pub fn read_embedded() -> Option<Embedded> {
     let mut f = File::open(std::env::current_exe().ok()?).ok()?;
     let size = f.seek(SeekFrom::End(0)).ok()?;

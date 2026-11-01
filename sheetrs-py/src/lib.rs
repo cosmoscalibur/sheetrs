@@ -1,4 +1,4 @@
-//! Python bindings for the SheetRS suite.
+//! Python bindings for the `SheetRS` suite.
 //!
 //! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports it, flat.
 //!
@@ -161,7 +161,7 @@ impl PyLinter {
     ///
     /// Raises `OSError` when a file cannot be read and `SheetrsError` when the workbook cannot be
     /// parsed.
-    fn lint(&self, py: Python<'_>, source: PyRef<'_, PySource>) -> PyResult<Vec<PyViolation>> {
+    fn lint(&self, py: Python<'_>, source: &PySource) -> PyResult<Vec<PyViolation>> {
         let source = &source.source;
         py.detach(|| {
             let workbook = source.read_workbook().map_err(to_py_err)?;
@@ -349,7 +349,8 @@ impl PyEditPlan {
     /// recalculates every formula, and puts the mark last: it does when an operation leaves the
     /// cached results of formulas stale (rows, columns, sheets or names removed). There is no
     /// option for it.
-    fn save(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+    #[allow(clippy::needless_pass_by_value)] // pyo3 hands over an owned argument
+    fn save(&self, py: Python<'_>, path: std::borrow::Cow<'_, std::path::Path>) -> PyResult<()> {
         py.detach(|| self.plan.execute(&self.source, &path).map_err(to_py_err))
     }
 

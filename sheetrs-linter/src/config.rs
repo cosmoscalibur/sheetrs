@@ -172,7 +172,7 @@ impl LinterConfig {
         for (scope, params) in scopes {
             for key in Self::POSITIVE_INT_PARAMS {
                 if let Some(value) = params.get(*key)
-                    && !value.as_integer().is_some_and(|n| n >= 1)
+                    && value.as_integer().is_none_or(|n| n < 1)
                 {
                     return Err(Error::NotPositive {
                         key,
@@ -238,13 +238,16 @@ impl LinterConfig {
     pub fn param_int(&self, key: &str, sheet_name: Option<&str>) -> Option<i64> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
-            && let Some(value) = sheet.params.get(key).and_then(|v| v.as_integer())
+            && let Some(value) = sheet.params.get(key).and_then(toml::Value::as_integer)
         {
             return Some(value);
         }
 
         // Try global
-        self.global.params.get(key).and_then(|v| v.as_integer())
+        self.global
+            .params
+            .get(key)
+            .and_then(toml::Value::as_integer)
     }
 
     /// Get a parameter value as string with fallback chain: sheet -> global
@@ -269,7 +272,7 @@ impl LinterConfig {
             && let Some(arr) = sheet.params.get(key).and_then(|v| {
                 v.as_array().map(|arr| {
                     arr.iter()
-                        .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                        .filter_map(|item| item.as_str().map(std::string::ToString::to_string))
                         .collect()
                 })
             })
@@ -281,7 +284,7 @@ impl LinterConfig {
         self.global.params.get(key).and_then(|v| {
             v.as_array().map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                    .filter_map(|item| item.as_str().map(std::string::ToString::to_string))
                     .collect()
             })
         })
@@ -318,13 +321,13 @@ impl LinterConfig {
     pub fn param_bool(&self, key: &str, sheet_name: Option<&str>) -> Option<bool> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
-            && let Some(value) = sheet.params.get(key).and_then(|v| v.as_bool())
+            && let Some(value) = sheet.params.get(key).and_then(toml::Value::as_bool)
         {
             return Some(value);
         }
 
         // Try global
-        self.global.params.get(key).and_then(|v| v.as_bool())
+        self.global.params.get(key).and_then(toml::Value::as_bool)
     }
 }
 

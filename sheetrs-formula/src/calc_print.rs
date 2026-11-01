@@ -1,4 +1,4 @@
-//! Printing in LibreOffice's own notation, as `FORMULA()` (`FORMULATEXT` in
+//! Printing in `LibreOffice`'s own notation, as `FORMULA()` (`FORMULATEXT` in
 //! Excel) shows it: `$Sheet.A1:B2` references (the sheet of the formula
 //! itself is left out), `TRUE()`, canonical function names, numbers in the
 //! reader's locale and the separators of that locale.
@@ -7,7 +7,7 @@ use crate::addr::col_name;
 use crate::ast::{CellAddr, Expr, RefArea, Reference, UnOp};
 use std::fmt::Write;
 
-/// Separators a LibreOffice user has set; they follow the decimal separator
+/// Separators a `LibreOffice` user has set; they follow the decimal separator
 /// unless changed (`,` decimal: `;` between arguments, `.` between the columns
 /// of an array constant).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub struct CalcSyntax {
 }
 
 impl CalcSyntax {
-    /// The defaults LibreOffice derives from the decimal separator.
+    /// The defaults `LibreOffice` derives from the decimal separator.
     #[must_use]
     pub fn for_decimal(decimal: char) -> Self {
         if decimal == ',' {
@@ -233,7 +233,7 @@ fn expr(out: &mut String, e: &Expr, home: &str, syn: &CalcSyntax) {
     }
 }
 
-/// `e` in LibreOffice notation, without the leading `=`. `home` is the sheet the
+/// `e` in `LibreOffice` notation, without the leading `=`. `home` is the sheet the
 /// formula is in.
 #[must_use]
 pub fn to_calc(e: &Expr, home: &str, syn: &CalcSyntax) -> String {

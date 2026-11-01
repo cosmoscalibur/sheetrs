@@ -1,4 +1,4 @@
-//! sheetrs-core: the shared kernel of the SheetRS suite.
+//! sheetrs-core: the shared kernel of the `SheetRS` suite.
 //!
 //! It holds what every tool needs and no tool owns: the format-agnostic workbook model
 //! ([`reader::Workbook`], [`reader::Cell`], [`reader::Grid`]) and the streaming XLSX/ODS readers

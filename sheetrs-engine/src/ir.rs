@@ -12,7 +12,7 @@ use crate::options::EngineOptions;
 use crate::value::Value;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// Namespace of a function, as OpenDocument names them. `Core` is the standard: its names carry
+/// Namespace of a function, as `OpenDocument` names them. `Core` is the standard: its names carry
 /// no prefix (`SUM`). The others are the prefixes a name carries in an ODS and, with `_xlfn.`,
 /// in an XLSX: `COM.MICROSOFT.` (functions Microsoft defined after ODF 1.2, and Excel's own
 /// version of a function whose bare name is something else), `ORG.OPENOFFICE.` and
@@ -28,6 +28,7 @@ pub enum Ns {
 }
 
 impl Ns {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Core => "core",
@@ -38,6 +39,7 @@ impl Ns {
         }
     }
 
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "core" => Self::Core,
@@ -50,6 +52,7 @@ impl Ns {
     }
 
     /// The namespace an ODS name's prefix names (`COM.MICROSOFT.` …), with the name that is left.
+    #[must_use]
     pub fn of_prefixed(name: &str) -> Option<(Self, &str)> {
         [
             ("COM.MICROSOFT.", Self::Microsoft),
@@ -68,10 +71,12 @@ impl Ns {
 pub struct FuncId(pub u16);
 
 impl FuncId {
+    #[must_use]
     pub fn def(self) -> &'static functions::FuncDef {
         &functions::table()[self.0 as usize]
     }
 
+    #[must_use]
     pub fn qualified(self) -> String {
         let d = self.def();
         format!("{}::{}", d.ns.as_str(), d.name)

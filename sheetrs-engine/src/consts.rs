@@ -31,6 +31,7 @@ pub struct ConstIndex {
 
 impl ConstIndex {
     /// The number of constants kept apart.
+    #[must_use]
     pub fn cells(&self) -> u64 {
         self.cells
     }
@@ -58,6 +59,10 @@ type Block = Vec<(u32, u32, Value)>;
 /// Move the constants of `program` out of its cells, returning their index and encoded blocks.
 /// With fewer than `min` constants the program is left as it is and the index is empty. The slots
 /// of `cycles` follow the cells that stay.
+///
+/// # Errors
+///
+/// When the constants cannot be split off the program.
 pub fn split(program: &mut Program, min: usize) -> Result<(ConstIndex, Vec<u8>), String> {
     let total = program
         .cells
@@ -144,6 +149,7 @@ pub struct StoredConsts {
 }
 
 impl StoredConsts {
+    #[must_use]
     pub fn new(index: ConstIndex, file: File, start: u64) -> Self {
         Self {
             index,

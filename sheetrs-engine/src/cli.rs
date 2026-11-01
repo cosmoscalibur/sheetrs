@@ -22,6 +22,9 @@ impl Args {
         }
     }
 
+    /// # Errors
+    ///
+    /// When the flag is present without a value.
     pub fn value(&mut self, name: &str) -> Result<Option<String>, String> {
         let eq = format!("{name}=");
         if let Some(i) = self.0.iter().position(|a| a.starts_with(&eq)) {
@@ -37,6 +40,9 @@ impl Args {
         }
     }
 
+    /// # Errors
+    ///
+    /// When a flag is present without a value.
     pub fn values(&mut self, name: &str) -> Result<Vec<String>, String> {
         let mut out = Vec::new();
         while let Some(v) = self.value(name)? {
@@ -46,6 +52,9 @@ impl Args {
     }
 }
 
+/// # Errors
+///
+/// When `s` is not a date system.
 pub fn parse_date_system(s: &str) -> Result<DateSystem, String> {
     match s {
         "1904" => Ok(DateSystem::NULL_1904),
@@ -67,6 +76,10 @@ pub fn parse_date_system(s: &str) -> Result<DateSystem, String> {
 }
 
 /// `--iterate` (defaults) or `--iterate=N[,EPS]`.
+///
+/// # Errors
+///
+/// When an iteration flag has a value that does not parse.
 pub fn parse_iteration(args: &mut Args) -> Result<Option<Iteration>, String> {
     if args.flag("--iterate") {
         return Ok(Some(Iteration::default()));
@@ -99,6 +112,9 @@ pub struct ModelFlags {
     pub iteration: Option<Iteration>,
 }
 
+/// # Errors
+///
+/// When a flag has no value or a value that does not parse.
 pub fn parse_model_flags(args: &mut Args) -> Result<ModelFlags, String> {
     let mut f = ModelFlags::default();
     if let Some(v) = args.value("--date-system")? {
@@ -113,6 +129,10 @@ pub const FILE_DEFINED_FLAGS: [&str; 4] =
     ["--date-system", "--iterate", "--no-iterate", "--search"];
 
 /// Options of the clock and the random seed, shared by build and run time.
+///
+/// # Errors
+///
+/// When a flag has no value or a value that does not parse.
 pub fn parse_overrides(args: &mut Args) -> Result<Overrides, String> {
     for f in FILE_DEFINED_FLAGS {
         if args
@@ -227,6 +247,7 @@ fn meta_json(p: &Program) -> serde_json::Value {
 
 /// Execute a program according to command-line arguments. Returns the exit
 /// code: 0 on success, 1 on a failed run, 2 on bad arguments.
+#[must_use]
 pub fn run_program(program: &Program, consts: Option<&StoredConsts>, mut args: Args) -> i32 {
     let base = consts.map(|c| c as &dyn ConstSource);
     let pretty = args.flag("--pretty");
@@ -306,6 +327,7 @@ pub fn run_program(program: &Program, consts: Option<&StoredConsts>, mut args: A
     }
 }
 
+#[must_use]
 pub fn usage_error(msg: &str) -> i32 {
     eprintln!("error: {msg}");
     2

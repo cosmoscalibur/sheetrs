@@ -56,7 +56,7 @@ pub enum Error {
         "the formula '{formula}' holds a 3D reference (a span of sheets such as Sheet1:Sheet3!A1), which is not supported yet when rows or columns are deleted or sheets are removed (https://github.com/cosmoscalibur/sheetrs/issues/75)"
     )]
     ThreeDReference { formula: String },
-    /// LibreOffice places such a shape by sizes that the file does not hold.
+    /// `LibreOffice` places such a shape by sizes that the file does not hold.
     #[error(
         "a deletion in sheet '{sheet}' removes a cell that a shape is anchored to together with the rows or columns before it: LibreOffice places the shape by its size and the height of the rows (or width of the columns), which the file does not hold"
     )]

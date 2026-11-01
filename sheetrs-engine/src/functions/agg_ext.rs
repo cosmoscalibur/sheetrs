@@ -14,6 +14,7 @@ struct Skip {
 }
 
 /// The cells of the references and arrays, in order, minus what `skip` leaves out.
+#[allow(clippy::unnecessary_wraps)] // same fallible signature as its siblings, which share call sites
 fn cells(e: &mut Engine, args: &[Value], skip: &Skip) -> Res<Vec<Value>> {
     let mut out = Vec::new();
     for a in args {
@@ -142,7 +143,7 @@ pub(super) fn register(r: &mut Reg) {
                     num(if m % 2 == 1 {
                         n[m / 2]
                     } else {
-                        (n[m / 2 - 1] + n[m / 2]) / 2.0
+                        f64::midpoint(n[m / 2 - 1], n[m / 2])
                     })
                 }
                 13 => {

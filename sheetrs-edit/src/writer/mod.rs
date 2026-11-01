@@ -332,6 +332,10 @@ fn write_element<W: Write>(
 }
 
 /// Modify a workbook file (supports multiple operations)
+///
+/// # Errors
+///
+/// When the input cannot be read or written, the format is not supported, an operation cannot be applied (it names a sheet the workbook does not have, or a deletion that cannot be made right), or a formula holds a 3D reference.
 pub fn modify_workbook<P: AsRef<Path>>(
     input_path: P,
     output_path: P,
@@ -361,6 +365,10 @@ pub fn modify_workbook<P: AsRef<Path>>(
 }
 
 /// Legacy wrapper for removing sheets
+///
+/// # Errors
+///
+/// When a sheet is unknown, the workbook would be left with none, or the file cannot be read or written.
 pub fn remove_sheets<P: AsRef<Path>>(
     input_path: P,
     output_path: P,
@@ -374,6 +382,10 @@ pub fn remove_sheets<P: AsRef<Path>>(
 }
 
 /// Legacy wrapper for removing named ranges
+///
+/// # Errors
+///
+/// When the file cannot be read or written.
 pub fn remove_named_ranges<P: AsRef<Path>>(
     input_path: P,
     output_path: P,

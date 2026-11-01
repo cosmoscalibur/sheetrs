@@ -43,7 +43,7 @@ const THRESHOLD_ROWS: u32 = 2;
 /// Threshold for columns beyond data.
 const THRESHOLD_COLS: u32 = 2;
 
-/// Per-sheet tracked max data cell: sheet_index → (max_row, max_col).
+/// Per-sheet tracked max data cell: `sheet_index` → (`max_row`, `max_col`).
 type SheetMaxMap = HashMap<u16, (u32, u32)>;
 
 /// Rule that detects excessively large used ranges.
@@ -249,7 +249,7 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: Default::default(),
+            cells: sheetrs_core::reader::Grid::default(),
             used_range: Some((100, 100)),
             ..Default::default()
         };

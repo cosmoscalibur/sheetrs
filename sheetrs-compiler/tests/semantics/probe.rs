@@ -1,6 +1,6 @@
-//! Fidelity probes: formulas on which Excel and LibreOffice are known or suspected to differ
+//! Fidelity probes: formulas on which Excel and `LibreOffice` are known or suspected to differ
 //! (`scripts/probe_behavior.py`, documented in docs/FIDELITY.md). The ODS files hold
-//! LibreOffice's answers, which the engine must reproduce; the cases where it differs from
+//! `LibreOffice`'s answers, which the engine must reproduce; the cases where it differs from
 //! Excel are pinned below.
 
 use serde_json::{Value as Json, json};
@@ -26,7 +26,7 @@ const NOT_REPRODUCED: &[(&str, &str)] = &[
     ),
 ];
 
-/// Error-valued probes where LibreOffice's error kind is not meaningful
+/// Error-valued probes where `LibreOffice`'s error kind is not meaningful
 /// (every invalid argument is Err:502): only "is an error" is compared.
 const ANY_ERROR: &[&str] = &[
     "CEILING(2.1,-2)",
@@ -135,7 +135,7 @@ fn document_search_settings_literal_mode() {
     });
 }
 
-/// The behaviors that differ from Excel's, pinned: the answers are LibreOffice's.
+/// The behaviors that differ from Excel's, pinned: the answers are `LibreOffice`'s.
 #[test]
 fn libreoffice_behaviors_that_differ_from_excel_are_pinned() {
     let cases: &[(&str, Json)] = &[

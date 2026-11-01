@@ -316,8 +316,7 @@ impl ViolationScope {
     pub fn sheet_index(&self) -> Option<u16> {
         match self {
             ViolationScope::Book => None,
-            ViolationScope::Sheet(idx) => Some(*idx),
-            ViolationScope::Cell(idx, _) => Some(*idx),
+            ViolationScope::Sheet(idx) | ViolationScope::Cell(idx, _) => Some(*idx),
         }
     }
 }
@@ -332,11 +331,13 @@ impl Ord for ViolationScope {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (ViolationScope::Book, ViolationScope::Book) => Ordering::Equal,
-            (ViolationScope::Book, _) => Ordering::Less,
-            (_, ViolationScope::Book) => Ordering::Greater,
+            (ViolationScope::Book, _) | (ViolationScope::Sheet(_), ViolationScope::Cell(..)) => {
+                Ordering::Less
+            }
+            (_, ViolationScope::Book) | (ViolationScope::Cell(..), ViolationScope::Sheet(_)) => {
+                Ordering::Greater
+            }
             (ViolationScope::Sheet(a), ViolationScope::Sheet(b)) => a.cmp(b),
-            (ViolationScope::Sheet(_), ViolationScope::Cell(_, _)) => Ordering::Less,
-            (ViolationScope::Cell(_, _), ViolationScope::Sheet(_)) => Ordering::Greater,
             (ViolationScope::Cell(sheet_a, cell_a), ViolationScope::Cell(sheet_b, cell_b)) => {
                 sheet_a.cmp(sheet_b).then_with(|| cell_a.cmp(cell_b))
             }

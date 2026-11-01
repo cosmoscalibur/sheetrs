@@ -1,6 +1,6 @@
 //! Verification against a workbook's own cached values.
 //!
-//! A workbook saved by Excel or LibreOffice holds, next to every formula, the
+//! A workbook saved by Excel or `LibreOffice` holds, next to every formula, the
 //! value the application computed. Recomputing the formulas with the engine, with
 //! the inputs the file holds (its defaults), and comparing is the check of
 //! fidelity on a real model.
@@ -64,6 +64,7 @@ pub struct Verification {
 }
 
 impl Verification {
+    #[must_use]
     pub fn mismatches(&self) -> usize {
         self.sheets.iter().map(|s| s.mismatches.len()).sum()
     }
@@ -120,8 +121,12 @@ fn is_volatile(formula: &str) -> bool {
 /// values of the file. `spec` carries the options of the build (locale, folding).
 ///
 /// `reference`: a copy of the workbook whose cached values are the ones to compare with
-/// (what LibreOffice recalculated, see `recalc`); `None` compares with the values `model`
+/// (what `LibreOffice` recalculated, see `recalc`); `None` compares with the values `model`
 /// itself caches.
+///
+/// # Errors
+///
+/// When the program cannot be run or the reference results cannot be read.
 pub fn verify(
     model: &Model,
     spec: &Spec,

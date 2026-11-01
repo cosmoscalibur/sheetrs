@@ -1,5 +1,5 @@
 //! A fast non-cryptographic hasher for the integer-keyed maps that dominate
-//! large workbooks (millions of cell addresses). The default SipHash is
+//! large workbooks (millions of cell addresses). The default `SipHash` is
 //! DoS-resistant, which a compiler reading its own input does not need.
 
 use std::collections::HashMap;

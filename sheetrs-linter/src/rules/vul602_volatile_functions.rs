@@ -53,7 +53,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
         .collect()
 });
 
-/// Per-sheet cell collection: sheet_index → Vec<(func_index, row, col)>.
+/// Per-sheet cell collection: `sheet_index` → Vec<(`func_index`, row, col)>.
 type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
 
 /// Rule that detects usage of volatile functions.
@@ -84,7 +84,7 @@ impl Default for VolatileFunctionsRule {
 pub struct VolatileFunctionData {
     /// Index into `VOLATILE_FUNCTIONS` list.
     pub func_index: u8,
-    /// Bounding box of violating cells (start_row, start_col, end_row, end_col).
+    /// Bounding box of violating cells (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 
@@ -329,7 +329,7 @@ mod tests {
             })
             .collect();
         let mut sorted = keys.clone();
-        sorted.sort();
+        sorted.sort_unstable();
         assert_eq!(keys.len(), 18);
         assert_eq!(keys, sorted);
     }

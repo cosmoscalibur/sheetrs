@@ -40,7 +40,7 @@ enum Tok {
     Frac(usize),
     /// `/` in a date format: the locale's date separator.
     DateSep,
-    /// A `[$-407]` tag of a language the engine has no names for: LibreOffice writes that
+    /// A `[$-407]` tag of a language the engine has no names for: `LibreOffice` writes that
     /// language's names, so the code cannot be reproduced and TEXT is an error.
     Foreign,
     /// A `[$-409]` tag: the names of months and days, and AM/PM, are those of this locale's language.
@@ -185,6 +185,7 @@ fn sym_only_symbol(sym: &str) -> bool {
 }
 
 /// Whether a date or time code carries a language tag the engine has no names for (`[$-407]`).
+#[must_use]
 pub fn has_foreign_language_tag(fmt: &str) -> bool {
     tokenize_dt(fmt).is_some_and(|t| t.contains(&Tok::Foreign))
 }
@@ -387,7 +388,7 @@ fn parse_cond(s: &str) -> Option<(Cmp, f64)> {
     rest.trim().parse().ok().map(|v| (op, v))
 }
 
-/// The decimal and group characters a format code is written with. LibreOffice
+/// The decimal and group characters a format code is written with. `LibreOffice`
 /// reads the code of `TEXT` in the user's locale (`#.##0,00` in Spanish); the codes
 /// it was observed to take in English form whatever the locale are listed.
 fn code_separators(fmt: &str, loc: &Locale) -> (char, char) {
@@ -823,7 +824,7 @@ fn cond_holds(c: (Cmp, f64), x: f64) -> bool {
 }
 
 /// Whether a color or condition bracket comes after other content of its
-/// section: LibreOffice refuses such a code (`yyyy [Blue]`).
+/// section: `LibreOffice` refuses such a code (`yyyy [Blue]`).
 fn misplaced_bracket(section: &str) -> bool {
     let cs: Vec<char> = section.chars().collect();
     let mut seen = false;
@@ -868,7 +869,7 @@ fn misplaced_bracket(section: &str) -> bool {
 /// `TEXT` takes it. `None`: the code is not valid (`#VALUE!`). `General` (or an
 /// empty code) uses the general number format.
 /// A `[$-…]` tag without a currency symbol whose language is not a hexadecimal id (`[$-en-US]`,
-/// `[$-ZZZ]`): LibreOffice answers `Err:502`. With a symbol (`[$€-en-US]`) the language is not read.
+/// `[$-ZZZ]`): `LibreOffice` answers `Err:502`. With a symbol (`[$€-en-US]`) the language is not read.
 fn bad_language_tag(fmt: &str) -> bool {
     let mut rest = fmt;
     while let Some(at) = rest.find("[$-") {
@@ -883,6 +884,7 @@ fn bad_language_tag(fmt: &str) -> bool {
     false
 }
 
+#[must_use]
 pub fn format_number(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> Option<String> {
     let (dec, grp) = code_separators(fmt, loc);
     format_with(x, fmt, loc, sys, dec, grp)
@@ -890,6 +892,7 @@ pub fn format_number(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> Option
 
 /// [`format_number`] for a code the engine writes itself, always in English
 /// notation (`FIXED`).
+#[must_use]
 pub fn format_number_en(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> String {
     format_with(x, fmt, loc, sys, '.', ',').unwrap_or_default()
 }
@@ -979,6 +982,7 @@ fn format_with(
 }
 
 /// Format a text value with the text section (`@`) of a format code, if it has one.
+#[must_use]
 pub fn format_text(text: &str, fmt: &str, loc: &Locale) -> Option<String> {
     let (dec, grp) = code_separators(fmt, loc);
     let raw = sections(fmt);
@@ -1045,9 +1049,9 @@ mod tests {
         assert_eq!(f(0.5, "# ??/??"), " \u{2007}1/2\u{2007}");
         assert_eq!(f(0.0, "# ?/?"), "0 \u{2007} \u{2007}");
         assert_eq!(f(1234.5678, "0.00E+00"), "1.23E+03");
-        assert_eq!(f(12345678.9, "##0.0E+0"), "12.3E+6");
+        assert_eq!(f(12_345_678.9, "##0.0E+0"), "12.3E+6");
         assert_eq!(f(1234.5678, "000-00"), "012-35");
-        assert_eq!(f(1000000.0, "0,"), "1000");
+        assert_eq!(f(1_000_000.0, "0,"), "1000");
         assert_eq!(f(-1234.5678, "[>100]0.0;0"), "1235");
         assert_eq!(f(-1234.5678, "#,##0_);(#,##0)"), "(1,235)");
         assert_eq!(f(1234.5678, "[$$-en-US]#,##0"), "$1,235");
@@ -1076,8 +1080,8 @@ mod tests {
             format_number(x, code, &Locale::en_us(), DateSystem::NULL_1899).unwrap()
         };
         // A clock shows what it has reached; elapsed time rounds to the second.
-        assert_eq!(g(0.999999, "h:mm"), "23:59");
-        assert_eq!(g(0.999999, "[h]:mm"), "24:00");
+        assert_eq!(g(0.999_999, "h:mm"), "23:59");
+        assert_eq!(g(0.999_999, "[h]:mm"), "24:00");
         assert_eq!(g(45658.75123, "[h]:mm"), "1095810:01");
         assert_eq!(g(45658.75123, "hh:mm:ss.0"), "18:01:46.3");
         assert_eq!(g(45658.75123, "h A/P"), "6 p");

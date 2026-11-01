@@ -151,6 +151,7 @@ impl EditPlan {
     /// Whether the output will be marked to be recalculated when it is opened. The plan decides:
     /// it does when an operation leaves cached results stale (rows, columns, sheets or names
     /// removed), and it does not when the plan only converts formulas to values.
+    #[must_use]
     pub fn marks_recalculation(&self) -> bool {
         self.operations
             .iter()
@@ -337,12 +338,19 @@ impl IntoIterator for EditPlan {
     }
 }
 
+impl EditPlan {
+    /// The operations in order.
+    pub fn iter(&self) -> std::slice::Iter<'_, Operation> {
+        self.operations.iter()
+    }
+}
+
 impl<'a> IntoIterator for &'a EditPlan {
     type Item = &'a Operation;
     type IntoIter = std::slice::Iter<'a, Operation>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.operations.iter()
+        self.iter()
     }
 }
 

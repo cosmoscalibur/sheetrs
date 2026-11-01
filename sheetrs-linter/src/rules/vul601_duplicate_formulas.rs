@@ -66,7 +66,7 @@ pub struct DuplicateFormulaData {
     pub formula: String,
     /// Number of times the formula appears.
     pub count: usize,
-    /// Bounding box of one contiguous group (start_row, start_col, end_row, end_col).
+    /// Bounding box of one contiguous group (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 

@@ -82,13 +82,7 @@ impl HardcodedValuesInFormulasRule {
     }
 
     /// Check whether a value should be ignored based on configuration.
-    fn is_ignored(
-        &self,
-        val: f64,
-        ignored_values: &[f64],
-        ignore_ints: bool,
-        ignore_pow10: bool,
-    ) -> bool {
+    fn is_ignored(val: f64, ignored_values: &[f64], ignore_ints: bool, ignore_pow10: bool) -> bool {
         // Check exact match (with epsilon)
         if ignored_values
             .iter()
@@ -118,7 +112,6 @@ impl HardcodedValuesInFormulasRule {
 
     /// Extract non-ignored hardcoded constants from a formula string.
     fn extract_hardcoded_values(
-        &self,
         formula: &str,
         ignored_values: &[f64],
         ignore_ints: bool,
@@ -147,7 +140,7 @@ impl HardcodedValuesInFormulasRule {
 
                 if !is_external_ref
                     && let Ok(val) = match_str.as_str().parse::<f64>()
-                    && !self.is_ignored(val, ignored_values, ignore_ints, ignore_pow10)
+                    && !Self::is_ignored(val, ignored_values, ignore_ints, ignore_pow10)
                     && !values.contains(&val)
                 {
                     values.push(val);
@@ -168,7 +161,11 @@ pub struct HardcodedValuesData {
 
 impl ViolationData for HardcodedValuesData {
     fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
-        let formatted: Vec<String> = self.values.iter().map(|v| v.to_string()).collect();
+        let formatted: Vec<String> = self
+            .values
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         format!(
             "Hardcoded values found in formula: {}",
             formatted.join(", ")
@@ -223,7 +220,7 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
                 .unwrap_or(true);
 
             let values =
-                self.extract_hardcoded_values(formula, &ignored_values, ignore_ints, ignore_pow10);
+                Self::extract_hardcoded_values(formula, &ignored_values, ignore_ints, ignore_pow10);
 
             if !values.is_empty() {
                 out.push(Violation::with_data(
@@ -326,7 +323,10 @@ mod tests {
 
         // One violation per cell with hardcoded values
         assert_eq!(violations.len(), 2);
-        let msgs: Vec<String> = violations.iter().map(|v| v.message()).collect();
+        let msgs: Vec<String> = violations
+            .iter()
+            .map(crate::violation::Violation::message)
+            .collect();
         assert!(msgs.iter().any(|m| m.contains("123")));
         assert!(msgs.iter().any(|m| m.contains("1.5")));
 
@@ -347,7 +347,10 @@ mod tests {
 
         // Should flag: 1.5 (cell B1), 0.1+0.01 aggregated (cell D1)
         let violations2 = run_calc201(&config2, &workbook);
-        let msgs2: Vec<String> = violations2.iter().map(|v| v.message()).collect();
+        let msgs2: Vec<String> = violations2
+            .iter()
+            .map(crate::violation::Violation::message)
+            .collect();
 
         // Integers are ignored, so 123, 0, 10, 100, 5 filtered out
         assert!(!msgs2.iter().any(|m| m.contains("123")));
@@ -366,7 +369,10 @@ mod tests {
 
         // 123 is integer, ignored on Sheet1
         let violations3 = run_calc201(&config3, &workbook);
-        let msgs3: Vec<String> = violations3.iter().map(|v| v.message()).collect();
+        let msgs3: Vec<String> = violations3
+            .iter()
+            .map(crate::violation::Violation::message)
+            .collect();
         assert!(!msgs3.iter().any(|m| m.contains("123")));
     }
 
@@ -477,7 +483,10 @@ mod tests {
 
         let violations = run_calc201(&config, &workbook);
 
-        let msgs: Vec<String> = violations.iter().map(|v| v.message()).collect();
+        let msgs: Vec<String> = violations
+            .iter()
+            .map(crate::violation::Violation::message)
+            .collect();
 
         // Indices 1 and 2 should NOT be flagged
         assert!(
@@ -492,7 +501,7 @@ mod tests {
         );
 
         // The constant 6 SHOULD be flagged
-        assert!(msgs.iter().any(|m| m.contains("6")));
+        assert!(msgs.iter().any(|m| m.contains('6')));
 
         // Should have exactly 1 violation (the 6)
         assert_eq!(violations.len(), 1);

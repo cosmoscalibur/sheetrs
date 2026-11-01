@@ -18,6 +18,10 @@ use super::{
 use crate::reader::ExcelError;
 
 /// Resolve sheet name to its XML path in the XLSX archive
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn get_xlsx_sheet_path(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
     sheet_name: &str,
@@ -119,6 +123,10 @@ pub fn workbook_part_name(target: &str) -> String {
 }
 
 /// Extract defined names (named ranges) from XLSX file
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_defined_names_from_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<HashMap<String, String>> {
@@ -140,7 +148,7 @@ pub fn extract_defined_names_from_xlsx(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+            Ok(Event::Start(e) | Event::Empty(e)) => {
                 match e.name().as_ref() {
                     "definedNames" => in_defined_names = true,
                     "definedName" if in_defined_names => {
@@ -188,6 +196,10 @@ pub fn extract_defined_names_from_xlsx(
 
 /// Extract Excel Tables from XLSX file as defined names
 /// Scans xl/tables/*.xml
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_tables_from_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<HashMap<String, String>> {
@@ -198,7 +210,10 @@ pub fn extract_tables_from_xlsx(
     for i in 0..archive.len() {
         if let Ok(file) = archive.by_index(i) {
             let name = file.name().to_string();
-            if name.starts_with("xl/tables/") && name.ends_with(".xml") {
+            // Part names of the package are lowercase by the OPC convention and compared as such.
+            #[allow(clippy::case_sensitive_file_extension_comparisons)]
+            let is_table = name.starts_with("xl/tables/") && name.ends_with(".xml");
+            if is_table {
                 table_files.push(name);
             }
         }
@@ -215,7 +230,7 @@ pub fn extract_tables_from_xlsx(
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == "table" => {
+                Ok(Event::Start(e) | Event::Empty(e)) if e.name().as_ref() == "table" => {
                     let mut name = String::new();
                     let mut ref_sqref = String::new();
 
@@ -255,8 +270,7 @@ pub fn extract_tables_from_xlsx(
                     // Only the top level table element is processed
                     break;
                 }
-                Ok(Event::Eof) => break,
-                Err(_) => break,
+                Ok(Event::Eof) | Err(_) => break,
                 _ => {}
             }
             buf.clear();
@@ -382,6 +396,9 @@ pub struct XlsxReader<'a, R: std::io::Read + std::io::Seek> {
 }
 
 impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
+    /// # Errors
+    ///
+    /// When the archive does not hold a readable XLSX workbook.
     pub fn new(archive: &'a mut ZipArchive<R>) -> Result<Self> {
         let shared_strings = extract_shared_strings(archive).unwrap_or_default();
         let styles = parse_styles(archive).unwrap_or_default();
@@ -393,7 +410,7 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
     }
 }
 
-impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'a, R> {
+impl<R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'_, R> {
     fn read_sheets_into(&mut self, sink: &mut dyn CellSink) -> Result<Vec<Sheet>> {
         let mut sheets = Vec::new();
         let sheet_names = self.get_sheet_names()?;
@@ -688,6 +705,9 @@ fn extract_settings_xlsx(
     Ok(settings)
 }
 
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_external_links_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<String>> {
@@ -766,7 +786,11 @@ pub fn extract_external_links_xlsx(
 }
 
 /// Extract external workbooks with indices from XLSX file
-/// Returns a vector of ExternalWorkbook where index is 0-based (maps to [N+1] in formulas)
+/// Returns a vector of `ExternalWorkbook` where index is 0-based (maps to [N+1] in formulas)
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_external_workbooks_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<super::ExternalWorkbook>> {
@@ -904,7 +928,7 @@ fn continues_token(text: &str, end: usize) -> bool {
 }
 
 /// Reads `$?[A-Z]+$?[0-9]+` at `at` when it is a cell of the sheet (up to column `XFD` and row
-/// 1,048,576, the limits of LibreOffice) that stands alone.
+/// 1,048,576, the limits of `LibreOffice`) that stands alone.
 fn cell_corner_at(text: &str, at: usize) -> Option<(Corner, usize)> {
     let b = text.as_bytes();
     let mut i = at;
@@ -1123,7 +1147,7 @@ fn bracket_group_end(text: &str, at: usize) -> usize {
 /// Writes `formula` with each reference shifted by the shared-formula offset, the `$` absolute
 /// ones kept. Names, calls and text literals are copied as they are. A reference that leaves the
 /// sheet (past column `XFD` or row 1,048,576, or before the first) is `Sheet!#REF!`, with the sheet
-/// it was on (`home_sheet` for one without qualifier): LibreOffice reads that as `#REF!`, which is
+/// it was on (`home_sheet` for one without qualifier): `LibreOffice` reads that as `#REF!`, which is
 /// what it computes for a formula it moves outside the sheet.
 #[must_use]
 pub fn translate_shared_formula(
@@ -1194,7 +1218,7 @@ type ParsedSheetData = (
 // Type alias to avoid clippy::type_complexity warning
 type SharedFormulaMap = HashMap<u32, Vec<(String, u32, u32, Option<(u32, u32, u32, u32)>)>>;
 
-impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
+impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
     fn get_sheet_names(&mut self) -> Result<Vec<String>> {
         let mut names = Vec::new();
         let workbook_xml = self.archive.by_name("xl/workbook.xml")?;
@@ -1330,15 +1354,15 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                             }
                         }
 
-                        let (row, col) = if !r_attr.is_empty() {
+                        let (row, col) = if r_attr.is_empty() {
+                            let c = current_col;
+                            current_col += 1;
+                            (current_row, c)
+                        } else {
                             let (r, c) =
                                 parse_cell_ref(&r_attr).unwrap_or((current_row, current_col));
                             current_col = c + 1;
                             (r, c)
-                        } else {
-                            let c = current_col;
-                            current_col += 1;
-                            (current_row, c)
                         };
 
                         let num_fmt = s_attr.and_then(|idx| self.styles.get(idx).cloned());
@@ -1480,15 +1504,15 @@ impl<'a, R: std::io::Read + std::io::Seek> XlsxReader<'a, R> {
                                 _ => {}
                             }
                         }
-                        let (row, col) = if !r_attr.is_empty() {
+                        let (row, col) = if r_attr.is_empty() {
+                            let c = current_col;
+                            current_col += 1;
+                            (current_row, c)
+                        } else {
                             let (r, c) =
                                 parse_cell_ref(&r_attr).unwrap_or((current_row, current_col));
                             current_col = c + 1;
                             (r, c)
-                        } else {
-                            let c = current_col;
-                            current_col += 1;
-                            (current_row, c)
                         };
                         let num_fmt = s_attr.and_then(|idx| self.styles.get(idx).cloned());
                         sink.cell(
@@ -1732,6 +1756,9 @@ pub fn is_array_error_placeholder(err: &str, formula: &str, is_array: bool) -> b
     err == "#VALUE!" && (is_array || formula.contains(':'))
 }
 
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_shared_strings(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<Arc<str>>> {
@@ -1763,6 +1790,10 @@ pub fn extract_shared_strings(
 }
 
 /// Count conditional formatting rules in a worksheet
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn count_conditional_formatting(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
     sheet_name: &str,
@@ -1784,7 +1815,7 @@ pub fn count_conditional_formatting(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == "cfRule" => {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.name().as_ref() == "cfRule" => {
                 cf_count += 1;
             }
             Ok(Event::Eof) => break,
@@ -1800,6 +1831,10 @@ pub fn count_conditional_formatting(
 }
 
 /// Check if XLSX file contains VBA macros
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn has_vba_project_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<bool> {
@@ -1807,6 +1842,10 @@ pub fn has_vba_project_xlsx(
 }
 
 /// Extract hidden sheets from XLSX file
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_hidden_sheets_from_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<String>> {
@@ -1826,7 +1865,7 @@ pub fn extract_hidden_sheets_from_xlsx(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+            Ok(Event::Start(e) | Event::Empty(e)) => {
                 match e.name().as_ref() {
                     "sheets" => in_sheets = true,
                     "sheet" if in_sheets => {
@@ -1870,6 +1909,10 @@ pub fn extract_hidden_sheets_from_xlsx(
 type HiddenColumnsRows = (Vec<(u32, u32)>, Vec<(u32, u32)>);
 
 /// Extract hidden column and row ranges, (start, end) 0-based inclusive, from a worksheet
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_hidden_columns_rows_from_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
     sheet_name: &str,
@@ -1893,7 +1936,7 @@ pub fn extract_hidden_columns_rows_from_xlsx(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+            Ok(Event::Start(e) | Event::Empty(e)) => {
                 match e.name().as_ref() {
                     "col" => {
                         // Column definition with hidden attribute
@@ -1963,6 +2006,10 @@ pub fn extract_hidden_columns_rows_from_xlsx(
 }
 
 /// Extract merged cell ranges from a worksheet
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_merged_cells_from_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
     sheet_name: &str,
@@ -1985,7 +2032,7 @@ pub fn extract_merged_cells_from_xlsx(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == "mergeCell" => {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.name().as_ref() == "mergeCell" => {
                 for attr in e.attributes() {
                     if let Ok(attr) = attr
                         && attr.key.as_ref() == "ref"
@@ -2045,6 +2092,10 @@ const BUILTIN_NUM_FMTS: &[(u32, &str)] = &[
 ];
 
 /// Parses `xl/styles.xml` into the number format code of each cell style (`xf`), by index.
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn parse_styles(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<NumFmt>> {
@@ -2166,6 +2217,10 @@ pub fn parse_styles(
 }
 
 /// Extract cell style indices from a worksheet
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_cell_style_indices_from_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
     sheet_name: &str,
@@ -2187,7 +2242,7 @@ pub fn extract_cell_style_indices_from_xlsx(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == "c" => {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.name().as_ref() == "c" => {
                 // Cell element `c`
                 let mut row = 0u32;
                 let mut col = 0u32;
@@ -2227,6 +2282,10 @@ pub fn extract_cell_style_indices_from_xlsx(
 }
 
 /// Extract formulas from an XLSX worksheet manually
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
 pub fn extract_formulas_from_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
     sheet_name: &str,
@@ -2306,10 +2365,11 @@ pub fn extract_formulas_from_xlsx(
                     && let Some((r, c)) = parse_cell_ref(&current_cell_ref)
                 {
                     // Check if this cell was marked as shared
-                    if let Some(marker) = formulas.get(&(r, c))
-                        && marker.starts_with("__SHARED__")
+                    if let Some(si) = formulas
+                        .get(&(r, c))
+                        .and_then(|marker| marker.strip_prefix("__SHARED__"))
+                        .and_then(|si| si.parse::<u32>().ok())
                     {
-                        let si: u32 = marker["__SHARED__".len()..].parse().unwrap();
                         shared_formulas.insert(si, formula_text.clone());
                     }
                     formulas.insert((r, c), formula_text);
@@ -2322,11 +2382,13 @@ pub fn extract_formulas_from_xlsx(
     }
 
     // Second pass to resolve shared formulas
-    for ((_r, _c), formula) in formulas.iter_mut() {
-        if formula.starts_with("__SHARED__") {
-            let si: u32 = formula["__SHARED__".len()..].parse().unwrap();
+    for ((_r, _c), formula) in &mut formulas {
+        if let Some(si) = formula
+            .strip_prefix("__SHARED__")
+            .and_then(|si| si.parse::<u32>().ok())
+        {
             if let Some(base_formula) = shared_formulas.get(&si) {
-                *formula = base_formula.clone();
+                formula.clone_from(base_formula);
             } else {
                 *formula = String::new(); // Fallback if si not found
             }
@@ -2359,7 +2421,7 @@ mod tests {
             ),
             (
                 "docProps/app.xml",
-                r#"<Properties><Application>Microsoft Excel</Application><Company>Acme</Company></Properties>"#,
+                r"<Properties><Application>Microsoft Excel</Application><Company>Acme</Company></Properties>",
             ),
             (
                 "docProps/custom.xml",
@@ -2501,7 +2563,7 @@ mod tests {
         .into_owned()
     }
 
-    /// What LibreOffice 26.8 reads as a cell reference: up to column `XFD` and row 1,048,576.
+    /// What `LibreOffice` 26.8 reads as a cell reference: up to column `XFD` and row 1,048,576.
     /// Anything else with the same shape (`ABCD1`, `XFE1`, `A0`, `A1048577`) is a name.
     #[test]
     fn test_translate_shared_formula_shifts_only_cell_references() {
@@ -2547,7 +2609,7 @@ mod tests {
         assert_eq!(shift("'My Sheet'!A1:B2"), "'My Sheet'!B2:C3");
     }
 
-    /// What LibreOffice 26.8 gives for a shared formula (checked by importing XLSX files).
+    /// What `LibreOffice` 26.8 gives for a shared formula (checked by importing XLSX files).
     #[test]
     fn test_translate_shared_formula_shifts_whole_columns_and_rows() {
         assert_eq!(shared("SUM(B:B)", 0, 1), "SUM(C:C)");
@@ -2568,7 +2630,7 @@ mod tests {
         assert_eq!(shared("TIME(1,2,3)+A1", 1, 1), "TIME(1,2,3)+B2");
     }
 
-    /// A reference that moves outside the sheet is `Sheet!#REF!`, which LibreOffice reads as `#REF!`.
+    /// A reference that moves outside the sheet is `Sheet!#REF!`, which `LibreOffice` reads as `#REF!`.
     #[test]
     fn test_translate_shared_formula_writes_ref_error_beyond_the_sheet() {
         assert_eq!(shared("XFD2", 0, 1), "S!#REF!");

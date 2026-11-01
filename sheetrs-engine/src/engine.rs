@@ -62,10 +62,12 @@ impl LookupIndex {
         }
     }
 
+    #[must_use]
     pub fn find_text(&self, folded: &str) -> Option<usize> {
         self.text.get(folded).copied()
     }
 
+    #[must_use]
     pub fn find_number(&self, n: f64) -> Option<usize> {
         self.number.get(&(n + 0.0).to_bits()).copied()
     }
@@ -83,7 +85,7 @@ pub struct Engine<'p> {
     /// Per sheet: (rows, cols) spanned by its cells.
     extent: Vec<(u32, u32)>,
     values: Vec<Value>,
-    /// Formula cells that ended in a blank. LibreOffice keeps such an "empty
+    /// Formula cells that ended in a blank. `LibreOffice` keeps such an "empty
     /// result" (cached as 0) that still equals `""` and is not a number.
     blank: Vec<bool>,
     state: Vec<St>,
@@ -101,7 +103,7 @@ pub struct Engine<'p> {
     /// Buffer for the values of a small range read by `numbers`, kept between calls.
     scratch: Vec<Value>,
     coll: Collators,
-    /// Formula cells that met something LibreOffice does and the engine does not reproduce
+    /// Formula cells that met something `LibreOffice` does and the engine does not reproduce
     /// (see [`crate::notes`]).
     pub violations: Vec<(CellRef, &'static str)>,
 }
@@ -117,6 +119,7 @@ impl std::fmt::Debug for Engine<'_> {
 }
 
 impl<'p> Engine<'p> {
+    #[must_use]
     pub fn new(prog: &'p Program, opts: EngineOptions) -> Self {
         Self::build(prog, opts, None)
     }
@@ -128,7 +131,8 @@ impl<'p> Engine<'p> {
 
     fn build(prog: &'p Program, opts: EngineOptions, base: Option<&'p dyn ConstSource>) -> Self {
         let n = prog.cells.len();
-        let mut index = FastMap::with_capacity_and_hasher(n, Default::default());
+        let mut index =
+            FastMap::with_capacity_and_hasher(n, std::hash::BuildHasherDefault::default());
         let mut by_sheet = vec![Vec::new(); prog.sheets.len().max(1)];
         let mut extent = vec![(0u32, 0u32); prog.sheets.len().max(1)];
         let mut values = Vec::with_capacity(n);
@@ -183,7 +187,7 @@ impl<'p> Engine<'p> {
             unstable_reads: 0,
             coll,
             violations: {
-                crate::notes::take();
+                let _ = crate::notes::take();
                 Vec::new()
             },
         }
@@ -300,6 +304,7 @@ impl<'p> Engine<'p> {
     }
 
     /// The part of `r` inside the sheet's populated extent, as `range_array` sees it.
+    #[must_use]
     pub fn trimmed(&self, r: Rect) -> Option<Rect> {
         let (er, ec) = self.extent.get(r.sheet as usize).copied().unwrap_or((0, 0));
         (r.r0 < er && r.c0 < ec)
@@ -398,10 +403,12 @@ impl<'p> Engine<'p> {
     }
 
     /// Text collator for the locale; `case_sensitive` only where a setting asks.
+    #[must_use]
     pub fn collator(&self, case_sensitive: bool) -> &crate::value::Coll {
         self.coll.get(case_sensitive)
     }
 
+    #[must_use]
     pub fn sheet_id(&self, name: &str) -> Option<u16> {
         self.prog
             .sheets
@@ -411,6 +418,7 @@ impl<'p> Engine<'p> {
     }
 
     /// Whether the row is hidden in the source workbook.
+    #[must_use]
     pub fn is_row_hidden(&self, sheet: u16, row: u32) -> bool {
         self.prog
             .hidden_rows
@@ -419,6 +427,7 @@ impl<'p> Engine<'p> {
     }
 
     /// Whether the cell's formula holds `SUBTOTAL` or `AGGREGATE`.
+    #[must_use]
     pub fn is_subtotal_cell(&self, at: CellRef) -> bool {
         self.prog.subtotal_cells.binary_search(&at).is_ok()
     }
@@ -437,6 +446,7 @@ impl<'p> Engine<'p> {
     /// larger one is intersected with the current cell; an array yields its
     /// top-left element.
     /// The names of the sheets, in order.
+    #[must_use]
     pub fn sheet_names(&self) -> &[String] {
         &self.prog.sheets
     }
@@ -461,7 +471,7 @@ impl<'p> Engine<'p> {
 
     /// The value a formula cell holds, and whether it is an *empty result*. A
     /// formula that ends in a blank (`=A9` with `A9` empty) holds the number 0 and
-    /// `ISBLANK` is false, but LibreOffice keeps an empty result that still equals
+    /// `ISBLANK` is false, but `LibreOffice` keeps an empty result that still equals
     /// `""` and is not a number.
     fn finalize(&mut self, v: Value) -> (Value, bool) {
         // A plain reference to an empty result is an empty result too.
@@ -482,13 +492,14 @@ impl<'p> Engine<'p> {
 
     /// Whether the cell is a formula whose result is an empty result (see
     /// `finalize`).
+    #[must_use]
     pub fn blank_result(&self, at: CellRef) -> bool {
         self.index.get(&at).is_some_and(|&s| self.blank[s as usize])
     }
 
     /// [`operand`](Self::operand) for an operator. In a comparison an empty
     /// result (see `finalize`) is empty again; elsewhere (`&`,
-    /// arithmetic) LibreOffice uses its cached 0.
+    /// arithmetic) `LibreOffice` uses its cached 0.
     fn comparand(&mut self, op: BinOp, v: Value) -> Value {
         let compare = matches!(
             op,
@@ -506,7 +517,7 @@ impl<'p> Engine<'p> {
 
     /// Operand of an operator: a scalar, or `Array` where array evaluation is
     /// in force. Elsewhere a multi-cell reference is intersected with the
-    /// current cell (legacy implicit intersection, as in LibreOffice and
+    /// current cell (legacy implicit intersection, as in `LibreOffice` and
     /// non-dynamic Excel), which is `#VALUE!` when they do not meet.
     pub fn operand(&mut self, v: Value) -> Value {
         match v {
@@ -529,16 +540,25 @@ impl<'p> Engine<'p> {
         }
     }
 
+    /// # Errors
+    ///
+    /// The error value Excel gives when `v` is not a number, or the error `v` holds.
     pub fn num(&mut self, v: &Value) -> Res<f64> {
         let s = self.scalar(v.clone());
         coerce::to_num(&s, &self.opts.locale, self.opts.date_ctx())
     }
 
+    /// # Errors
+    ///
+    /// The error `v` holds.
     pub fn text(&mut self, v: &Value) -> Res<String> {
         let s = self.scalar(v.clone());
         coerce::to_text(&s, &self.opts.locale)
     }
 
+    /// # Errors
+    ///
+    /// The error value Excel gives when `v` is not a boolean, or the error `v` holds.
     pub fn boolean(&mut self, v: &Value) -> Res<bool> {
         let s = self.scalar(v.clone());
         coerce::to_bool(&s, &self.opts.locale)
@@ -547,6 +567,10 @@ impl<'p> Engine<'p> {
     /// Flatten arguments for aggregate functions. Numbers found in references
     /// and arrays are collected; text, booleans and blanks there are skipped.
     /// Direct scalar arguments are coerced. Errors propagate.
+    ///
+    /// # Errors
+    ///
+    /// The first error value among `args`, or `#VALUE!` for an argument that is not a number.
     pub fn numbers(&mut self, args: &[Value]) -> Res<Vec<f64>> {
         let mut out = Vec::new();
         for a in args {
@@ -662,14 +686,14 @@ impl<'p> Engine<'p> {
                         }
                     }
                 };
-                res.unwrap_or_else(|k| self.error_value(k, def.name))
+                res.unwrap_or_else(|k| Self::error_value(k, def.name))
             }
         }
     }
 
     /// The error a function failure becomes: an argument outside a function's
-    /// domain is `#NUM!` in Excel and `Err:502` (`#VALUE!`) in LibreOffice.
-    fn error_value(&self, k: ErrorKind, function: &str) -> Value {
+    /// domain is `#NUM!` in Excel and `Err:502` (`#VALUE!`) in `LibreOffice`.
+    fn error_value(k: ErrorKind, function: &str) -> Value {
         Value::Error(match k {
             ErrorKind::Domain if !crate::functions::LO_DOMAIN_NUM.contains(&function) => {
                 ErrorKind::Value
@@ -680,6 +704,7 @@ impl<'p> Engine<'p> {
     }
 
     /// Apply a scalar function element-wise, broadcasting like operators do.
+    #[allow(clippy::unnecessary_wraps)] // same fallible signature as its siblings, which share call sites
     fn lifted(&mut self, f: crate::functions::EagerFn, vals: &[Value], mask: u32) -> Res<Value> {
         let arrays: Vec<Option<Arc<Array>>> = vals
             .iter()
@@ -709,7 +734,7 @@ impl<'p> Engine<'p> {
                         None => v.clone(),
                     })
                     .collect();
-                let r = f(self, &call).unwrap_or_else(|k| self.error_value(k, ""));
+                let r = f(self, &call).unwrap_or_else(|k| Self::error_value(k, ""));
                 data.push(self.scalar(r));
             }
         }
@@ -839,7 +864,8 @@ impl<'p> Engine<'p> {
     }
 }
 
-/// `x^y` as LibreOffice computes it: `0^0` is 1 and `x^(1/n)` is the real root for odd `n`.
+/// `x^y` as `LibreOffice` computes it: `0^0` is 1 and `x^(1/n)` is the real root for odd `n`.
+#[must_use]
 pub fn power(x: f64, y: f64) -> Option<f64> {
     if x == 0.0 && y == 0.0 {
         return Some(1.0);

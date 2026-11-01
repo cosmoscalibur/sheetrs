@@ -18,7 +18,7 @@
 //!
 //! The file only holds what the workbook cannot say itself. Whatever the document does not
 //! specify (how `TRUE()` is stored, what an error of a function's domain is, text
-//! collation, ...) is LibreOffice's behavior. The date system, iteration and search
+//! collation, ...) is `LibreOffice`'s behavior. The date system, iteration and search
 //! settings come from the document.
 
 use crate::compile::{BindingSpec, CompileError, Features, QueryLevel, Spec};
@@ -106,6 +106,10 @@ impl Config {
 
     /// The compiler's [`Spec`] for `model`: the settings sheet supplies inputs,
     /// outputs and metadata; this configuration the rest.
+    ///
+    /// # Errors
+    ///
+    /// When a target of the configuration cannot be resolved against `model`.
     pub fn spec(&self, model: &Model) -> Result<Spec, CompileError> {
         let mut spec = self.base_spec(model)?;
         let name = self.settings.as_deref().unwrap_or(settings::DEFAULT_SHEET);
@@ -133,6 +137,10 @@ impl Config {
 
     /// Everything of the spec that does not come from the settings sheet: the
     /// level, folding, clock, seed, locale and the macro policy.
+    ///
+    /// # Errors
+    ///
+    /// When a target of the configuration cannot be resolved against `model`.
     pub fn base_spec(&self, model: &Model) -> Result<Spec, CompileError> {
         let query = match self.outputs.as_deref() {
             None => QueryLevel::Declared,
@@ -175,10 +183,16 @@ impl Config {
     }
 }
 
+/// # Errors
+///
+/// When `text` is not a valid configuration; the message names `origin`.
 pub fn parse(text: &str, origin: &str) -> Result<Config, String> {
     toml::from_str(text).map_err(|e| format!("{origin}: {e}"))
 }
 
+/// # Errors
+///
+/// When the file cannot be read or is not a valid configuration.
 pub fn load(path: &Path) -> Result<Config, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     parse(&text, &path.display().to_string())
@@ -186,6 +200,7 @@ pub fn load(path: &Path) -> Result<Config, String> {
 
 /// The configuration next to the workbook, when there is one. Only that
 /// directory is searched, so a build does not depend on where it is started.
+#[must_use]
 pub fn discover(workbook: &Path) -> Option<PathBuf> {
     let dir = workbook
         .parent()

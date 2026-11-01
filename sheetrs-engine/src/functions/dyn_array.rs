@@ -2,7 +2,7 @@
 //! `SEQUENCE`, `FILTER`, `SORT`, `SORTBY`, `TAKE`, `DROP`, `CHOOSECOLS`, `CHOOSEROWS`, `HSTACK`,
 //! `VSTACK`, `EXPAND`, `TOCOL`, `TOROW`, `WRAPCOLS`, `WRAPROWS`, `RANDARRAY`, `TEXTSPLIT`,
 //! `TEXTBEFORE`, `TEXTAFTER`, `ENCODEURL` and `ROT13`. What they answer for an argument outside
-//! their domain is what the oracle (`tests/assets/semantics.*`) has from LibreOffice 26.8.
+//! their domain is what the oracle (`tests/assets/semantics.*`) has from `LibreOffice` 26.8.
 
 use super::{Reg, VAR, opt, opt_num};
 use crate::engine::{Engine, Res};
@@ -76,7 +76,7 @@ fn errors_of_a_range_are_zero(source: &Value, sorted: Value) -> Value {
     }
 }
 
-/// Keys with an error give an order that LibreOffice does not derive from the keys.
+/// Keys with an error give an order that `LibreOffice` does not derive from the keys.
 fn unordered_errors(key: &[Value]) -> Res<()> {
     if key.iter().any(|v| matches!(v, Value::Error(_))) {
         crate::notes::note(crate::notes::SORT_ERROR_KEY);
@@ -622,6 +622,7 @@ fn choose(e: &mut Engine, a: &[Value], cols: bool) -> Res<Value> {
 
 /// `HSTACK` / `VSTACK`: the arrays side by side (or one above the other), `#N/A` where one is
 /// shorter.
+#[allow(clippy::unnecessary_wraps)] // same fallible signature as its siblings, which share call sites
 fn stack(e: &mut Engine, a: &[Value], horizontal: bool) -> Res<Value> {
     let parts: Vec<Arc<Array>> = a.iter().map(|v| e.array_of(v.clone())).collect();
     let (rows, cols) = if horizontal {

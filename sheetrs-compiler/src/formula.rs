@@ -29,7 +29,7 @@ pub struct ParseCtx<'a> {
     pub cells: Option<&'a crate::cellstore::CellStore>,
     /// The formulas were read from an XLSX.
     pub xlsx: bool,
-    /// The formulas were read from an ODS: a name without a namespace is LibreOffice's own
+    /// The formulas were read from an ODS: a name without a namespace is `LibreOffice`'s own
     /// (`CEILING` and `FLOOR` are not Excel's, which an ODS names `COM.MICROSOFT.CEILING`).
     pub ods: bool,
     /// Notation of the text `FORMULATEXT` returns.
@@ -48,6 +48,10 @@ impl ParseCtx<'_> {
 }
 
 /// Parse a formula body (without the leading `=`) and lower it.
+///
+/// # Errors
+///
+/// When `src` is not a formula the parser reads.
 pub fn parse(src: &str, ctx: &ParseCtx, diags: &mut Vec<String>) -> Result<Expr, ParseError> {
     let ast = sheetrs_formula::parse(src)?;
     Ok(Lowering {
@@ -152,7 +156,7 @@ impl Lowering<'_, '_> {
         }
     }
 
-    /// An error written in a formula. LibreOffice knows the spellings in capitals
+    /// An error written in a formula. `LibreOffice` knows the spellings in capitals
     /// only: `#ref!` is a name it cannot resolve; an XLSX import does not read a bare
     /// `#REF!` either (the other error literals are fine).
     fn error_literal(&self, text: &str) -> ErrorKind {
@@ -176,14 +180,15 @@ impl Lowering<'_, '_> {
     fn reference(&mut self, r: &ast::Reference) -> Expr {
         let sheet = match &r.sheet {
             None => self.ctx.current_sheet,
-            Some(name) => match self.ctx.sheet_id(name) {
-                Some(s) => s,
-                None => {
+            Some(name) => {
+                if let Some(s) = self.ctx.sheet_id(name) {
+                    s
+                } else {
                     // Unknown sheet or an external workbook: keep going with #REF!.
                     self.diags.push(format!("unresolved sheet `{name}`"));
                     return Expr::Const(Value::Error(ErrorKind::Ref));
                 }
-            },
+            }
         };
         let rect = match r.area {
             ast::RefArea::Cell(c) => {
@@ -329,34 +334,31 @@ impl Lowering<'_, '_> {
             return Expr::Const(Value::text(joined));
         }
         let (ns, name) = self.function_namespace(&c.name);
-        match functions::lookup(ns, &name) {
-            Some(id) => {
-                let def = id.def();
-                if args.len() < def.min as usize || args.len() > def.max as usize {
-                    self.diags.push(format!(
-                        "{}: wrong number of arguments ({})",
-                        id.qualified(),
-                        args.len()
-                    ));
-                }
-                Expr::Call(id, args)
+        if let Some(id) = functions::lookup(ns, &name) {
+            let def = id.def();
+            if args.len() < def.min as usize || args.len() > def.max as usize {
+                self.diags.push(format!(
+                    "{}: wrong number of arguments ({})",
+                    id.qualified(),
+                    args.len()
+                ));
             }
-            None => {
-                if name == "_LONGTEXT" && self.ctx.longtext {
-                    self.diags.push(
-                        "`_xlfn._longtext(…)` with an argument that is not a constant text cannot be joined (feature LONGTEXT); LibreOffice 26.8 reads it as #NAME? (as this does); inspect the cell"
-                            .to_string(),
-                    );
-                } else if name == "_LONGTEXT" {
-                    self.diags.push(
-                        "`_xlfn._longtext(…)` is not an Excel function: LibreOffice 26.2 wrote a text literal longer than 255 characters as pieces joined by it, and LibreOffice 26.8 reads it as #NAME? (as this does); the LONGTEXT feature (enable_features) joins constant pieces; inspect the cell"
-                            .to_string(),
-                    );
-                } else {
-                    self.diags.push(format!("unsupported function `{name}`"));
-                }
-                Expr::Unknown(Box::new((name.into(), args)))
+            Expr::Call(id, args)
+        } else {
+            if name == "_LONGTEXT" && self.ctx.longtext {
+                self.diags.push(
+                    "`_xlfn._longtext(…)` with an argument that is not a constant text cannot be joined (feature LONGTEXT); LibreOffice 26.8 reads it as #NAME? (as this does); inspect the cell"
+                        .to_string(),
+                );
+            } else if name == "_LONGTEXT" {
+                self.diags.push(
+                    "`_xlfn._longtext(…)` is not an Excel function: LibreOffice 26.2 wrote a text literal longer than 255 characters as pieces joined by it, and LibreOffice 26.8 reads it as #NAME? (as this does); the LONGTEXT feature (enable_features) joins constant pieces; inspect the cell"
+                        .to_string(),
+                );
+            } else {
+                self.diags.push(format!("unsupported function `{name}`"));
             }
+            Expr::Unknown(Box::new((name.into(), args)))
         }
     }
 }
@@ -374,7 +376,8 @@ fn join_longtext(args: &[Expr]) -> Option<String> {
 }
 
 /// A function name as the formula wrote it, uppercase and without the prefixes: `_xlfn.`/`_xlws.`
-/// (XLSX: the function is newer than the file format) and the namespaces of OpenDocument.
+/// (XLSX: the function is newer than the file format) and the namespaces of `OpenDocument`.
+#[must_use]
 pub fn split_function_name(raw: &str) -> String {
     let up = raw.to_ascii_uppercase();
     let (rest, _) = strip_future(&up);

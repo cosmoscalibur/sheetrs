@@ -51,7 +51,7 @@ use sheetrs_core::reader::{Cell, Sheet};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
-/// Per-sheet URL cell collection: sheet_index → Vec<(row, col, url)>.
+/// Per-sheet URL cell collection: `sheet_index` → Vec<(row, col, url)>.
 type SheetUrlCellMap = HashMap<u16, Vec<(u32, u32, String)>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,8 +64,8 @@ impl LinkStatus {
     fn from_str(s: &str) -> Self {
         match s.to_uppercase().as_str() {
             "INVALID" => LinkStatus::Invalid,
-            "ALL" => LinkStatus::All,
-            _ => LinkStatus::All, // Default: ALL
+            // "ALL", and the default for anything else
+            _ => LinkStatus::All,
         }
     }
 }
@@ -92,8 +92,7 @@ impl WebUrlsRule {
     pub fn new(config: &LinterConfig) -> Self {
         let status = config
             .param_str("url_links_status", None)
-            .map(LinkStatus::from_str)
-            .unwrap_or(LinkStatus::All);
+            .map_or(LinkStatus::All, LinkStatus::from_str);
 
         let timeout_secs = config.param_int("url_timeout_seconds", None).unwrap_or(5) as u64;
 
@@ -120,7 +119,7 @@ impl Default for WebUrlsRule {
 pub struct WebUrlData {
     /// The detected URL.
     pub url: String,
-    /// Range as (start_row, start_col, end_row, end_col).
+    /// Range as (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
     /// Whether the URL was determined to be invalid/inaccessible.
     pub is_invalid: bool,

@@ -44,7 +44,7 @@ use sheetrs_core::reader::{Cell, Sheet};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
-/// Per-sheet cell collection: sheet_index → Vec<(row, col, wb_index)>.
+/// Per-sheet cell collection: `sheet_index` → Vec<(row, col, `wb_index`)>.
 type SheetCellMap = HashMap<u16, Vec<(u32, u32, usize)>>;
 
 /// Rule that detects references to external workbooks
@@ -75,7 +75,7 @@ impl Default for ExternalWorkbooksRule {
 pub struct ExternalWorkbookData {
     /// 0-based external workbook index (into `Workbook::external_workbooks`).
     pub workbook_index: usize,
-    /// Range as (start_row, start_col, end_row, end_col).
+    /// Range as (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 
@@ -85,8 +85,7 @@ impl ViolationData for ExternalWorkbookData {
             .workbook
             .external_workbooks
             .get(self.workbook_index)
-            .map(|wb| wb.path.as_str())
-            .unwrap_or("unknown");
+            .map_or("unknown", |wb| wb.path.as_str());
 
         let (sr, sc, er, ec) = self.range;
         let range_str = if sr == er && sc == ec {

@@ -1,9 +1,9 @@
 //! The regular expressions the engine runs: a subset of ICU's syntax.
 //!
-//! LibreOffice runs a regular expression with ICU's engine, whose results differ from other
+//! `LibreOffice` runs a regular expression with ICU's engine, whose results differ from other
 //! engines' in details: what an empty match is, where `$` and `\b` match, what `.` and `\s` stand
 //! for, how a pattern that is not valid is treated. This module reads the part of the syntax in
-//! which the results were compared with LibreOffice's (`tests/regex_subset.rs` lists the cases)
+//! which the results were compared with `LibreOffice`'s (`tests/regex_subset.rs` lists the cases)
 //! and writes it for the `regex` engine with the meanings ICU gives; anything else is refused, so
 //! the build can stop instead of giving another result.
 //!
@@ -364,11 +364,19 @@ fn write(n: &Node, out: &mut String, captures: bool) {
 
 /// The pattern as the `regex` engine reads it (case is ignored by the caller's flags), or why the
 /// pattern is outside the subset.
+///
+/// # Errors
+///
+/// When `pattern` uses a construct outside the subset.
 pub fn translate(pattern: &str) -> Result<String, String> {
     translate_with(pattern, false)
 }
 
 /// Like [`translate`], keeping the groups that capture (for the replacements of `REGEX`).
+///
+/// # Errors
+///
+/// When `pattern` uses a construct outside the subset.
 pub fn translate_capturing(pattern: &str) -> Result<String, String> {
     translate_with(pattern, true)
 }

@@ -1,9 +1,9 @@
 //! Complex numbers: `COMPLEX`, `IMREAL`, `IMAGINARY`, `IMABS`, `IMARGUMENT`, `IMCONJUGATE`, the
 //! arithmetic (`IMSUM`, `IMSUB`, `IMPRODUCT`, `IMDIV`, `IMPOWER`), the roots, exponentials and
 //! logarithms, and the trigonometric and hyperbolic functions with their reciprocals. A complex
-//! number is a text (`3+4i`, with `i` or `j`), which is how LibreOffice takes it and gives it back;
+//! number is a text (`3+4i`, with `i` or `j`), which is how `LibreOffice` takes it and gives it back;
 //! its numbers are written with 15 significant digits. The results are what the oracle
-//! (`tests/assets/semantics.*`) has from LibreOffice 26.8.
+//! (`tests/assets/semantics.*`) has from `LibreOffice` 26.8.
 
 use super::{Reg, VAR, num};
 use crate::engine::{Engine, Res};
@@ -110,7 +110,7 @@ impl Z {
     }
 }
 
-/// `%.15g` of a number, as LibreOffice writes the parts of a complex number.
+/// `%.15g` of a number, as `LibreOffice` writes the parts of a complex number.
 fn g15(x: f64) -> String {
     if x == 0.0 {
         return if x.is_sign_negative() {
@@ -183,7 +183,7 @@ fn write_z(z: Z) -> String {
     out
 }
 
-/// A number as LibreOffice reads it inside a complex number: digits with a `.` or a `,`, and an
+/// A number as `LibreOffice` reads it inside a complex number: digits with a `.` or a `,`, and an
 /// exponent. The fraction is added digit by digit with a multiplier divided by ten each time, so
 /// `0.0000001` is 1.0000000000000005e-7, which the results of the functions show.
 fn number(s: &[char], at: &mut usize) -> Option<f64> {
@@ -362,25 +362,25 @@ fn finish(mut z: Z, suffix: Option<char>) -> Res<Value> {
     out(z)
 }
 
-/// Whether `x` is an argument that sine and cosine of LibreOffice accept.
+/// Whether `x` is an argument that sine and cosine of `LibreOffice` accept.
 fn valid_arc(x: f64, limit: f64) -> Res<()> {
     if x.abs() < limit { Ok(()) } else { Err(DOMAIN) }
 }
 
-const TWO_64: f64 = 18446744073709551616.0;
-const TWO_63: f64 = 9223372036854775808.0;
+const TWO_64: f64 = 18_446_744_073_709_551_616.0;
+const TWO_63: f64 = 9_223_372_036_854_775_808.0;
 
 fn sin(z: Z) -> Res<Z> {
     valid_arc(z.re, TWO_64)?;
-    if z.im != 0.0 {
+    if z.im == 0.0 {
         Ok(Z {
-            re: z.re.sin() * z.im.cosh(),
-            im: z.re.cos() * z.im.sinh(),
+            re: z.re.sin(),
             ..z
         })
     } else {
         Ok(Z {
-            re: z.re.sin(),
+            re: z.re.sin() * z.im.cosh(),
+            im: z.re.cos() * z.im.sinh(),
             ..z
         })
     }
@@ -388,15 +388,15 @@ fn sin(z: Z) -> Res<Z> {
 
 fn cos(z: Z) -> Res<Z> {
     valid_arc(z.re, TWO_64)?;
-    if z.im != 0.0 {
+    if z.im == 0.0 {
         Ok(Z {
-            re: z.re.cos() * z.im.cosh(),
-            im: -(z.re.sin() * z.im.sinh()),
+            re: z.re.cos(),
             ..z
         })
     } else {
         Ok(Z {
-            re: z.re.cos(),
+            re: z.re.cos() * z.im.cosh(),
+            im: -(z.re.sin() * z.im.sinh()),
             ..z
         })
     }
@@ -448,15 +448,15 @@ fn tan(z: Z) -> Res<Z> {
 
 fn sinh(z: Z) -> Res<Z> {
     valid_arc(z.im, TWO_64)?;
-    if z.im != 0.0 {
+    if z.im == 0.0 {
         Ok(Z {
-            re: z.re.sinh() * z.im.cos(),
-            im: z.re.cosh() * z.im.sin(),
+            re: z.re.sinh(),
             ..z
         })
     } else {
         Ok(Z {
-            re: z.re.sinh(),
+            re: z.re.sinh() * z.im.cos(),
+            im: z.re.cosh() * z.im.sin(),
             ..z
         })
     }
@@ -464,15 +464,15 @@ fn sinh(z: Z) -> Res<Z> {
 
 fn cosh(z: Z) -> Res<Z> {
     valid_arc(z.im, TWO_64)?;
-    if z.im != 0.0 {
+    if z.im == 0.0 {
         Ok(Z {
-            re: z.re.cosh() * z.im.cos(),
-            im: z.re.sinh() * z.im.sin(),
+            re: z.re.cosh(),
             ..z
         })
     } else {
         Ok(Z {
-            re: z.re.cosh(),
+            re: z.re.cosh() * z.im.cos(),
+            im: z.re.sinh() * z.im.sin(),
             ..z
         })
     }
@@ -508,7 +508,7 @@ fn sqrt(z: Z) -> Z {
         let m = (z.im.abs() / 2.0).sqrt();
         (m, if neg { -m } else { m })
     } else if z.re > 0.0 {
-        let re = ((p + z.re) / 2.0).sqrt();
+        let re = f64::midpoint(p, z.re).sqrt();
         (re, z.im / (2.0 * re))
     } else {
         let m = ((p - z.re) / 2.0).sqrt();

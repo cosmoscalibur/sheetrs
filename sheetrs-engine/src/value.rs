@@ -18,17 +18,18 @@ pub enum ErrorKind {
     Num,
     Na,
     Circ,
-    /// An engine extension: LibreOffice gives a result here that the engine does not reproduce
+    /// An engine extension: `LibreOffice` gives a result here that the engine does not reproduce
     /// (see `notes`). The build stops when it meets the case; this is what a run gives when the
     /// case only shows up with the inputs.
     Unsupported,
     /// Internal: an argument outside the domain of the function. It never reaches
-    /// a cell: the engine turns it into `#NUM!` (Excel) or `#VALUE!` (LibreOffice,
+    /// a cell: the engine turns it into `#NUM!` (Excel) or `#VALUE!` (`LibreOffice`,
     /// whose `Err:502` the readers translate to `#VALUE!`).
     Domain,
 }
 
 impl ErrorKind {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Null => "#NULL!",
@@ -43,6 +44,7 @@ impl ErrorKind {
         }
     }
 
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s.to_ascii_uppercase().as_str() {
             "#NULL!" => Self::Null,
@@ -59,6 +61,7 @@ impl ErrorKind {
     }
 
     /// Code returned by the `ERROR.TYPE` function (1-based, `#N/A` is 7).
+    #[must_use]
     pub fn code(self) -> f64 {
         match self {
             Self::Null => 1.0,
@@ -84,15 +87,18 @@ pub struct Array {
 }
 
 impl Array {
+    #[must_use]
     pub fn new(rows: u32, cols: u32, data: Vec<Value>) -> Self {
         debug_assert_eq!(data.len(), rows as usize * cols as usize);
         Self { rows, cols, data }
     }
 
+    #[must_use]
     pub fn filled(rows: u32, cols: u32, v: Value) -> Self {
         Self::new(rows, cols, vec![v; rows as usize * cols as usize])
     }
 
+    #[must_use]
     pub fn get(&self, r: u32, c: u32) -> &Value {
         &self.data[r as usize * self.cols as usize + c as usize]
     }
@@ -116,10 +122,12 @@ impl Value {
         Self::Text(Arc::from(s.as_ref()))
     }
 
+    #[must_use]
     pub fn is_error(&self) -> bool {
         matches!(self, Self::Error(_))
     }
 
+    #[must_use]
     pub fn as_error(&self) -> Option<ErrorKind> {
         match self {
             Self::Error(e) => Some(*e),
@@ -128,7 +136,7 @@ impl Value {
     }
 
     /// Rank used by the cross-type ordering: numbers (booleans are the numbers 1 and 0 in
-    /// LibreOffice) < text.
+    /// `LibreOffice`) < text.
     fn type_rank(&self) -> u8 {
         match self {
             Self::Empty | Self::Number(_) | Self::Bool(_) => 0,
@@ -138,6 +146,7 @@ impl Value {
     }
 
     /// The number a value is for ordering and matching: a boolean is 1 or 0, an empty cell 0.
+    #[must_use]
     pub fn as_ordinal(&self) -> Option<f64> {
         match self {
             Self::Number(n) => Some(*n),
@@ -160,6 +169,7 @@ pub struct Collators {
 
 impl Collators {
     /// The collators of the language of `tag`.
+    #[must_use]
     pub fn new(tag: &str) -> Self {
         Self {
             ci: Collator::new(tag, false),
@@ -168,6 +178,7 @@ impl Collators {
     }
 
     /// `case_sensitive`: case decides ties instead of being ignored.
+    #[must_use]
     pub fn get(&self, case_sensitive: bool) -> &Coll {
         if case_sensitive { &self.cs } else { &self.ci }
     }
@@ -175,6 +186,7 @@ impl Collators {
 
 /// Spreadsheet ordering of two scalars. `Empty` takes the type of the other
 /// operand.
+#[must_use]
 pub fn compare(a: &Value, b: &Value, col: &Coll) -> Ordering {
     let (a, b) = match (a, b) {
         (Value::Empty, Value::Text(_)) => (&Value::Text(Arc::from("")), b),

@@ -13,7 +13,7 @@
 //!
 //! The values saved in the file decide how serious a loop is. A loop in which at least one cell
 //! holds an error in the cache is reported as active: that is how a spreadsheet stores a circular
-//! result (LibreOffice writes an error, Excel writes 0, so Excel files show a warning). Active
+//! result (`LibreOffice` writes an error, Excel writes 0, so Excel files show a warning). Active
 //! loops are also withheld from [`err102_error_cells`](super::err102_error_cells) and
 //! [`err103_ref_to_error`](super::err103_ref_to_error), so the same cells are not reported twice.
 //! A loop whose cache shows no error is a potential loop: it may never be evaluated (an unchosen
@@ -84,7 +84,7 @@ impl Default for CircularReferenceRule {
 /// Incident data for CALC202 (walker path).
 #[derive(Debug)]
 pub struct CircularReferenceData {
-    /// Cycle path as (sheet_index, row, col) tuples.
+    /// Cycle path as (`sheet_index`, row, col) tuples.
     pub cycle: Vec<(u16, u32, u32)>,
     /// The saved values show the loop evaluated as circular (a cell of it holds an error).
     pub active: bool,
@@ -376,7 +376,7 @@ fn find_cycles(dependencies: &HashMap<Node, Vec<Node>>) -> Vec<Vec<Node>> {
 
     // Sort keys for deterministic output
     let mut keys: Vec<Node> = state.keys().copied().collect();
-    keys.sort();
+    keys.sort_unstable();
 
     for start_node in keys {
         if state.get(&start_node) == Some(&VisitState::Unvisited) {

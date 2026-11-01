@@ -120,7 +120,7 @@ struct Interruption {
     kind: InterruptionKind,
     /// Whether the interruption is in a column (true) or row (false).
     is_column: bool,
-    /// The axis index (column index if is_column, row index if !is_column).
+    /// The axis index (column index if `is_column`, row index if !`is_column`).
     axis_index: u32,
     /// Start of the formula sequence (row if column, col if row).
     seq_start: u32,
@@ -236,7 +236,7 @@ impl InterruptionRule {
 
     /// Scan a sequence of cells along one axis and find interruptions.
     ///
-    /// The algorithm iterates over sorted cells (O(n)), using a HashMap for
+    /// The algorithm iterates over sorted cells (O(n)), using a `HashMap` for
     /// O(1) position lookups. Only a gap of exactly 1 absent position is
     /// bridged — wider gaps are treated as separate formula contexts.
     ///
@@ -259,7 +259,7 @@ impl InterruptionRule {
         // O(1) lookup from position → cell type
         let cell_map: HashMap<u32, CellType> = cells.iter().copied().collect();
 
-        /// Classify a position from the cell_map (absent = Empty).
+        /// Classify a position from the `cell_map` (absent = Empty).
         fn classify(cell_map: &HashMap<u32, CellType>, pos: u32) -> CellType {
             cell_map.get(&pos).copied().unwrap_or(CellType::Empty)
         }

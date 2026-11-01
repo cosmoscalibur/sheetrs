@@ -1,5 +1,5 @@
 //! `LINEST`, `LOGEST`, `TREND`, `GROWTH`, `FREQUENCY` and `MODE.MULT`: the functions that answer an
-//! array computed from a least-squares fit or a count. What LibreOffice 26.8 answers for the
+//! array computed from a least-squares fit or a count. What `LibreOffice` 26.8 answers for the
 //! shapes and values outside the plain case is what `tests/assets/semantics.*` holds.
 
 use super::{Reg, VAR, opt};
@@ -124,7 +124,7 @@ struct Fit {
 }
 
 /// Least squares by Householder reflections; a regressor that is a combination of the others
-/// (or all zero) is `#VALUE!`, as it is in LibreOffice.
+/// (or all zero) is `#VALUE!`, as it is in `LibreOffice`.
 fn least_squares(d: &Design, y: &[f64], constant: bool) -> Res<Fit> {
     let n = y.len();
     let k = d.x.len();
@@ -201,7 +201,7 @@ fn least_squares(d: &Design, y: &[f64], constant: bool) -> Res<Fit> {
     Ok(finish(d.x.as_slice(), y, beta, inv_diag, constant))
 }
 
-/// The fit of one regressor, by the means as LibreOffice does it (so that data on a line, with
+/// The fit of one regressor, by the means as `LibreOffice` does it (so that data on a line, with
 /// numbers that are exact, leave no residual at all).
 fn single_regressor(x: &[f64], y: &[f64], constant: bool) -> Res<Fit> {
     let n = y.len() as f64;

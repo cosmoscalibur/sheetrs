@@ -84,7 +84,7 @@ fn holidays(e: &mut Engine, v: Option<&Value>) -> Res<Vec<f64>> {
     }
 }
 
-fn working(e: &Engine, d: f64, w: &[bool; 7], hol: &[f64]) -> bool {
+fn working(e: &Engine, d: f64, w: [bool; 7], hol: &[f64]) -> bool {
     !w[dates::weekday_sun0(d, e.opts.date_system) as usize] && !hol.contains(&d)
 }
 
@@ -103,7 +103,7 @@ fn workday(e: &mut Engine, a: &[Value], intl: bool) -> Res<Value> {
     let (mut d, mut left) = (start, days.abs());
     while left > 0.0 {
         d += step;
-        if working(e, d, &w, &hol) {
+        if working(e, d, w, &hol) {
             left -= 1.0;
         }
         if !(0.0..2_958_466.0).contains(&d) {
@@ -124,7 +124,7 @@ fn networkdays(e: &mut Engine, a: &[Value], intl: bool) -> Res<Value> {
     let mut n = 0.0;
     let mut d = lo;
     while d <= hi {
-        if working(e, d, &w, &hol) {
+        if working(e, d, w, &hol) {
             n += 1.0;
         }
         d += 1.0;
@@ -142,7 +142,7 @@ fn iso_weeks_in(year: i64) -> i64 {
     }
 }
 
-/// The calendar distance `WEEKS`, `MONTHS` and `YEARS` of OpenOffice measure: `mode` 0 counts the
+/// The calendar distance `WEEKS`, `MONTHS` and `YEARS` of `OpenOffice` measure: `mode` 0 counts the
 /// complete intervals between two dates and 1 the boundaries (Monday, first of the month, first of
 /// the year) crossed.
 fn date_distance(e: &mut Engine, a: &[Value], unit: char) -> Res<Value> {
@@ -335,7 +335,7 @@ fn weeknum(e: &mut Engine, a: &[Value]) -> Res<Value> {
     num(week as f64)
 }
 
-/// `Date::GetWeekOfYear` of LibreOffice's `tools` with a week of at least 4 days, the week the
+/// `Date::GetWeekOfYear` of `LibreOffice`'s `tools` with a week of at least 4 days, the week the
 /// older `WEEKNUM_OOO` gives: `start` is the first day of the week, Monday being 0.
 fn week_of_year(e: &Engine, serial: f64, start: i64) -> Res<i64> {
     let sys = e.opts.date_system;

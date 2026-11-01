@@ -4,7 +4,7 @@
 use super::ods_structure::{
     adjust_range_list, move_end_anchors, rewrite_cell_formula, rewrite_expression, sheet_of_address,
 };
-use super::structure::{StructureEdits, shape_depends_on_sizes};
+use super::structure::{Bands, StructureEdits, shape_depends_on_sizes};
 use super::xlsx_structure::{SheetStructure, map_attributes};
 use super::xlsx_writer::replace_names;
 use super::{
@@ -30,6 +30,10 @@ const MATRIX_COLUMNS: &str = "table:number-matrix-columns-spanned";
 const MATRIX_ROWS: &str = "table:number-matrix-rows-spanned";
 
 /// Modify the ODS file at `input` by applying specified modifications.
+///
+/// # Errors
+///
+/// When the document cannot be read or written, or an operation cannot be applied to it.
 pub fn modify_workbook_ods<W: Write + Seek>(
     input: &Path,
     output: W,
@@ -109,8 +113,8 @@ fn modify_content_xml<R: BufRead, W: Write>(
         plan: &plan,
         edits: &edits,
         sheet: String::new(),
-        rows: Default::default(),
-        cols: Default::default(),
+        rows: Bands::default(),
+        cols: Bands::default(),
         recalculate: modifications.recalculate_on_open,
     };
     let mut structure: Option<SheetStructure> = None;
@@ -274,12 +278,12 @@ fn modify_content_xml<R: BufRead, W: Write>(
             }
             Event::Start(e) if is_named_range(e.name().as_ref()) => {
                 let name = attribute(&e, "table:name")?.unwrap_or_default();
-                match defined_name_after(&e, &name, removed_ranges, &names_view, &plan)? {
-                    Some(e) => writer.write_event(Event::Start(e))?,
-                    None => {
-                        let end = e.to_end().into_owned();
-                        reader.read_to_end_into(end.name(), &mut skip_buf)?;
-                    }
+                if let Some(e) = defined_name_after(&e, &name, removed_ranges, &names_view, &plan)?
+                {
+                    writer.write_event(Event::Start(e))?;
+                } else {
+                    let end = e.to_end().into_owned();
+                    reader.read_to_end_into(end.name(), &mut skip_buf)?;
                 }
             }
             Event::Empty(e) if is_named_range(e.name().as_ref()) => {
@@ -295,12 +299,11 @@ fn modify_content_xml<R: BufRead, W: Write>(
                     .as_ref()
                     .or(structure.as_ref())
                     .unwrap_or(&names_view);
-                match adjust_range_holder(&e, view)? {
-                    Some(e) => writer.write_event(Event::Start(e))?,
-                    None => {
-                        let end = e.to_end().into_owned();
-                        reader.read_to_end_into(end.name(), &mut skip_buf)?;
-                    }
+                if let Some(e) = adjust_range_holder(&e, view)? {
+                    writer.write_event(Event::Start(e))?;
+                } else {
+                    let end = e.to_end().into_owned();
+                    reader.read_to_end_into(end.name(), &mut skip_buf)?;
                 }
             }
             Event::Empty(e) if !plan.is_empty() && is_range_holder(e.name().as_ref()) => {
@@ -445,7 +448,7 @@ fn row_items<'b, 'a>(body: &'b [Event<'a>]) -> Vec<RowItem<'b, 'a>> {
     items
 }
 
-/// A shape that was in a cell that goes. LibreOffice keeps it where it was, anchored to the cell
+/// A shape that was in a cell that goes. `LibreOffice` keeps it where it was, anchored to the cell
 /// that is there once the rows and columns are gone: the one with the index of the cell it left
 /// (the rows and columns that pass have the same height and width in a document that does not
 /// say otherwise, and a size is not in the file).
@@ -466,19 +469,14 @@ struct RowWriting<'a, 'b> {
 }
 
 /// The shapes of the cell at `(row, col)` of the input, which a deletion removes, as an orphan.
-fn orphan_of(
-    s: &SheetStructure,
-    row: u32,
-    col: u32,
-    shapes: Vec<Event<'static>>,
-) -> Result<Orphan> {
+fn orphan_of(s: &SheetStructure, row: u32, col: u32, shapes: &[Event<'static>]) -> Result<Orphan> {
     if s.rows.deleted_below_a_deleted(row) || s.cols.deleted_below_a_deleted(col) {
         return Err(shape_depends_on_sizes(&s.sheet));
     }
     Ok(Orphan {
         row: s.rows.anchored_at(row),
         col: s.cols.anchored_at(col),
-        shapes: move_end_anchors(&shapes, s),
+        shapes: move_end_anchors(shapes, s),
     })
 }
 
@@ -532,7 +530,7 @@ fn write_rows<W: Write>(
                     check_merged_area(ctx.structure, start, row, col)?;
                     let shapes = content.map(shapes_of).unwrap_or_default();
                     if !shapes.is_empty() {
-                        ctx.orphans.push(orphan_of(s, row, col, shapes)?);
+                        ctx.orphans.push(orphan_of(s, row, col, &shapes)?);
                     }
                     col = col.saturating_add(repeat_count(start, COLUMNS_REPEATED)?);
                 }
@@ -613,7 +611,7 @@ fn write_row<W: Write>(
                     repeated,
                     collects,
                 };
-                written += write_cells(writer, start, *content, run, ctx)?;
+                written += write_cells(writer, start, *content, &run, ctx)?;
                 col = col.saturating_add(repeated);
             }
             RowItem::Other(event) => writer.write_event(event.borrow())?,
@@ -688,6 +686,7 @@ fn write_orphan_rows<W: Write>(
 }
 
 /// Where a cell element sits: the row of the run it is in and the columns it covers.
+#[derive(Clone, Copy)]
 struct CellRun {
     /// The row of the input, and the one it has in the output.
     row: u32,
@@ -885,7 +884,7 @@ fn write_cells<W: Write>(
     writer: &mut Writer<W>,
     start: &BytesStart,
     content: Option<&[Event]>,
-    run: CellRun,
+    run: &CellRun,
     ctx: &mut RowWriting,
 ) -> Result<u32> {
     let CellRun {
@@ -894,14 +893,14 @@ fn write_cells<W: Write>(
         first_col,
         repeated,
         collects,
-    } = run;
+    } = *run;
     let layout = ctx.structure.filter(|s| s.changes_layout());
     let formula = attribute(start, FORMULA)?;
     // LibreOffice stores an empty text result as a paragraph without a value
     // type. A formula with neither has no cached value to convert to.
     let value_type = attribute(start, "office:value-type")?;
     let has_paragraph = content.is_some_and(|events| has_cell_text(events));
-    let convertible = formula.is_some() && !(value_type.is_none() && !has_paragraph);
+    let convertible = formula.is_some() && (value_type.is_some() || has_paragraph);
     let new_formula = match (ctx.structure, formula.as_deref()) {
         (Some(s), Some(f)) => match rewrite_cell_formula(s, f)? {
             None if s.recalculate => Some(f.to_string()),
@@ -937,7 +936,7 @@ fn write_cells<W: Write>(
             check_merged_area(ctx.structure, start, row, col)?;
             let shapes = content.map(shapes_of).unwrap_or_default();
             if collects && !shapes.is_empty() {
-                ctx.orphans.push(orphan_of(s, row, col, shapes)?);
+                ctx.orphans.push(orphan_of(s, row, col, &shapes)?);
             }
             continue;
         }
@@ -1491,13 +1490,13 @@ mod tests {
     }
 
     /// The shape that is anchored to a cell that goes stays where it was: it belongs to the cell
-    /// that has the index of the one it left (what LibreOffice 26.8 gave, see
+    /// that has the index of the one it left (what `LibreOffice` 26.8 gave, see
     /// `sheetrs-edit/scripts/compare_structure_with_libreoffice.py`).
     #[test]
     fn a_shape_of_a_deleted_cell_goes_to_the_cell_that_takes_its_place() {
         let cell =
             |text: &str| format!("<table:table-cell><text:p>{text}</text:p></table:table-cell>");
-        let shape = r#"<table:table-cell><draw:rect/></table:table-cell>"#;
+        let shape = r"<table:table-cell><draw:rect/></table:table-cell>";
         let row = |cells: &str| format!("<table:table-row>{cells}</table:table-row>");
         let rows = [
             row(&cell("a")),

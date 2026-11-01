@@ -33,7 +33,7 @@ use sheetrs_core::reader::{Cell, Sheet};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
-/// Error-prone function entries: (function_name, recommended_alternative).
+/// Error-prone function entries: (`function_name`, `recommended_alternative`).
 const ERROR_PRONE_FUNCTIONS: &[(&str, &str)] = &[
     ("VLOOKUP", "XLOOKUP / INDEX+MATCH"),
     ("HLOOKUP", "XLOOKUP / INDEX+MATCH"),
@@ -48,7 +48,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
         .collect()
 });
 
-/// Per-sheet cell collection: sheet_index → Vec<(func_index, row, col)>.
+/// Per-sheet cell collection: `sheet_index` → Vec<(`func_index`, row, col)>.
 type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
 
 /// Rule that detects error-prone functions like VLOOKUP, HLOOKUP, and LOOKUP.
@@ -72,7 +72,7 @@ impl ErrorProneFunctionsRule {
 pub struct ErrorProneFuncData {
     /// Index into `ERROR_PRONE_FUNCTIONS` list.
     pub func_index: u8,
-    /// Bounding box of violating cells (start_row, start_col, end_row, end_col).
+    /// Bounding box of violating cells (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 

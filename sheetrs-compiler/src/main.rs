@@ -258,13 +258,12 @@ fn build(mut args: Args) -> Result<i32, Fail> {
         .and_then(|s| s.to_str())
         .unwrap_or("model");
     let out = PathBuf::from(out.unwrap_or_else(|| stem.to_string()));
-    let runtime = match runtime {
-        Some(r) => PathBuf::from(r),
-        None => {
-            let me = std::env::current_exe().map_err(|e| Fail::Run(e.to_string()))?;
-            let rt = me.with_file_name(format!("sheetrs-rt{}", std::env::consts::EXE_SUFFIX));
-            if rt.exists() { rt } else { me }
-        }
+    let runtime = if let Some(r) = runtime {
+        PathBuf::from(r)
+    } else {
+        let me = std::env::current_exe().map_err(|e| Fail::Run(e.to_string()))?;
+        let rt = me.with_file_name(format!("sheetrs-rt{}", std::env::consts::EXE_SUFFIX));
+        if rt.exists() { rt } else { me }
     };
     let t2 = std::time::Instant::now();
     bundle::write_executable(&mut program, &runtime, &out).map_err(Fail::Run)?;
@@ -295,7 +294,10 @@ fn run(mut args: Args) -> Result<i32, Fail> {
     let [file] = args.0.as_slice() else {
         return Err(Fail::Usage("run needs exactly one input file".into()));
     };
-    let program: Program = if file.ends_with(".json") {
+    let program: Program = if std::path::Path::new(file)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+    {
         serde_json::from_slice(&std::fs::read(file).map_err(|e| Fail::Run(format!("{file}: {e}")))?)
             .map_err(|e| Fail::Run(format!("{file}: {e}")))?
     } else {
@@ -516,7 +518,7 @@ fn verify(mut args: Args) -> Result<i32, Fail> {
             v.unsupported.iter().cloned().collect::<Vec<_>>().join(", ")
         );
     }
-    let mut kinds: std::collections::BTreeMap<&str, usize> = Default::default();
+    let mut kinds: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::default();
     for m in v.sheets.iter().flat_map(|s| &s.mismatches) {
         *kinds.entry(m.kind).or_default() += 1;
     }

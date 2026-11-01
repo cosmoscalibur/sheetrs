@@ -843,7 +843,7 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: Default::default(),
+            cells: sheetrs_core::reader::Grid::default(),
             used_range: Some((100, 100)),
             ..Default::default()
         };

@@ -147,7 +147,7 @@ mod tests {
         let sheet1 = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: Default::default(),
+            cells: sheetrs_core::reader::Grid::default(),
             ..Default::default()
         };
 
@@ -194,7 +194,7 @@ mod tests {
         let sheet = Sheet {
             name: "OnlySheet".to_string(),
             sheet_index: 0,
-            cells: Default::default(),
+            cells: sheetrs_core::reader::Grid::default(),
             ..Default::default()
         };
 

@@ -36,6 +36,10 @@ struct SheetEntry {
 }
 
 /// Modify an XLSX file by applying specified modifications
+///
+/// # Errors
+///
+/// When the workbook cannot be read or written, or an operation cannot be applied to it.
 pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
     input: R,
     output: W,
@@ -244,8 +248,7 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
                 } else if !plan.is_empty() && name.starts_with("xl/charts/chart") {
                     let content = read_part(&mut archive, &name)?;
                     zip_writer.start_file(&name, SimpleFileOptions::default())?;
-                    zip_writer
-                        .write_all(rewrite_chart_references(&content, &plan, &edits)?.as_bytes())?;
+                    zip_writer.write_all(rewrite_chart_references(&content, &edits)?.as_bytes())?;
                 } else {
                     zip_writer.raw_copy_file(archive.by_index_raw(i)?)?;
                 }
@@ -531,12 +534,10 @@ fn full_calc_on_load(element: &BytesStart) -> Result<BytesStart<'static>> {
 }
 
 /// The definition of a name once the plan is applied: its references adjusted, and the removed
-/// names it uses unknown (`#NAME?`), as LibreOffice leaves them.
+/// names it uses unknown (`#NAME?`), as `LibreOffice` leaves them.
 fn definition_after(w: &WorkbookEdits, text: &str, home: &str) -> Result<String> {
-    let adjusted = w
-        .plan
-        .rewrite_formula(w.edits, text, home)?
-        .unwrap_or_else(|| text.to_string());
+    let adjusted =
+        StructureEdits::rewrite_formula(w.edits, text, home)?.unwrap_or_else(|| text.to_string());
     Ok(match w.removed_ranges {
         Some(removed) => replace_names(&adjusted, removed),
         None => adjusted,
@@ -619,11 +620,7 @@ fn refuse_what_is_not_adjusted<R: Read + Seek>(archive: &mut ZipArchive<R>) -> R
 }
 
 /// A chart part with the ranges of its series adjusted.
-fn rewrite_chart_references(
-    xml: &str,
-    plan: &StructureEdits,
-    edits: &[Edit<'_>],
-) -> Result<String> {
+fn rewrite_chart_references(xml: &str, edits: &[Edit<'_>]) -> Result<String> {
     let mut reader = Reader::from_str(xml);
     let mut writer = Writer::new(Cursor::new(Vec::new()));
     loop {
@@ -633,7 +630,7 @@ fn rewrite_chart_references(
                 let body = read_element_body(&mut reader, &name)?;
                 let text = text_of(&body)?;
                 // A reference that goes becomes `#REF!`, as a chart of LibreOffice shows it.
-                let new = plan.rewrite_formula(edits, &text, "")?.unwrap_or(text);
+                let new = StructureEdits::rewrite_formula(edits, &text, "")?.unwrap_or(text);
                 let end = e.to_end().into_owned();
                 writer.write_event(Event::Start(e))?;
                 writer.write_event(Event::Text(BytesText::new(&new)))?;
@@ -1013,18 +1010,19 @@ fn transform_sheet<R: BufRead, W: Write>(
                     );
                 }
                 let at = match layout {
-                    Some(s) => match s.cols.moved(col) {
-                        Some(new_col) => Some((
-                            s.rows
-                                .moved(row)
-                                .expect("a cell of a deleted row is skipped with its row"),
-                            new_col,
-                        )),
-                        None => {
+                    Some(s) => {
+                        if let Some(new_col) = s.cols.moved(col) {
+                            Some((
+                                s.rows
+                                    .moved(row)
+                                    .expect("a cell of a deleted row is skipped with its row"),
+                                new_col,
+                            ))
+                        } else {
                             check_array_goes_whole(structure, formula.as_ref(), row, col)?;
                             continue;
                         }
-                    },
+                    }
                     None => None,
                 };
                 let start = relocated_cell(&e, at, false)?;

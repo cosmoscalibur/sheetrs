@@ -1,11 +1,11 @@
 //! `FORECAST.ETS.ADD`, `FORECAST.ETS.MULT`, `FORECAST.ETS.PI.ADD`, `FORECAST.ETS.PI.MULT`,
 //! `FORECAST.ETS.STAT.ADD`, `FORECAST.ETS.STAT.MULT` and `FORECAST.ETS.SEASONALITY`: the
-//! Holt-Winters exponential smoothing of LibreOffice (`ScETSForecastCalculation` of
+//! Holt-Winters exponential smoothing of `LibreOffice` (`ScETSForecastCalculation` of
 //! `sc/source/core/tool/interpr8.cxx`), with its search of the smoothing constants, its handling
 //! of gaps, repeated timeline values and month steps, and the Kahan sums it computes with. The
 //! results are checked against the oracle (`tests/assets/semantics.*`).
 //!
-//! Not reproduced: the prediction interval of a series with seasons, which LibreOffice computes
+//! Not reproduced: the prediction interval of a series with seasons, which `LibreOffice` computes
 //! from random scenarios (the result changes with each calculation): the build stops.
 
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use crate::engine::{Engine, Res};
 use crate::ir::Ns;
 use crate::value::{Array, ErrorKind, Value};
 
-/// The errors of LibreOffice's calculation, by the error value a file stores for them.
+/// The errors of `LibreOffice`'s calculation, by the error value a file stores for them.
 const ILLEGAL_FP: ErrorKind = ErrorKind::Num;
 const NO_VALUE: ErrorKind = ErrorKind::Value;
 const DIV_ZERO: ErrorKind = ErrorKind::DivZero;
@@ -51,7 +51,7 @@ impl Kind {
     }
 }
 
-/// `KahanSum` of LibreOffice: Neumaier's sum with the last term kept apart.
+/// `KahanSum` of `LibreOffice`: Neumaier's sum with the last term kept apart.
 #[derive(Clone, Copy, Default)]
 struct Kahan {
     sum: f64,
@@ -107,11 +107,11 @@ impl Kahan {
     }
 
     fn div(&mut self, d: f64) {
-        if self.mem != 0.0 {
+        if self.mem == 0.0 {
+            self.sum = (self.sum + self.err) / d;
+        } else {
             self.sum = self.get() / d;
             self.mem = 0.0;
-        } else {
-            self.sum = (self.sum + self.err) / d;
         }
         self.err = 0.0;
     }
@@ -146,7 +146,7 @@ fn approx_equal(a: f64, b: f64) -> bool {
 }
 
 /// `std::sort` of libstdc++ (introsort) on the data points by timeline value, whose order of
-/// equal values is the one LibreOffice's calculation depends on. `false` where it would fall back
+/// equal values is the one `LibreOffice`'s calculation depends on. `false` where it would fall back
 /// to heap sort (not reproduced).
 fn std_sort(v: &mut [(f64, f64)]) -> bool {
     let n = v.len();
@@ -390,7 +390,7 @@ impl Ets {
                         self.range[i - 1].1 = if counter % 2 == 1 {
                             values[counter / 2]
                         } else {
-                            (values[counter / 2] + values[counter / 2 - 1]) / 2.0
+                            f64::midpoint(values[counter / 2], values[counter / 2 - 1])
                         };
                     }
                     6 => {
@@ -449,7 +449,7 @@ impl Ets {
                     dist = self.range[i].0 - self.range[i - 1].0;
                 }
                 if dist > self.step {
-                    let gap_y = (self.range[i].1 + self.range[i - 1].1) / 2.0;
+                    let gap_y = f64::midpoint(self.range[i].1, self.range[i - 1].1);
                     let mut x_gap = Kahan::new(self.range[i - 1].0 + self.step);
                     while x_gap.get() < self.range[i].0 {
                         let x = x_gap.get();
@@ -467,13 +467,13 @@ impl Ets {
                 i += 1;
             }
         }
-        if smpl != 1 {
-            self.smpl_in_prd = smpl as usize;
-        } else {
+        if smpl == 1 {
             self.smpl_in_prd = self.calc_period_len();
             if self.smpl_in_prd == 1 {
                 self.eds = true;
             }
+        } else {
+            self.smpl_in_prd = smpl as usize;
         }
         self.init_data()
     }
@@ -662,11 +662,11 @@ impl Ets {
             if e2 > e0 {
                 f2 = f1;
                 e2 = self.mse;
-                f1 = (f0 + f1) / 2.0;
+                f1 = f64::midpoint(f0, f1);
             } else {
                 f0 = f1;
                 e0 = self.mse;
-                f1 = (f1 + f2) / 2.0;
+                f1 = f64::midpoint(f1, f2);
             }
             set(self, f1);
             inner(self);
@@ -762,7 +762,7 @@ impl Ets {
         }
     }
 
-    /// What LibreOffice does when it reads beyond an array is not defined.
+    /// What `LibreOffice` does when it reads beyond an array is not defined.
     fn beyond<T>() -> Res<T> {
         crate::notes::note(crate::notes::ETS_BOUNDS);
         Err(ErrorKind::Unsupported)
@@ -847,7 +847,7 @@ impl Ets {
         if size == 0 {
             return Err(ILLEGAL_ARG);
         }
-        let z = norm_inv((1.0 + level) / 2.0);
+        let z = norm_inv(f64::midpoint(1.0, level));
         let o = 1.0 - level;
         let c: Vec<f64> = (0..size)
             .map(|i| {

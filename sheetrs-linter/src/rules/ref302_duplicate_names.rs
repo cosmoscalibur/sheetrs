@@ -128,21 +128,21 @@ mod tests {
             Sheet {
                 name: "Data".to_string(),
                 sheet_index: 0,
-                cells: Default::default(),
+                cells: sheetrs_core::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "data".to_string(),
                 sheet_index: 1,
-                cells: Default::default(),
+                cells: sheetrs_core::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "Summary".to_string(),
                 sheet_index: 2,
-                cells: Default::default(),
+                cells: sheetrs_core::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
@@ -168,35 +168,35 @@ mod tests {
             Sheet {
                 name: "Sheet1".to_string(),
                 sheet_index: 0,
-                cells: Default::default(),
+                cells: sheetrs_core::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "sheet 1".to_string(),
                 sheet_index: 1,
-                cells: Default::default(),
+                cells: sheetrs_core::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "Sheet-1".to_string(),
                 sheet_index: 2,
-                cells: Default::default(),
+                cells: sheetrs_core::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "Data_2024".to_string(),
                 sheet_index: 3,
-                cells: Default::default(),
+                cells: sheetrs_core::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "data2024".to_string(),
                 sheet_index: 4,
-                cells: Default::default(),
+                cells: sheetrs_core::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
@@ -233,7 +233,11 @@ mod tests {
         };
 
         let violations = collect_violations(|out| {
-            DuplicateSheetNamesRule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+            DuplicateSheetNamesRule.on_workbook_start(
+                &workbook,
+                &mut LinterContext::default(),
+                out,
+            );
         });
         let groups: Vec<_> = violations
             .iter()

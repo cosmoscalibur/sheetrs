@@ -101,7 +101,7 @@ mod tests {
         let empty_sheet = Sheet {
             name: "Empty".to_string(),
             sheet_index: 2,
-            cells: Default::default(),
+            cells: sheetrs_core::reader::Grid::default(),
             used_range: None,
             ..Default::default()
         };

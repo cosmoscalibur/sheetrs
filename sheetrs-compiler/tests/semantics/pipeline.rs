@@ -32,20 +32,23 @@ fn inputs_outputs_prune_and_fold() {
         .count();
     assert_eq!(formulas, 2);
     assert!(
-        p.cells.iter().all(|c| !(c.at.col == 3)),
+        p.cells.iter().all(|c| c.at.col != 3),
         "column D must be pruned"
     );
 
     let out = p
         .execute(
             &json!({"Sheet1!A1": 100, "Sheet1!A2": 3}),
-            &Overrides::default(),
+            &sheetrs_engine::run::Overrides::default(),
         )
         .unwrap();
     assert_eq!(out["Sheet1!C2"], json!(300.0 * 1.21 + 0.42));
     // Defaults come from the source file when an input is omitted.
     let out = p
-        .execute(&json!({"Sheet1!A2": 1}), &Overrides::default())
+        .execute(
+            &json!({"Sheet1!A2": 1}),
+            &sheetrs_engine::run::Overrides::default(),
+        )
         .unwrap();
     assert_eq!(out["Sheet1!C2"], json!(100.0 * 1.21 + 0.42));
 }
@@ -54,13 +57,19 @@ fn inputs_outputs_prune_and_fold() {
 fn unknown_and_malformed_inputs_are_rejected() {
     let (p, _) = build(&model(), &spec(&["A1"], &["C2"]));
     let e = p
-        .execute(&json!({"nope": 1}), &Overrides::default())
+        .execute(
+            &json!({"nope": 1}),
+            &sheetrs_engine::run::Overrides::default(),
+        )
         .unwrap_err();
     assert!(
         e.0.contains("unknown input `nope`") && e.0.contains("Sheet1!A1"),
         "{e}"
     );
-    assert!(p.execute(&json!([1]), &Overrides::default()).is_err());
+    assert!(
+        p.execute(&json!([1]), &sheetrs_engine::run::Overrides::default())
+            .is_err()
+    );
 }
 
 #[test]
@@ -68,7 +77,9 @@ fn everything_folds_without_inputs() {
     let (p, r) = build(&model(), &spec(&[], &["C2", "D2"]));
     assert_eq!(r.formulas_kept, 0);
     assert!(p.cells.iter().all(|c| matches!(c.kind, CellKind::Const(_))));
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert_eq!(out["Sheet1!D2"], json!(6000));
 }
 
@@ -86,13 +97,19 @@ fn range_bindings_use_json_matrices() {
     let (p, _) = build(&m, &spec(&["A1:A3"], &["B1:B3", "C1"]));
     for input in [json!([1, 2, 3]), json!([[1], [2], [3]])] {
         let out = p
-            .execute(&json!({ "Sheet1!A1:A3": input }), &Overrides::default())
+            .execute(
+                &json!({ "Sheet1!A1:A3": input }),
+                &sheetrs_engine::run::Overrides::default(),
+            )
             .unwrap();
         assert_eq!(out["Sheet1!B1:B3"], json!([[2], [4], [6]]));
         assert_eq!(out["Sheet1!C1"], json!(12));
     }
     let e = p
-        .execute(&json!({"Sheet1!A1:A3": [1, 2]}), &Overrides::default())
+        .execute(
+            &json!({"Sheet1!A1:A3": [1, 2]}),
+            &sheetrs_engine::run::Overrides::default(),
+        )
         .unwrap_err();
     assert!(e.0.contains("expects 3"), "{e}");
 }
@@ -106,7 +123,10 @@ fn errors_and_blanks_in_json() {
     ]);
     let (p, _) = build(&m, &spec(&["A1"], &["B1", "C1"]));
     let out = p
-        .execute(&json!({"Sheet1!A1": "hi"}), &Overrides::default())
+        .execute(
+            &json!({"Sheet1!A1": "hi"}),
+            &sheetrs_engine::run::Overrides::default(),
+        )
         .unwrap();
     assert_eq!(out["Sheet1!B1"], err("#VALUE!"));
     // A formula that refers to a blank cell holds 0, as in Excel and LibreOffice.
@@ -118,7 +138,9 @@ fn default_outputs_cover_formula_ranges() {
     let (p, _) = build(&model(), &spec(&[], &[]));
     assert_eq!(p.outputs.len(), 1);
     assert_eq!(p.outputs[0].name, "Sheet1!B1:D2");
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert_eq!(out["Sheet1!B1:D2"][1][1], json!(300.0 * 1.21 + 0.42)); // C2 in B1:D2
 }
 
@@ -131,7 +153,9 @@ fn circular_references_and_iteration() {
     ]);
     let (p, r) = build(&m, &spec(&[], &["A1", "C1"]));
     assert_eq!(r.cycles, 1);
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert_eq!(out["Sheet1!A1"], err("#CIRC!"));
     assert_eq!(out["Sheet1!C1"], err("#CIRC!"));
 
@@ -147,7 +171,9 @@ fn circular_references_and_iteration() {
         max_change: 1e-12,
     });
     let (p, _) = build(&m, &s);
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert!((out["Sheet1!A1"].as_f64().unwrap() - 20.0).abs() < 1e-9);
     assert!((out["Sheet1!C1"].as_f64().unwrap() - 40.0).abs() < 1e-9);
 }
@@ -169,7 +195,10 @@ fn cycles_through_inputs_survive_to_run_time() {
     assert_eq!(r.formulas_kept, 2);
     assert_eq!(p.cycles.len(), 1);
     let out = p
-        .execute(&json!({"Sheet1!A1": 5}), &Overrides::default())
+        .execute(
+            &json!({"Sheet1!A1": 5}),
+            &sheetrs_engine::run::Overrides::default(),
+        )
         .unwrap();
     assert!((out["Sheet1!B1"].as_f64().unwrap() - 10.0).abs() < 1e-9);
 }
@@ -194,7 +223,10 @@ fn dynamic_references_resolve_at_run_time() {
         (3, [40, 0, 70, 40]),
     ] {
         let out = p
-            .execute(&json!({"Sheet1!A1": row}), &Overrides::default())
+            .execute(
+                &json!({"Sheet1!A1": row}),
+                &sheetrs_engine::run::Overrides::default(),
+            )
             .unwrap();
         let got: Vec<Json> = out["Sheet1!C1:C4"]
             .as_array()
@@ -213,7 +245,8 @@ fn dynamic_references_resolve_at_run_time() {
     );
     assert!(!r.dynamic_refs);
     assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!A1"],
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["Sheet1!A1"],
         json!(4)
     );
 }
@@ -245,7 +278,9 @@ fn locale_is_fixed_at_build_time() {
         };
         s.locale = Some(from_tag(tag, &over).unwrap().0);
         let (p, _) = build(&m, &s);
-        p.execute(&Json::Null, &Overrides::default()).unwrap()[key].clone()
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()[key]
+            .clone()
     };
 
     // Folded or not, the build's locale is the one in force.
@@ -271,7 +306,8 @@ fn locale_is_fixed_at_build_time() {
     let m = sheet(&[("A1", json!("=DATE(2024,1,1)"))]);
     let (p, _) = build(&m, &spec(&[], &["A1"]));
     assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!A1"],
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["Sheet1!A1"],
         json!(45292)
     );
 }
@@ -312,8 +348,11 @@ fn defined_names_bind_and_parse() {
     m.names.insert("Rate".into(), "Sheet1!$A$1".into());
     let (p, _) = build(&m, &spec(&["Rate"], &["B1"]));
     assert_eq!(
-        p.execute(&json!({"Sheet1!A1": 4}), &Overrides::default())
-            .unwrap()["Sheet1!B1"],
+        p.execute(
+            &json!({"Sheet1!A1": 4}),
+            &sheetrs_engine::run::Overrides::default()
+        )
+        .unwrap()["Sheet1!B1"],
         json!(8)
     );
 }
@@ -348,7 +387,12 @@ fn query_levels_keep_progressively_more() {
     };
     let ask = |p: &Program, inputs: &Json, q: &[&str]| {
         let q: Vec<String> = q.iter().map(|s| (*s).to_string()).collect();
-        p.query(inputs, &Overrides::default(), &q, Default::default())
+        p.query(
+            inputs,
+            &sheetrs_engine::run::Overrides::default(),
+            &q,
+            sheetrs_engine::run::MajorDimension::default(),
+        )
     };
     let none = Json::Null;
 
@@ -399,7 +443,7 @@ fn query_levels_keep_progressively_more() {
     let cols = p
         .query(
             &none,
-            &Overrides::default(),
+            &sheetrs_engine::run::Overrides::default(),
             &["A1:C1".into()],
             sheetrs_compiler::run::MajorDimension::Columns,
         )
@@ -427,7 +471,9 @@ fn requests_are_inputs_and_ranges() {
         };
         build(&m, &s).0
     };
-    let call = |p: &sheetrs_compiler::Program, r: Json| p.handle(&r, &Overrides::default());
+    let call = |p: &sheetrs_compiler::Program, r: Json| {
+        p.handle(&r, &sheetrs_engine::run::Overrides::default())
+    };
 
     // Without ranges: the outputs declared at build time, under their names.
     let p = build_at(QueryLevel::Declared);
@@ -497,9 +543,9 @@ fn settings_sheet_errors_and_defaults() {
     let out = p
         .query(
             &Json::Null,
-            &Overrides::default(),
+            &sheetrs_engine::run::Overrides::default(),
             &["B1".into()],
-            Default::default(),
+            sheetrs_engine::run::MajorDimension::default(),
         )
         .unwrap();
     assert_eq!(out[0]["values"], json!([[2]]));
@@ -507,9 +553,9 @@ fn settings_sheet_errors_and_defaults() {
     let e = p
         .query(
             &Json::Null,
-            &Overrides::default(),
+            &sheetrs_engine::run::Overrides::default(),
             &["settings!A1".into()],
-            Default::default(),
+            sheetrs_engine::run::MajorDimension::default(),
         )
         .unwrap_err()
         .0;
@@ -556,7 +602,11 @@ fn declarations_are_validated_together() {
     let m = sheet(&[("A1", json!(5)), ("B1", json!("=A1*2+N(A2)"))]);
     let s = named(&[("a", "A1"), ("blank", "A2")], &[("out", "B1")]);
     let (p, _) = build(&m, &s);
-    let run = |j: Json| p.execute(&j, &Overrides::default()).unwrap()["out"].clone();
+    let run = |j: Json| {
+        p.execute(&j, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["out"]
+            .clone()
+    };
     assert_eq!(run(json!({})), json!(10));
     assert_eq!(run(json!({"a": 7})), json!(14));
     assert_eq!(run(json!({"blank": 1})), json!(11));
@@ -613,7 +663,9 @@ fn a_formula_ending_in_a_blank_keeps_an_empty_result() {
             ..spec(&[], &["B1:H1"])
         };
         let (p, _) = build(&m, &spec);
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["S!B1:H1"][0].clone()
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["S!B1:H1"][0]
+            .clone()
     };
     for fold in [true, false] {
         assert_eq!(
@@ -640,7 +692,9 @@ fn conditional_sums_read_only_the_selected_cells() {
     ]);
     let (p, r) = build(&m, &spec(&[], &["B1:D1"]));
     assert_eq!(r.cycles, 1, "the static graph still sees the loop");
-    let got = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let got = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert_eq!(got["Sheet1!B1:D1"], json!([[30, 30, 15]]));
 }
 
@@ -666,7 +720,8 @@ fn a_one_cell_array_formula_over_a_range_shows_its_first_element() {
     );
     let (p, _) = build(&m, &spec(&[], &["C1"]));
     assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!C1"],
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["Sheet1!C1"],
         json!(7)
     );
 }
@@ -698,12 +753,17 @@ fn formula_text_follows_libreoffice_notation_and_locale() {
     let run = |tag: &str| {
         let mut s = spec(&[], &["B1:B4"]);
         s.locale = Some(
-            sheetrs_compiler::locale::from_tag(tag, &Default::default())
-                .unwrap()
-                .0,
+            sheetrs_compiler::locale::from_tag(
+                tag,
+                &sheetrs_compiler::locale::LocaleOverride::default(),
+            )
+            .unwrap()
+            .0,
         );
         let (p, _) = build(&m, &s);
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!B1:B4"].clone()
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["Sheet1!B1:B4"]
+            .clone()
     };
     assert_eq!(
         run("en"),
@@ -749,7 +809,9 @@ fn the_longtext_feature_joins_constant_pieces_only() {
     let mut sp = spec(&[], &["A1", "A2"]);
     sp.features.longtext = true;
     let (p, _) = build(&m, &sp);
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert_eq!(out["Sheet1!A1"], json!("abcd"));
     assert_eq!(out["Sheet1!A2"], json!({"error": "#NAME?"}));
     let note: Vec<_> = p
@@ -776,7 +838,9 @@ fn a_longtext_wrapper_is_reported_per_cell() {
         .collect();
     assert_eq!(note.len(), 1, "{:?}", p.diagnostics);
     assert!(note[0].starts_with("Sheet1!A1: "), "{}", note[0]);
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert_eq!(out["Sheet1!A1"], json!({"error": "#NAME?"}));
 }
 
@@ -794,7 +858,8 @@ fn error_literals_are_capitals_only_in_libreoffice() {
     m.set_formula(s, "A2", "#N/A");
     let (p, _) = build(&m, &spec(&[], &["A1:A2"]));
     assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!A1:A2"],
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["Sheet1!A1:A2"],
         json!([[err("#NAME?")], [err("#N/A")]])
     );
 }
@@ -831,7 +896,9 @@ fn exact_lookups_over_big_ranges_use_an_index_with_the_scan_semantics() {
         .collect();
     let m = sheet(&owned);
     let (p, _) = build(&m, &spec(&[], &["D1:D7"]));
-    let got = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let got = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert_eq!(
         got["Sheet1!D1:D7"],
         json!([[50], [70], [2500], [{"error": "#N/A"}], [0], [20], [0]])
@@ -846,7 +913,9 @@ fn indirect_and_address_follow_the_documents_reference_syntax() {
         let s = m.add_sheet("Other");
         m.set_formula(s, "A1", formula);
         let (p, _) = build(&m, &spec(&[], &["Other!A1"]));
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Other!A1"].clone()
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["Other!A1"]
+            .clone()
     };
     // An XLSX (or an XLSX saved as ODS): `Sheet!A1`.
     assert_eq!(run(true, "=INDIRECT(\"Sheet1!A1\")"), json!(7));
@@ -894,7 +963,7 @@ fn xlsx_with(sheet_data: &str) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
-/// A shared formula whose cell would read outside the sheet is `#REF!` there, as LibreOffice
+/// A shared formula whose cell would read outside the sheet is `#REF!` there, as `LibreOffice`
 /// computes it: the workbook builds, and the cell is `#REF!` when it runs.
 #[test]
 fn a_shared_formula_moved_outside_the_sheet_builds_and_is_a_ref_error() {
@@ -910,7 +979,9 @@ fn a_shared_formula_moved_outside_the_sheet_builds_and_is_a_ref_error() {
     .unwrap();
     let m = sheetrs_compiler::loader::load(&path).unwrap();
     let (p, _) = build(&m, &spec(&[], &["XFC1", "XFD1"]));
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert_eq!(out["S!XFC1"], json!(5));
     assert_eq!(out["S!XFD1"], err("#REF!"));
 }

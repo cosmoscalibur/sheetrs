@@ -58,8 +58,13 @@ Run these checks before submitting:
 
 ```bash
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+Clippy runs with `clippy::all` and `clippy::pedantic` (`[workspace.lints.clippy]` in the root
+`Cargo.toml`). The few pedantic lints that are allowed workspace-wide carry their reason next to
+the setting; an `#[allow]` anywhere else needs a comment that says why the code is right and the
+lint is not.
 
 CI runs the checks in `.github/workflows/ci.yml` on every pull request. Fix
 any red check before requesting review.

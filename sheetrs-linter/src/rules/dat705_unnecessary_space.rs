@@ -72,8 +72,8 @@ impl WalkerRule for UnnecessarySpaceRule {
     ) {
         if let sheetrs_core::reader::CellValue::Text(text) = &cell.value {
             let bytes = text.as_bytes();
-            let has_whitespace = bytes.first().is_some_and(|b| b.is_ascii_whitespace())
-                || bytes.last().is_some_and(|b| b.is_ascii_whitespace());
+            let has_whitespace = bytes.first().is_some_and(u8::is_ascii_whitespace)
+                || bytes.last().is_some_and(u8::is_ascii_whitespace);
 
             if has_whitespace {
                 out.push(Violation::with_data(

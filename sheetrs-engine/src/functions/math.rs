@@ -263,7 +263,7 @@ fn multiple(e: &mut Engine, a: &[Value], f: fn(f64) -> f64) -> Res<Value> {
     num(f(x / m) * m)
 }
 
-/// LibreOffice's `CEILING(x; multiple; mode)` and `FLOOR`: a zero number or multiple gives 0,
+/// `LibreOffice`'s `CEILING(x; multiple; mode)` and `FLOOR`: a zero number or multiple gives 0,
 /// the number and the multiple must have the same sign, and for negative numbers `mode` 0
 /// rounds toward +∞ (CEILING) or −∞ (FLOOR) and any other mode away from / toward zero.
 fn native_multiple(e: &mut Engine, a: &[Value], ceiling: bool) -> Res<Value> {

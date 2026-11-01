@@ -10,7 +10,7 @@ type Res<T> = Result<T, ErrorKind>;
 
 /// Number → text as the `General` format would show it: 15 significant
 /// digits, positional between 1e-14 and 1e15, scientific otherwise with
-/// the exponent in three digits (`E+017`), as LibreOffice writes it.
+/// the exponent in three digits (`E+017`), as `LibreOffice` writes it.
 pub fn fmt_number(x: f64, loc: &Locale) -> String {
     if x == 0.0 {
         return "0".into();
@@ -61,6 +61,7 @@ pub fn fmt_number(x: f64, loc: &Locale) -> String {
 }
 
 /// Text → number: locale decimal/group separators, `%` suffix, and ISO dates.
+#[must_use]
 pub fn parse_number(s: &str, loc: &Locale, dc: DateCtx) -> Option<f64> {
     let t = s.trim();
     if t.is_empty() {
@@ -118,6 +119,7 @@ pub fn parse_number(s: &str, loc: &Locale, dc: DateCtx) -> Option<f64> {
 }
 
 /// Complete a two-digit year inside the 100-year window starting at `start`.
+#[must_use]
 pub fn expand_year(y: i64, start: u16) -> i64 {
     if y >= 100 {
         return y;
@@ -127,6 +129,9 @@ pub fn expand_year(y: i64, start: u16) -> i64 {
     if cand < start { cand + 100 } else { cand }
 }
 
+/// # Errors
+///
+/// The error value Excel gives when `v` is not a number (`#VALUE!`), or the error `v` holds.
 pub fn to_num(v: &Value, loc: &Locale, dc: DateCtx) -> Res<f64> {
     match v {
         Value::Number(n) => Ok(*n),
@@ -138,8 +143,12 @@ pub fn to_num(v: &Value, loc: &Locale, dc: DateCtx) -> Res<f64> {
     }
 }
 
-/// Value → text as LibreOffice writes it (booleans are the numbers 1/0, numbers use its
+/// Value → text as `LibreOffice` writes it (booleans are the numbers 1/0, numbers use its
 /// general format).
+///
+/// # Errors
+///
+/// The error `v` holds.
 pub fn to_text(v: &Value, loc: &Locale) -> Res<String> {
     match v {
         Value::Text(s) => Ok(s.to_string()),
@@ -151,6 +160,9 @@ pub fn to_text(v: &Value, loc: &Locale) -> Res<String> {
     }
 }
 
+/// # Errors
+///
+/// The error value Excel gives when `v` is not a boolean (`#VALUE!`), or the error `v` holds.
 pub fn to_bool(v: &Value, loc: &Locale) -> Res<bool> {
     match v {
         Value::Bool(b) => Ok(*b),

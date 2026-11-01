@@ -79,9 +79,17 @@ impl GridSink {
 pub trait WorkbookReader {
     /// Read the sheets, handing their cells to `sink`; the returned sheets have empty `cells`.
     /// The one place a format's cells are read: every consumer gets them through a sink.
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_sheets_into(&mut self, sink: &mut dyn CellSink) -> Result<Vec<Sheet>>;
 
     /// Read all sheets from the workbook, with their cells in a [`Grid`].
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_sheets(&mut self) -> Result<Vec<Sheet>> {
         let mut sink = GridSink::default();
         let mut sheets = self.read_sheets_into(&mut sink)?;
@@ -90,15 +98,31 @@ pub trait WorkbookReader {
     }
 
     /// Read defined names (named ranges) from the workbook
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_defined_names(&mut self) -> Result<HashMap<String, String>>;
 
     /// Read the list of hidden sheet names
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_hidden_sheets(&mut self) -> Result<Vec<String>>;
 
     /// Check if the workbook contains macros (VBA, Basic, Scripts)
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn has_macros(&mut self) -> Result<bool>;
 
     /// Read external file links (generic links)
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_external_links(&mut self) -> Result<Vec<String>>;
 
     /// Read external workbook references with their indices
@@ -106,12 +130,24 @@ pub trait WorkbookReader {
     /// The indices correspond to the reference ID used in formulas (e.g., `[1]Sheet1!A1`).
     /// For XLSX, this maps to the externalLink relations.
     /// For ODS, this maps to the order of appearance or explicit file references.
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_external_workbooks(&mut self) -> Result<Vec<ExternalWorkbook>>;
 
     /// Read the last modification date (parsed from file metadata)
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_modified_date(&mut self) -> Result<Option<chrono::DateTime<chrono::Utc>>>;
 
     /// Check if the workbook uses the 1904 date system
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_date1904(&mut self) -> Result<bool>;
 
     /// Read the document properties the file declares (title, author, dates…), as stored.
@@ -119,9 +155,17 @@ pub trait WorkbookReader {
     /// The names are the same in XLSX and ODS where both have the property: `title`, `subject`,
     /// `description`, `keywords`, `creator` (who made it), `last_modified_by`, `created`,
     /// `modified`, `generator` (the application); the others keep the name the file gives them.
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_properties(&mut self) -> Result<Vec<(String, String)>>;
 
     /// Read the calculation settings stored in the document, as stored.
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
     fn read_settings(&mut self) -> Result<DocumentSettings>;
 }
 
@@ -146,6 +190,10 @@ pub trait WorkbookReader {
 /// Read a workbook from a file path
 ///
 /// This function detects the file format based on extension and delegates to `read_workbook_from_reader`.
+///
+/// # Errors
+///
+/// When the file cannot be read or is not a workbook of a supported format.
 pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
     let path_ref = path.as_ref();
     let file = File::open(path_ref).map_err(|source| Error::Open {
@@ -154,7 +202,7 @@ pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
     })?;
 
     // Extract file size from metadata (Parse-Dont-Validate)
-    let file_size_bytes = std::fs::metadata(path_ref).map(|m| m.len()).unwrap_or(0);
+    let file_size_bytes = std::fs::metadata(path_ref).map_or(0, |m| m.len());
 
     let extension = path_ref.extension().and_then(|s| s.to_str());
     let mut workbook = read_workbook_from_reader(file, extension)?;
@@ -168,13 +216,17 @@ pub fn read_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
 /// Read a workbook, handing its cells to `sink` instead of keeping them: the returned workbook has
 /// sheets with empty `cells` and everything else (settings, names, hidden rows…) as
 /// [`read_workbook`] gives it. XLSX and ODS both stream their cells.
+///
+/// # Errors
+///
+/// When the file cannot be read or is not a workbook of a supported format.
 pub fn read_workbook_into<P: AsRef<Path>>(path: P, sink: &mut dyn CellSink) -> Result<Workbook> {
     let path_ref = path.as_ref();
     let file = File::open(path_ref).map_err(|source| Error::Open {
         path: path_ref.to_path_buf(),
         source,
     })?;
-    let file_size_bytes = std::fs::metadata(path_ref).map(|m| m.len()).unwrap_or(0);
+    let file_size_bytes = std::fs::metadata(path_ref).map_or(0, |m| m.len());
     let extension = path_ref.extension().and_then(|s| s.to_str());
     let mut workbook = read_workbook_from_reader_into(file, extension, sink)?;
     workbook.path = path_ref.to_path_buf();
@@ -188,6 +240,10 @@ pub fn read_workbook_into<P: AsRef<Path>>(path: P, sink: &mut dyn CellSink) -> R
 ///
 /// * `reader` - Any source that implements `std::io::Read` and `std::io::Seek` (e.g., `File`, `Cursor`)
 /// * `extension` - Optional hint for the file format ("xlsx", "xlsm", "ods")
+///
+/// # Errors
+///
+/// When the file cannot be read or is not a workbook of a supported format.
 pub fn read_workbook_from_reader<R: std::io::Read + std::io::Seek>(
     reader: R,
     extension: Option<&str>,
@@ -199,6 +255,10 @@ pub fn read_workbook_from_reader<R: std::io::Read + std::io::Seek>(
 }
 
 /// [`read_workbook_from_reader`] with the cells handed to `sink`.
+///
+/// # Errors
+///
+/// When the file cannot be read or is not a workbook of a supported format.
 pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
     reader: R,
     extension: Option<&str>,
@@ -206,13 +266,10 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
 ) -> Result<Workbook> {
     let mut archive = ZipArchive::new(reader)?;
 
-    let is_xlsx = extension
-        .map(|s| s.eq_ignore_ascii_case("xlsx") || s.eq_ignore_ascii_case("xlsm"))
-        .unwrap_or(false);
+    let is_xlsx =
+        extension.is_some_and(|s| s.eq_ignore_ascii_case("xlsx") || s.eq_ignore_ascii_case("xlsm"));
 
-    let is_ods = extension
-        .map(|s| s.eq_ignore_ascii_case("ods"))
-        .unwrap_or(false);
+    let is_ods = extension.is_some_and(|s| s.eq_ignore_ascii_case("ods"));
 
     // If extension is unknown, we could try to detect by contents,
     // but for now we'll stick to extension-based or default to one if Zip format allows.
@@ -474,16 +531,13 @@ mod date_format_parity_tests {
 
     // Helper: Detect if a cell has a date format
     fn is_date_cell(cell: &Cell) -> bool {
-        cell.num_fmt
-            .as_ref()
-            .map(|fmt| {
-                let lower = fmt.to_lowercase();
-                (lower.contains('d')
-                    || lower.contains('y')
-                    || (lower.contains('m') && !lower.contains('0') && !lower.contains('#')))
-                    && !lower.contains("general")
-            })
-            .unwrap_or(false)
+        cell.num_fmt.as_ref().is_some_and(|fmt| {
+            let lower = fmt.to_lowercase();
+            (lower.contains('d')
+                || lower.contains('y')
+                || (lower.contains('m') && !lower.contains('0') && !lower.contains('#')))
+                && !lower.contains("general")
+        })
     }
 }
 

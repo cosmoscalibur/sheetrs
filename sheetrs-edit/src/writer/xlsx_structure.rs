@@ -37,7 +37,7 @@ impl SheetStructure<'_> {
         {
             return Ok(None);
         }
-        self.plan.rewrite_formula(self.edits, formula, &self.sheet)
+        StructureEdits::rewrite_formula(self.edits, formula, &self.sheet)
     }
 
     /// `A1`, `A1:B2`, `C:D` or `3:5` once the plan is applied, `None` when no cell of it remains.
@@ -570,13 +570,14 @@ pub(super) fn rewrite_comments(xml: &str, element: &str, s: &SheetStructure) -> 
     };
     loop {
         match reader.read_event()? {
-            Event::Start(e) if e.name().as_ref() == element => match moved(&e)? {
-                Some(moved) => writer.write_event(Event::Start(moved))?,
-                None => {
+            Event::Start(e) if e.name().as_ref() == element => {
+                if let Some(moved) = moved(&e)? {
+                    writer.write_event(Event::Start(moved))?;
+                } else {
                     let end = e.to_end().into_owned();
                     reader.read_to_end(end.name())?;
                 }
-            },
+            }
             Event::Empty(e) if e.name().as_ref() == element => {
                 if let Some(moved) = moved(&e)? {
                     writer.write_event(Event::Empty(moved))?;
@@ -626,6 +627,7 @@ pub(super) fn rewrite_vml(xml: &str, s: &SheetStructure) -> Result<String> {
 
 /// The content of a note shape once its cell moves: `None` when the shape is not a note,
 /// `Some(None)` when its cell is deleted.
+#[allow(clippy::option_option)] // the two outcomes named above, told apart by the caller
 fn moved_note(
     body: &[Event<'static>],
     s: &SheetStructure,
@@ -716,7 +718,7 @@ fn moved_note(
 }
 
 /// The anchors of the shapes of a drawing (`xl/drawings/drawingN.xml`: images, charts, shapes)
-/// once the rows and columns of its sheet are deleted, as LibreOffice moves them. The top left
+/// once the rows and columns of its sheet are deleted, as `LibreOffice` moves them. The top left
 /// corner goes to the place of its cell, or keeps its index when the cell goes. A shape that
 /// resizes with its cells (`editAs="twoCell"`, which is the default) has its bottom right corner
 /// follow its cell the same way; any other keeps its size in rows and columns.

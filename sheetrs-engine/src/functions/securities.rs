@@ -1,5 +1,5 @@
 //! Securities: the coupon functions and what is built on them (prices, yields, durations,
-//! accrued interest and the discount instruments). What LibreOffice 26.8 answers for the
+//! accrued interest and the discount instruments). What `LibreOffice` 26.8 answers for the
 //! arguments outside the plain case is what `tests/assets/semantics.*` holds.
 
 use super::{Reg, num};
@@ -143,7 +143,7 @@ fn coupon_of(e: &mut Engine, a: &[Value]) -> Res<Coupon> {
     coupon(e.opts.date_system, s, m, freq, basis)
 }
 
-/// The years between two dates as LibreOffice's securities count them: the 30/360 bases with the
+/// The years between two dates as `LibreOffice`'s securities count them: the 30/360 bases with the
 /// rule of `days360`, the others as `YEARFRAC`.
 fn year_frac(e: &Engine, a: f64, b: f64, basis: i64) -> Res<f64> {
     let (a, b) = if a <= b { (a, b) } else { (b, a) };
@@ -208,7 +208,7 @@ fn price_of(c: &Coupon, rate: f64, yld: f64, redemption: f64, freq: f64) -> f64 
     price
 }
 
-/// The yield for a price: the search of LibreOffice (a regula falsi from yields 0 and 1, the upper
+/// The yield for a price: the search of `LibreOffice` (a regula falsi from yields 0 and 1, the upper
 /// one doubled while the price is above that of it).
 fn yield_of(c: &Coupon, rate: f64, price: f64, redemption: f64, freq: f64) -> Res<f64> {
     let at = |y: f64| price_of(c, rate, y, redemption, freq);
@@ -457,7 +457,7 @@ fn odd_last(e: &mut Engine, a: &[Value], price_known: bool) -> Res<Value> {
     }
 }
 
-/// LibreOffice has no calculation behind `ODDFPRICE` and `ODDFYIELD`: they answer `#VALUE!` for
+/// `LibreOffice` has no calculation behind `ODDFPRICE` and `ODDFYIELD`: they answer `#VALUE!` for
 /// every set of arguments that is a call of them (and the errors of the arguments).
 fn not_implemented_in_libreoffice(e: &mut Engine, a: &[Value]) -> Res<Value> {
     for v in a {

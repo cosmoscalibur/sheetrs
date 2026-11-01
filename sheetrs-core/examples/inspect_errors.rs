@@ -10,7 +10,7 @@ fn main() -> Result<()> {
     }
 
     let file_path = &args[1];
-    let target_sheet = args.get(2).map(|s| s.as_str());
+    let target_sheet = args.get(2).map(std::string::String::as_str);
 
     println!("Reading workbook: {file_path}");
     let workbook = read_workbook(file_path)?;

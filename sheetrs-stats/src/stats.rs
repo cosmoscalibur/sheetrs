@@ -95,6 +95,10 @@ impl StatsSink {
 
 impl WorkbookStats {
     /// The statistics of the workbook file at `path`, read in a single streaming pass.
+    ///
+    /// # Errors
+    ///
+    /// When the file cannot be read.
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
         let mut sink = StatsSink::default();
         let workbook = read_workbook_into(path, &mut sink)?;
@@ -117,6 +121,10 @@ impl WorkbookStats {
 
     /// The statistics of a workbook read from `reader`; `extension` (`xlsx`, `xlsm`, `ods`) tells
     /// its format. The reported file size is 0: a reader does not know it.
+    ///
+    /// # Errors
+    ///
+    /// When the workbook cannot be read.
     pub fn from_reader<R: Read + Seek>(reader: R, extension: Option<&str>) -> Result<Self> {
         let mut sink = StatsSink::default();
         let workbook = read_workbook_from_reader_into(reader, extension, &mut sink)?;

@@ -64,8 +64,7 @@ impl ViolationData for RefToEmptyCellData {
             .workbook
             .sheets
             .get(sheet_idx as usize)
-            .map(|s| s.name.as_str())
-            .unwrap_or("?");
+            .map_or("?", |s| s.name.as_str());
         format!(
             "Formula references empty cell: {}!{}",
             sheet_name,

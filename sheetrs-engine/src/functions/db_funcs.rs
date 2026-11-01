@@ -1,7 +1,7 @@
 //! The database functions `DSUM`, `DCOUNT`, `DCOUNTA`, `DAVERAGE`, `DGET`, `DMAX`, `DMIN`,
 //! `DPRODUCT`, `DSTDEV`, `DSTDEVP`, `DVAR` and `DVARP`: a table whose first row names its fields, a
 //! field (a name or a position) and a block of criteria (a row of names and one row per
-//! alternative, whose cells all have to hold). What LibreOffice 26.8 answers for the arguments
+//! alternative, whose cells all have to hold). What `LibreOffice` 26.8 answers for the arguments
 //! outside that shape is what `tests/assets/semantics.*` holds.
 
 use super::stats::Criterion;
@@ -137,9 +137,8 @@ fn database(e: &mut Engine, a: &[Value], fold: Fold) -> Res<Value> {
         Fold::Average if numbers.is_empty() => Err(ErrorKind::DivZero),
         Fold::Average => num(numbers.iter().sum::<f64>() / n),
         Fold::Get => match picked.as_slice() {
-            [Value::Empty] => Err(ErrorKind::Value),
+            [Value::Empty] | [] => Err(ErrorKind::Value),
             [one] => Ok(one.clone()),
-            [] => Err(ErrorKind::Value),
             _ => Err(DOMAIN),
         },
         Fold::Max => num(numbers

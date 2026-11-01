@@ -194,7 +194,7 @@ mod tests {
         assert_eq!((cell.row, cell.col), (Some(6), Some(27)));
         assert_eq!(cell.severity, "error");
         assert_eq!(cell.rule_id, "CPX509");
-        assert!(!cell.rule_name.is_empty());
+        assert_ne!(cell.rule_name, "");
         assert_eq!(cell.message, "long");
     }
 

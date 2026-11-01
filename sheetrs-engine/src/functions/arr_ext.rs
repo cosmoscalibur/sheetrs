@@ -301,9 +301,8 @@ pub(super) fn register(r: &mut Reg) {
             v => e.scalar(v.clone()),
         };
         num(match v {
-            Value::Number(_) | Value::Empty | Value::Ref(_) => 1.0,
+            Value::Number(_) | Value::Empty | Value::Ref(_) | Value::Bool(_) => 1.0,
             Value::Text(_) => 2.0,
-            Value::Bool(_) => 1.0,
             Value::Error(_) => 16.0,
             Value::Array(_) => 64.0,
         })

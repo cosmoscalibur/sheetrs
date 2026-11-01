@@ -47,11 +47,19 @@ pub struct Formula {
 }
 
 /// Parse a formula; a leading `=` is accepted and dropped.
+///
+/// # Errors
+///
+/// When `src` is not a formula.
 pub fn parse(src: &str) -> Result<Expr, ParseError> {
     parse_spanned(src).map(|f| f.expr)
 }
 
 /// Parse keeping the source and the span of each reference.
+///
+/// # Errors
+///
+/// When `source` is not a formula.
 pub fn parse_spanned(source: &str) -> Result<Formula, ParseError> {
     let offset = usize::from(source.starts_with('='));
     let body = &source[offset..];

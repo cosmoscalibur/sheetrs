@@ -2,7 +2,7 @@
 //! removed. Everything is expressed in the coordinates of the input file, so the user needs no
 //! idea of the positions the cells will have afterwards.
 //!
-//! References follow LibreOffice 26.8, which `sheetrs_formula::edit` implements: a reference to
+//! References follow `LibreOffice` 26.8, which `sheetrs_formula::edit` implements: a reference to
 //! deleted cells is `#REF!`, a range shrinks around the deletion, whole rows and columns do not
 //! move when the other axis changes.
 
@@ -79,7 +79,7 @@ impl Bands {
     }
 
     /// Where an anchor at `index` is once the bands are gone: its place, or its own index when it
-    /// is deleted. LibreOffice keeps the position of a shape whose cell goes and anchors it to the
+    /// is deleted. `LibreOffice` keeps the position of a shape whose cell goes and anchors it to the
     /// cell that is there now, which is the cell of that index when the rows or columns that pass
     /// have the same height or width; the size of those is not in the file.
     pub(crate) fn anchored_at(&self, index: u32) -> u32 {
@@ -146,7 +146,7 @@ impl Bands {
 }
 
 /// The error of a deletion that removes the rows (or columns) above the cell a shape is anchored
-/// to together with that cell. LibreOffice places the shape then by its size and the size of the
+/// to together with that cell. `LibreOffice` places the shape then by its size and the size of the
 /// rows (or columns), which are not in the file.
 pub(super) fn shape_depends_on_sizes(sheet: &str) -> Error {
     Error::ShapeDependsOnSizes {
@@ -190,6 +190,9 @@ enum ScanState {
 }
 
 impl SpanScan {
+    // A transition table: one arm per (state, byte class), kept apart even where two arms share
+    // a next state so that each row can be checked against the diagram on its own.
+    #[allow(clippy::match_same_arms)]
     fn feed(&mut self, bytes: &[u8]) {
         use ScanState::{
             AfterColon, Idle, InQuote, InQuoteColon, Name, QuoteEnd, QuoteEndColon, Quoted,
@@ -439,7 +442,6 @@ impl StructureEdits {
     /// The text of the formula `source` held by a cell of `home_sheet` once the plan is applied,
     /// `None` when it does not change.
     pub(crate) fn rewrite_formula(
-        &self,
         edits: &[Edit<'_>],
         source: &str,
         home_sheet: &str,

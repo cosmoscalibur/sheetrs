@@ -113,7 +113,7 @@ mod tests {
 
         let mut rule = DateSystem1904Rule::new();
         let violations = collect_violations(|out| {
-            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out);
         });
         assert!(violations.is_empty());
     }
@@ -127,7 +127,7 @@ mod tests {
 
         let mut rule = DateSystem1904Rule::new();
         let violations = collect_violations(|out| {
-            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out);
         });
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, RuleId::File1003);
@@ -139,7 +139,7 @@ mod tests {
         let workbook = Workbook::default();
         let mut rule = DateSystem1904Rule::new();
         let violations = collect_violations(|out| {
-            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out)
+            rule.on_workbook_start(&workbook, &mut LinterContext::default(), out);
         });
         assert!(violations.is_empty());
     }

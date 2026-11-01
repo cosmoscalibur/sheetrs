@@ -45,6 +45,7 @@ pub enum MajorDimension {
 }
 
 impl MajorDimension {
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_ascii_uppercase().as_str() {
             "ROWS" => Some(Self::Rows),
@@ -63,6 +64,7 @@ struct Target {
 }
 
 impl Program {
+    #[must_use]
     pub fn effective_options(&self, o: &Overrides) -> EngineOptions {
         let mut opts = self.options.clone();
         opts.now = o.now.or(opts.now);
@@ -73,11 +75,19 @@ impl Program {
 
     /// Evaluate with JSON inputs (an object keyed by input name), returning the
     /// declared outputs as an object keyed by output name.
+    ///
+    /// # Errors
+    ///
+    /// When an input is not one of the program, or the program fails.
     pub fn execute(&self, inputs: &Json, o: &Overrides) -> Result<Json, RunError> {
         self.execute_over(None, inputs, o)
     }
 
     /// [`execute`](Self::execute) for a program whose constants are kept in `base`.
+    ///
+    /// # Errors
+    ///
+    /// When an input is not one of the program, or the program fails.
     pub fn execute_over(
         &self,
         base: Option<&dyn ConstSource>,
@@ -92,6 +102,10 @@ impl Program {
     /// read of a spreadsheet API: an array with one `{range, values}` per request
     /// (plus `name` when asked by a name), in request order. See
     /// [`Queryable`] for what may be asked.
+    ///
+    /// # Errors
+    ///
+    /// When an input or an output is not one of the program, or the program fails.
     pub fn query(
         &self,
         inputs: &Json,
@@ -103,6 +117,10 @@ impl Program {
     }
 
     /// [`query`](Self::query) for a program whose constants are kept in `base`.
+    ///
+    /// # Errors
+    ///
+    /// When an input or an output is not one of the program, or the program fails.
     pub fn query_over(
         &self,
         base: Option<&dyn ConstSource>,
@@ -144,11 +162,19 @@ impl Program {
     /// `{"outputs": {...}}`, the outputs declared at build time; with them,
     /// `{"valueRanges": [...]}` for exactly those ranges. A program built with
     /// `outputs = any` has no default answer and requires `ranges`.
+    ///
+    /// # Errors
+    ///
+    /// When the request is not valid or the program fails.
     pub fn handle(&self, request: &Json, o: &Overrides) -> Result<Json, RunError> {
         self.handle_over(None, request, o)
     }
 
     /// [`handle`](Self::handle) for a program whose constants are kept in `base`.
+    ///
+    /// # Errors
+    ///
+    /// When the request is not valid or the program fails.
     pub fn handle_over(
         &self,
         base: Option<&dyn ConstSource>,

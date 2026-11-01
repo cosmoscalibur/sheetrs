@@ -1,10 +1,10 @@
-//! Dates and times written as text, as LibreOffice's input scanner reads them under a locale.
+//! Dates and times written as text, as `LibreOffice`'s input scanner reads them under a locale.
 //!
 //! A date of digits is accepted when it has the shape of one of the locale's patterns
 //! (`D/M/Y`, `M/D`: the separators must be written as in the pattern), or the ISO shape `Y-M-D`
 //! (`a-b-c` read as year, month, day, after the patterns). A pattern without a year gives the current year. A date with a month name is read
 //! by the form it is written in: the position of the month, the separator, and the digits of the
-//! numbers. What LibreOffice does with each form depends on the locale and is data
+//! numbers. What `LibreOffice` does with each form depends on the locale and is data
 //! (`Locale::named`, measured by `scripts/gen_locale_table.py`).
 
 use crate::coerce::expand_year;
@@ -21,11 +21,13 @@ pub struct DateCtx {
 }
 
 impl DateCtx {
+    #[must_use]
     pub fn new(sys: DateSystem, now: Option<f64>) -> Self {
         Self { sys, now }
     }
 
     /// The current year, read from the clock only when a date asks for it.
+    #[must_use]
     pub fn year(&self) -> i64 {
         let serial = self.now.unwrap_or_else(|| {
             let secs = std::time::SystemTime::now()
@@ -39,6 +41,7 @@ impl DateCtx {
 
 /// A text date or date-time, as typed into a cell, optionally followed by a time. Also a time
 /// alone (`13:30`, `1:30 PM`), which is a fraction of a day.
+#[must_use]
 pub fn parse_date_text(s: &str, loc: &Locale, dc: DateCtx) -> Option<f64> {
     let t = s.trim();
     if let Some(tm) = parse_time(t, loc) {
@@ -162,6 +165,7 @@ fn iso_shaped(nums: &[&str], seps: &[&str]) -> bool {
 }
 
 /// Whether a text has the shape of a date of digits in the locale.
+#[must_use]
 pub fn looks_like_numeric_date(s: &str, loc: &Locale) -> bool {
     let Some((nums, seps)) = split_digits(s) else {
         return false;
@@ -174,6 +178,7 @@ pub fn looks_like_numeric_date(s: &str, loc: &Locale) -> bool {
 }
 
 /// `None`: not the shape of a date of digits; `Some(None)`: it is, but it is not a date.
+#[allow(clippy::option_option)] // two distinct failures, told apart by the caller
 fn numeric_date(d: &str, loc: &Locale, dc: DateCtx) -> Option<Option<(i64, i64, i64)>> {
     let (nums, seps) = split_digits(d)?;
     let iso = iso_shaped(&nums, &seps);

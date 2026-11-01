@@ -106,7 +106,7 @@ use sheetrs_core::reader::ExcelError;
 use sheetrs_core::reader::{Cell, Sheet, Workbook};
 use std::collections::{HashMap, HashSet};
 
-/// Type alias for cell dependency graph: (SheetIndex, Row, Col) -> Vec<(SheetIndex, Row, Col)>
+/// Type alias for cell dependency graph: (`SheetIndex`, Row, Col) -> Vec<(`SheetIndex`, Row, Col)>
 pub type CellDependencyMap = HashMap<(u16, u32, u32), Vec<(u16, u32, u32)>>;
 
 /// Shared context for walker rules during single-pass execution

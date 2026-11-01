@@ -60,17 +60,17 @@ fn math_functions() {
     assert_eq!(calc("SUM({1,2;3,4})"), json!(10));
     assert_eq!(calc("MEDIAN(1,3,2,10)"), json!(2.5));
     assert_eq!(calc("LARGE({5,1,9},2)"), json!(5));
-    assert_eq!(calc("PMT(0.01,12,-1000)"), json!(88.84878867834166));
+    assert_eq!(calc("PMT(0.01,12,-1000)"), json!(88.848_788_678_341_66));
 }
 
 #[test]
 fn dates_reach_the_year_32767_like_libreoffice() {
-    assert_eq!(calc("DATE(10000,1,1)"), json!(2958466));
-    assert_eq!(calc("DATE(12345,1,1)"), json!(3814960));
-    assert_eq!(calc("DATE(32767,12,31)"), json!(11274306));
+    assert_eq!(calc("DATE(10000,1,1)"), json!(2_958_466));
+    assert_eq!(calc("DATE(12345,1,1)"), json!(3_814_960));
+    assert_eq!(calc("DATE(32767,12,31)"), json!(11_274_306));
     assert_eq!(calc("YEAR(3815019)"), json!(12345));
     assert_eq!(calc("TEXT(3815019,\"yyyy-mm-dd\")"), json!("12345-03-01"));
-    assert_eq!(calc("DATEVALUE(\"3/1/12345\")"), json!(3815019));
+    assert_eq!(calc("DATEVALUE(\"3/1/12345\")"), json!(3_815_019));
     assert_eq!(calc("DATEVALUE(\"3/1/32768\")"), err("#VALUE!"));
 }
 
@@ -93,7 +93,9 @@ fn one_row_aggregates() {
         ("F5", json!("=SUM(A1:D1,A3:C3)")),
     ]);
     let (p, _) = build(&m, &spec(&[], &["A5:F5"]));
-    let out = p.execute(&Json::Null, &Default::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     assert_eq!(
         out["Sheet1!A5:F5"][0],
         json!([3.5, err("#DIV/0!"), 12, 0, 1.75, 15.5])
@@ -125,7 +127,9 @@ fn ranges_and_aggregates() {
         ("C12", json!("=COUNTBLANK(A1:A6)")),
     ]);
     let (p, _) = build(&m, &spec(&[], &["C1:C12"]));
-    let out = p.execute(&Json::Null, &Default::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     let col: Vec<Json> = out["Sheet1!C1:C12"]
         .as_array()
         .unwrap()
@@ -170,7 +174,9 @@ fn lookups() {
         ("D8", json!("=ROWS(A1:B3)*COLUMNS(A1:B3)")),
     ]);
     let (p, _) = build(&m, &spec(&[], &["D1:D8"]));
-    let out = p.execute(&Json::Null, &Default::default()).unwrap();
+    let out = p
+        .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+        .unwrap();
     let col: Vec<Json> = out["Sheet1!D1:D8"]
         .as_array()
         .unwrap()
@@ -221,7 +227,8 @@ fn dates_and_date_systems() {
     m.set_formula(sh, "A1", "DATE(2024,1,1)");
     let (p, _) = build(&m, &s);
     assert_eq!(
-        p.execute(&Json::Null, &Default::default()).unwrap()["Sheet1!A1"],
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["Sheet1!A1"],
         json!(43830)
     );
 }
@@ -256,7 +263,8 @@ fn unsupported_functions_are_reported() {
     let (p, r) = build(&m, &spec(&[], &["A1"]));
     assert!(r.unsupported.contains("NOSUCHFN"));
     assert_eq!(
-        p.execute(&Json::Null, &Default::default()).unwrap()["Sheet1!A1"],
+        p.execute(&Json::Null, &sheetrs_engine::run::Overrides::default())
+            .unwrap()["Sheet1!A1"],
         err("#NAME?")
     );
     assert!(
@@ -266,8 +274,8 @@ fn unsupported_functions_are_reported() {
     );
 }
 
-/// Approximate lookups over an array that is not a range follow LibreOffice's own search for
-/// them; each answer here is one LibreOffice 26.8 gave (15,000 more were compared when it was
+/// Approximate lookups over an array that is not a range follow `LibreOffice`'s own search for
+/// them; each answer here is one `LibreOffice` 26.8 gave (15,000 more were compared when it was
 /// written).
 #[test]
 fn lookups_over_arrays_that_are_not_sorted_as_libreoffice() {
@@ -294,7 +302,7 @@ fn lookups_over_arrays_that_are_not_sorted_as_libreoffice() {
 }
 
 /// `XLOOKUP` over an array that is not a range, in the modes that look for the nearest value or
-/// search in halves; LibreOffice 26.8 gave these (its walk down skips the last element).
+/// search in halves; `LibreOffice` 26.8 gave these (its walk down skips the last element).
 #[test]
 fn xlookup_over_arrays_as_libreoffice() {
     for (f, want) in [
@@ -345,8 +353,8 @@ fn match_over_a_range_wants_a_vector_and_a_known_type() {
     assert_eq!(r["Sheet1!A4"], json!(2));
 }
 
-/// Text of every script orders as LibreOffice orders it (ICU's collation): each answer is one
-/// LibreOffice 26.8 gave.
+/// Text of every script orders as `LibreOffice` orders it (ICU's collation): each answer is one
+/// `LibreOffice` 26.8 gave.
 #[test]
 fn text_orders_as_libreoffice_in_every_script() {
     for (a, b, lt) in [

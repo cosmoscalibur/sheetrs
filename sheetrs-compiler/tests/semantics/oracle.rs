@@ -1,5 +1,5 @@
-//! Cross-check against LibreOffice: `tests/assets/semantics.{xlsx,ods}` hold
-//! ~200 formulas whose cached values were computed by LibreOffice (see
+//! Cross-check against `LibreOffice`: `tests/assets/semantics.{xlsx,ods}` hold
+//! ~200 formulas whose cached values were computed by `LibreOffice` (see
 //! `scripts/gen_semantics_fixture.py`). The engine must reproduce them from the
 //! formulas alone, from both container formats.
 
@@ -10,7 +10,7 @@ use sheetrs_compiler::{BindingSpec, Overrides, Spec, compile, loader};
 use std::path::Path;
 
 /// Formulas where the oracle itself cannot be compared as is (the reference is
-/// LibreOffice for both files): (label, file suffix
+/// `LibreOffice` for both files): (label, file suffix
 /// or "" for all, reason).
 const ORACLE_GAPS: &[(&str, &str, &str)] = &[
     (
@@ -32,10 +32,10 @@ const ORACLE_GAPS: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// LibreOffice's XLSX export writes every error of an invalid argument as
+/// `LibreOffice`'s XLSX export writes every error of an invalid argument as
 /// `#VALUE!` (and sheetrs reads a cached `#VALUE!` of a formula with `:` as no
 /// value, #62), so the kind an Excel-semantics engine must give cannot be read
-/// from it. The ODS twin keeps the real code: when LibreOffice says "error" there,
+/// from it. The ODS twin keeps the real code: when `LibreOffice` says "error" there,
 /// an engine error of any kind is accepted for the XLSX row.
 fn ods_errors(twin: &str) -> std::collections::HashSet<String> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -56,7 +56,7 @@ fn ods_errors(twin: &str) -> std::collections::HashSet<String> {
         .collect()
 }
 
-/// `locale`: the regional settings LibreOffice ran with when it computed `file`.
+/// `locale`: the regional settings `LibreOffice` ran with when it computed `file`.
 fn check(file: &str, locale: &str) {
     check_rows(file, locale, 150);
 }
@@ -104,9 +104,12 @@ fn check_rows(file: &str, locale: &str, min_rows: usize) {
         fold: false,
         now,
         locale: Some(
-            sheetrs_compiler::locale::from_tag(locale, &Default::default())
-                .unwrap()
-                .0,
+            sheetrs_compiler::locale::from_tag(
+                locale,
+                &sheetrs_compiler::locale::LocaleOverride::default(),
+            )
+            .unwrap()
+            .0,
         ),
         ..Spec::default()
     };
@@ -118,7 +121,7 @@ fn check_rows(file: &str, locale: &str, min_rows: usize) {
     let twin_errors = if file.ends_with("xlsx") {
         ods_errors(&file.replace(".xlsx", ".ods"))
     } else {
-        Default::default()
+        std::collections::HashSet::default()
     };
     let mut bad = Vec::new();
     for &row in &rows {
@@ -169,7 +172,7 @@ fn ods_matches_libreoffice() {
     check("semantics.ods", "en");
 }
 
-/// Locales with a fixture of their own, computed by a LibreOffice running with that regional
+/// Locales with a fixture of their own, computed by a `LibreOffice` running with that regional
 /// setting (`scripts/gen_semantics_fixture.py`, `LOCALE_FIXTURES`).
 fn check_locale(tag: &str) {
     check_rows(&format!("semantics_{tag}.xlsx"), tag, 150);
@@ -196,14 +199,14 @@ fn british_english_matches_libreoffice() {
     check_locale("en-GB");
 }
 
-/// A spreadsheet created in LibreOffice (ODF default settings, LibreOffice's own function
+/// A spreadsheet created in `LibreOffice` (ODF default settings, `LibreOffice`'s own function
 /// names such as the native `CEILING`), not imported from XLSX.
 #[test]
 fn native_ods_matches_libreoffice() {
     check("native.ods", "en");
 }
 
-/// Documents created in LibreOffice with another null date (the date of serial 0): the date
+/// Documents created in `LibreOffice` with another null date (the date of serial 0): the date
 /// system is the document's, whatever it is.
 #[test]
 fn null_dates_match_libreoffice() {

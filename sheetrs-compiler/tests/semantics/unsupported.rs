@@ -1,4 +1,4 @@
-//! What the engine does not support stops the build: it is a replacement of LibreOffice or it
+//! What the engine does not support stops the build: it is a replacement of `LibreOffice` or it
 //! says it is not one for the workbook.
 
 use crate::common::*;

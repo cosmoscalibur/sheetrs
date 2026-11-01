@@ -11,8 +11,12 @@ use crate::model::{Model, ModelCell, ModelSettings};
 use crate::options::{DateSystem, Iteration, Search, SearchMode};
 use crate::value::{ErrorKind, Value};
 use sheetrs_core::reader::{CellValue, DocumentSettings, Workbook};
+use std::fmt::Write as _;
 use std::path::Path;
 
+/// # Errors
+///
+/// When the workbook cannot be read.
 pub fn load(path: &Path) -> Result<Model, String> {
     let ods = path
         .extension()
@@ -45,8 +49,10 @@ fn sha256_of(path: &Path) -> std::io::Result<String> {
     Ok(hasher
         .finalize()
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+        .fold(String::new(), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        }))
 }
 
 /// The model's cells, filled by the reader.
@@ -61,15 +67,15 @@ impl sheetrs_core::reader::CellSink for ModelSink {
     }
 
     fn cell(&mut self, sheet: u16, at: (u32, u32), cell: sheetrs_core::reader::Cell) {
-        if let Some(c) = model_cell(cell.value, cell.formula, cell.is_array) {
+        if let Some(c) = model_cell(&cell.value, cell.formula, cell.is_array) {
             self.cells.insert(CellRef::new(sheet, at.0, at.1), c);
         }
     }
 }
 
 /// What the model keeps of a cell: nothing for one that holds no value and no formula.
-fn model_cell(value: CellValue, formula: Option<Box<str>>, array: bool) -> Option<ModelCell> {
-    let value = convert(&value);
+fn model_cell(value: &CellValue, formula: Option<Box<str>>, array: bool) -> Option<ModelCell> {
+    let value = convert(value);
     let formula = formula.map(String::from);
     (formula.is_some() || value != Value::Empty).then_some(ModelCell {
         value,
@@ -80,6 +86,7 @@ fn model_cell(value: CellValue, formula: Option<Box<str>>, array: bool) -> Optio
 
 /// Convert a workbook that holds its cells, consuming it: values and formula text move
 /// instead of being copied, and each sheet's cells are released as soon as they are converted.
+#[must_use]
 pub fn from_workbook_owned(mut wb: Workbook, ods: bool) -> Model {
     let mut cells = CellStore::default();
     for (i, sheet) in wb.sheets.iter_mut().enumerate() {
@@ -87,7 +94,7 @@ pub fn from_workbook_owned(mut wb: Workbook, ods: bool) -> Model {
         let sheet_cells = std::mem::take(&mut sheet.cells);
         cells.reserve(i as u16, sheet_cells.len());
         for ((row, col), cell) in sheet_cells {
-            if let Some(c) = model_cell(cell.value, cell.formula, cell.is_array) {
+            if let Some(c) = model_cell(&cell.value, cell.formula, cell.is_array) {
                 cells.insert(CellRef::new(i as u16, row, col), c);
             }
         }
@@ -112,7 +119,7 @@ fn header(wb: &Workbook, ods: bool) -> Model {
     let mut m = Model::new();
     m.from_file = true;
     m.macros = wb.has_macros;
-    m.properties = wb.properties.clone();
+    m.properties.clone_from(&wb.properties);
     // The null date is the document's: an ODS stores any date, an XLSX says `date1904` or
     // gets LibreOffice's default, 1899-12-30, on the real calendar.
     m.date_system = match wb.settings.null_date {
@@ -162,7 +169,7 @@ pub fn from_workbook(wb: &Workbook, ods: bool) -> Model {
 
 /// Resolve the settings the document states into engine terms. ODS applies the
 /// ODF defaults to what it leaves out (case sensitive, whole-cell, regular
-/// expressions on, wildcards off); LibreOffice itself omits an attribute that
+/// expressions on, wildcards off); `LibreOffice` itself omits an attribute that
 /// equals the default. Excel files carry no search settings and use Excel's
 /// behavior.
 fn settings(s: &DocumentSettings, ods: bool, unsupported: &mut Vec<String>) -> ModelSettings {
@@ -212,7 +219,7 @@ fn convert(v: &CellValue) -> Value {
     }
 }
 
-/// Excel error literal or LibreOffice `Err:NNN` code.
+/// Excel error literal or `LibreOffice` `Err:NNN` code.
 fn error_kind(s: &str) -> ErrorKind {
     if let Some(k) = ErrorKind::parse(s) {
         return k;

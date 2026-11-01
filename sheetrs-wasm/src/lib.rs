@@ -21,6 +21,9 @@ struct RuleInfo {
     is_default: bool,
 }
 
+/// # Errors
+///
+/// A message when the result cannot be serialized.
 #[wasm_bindgen]
 pub fn lint_rules() -> Result<JsValue, JsValue> {
     let config = LinterConfig::default();
@@ -40,6 +43,9 @@ pub fn lint_rules() -> Result<JsValue, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
 }
 
+/// # Errors
+///
+/// A message when the workbook cannot be read or the configuration is not valid.
 #[wasm_bindgen]
 pub fn lint_workbook(
     file_data: &[u8],
@@ -74,6 +80,10 @@ pub fn lint_workbook(
 /// (`rule_id`, `rule_name`, `severity`, `message`, `scope`, `sheet`, `cell`, `row`, `col`), the
 /// structured counterpart of [`lint_workbook`]. `config_toml` is the text of a `sheetlint.toml`
 /// (empty for the default rules).
+///
+/// # Errors
+///
+/// A message when the workbook cannot be read, the configuration is not valid or the result cannot be serialized.
 #[wasm_bindgen]
 pub fn lint_workbook_records(
     file_data: &[u8],
@@ -96,6 +106,10 @@ pub fn lint_workbook_records(
 
 /// Statistics of a workbook as an object (the fields of `sheetstats --format json`), the
 /// structured counterpart of [`get_workbook_stats`]. `total_file_size` is 0: bytes carry no size.
+///
+/// # Errors
+///
+/// A message when the workbook cannot be read or the result cannot be serialized.
 #[wasm_bindgen]
 pub fn workbook_stats(file_data: &[u8], extension: &str) -> Result<JsValue, JsValue> {
     let stats = sheetrs_stats::WorkbookStats::from_reader(Cursor::new(file_data), Some(extension))
@@ -187,8 +201,7 @@ fn format_violation(
     let rule_id_str = violation.rule_id.as_str();
     let rule_name = rule_names
         .get(rule_id_str)
-        .map(|s| s.as_str())
-        .unwrap_or("Unknown rule");
+        .map_or("Unknown rule", std::string::String::as_str);
 
     format!(
         "{}{} [{}] {} - {}\n",
@@ -200,6 +213,9 @@ fn format_violation(
     )
 }
 
+/// # Errors
+///
+/// A message when the workbook cannot be read.
 #[wasm_bindgen]
 pub fn get_workbook_stats(file_data: &[u8], extension: &str) -> Result<String, JsValue> {
     let cursor = Cursor::new(file_data);

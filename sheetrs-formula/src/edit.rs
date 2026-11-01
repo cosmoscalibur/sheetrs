@@ -103,7 +103,7 @@ fn ordered(a: u32, b: u32) -> (u32, u32, bool) {
 
 /// Apply `shift` along rows (`rows == true`) or columns to an area.
 fn shift_area(area: &RefArea, s: Shift, rows: bool) -> Option<RefArea> {
-    let (limit, _) = if rows { (MAX_ROWS, ()) } else { (MAX_COLS, ()) };
+    let (limit, ()) = if rows { (MAX_ROWS, ()) } else { (MAX_COLS, ()) };
     Some(match *area {
         RefArea::Cell(mut c) => {
             if rows {
@@ -194,7 +194,7 @@ pub fn apply(expr: &mut Expr, edit: &Edit<'_>, home_sheet: &str) -> bool {
 }
 
 /// Rewrite the reference `r` to a sheet named `target` after `s`. Cells that are gone leave
-/// `Sheet!#REF!`, the form that LibreOffice reads as `#REF!` (a bare one is an unknown name there)
+/// `Sheet!#REF!`, the form that `LibreOffice` reads as `#REF!` (a bare one is an unknown name there)
 /// and Excel writes.
 fn replace(e: &mut Expr, r: Reference, s: Shift, rows: bool, target: &str) -> bool {
     match shift_area(&r.area, s, rows) {
@@ -425,7 +425,7 @@ mod tests {
         assert_eq!(&h.source[h.ref_spans[1].clone()], "B2");
     }
 
-    /// Several deletions of one sheet, in the coordinates of the file, as LibreOffice gives them.
+    /// Several deletions of one sheet, in the coordinates of the file, as `LibreOffice` gives them.
     #[test]
     fn several_edits_apply_to_the_coordinates_of_the_input() {
         use crate::parse::parse_spanned;

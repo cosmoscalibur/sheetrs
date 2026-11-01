@@ -1,4 +1,4 @@
-//! ODS (OpenDocument Spreadsheet) parser implementation
+//! ODS (`OpenDocument` Spreadsheet) parser implementation
 
 use super::parser_utils::{attr_value, push_general_ref, read_text_node};
 use super::workbook::{
@@ -27,6 +27,10 @@ use zip::ZipArchive;
 /// # Returns
 ///
 /// * `Result<bool>` - True if macros or scripts are detected
+///
+/// # Errors
+///
+/// When the archive cannot be read.
 pub fn has_macros(archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>) -> Result<bool> {
     let is_library = |path: &str| path.starts_with("Basic/") || path.starts_with("Scripts/");
 
@@ -132,7 +136,7 @@ fn parse_ods_date(date_str: &str, null_date_shift: i32) -> Option<f64> {
     let days_before_year =
         |y: i32| -> i32 { 365 * y + (y - 1) / 4 - (y - 1) / 100 + (y - 1) / 400 };
 
-    let leap_feb = if month > 2 && is_leap(year) { 1 } else { 0 };
+    let leap_feb = i32::from(month > 2 && is_leap(year));
     let absolute_days = days_before_year(year) + CUMULATIVE_DAYS[month as usize] + leap_feb + day;
 
     // 1899-12-30 is day 0 (1900-01-01 is therefore 2).
@@ -156,10 +160,10 @@ fn parse_ods_date(date_str: &str, null_date_shift: i32) -> Option<f64> {
         }
     }
 
-    Some(total_days as f64 + time_fraction)
+    Some(f64::from(total_days) + time_fraction)
 }
 
-/// Days between LibreOffice's default null date (1899-12-30) and the
+/// Days between `LibreOffice`'s default null date (1899-12-30) and the
 /// `table:null-date` declared by the document (`YYYY-MM-DD`).
 fn null_date_shift(null_date: &str) -> Option<i32> {
     // parse_ods_date numbers days from 1899-12-30, so the date itself gives the shift.
@@ -315,7 +319,7 @@ fn split_text_literals(formula: &str) -> Vec<(bool, &str)> {
 /// Check if a reference is a whole column (A) or whole row (1)
 fn is_whole_column_or_row(s: &str) -> bool {
     let cleaned = s.trim_start_matches('$');
-    cleaned.chars().all(|c| c.is_alphabetic()) || cleaned.chars().all(|c| c.is_numeric())
+    cleaned.chars().all(char::is_alphabetic) || cleaned.chars().all(char::is_numeric)
 }
 
 /// Parse bracketed reference: [.A1], [$Sheet.A1], [.A1:.B2]
@@ -427,7 +431,10 @@ fn parse_sheet_qualified_ref(content: &str, result: &mut String, current_sheet_n
             end_cell = c;
         }
 
-        if !start_sheet.is_empty() {
+        if start_sheet.is_empty() {
+            // Malformed or just local range like .A1:.B2 (though those should go to parse_local_ref)
+            result.push_str(content);
+        } else {
             // Check if we should strip the sheet name
             // For a range, we only strip if BOTH sheets match the current sheet
             let should_strip = if let Some(current) = current_sheet_name {
@@ -466,9 +473,6 @@ fn parse_sheet_qualified_ref(content: &str, result: &mut String, current_sheet_n
                 result.push(':');
                 result.push_str(end_cell);
             }
-        } else {
-            // Malformed or just local range like .A1:.B2 (though those should go to parse_local_ref)
-            result.push_str(content);
         }
     } else {
         // Single cell: Sheet.A1
@@ -479,7 +483,10 @@ fn parse_sheet_qualified_ref(content: &str, result: &mut String, current_sheet_n
             cell = c;
         }
 
-        if !sheet.is_empty() {
+        if sheet.is_empty() {
+            // Malformed, keep as-is
+            result.push_str(content);
+        } else {
             // Check if we should strip the sheet name
             let should_strip = if let Some(current) = current_sheet_name {
                 sheet == current
@@ -494,9 +501,6 @@ fn parse_sheet_qualified_ref(content: &str, result: &mut String, current_sheet_n
                 result.push('!');
                 result.push_str(cell);
             }
-        } else {
-            // Malformed, keep as-is
-            result.push_str(content);
         }
     }
 }
@@ -519,7 +523,7 @@ fn parse_local_ref(content: &str, result: &mut String) {
 }
 
 /// Parse $Sheet.A1 or $Sheet.A1:.$B$2 (unbracketed sheet reference)
-/// Always outputs Sheet!Cell format, stripping handled at end of normalize_ods_reference
+/// Always outputs Sheet!Cell format, stripping handled at end of `normalize_ods_reference`
 fn parse_dollar_sheet_ref(
     chars: &mut std::iter::Peekable<std::str::Chars>,
     result: &mut String,
@@ -683,7 +687,7 @@ struct OdsData {
     external_workbooks: Vec<ExternalWorkbook>,
 }
 
-/// ODS (OpenDocument Spreadsheet) reader implementation
+/// ODS (`OpenDocument` Spreadsheet) reader implementation
 ///
 /// Handles parsing of .ods content.xml and styles.xml
 #[derive(Debug)]
@@ -695,6 +699,9 @@ pub struct OdsReader<'a, R: std::io::Read + std::io::Seek> {
 const MAX_COLUMNS: u32 = 16384;
 
 impl<'a, R: std::io::Read + std::io::Seek> OdsReader<'a, R> {
+    /// # Errors
+    ///
+    /// When the archive does not hold a readable ODS document.
     pub fn new(archive: &'a mut ZipArchive<R>) -> Result<Self> {
         Ok(Self {
             archive,
@@ -703,7 +710,7 @@ impl<'a, R: std::io::Read + std::io::Seek> OdsReader<'a, R> {
     }
 }
 
-impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
+impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
     fn read_sheets_into(&mut self, sink: &mut dyn CellSink) -> Result<Vec<Sheet>> {
         // ============================================================
         // SINGLE PASS: Parse content.xml once for all concerns
@@ -1135,9 +1142,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             "number:seconds" => {
                                 current_format.push_str("ss");
                             }
-                            "number:text" => {
-                                // Will read text event next
-                            }
+                            // "number:text" reads its text event next
                             _ => {}
                         }
                     }
@@ -1297,7 +1302,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 loop {
                                     match reader.read_event_into(&mut skip_buf)? {
                                         Event::Start(ee) if ee.name().as_ref() == "table:table" => {
-                                            depth += 1
+                                            depth += 1;
                                         }
                                         Event::End(ee) if ee.name().as_ref() == "table:table" => {
                                             if depth == 0 {
@@ -1649,10 +1654,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 let formula_for_cell = formula;
 
                                 // Look up format string from style
-                                let num_fmt = if !style_name.is_empty() {
-                                    date_styles.get(&style_name).cloned()
-                                } else {
+                                let num_fmt = if style_name.is_empty() {
                                     None
+                                } else {
+                                    date_styles.get(&style_name).cloned()
                                 };
 
                                 // A float stays a float in a cell formatted as Text, as in XLSX.
@@ -1762,10 +1767,10 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                                 let formula_for_cell = formula;
 
                                 // Look up format string from style
-                                let num_fmt = if !style_name.is_empty() {
-                                    date_styles.get(&style_name).cloned()
-                                } else {
+                                let num_fmt = if style_name.is_empty() {
                                     None
+                                } else {
+                                    date_styles.get(&style_name).cloned()
                                 };
 
                                 for r in 0..row_repeated {
@@ -1954,7 +1959,7 @@ impl<'a, R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'a, R> {
                             match attr.key.as_ref() {
                                 "table:name" => name = attr_value(&attr)?.into_owned(),
                                 "table:target-range-address" => {
-                                    target = attr_value(&attr)?.into_owned()
+                                    target = attr_value(&attr)?.into_owned();
                                 }
                                 _ => {}
                             }
@@ -2432,7 +2437,7 @@ fn extract_settings_ods(
                             "table:status" => it.enabled = v == "enable",
                             "table:steps" => it.max_iterations = v.parse().unwrap_or(100),
                             "table:maximum-difference" => {
-                                it.max_change = v.parse().unwrap_or(0.001)
+                                it.max_change = v.parse().unwrap_or(0.001);
                             }
                             _ => {}
                         }

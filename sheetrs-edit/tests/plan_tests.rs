@@ -77,14 +77,14 @@ fn modifications(operation: &Operation) -> WorkbookModifications {
     let mut mods = WorkbookModifications::default();
     match operation {
         Operation::RemoveSheets(names) => {
-            mods.remove_sheets = Some(names.iter().cloned().collect())
+            mods.remove_sheets = Some(names.iter().cloned().collect());
         }
         Operation::RemoveNamedRanges(names) => {
             mods.remove_named_ranges = Some(names.iter().cloned().collect());
         }
         Operation::ConvertToValues(scopes) => mods.convert_to_values.clone_from(scopes),
         Operation::DeleteRows(rows) => {
-            mods.delete_rows = rows.iter().cloned().map(Into::into).collect()
+            mods.delete_rows = rows.iter().cloned().map(Into::into).collect();
         }
         Operation::DeleteColumns(columns) => {
             mods.delete_columns = columns.iter().cloned().map(Into::into).collect();
@@ -372,7 +372,7 @@ fn an_operation_on_a_sheet_that_was_removed_stops_the_plan_before_it_runs() {
 }
 
 /// The formulas of a snapshot, one reference form for both formats: a reference that went reads
-/// `T!#REF!` in an XLSX and `#REF!` in an ODS, and LibreOffice writes the range of one cell as the
+/// `T!#REF!` in an XLSX and `#REF!` in an ODS, and `LibreOffice` writes the range of one cell as the
 /// cell in an XLSX and as a range in an ODS.
 fn formulas_only(snapshot: &Snapshot) -> BTreeMap<(String, u32, u32), String> {
     let one_cell = regex::Regex::new(r"(\$?[A-Z]+\$?[0-9]+):(\$?[A-Z]+\$?[0-9]+)").unwrap();

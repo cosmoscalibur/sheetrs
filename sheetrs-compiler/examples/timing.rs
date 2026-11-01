@@ -61,7 +61,10 @@ fn main() {
     );
     let t = Instant::now();
     let out = p
-        .execute(&serde_json::Value::Null, &Default::default())
+        .execute(
+            &serde_json::Value::Null,
+            &sheetrs_engine::run::Overrides::default(),
+        )
         .unwrap();
     println!("run                 {:>8.1?}   -> {out}", t.elapsed());
 }

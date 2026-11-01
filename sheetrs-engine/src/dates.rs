@@ -8,6 +8,7 @@ fn out_of_range<T>() -> Option<T> {
 }
 
 /// Days since 1970-01-01 of a proleptic Gregorian date (Hinnant's algorithm).
+#[must_use]
 pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
@@ -17,6 +18,7 @@ pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
+#[must_use]
 pub fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
@@ -34,7 +36,7 @@ fn epoch(sys: DateSystem) -> i64 {
     sys.null_date
 }
 
-/// Serials between 0001-01-01 and 32767-12-31, the dates LibreOffice can write.
+/// Serials between 0001-01-01 and 32767-12-31, the dates `LibreOffice` can write.
 fn serial_range(sys: DateSystem) -> (i64, i64) {
     (
         days_from_civil(1, 1, 1) - epoch(sys),
@@ -49,6 +51,7 @@ pub fn ymd_to_serial(y: i64, m: i64, d: i64, sys: DateSystem) -> Option<f64> {
 }
 
 /// Like [`ymd_to_serial`], for text that merely may not be a date.
+#[must_use]
 pub fn ymd_to_serial_quiet(y: i64, m: i64, d: i64, sys: DateSystem) -> Option<f64> {
     let y = y + (m - 1).div_euclid(12);
     let m = (m - 1).rem_euclid(12) + 1;
@@ -63,6 +66,7 @@ pub fn serial_to_ymd(serial: f64, sys: DateSystem) -> Option<(i64, i64, i64)> {
 }
 
 /// Like [`serial_to_ymd`], for values that are not known to be dates.
+#[must_use]
 pub fn serial_to_ymd_quiet(serial: f64, sys: DateSystem) -> Option<(i64, i64, i64)> {
     let (min, max) = serial_range(sys);
     if !((min as f64)..(max as f64)).contains(&serial) {
@@ -73,21 +77,25 @@ pub fn serial_to_ymd_quiet(serial: f64, sys: DateSystem) -> Option<(i64, i64, i6
 }
 
 /// 0 = Sunday … 6 = Saturday.
+#[must_use]
 pub fn weekday_sun0(serial: f64, sys: DateSystem) -> i64 {
     let s = serial.floor() as i64;
     // 1970-01-01 was a Thursday (4).
     (epoch(sys) + s + 4).rem_euclid(7)
 }
 
+#[must_use]
 pub fn unix_to_serial(secs: f64, sys: DateSystem) -> f64 {
     let days = secs / 86_400.0;
     days + (days_from_civil(1970, 1, 1) - epoch(sys)) as f64
 }
 
+#[must_use]
 pub fn is_leap(y: i64) -> bool {
     (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
 }
 
+#[must_use]
 pub fn days_in_month(y: i64, m: i64) -> i64 {
     match m {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,

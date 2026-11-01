@@ -99,6 +99,10 @@ impl<T> Grid<T> {
 
     /// Set an item; one already there is replaced and returned. Appending in row order, as a
     /// reader does, is constant time; any other position moves the items after it.
+    ///
+    /// # Panics
+    ///
+    /// When the grid would hold more than 2^32 cells.
     pub fn insert(&mut self, at: (u32, u32), item: T) -> Option<T> {
         let (row, col) = (at.0 as usize, at.1);
         // After every item stored: a new row, or a later column of the last row. No search, no

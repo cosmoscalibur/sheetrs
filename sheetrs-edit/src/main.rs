@@ -29,7 +29,7 @@ struct Cli {
     convert_to_values: Vec<writer::ValueScope>,
 
     /// Delete rows (`Sheet!3:10`, or `Sheet!3` for one), in the rows of the input file. The
-    /// references to them become `#REF!` and the ranges around them shrink, as in LibreOffice
+    /// references to them become `#REF!` and the ranges around them shrink, as in `LibreOffice`
     #[arg(long, num_args = 1.., value_name = "ROWS")]
     delete_rows: Vec<RowRange>,
 

@@ -1,6 +1,6 @@
-//! The same command on the XLSX and the ODS that LibreOffice wrote from one workbook
+//! The same command on the XLSX and the ODS that `LibreOffice` wrote from one workbook
 //! (`sheetrs-edit/scripts/gen_structure_fixtures.py`) gives the same formulas. The expectations are
-//! what LibreOffice 26.8 gave for the same deletion, asked through UNO.
+//! what `LibreOffice` 26.8 gave for the same deletion, asked through UNO.
 
 use sheetrs_core::reader::read_workbook;
 use sheetrs_edit::writer::{ValueScope, WorkbookModifications, modify_workbook};
@@ -32,7 +32,7 @@ fn run(extension: &str, mods: &WorkbookModifications) -> Vec<String> {
         .collect()
 }
 
-/// The formula with each range of one cell (`A1:A1`) as that cell: LibreOffice writes the 3D
+/// The formula with each range of one cell (`A1:A1`) as that cell: `LibreOffice` writes the 3D
 /// reference of one cell as the cell in an XLSX and as a range in an ODS.
 fn one_cell_ranges(formula: &str) -> String {
     let range = regex::Regex::new(r"(\$?[A-Z]+\$?[0-9]+):(\$?[A-Z]+\$?[0-9]+)").unwrap();

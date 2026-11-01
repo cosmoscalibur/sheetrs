@@ -1,10 +1,10 @@
 //! Locales: the user's regional settings, resolved at build time.
 //!
-//! The locales LibreOffice offers are a table of the engine (`locale_data.rs`, generated from
-//! LibreOffice by `scripts/gen_locale_table.py`): separators, names, the patterns of a date typed as
+//! The locales `LibreOffice` offers are a table of the engine (`locale_data.rs`, generated from
+//! `LibreOffice` by `scripts/gen_locale_table.py`): separators, names, the patterns of a date typed as
 //! text, the currency format. A tag the table has (`es-CO`, or a bare language such as `es`)
 //! needs nothing else. Any other region or language is stated in the `[locale]` table of the
-//! build configuration rather than guessed: what Excel and LibreOffice take from the operating
+//! build configuration rather than guessed: what Excel and `LibreOffice` take from the operating
 //! system's regional settings cannot be derived from a tag with certainty, and a wrong decimal
 //! separator changes every number read from text.
 
@@ -95,6 +95,10 @@ fn reference(order: DateOrder) -> Option<&'static str> {
 
 /// Resolve `tag` and the overrides into a locale. The second element lists what
 /// was inherited from the language of a region the table does not have.
+///
+/// # Errors
+///
+/// When `tag` is not a locale tag, or an override is not valid.
 pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>), String> {
     let t = parse_tag(tag)?;
     let mut notes = Vec::new();
@@ -192,16 +196,13 @@ pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>
         let o = order(o)?;
         if o != loc.date_order {
             // The patterns and the reading of a month name of that order.
-            match reference(o).and_then(Locale::row).map(Locale::from_row) {
-                Some(r) => {
-                    loc.date_patterns = r.date_patterns;
-                    loc.named = r.named;
-                    loc.date_sep = r.date_sep;
-                }
-                None => {
-                    loc.date_patterns = Vec::new();
-                    loc.named = String::new();
-                }
+            if let Some(r) = reference(o).and_then(Locale::row).map(Locale::from_row) {
+                loc.date_patterns = r.date_patterns;
+                loc.named = r.named;
+                loc.date_sep = r.date_sep;
+            } else {
+                loc.date_patterns = Vec::new();
+                loc.named = String::new();
             }
             loc.date_order = o;
         }

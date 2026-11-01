@@ -1,7 +1,7 @@
 //! Output formatters for violations
 
 use anyhow::Result;
-use colored::*;
+use colored::Colorize;
 use serde::Serialize;
 use sheetrs_core::reader::Workbook;
 use sheetrs_linter::report::group_by_scope;

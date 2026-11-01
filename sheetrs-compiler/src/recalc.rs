@@ -1,12 +1,16 @@
-//! A full recalculation by LibreOffice, to compare the engine with: the values a
+//! A full recalculation by `LibreOffice`, to compare the engine with: the values a
 //! file caches may come from another version or from a calculation that never ran.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Convert `file` to ODS with LibreOffice recalculating everything on load, under the
+/// Convert `file` to ODS with `LibreOffice` recalculating everything on load, under the
 /// regional settings `locale` (a BCP-47 tag such as `es-CO`). The binary is `$SOFFICE`
 /// or `soffice`. Returns the path of the ODS, inside `dir`.
+///
+/// # Errors
+///
+/// When `LibreOffice` is not available, fails, or does not write the recalculated file.
 pub fn recalculate(file: &Path, locale: &str, dir: &Path) -> Result<PathBuf, String> {
     let profile = dir.join("profile");
     std::fs::create_dir_all(profile.join("user")).map_err(|e| e.to_string())?;

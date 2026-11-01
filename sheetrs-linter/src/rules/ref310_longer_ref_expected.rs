@@ -255,7 +255,7 @@ fn boundary_types_match(
 struct RangeRef {
     /// Target sheet index.
     sheet_index: u16,
-    /// Range coordinates (start_row, start_col, end_row, end_col).
+    /// Range coordinates (`start_row`, `start_col`, `end_row`, `end_col`).
     start_row: u32,
     start_col: u32,
     end_row: u32,
@@ -499,7 +499,7 @@ fn suggestion(display: &str, sheet_name: &str, vertical: bool, lines: usize) -> 
     };
     let (qualifier, start_text) = head
         .rsplit_once('!')
-        .map_or(("", head), |(q, s)| (&head[..q.len() + 1], s));
+        .map_or(("", head), |(q, s)| (&head[..=q.len()], s));
     let (Some((sca, sc, sra, sr)), Some((eca, ec, era, er))) =
         (split_cell_text(start_text), split_cell_text(end_text))
     else {
@@ -620,7 +620,7 @@ mod tests {
         // A1:A5 have numbers, A6 also has a number → flag
         let mut cells = Vec::new();
         for row in 0..6 {
-            cells.push(make_number_cell(row, 0, (row + 1) as f64));
+            cells.push(make_number_cell(row, 0, f64::from(row + 1)));
         }
         // B1 = SUM(A1:A5)
         cells.push(make_formula_cell(0, 1, "SUM(A1:A5)"));
@@ -646,7 +646,7 @@ mod tests {
         // A1:A5 have numbers, A6 is empty → no flag
         let mut cells = Vec::new();
         for row in 0..5 {
-            cells.push(make_number_cell(row, 0, (row + 1) as f64));
+            cells.push(make_number_cell(row, 0, f64::from(row + 1)));
         }
         cells.push(make_formula_cell(0, 1, "SUM(A1:A5)"));
 
@@ -669,7 +669,7 @@ mod tests {
         // A1:A5 have numbers, A6 is text (header) → suppress
         let mut cells = Vec::new();
         for row in 0..5 {
-            cells.push(make_number_cell(row, 0, (row + 1) as f64));
+            cells.push(make_number_cell(row, 0, f64::from(row + 1)));
         }
         cells.push(make_text_cell(5, 0, "Total"));
         cells.push(make_formula_cell(0, 1, "SUM(A1:A5)"));
@@ -814,7 +814,7 @@ mod tests {
         // B1:E1 have numbers, F1 also has a number → flag
         let mut cells = Vec::new();
         for col in 1..6 {
-            cells.push(make_number_cell(0, col, col as f64));
+            cells.push(make_number_cell(0, col, f64::from(col)));
         }
         // A1 = SUM(B1:E1)
         cells.push(make_formula_cell(0, 0, "SUM(B1:E1)"));
@@ -851,7 +851,7 @@ mod tests {
         // A1:A5 numbers, A6 has number but min_adjacent_data=2, A7 is empty → no flag
         let mut cells = Vec::new();
         for row in 0..6 {
-            cells.push(make_number_cell(row, 0, (row + 1) as f64));
+            cells.push(make_number_cell(row, 0, f64::from(row + 1)));
         }
         cells.push(make_formula_cell(0, 1, "SUM(A1:A5)"));
 

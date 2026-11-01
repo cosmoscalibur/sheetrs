@@ -98,7 +98,7 @@ mod tests {
         let sheets = vec![sheetrs_core::reader::workbook::Sheet {
             name: "Data".to_string(),
             sheet_index: 0,
-            cells: Default::default(),
+            cells: sheetrs_core::reader::Grid::default(),
             ..Default::default()
         }];
         let workbook = Workbook {

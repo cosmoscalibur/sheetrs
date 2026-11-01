@@ -72,12 +72,12 @@ pub(crate) fn ln_beta(a: f64, b: f64) -> f64 {
 
 const EPS: f64 = 1.110_223_024_625_156_5e-16;
 const MAX_ITER: u32 = 1_000_000;
-/// LibreOffice gives up on the series and the continued fraction of the incomplete gamma function
+/// `LibreOffice` gives up on the series and the continued fraction of the incomplete gamma function
 /// after this many terms (`Err:523`, which the files store as `#VALUE!`).
 const GAMMA_LIMIT: u32 = 10_000;
 const TINY: f64 = 1e-300;
 
-/// The regularized lower incomplete gamma function `P(a, x)`; `NaN` where LibreOffice does not
+/// The regularized lower incomplete gamma function `P(a, x)`; `NaN` where `LibreOffice` does not
 /// converge (`a` large and `x` near it).
 pub(crate) fn gamma_p(a: f64, x: f64) -> f64 {
     if x <= 0.0 {
@@ -229,7 +229,7 @@ pub(crate) fn invert_increasing(f: impl Fn(f64) -> f64, target: f64) -> f64 {
     }
     let mut lo = if hi > 1.0 { hi / 2.0 } else { 0.0 };
     for _ in 0..3000 {
-        let mid = 0.5 * (lo + hi);
+        let mid = f64::midpoint(lo, hi);
         if mid == lo || mid == hi {
             break;
         }
@@ -242,13 +242,13 @@ pub(crate) fn invert_increasing(f: impl Fn(f64) -> f64, target: f64) -> f64 {
             break;
         }
     }
-    0.5 * (lo + hi)
+    f64::midpoint(lo, hi)
 }
 
 /// The `x` in `[lo, hi]` where the increasing `f` reaches `target`.
 pub(crate) fn invert_on(f: impl Fn(f64) -> f64, target: f64, mut lo: f64, mut hi: f64) -> f64 {
     for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
+        let mid = f64::midpoint(lo, hi);
         if f(mid) < target {
             lo = mid;
         } else {
@@ -258,7 +258,7 @@ pub(crate) fn invert_on(f: impl Fn(f64) -> f64, target: f64, mut lo: f64, mut hi
             break;
         }
     }
-    0.5 * (lo + hi)
+    f64::midpoint(lo, hi)
 }
 
 #[cfg(test)]

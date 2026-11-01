@@ -36,7 +36,7 @@ use crate::violation::{
 use sheetrs_core::reader::{Cell, CellValue, Sheet};
 use std::collections::HashMap;
 
-/// Per-sheet cell collection: sheet_index → Vec<(row, col)>.
+/// Per-sheet cell collection: `sheet_index` → Vec<(row, col)>.
 type SheetCellMap = HashMap<u16, Vec<(u32, u32)>>;
 
 /// Rule that detects numbers stored as text
@@ -65,7 +65,7 @@ impl Default for InconsistentNumberFormatRule {
 /// Incident data for DATA702.
 #[derive(Debug)]
 pub struct NumericTextData {
-    /// Bounding box of violating cells (start_row, start_col, end_row, end_col).
+    /// Bounding box of violating cells (`start_row`, `start_col`, `end_row`, `end_col`).
     pub range: (u32, u32, u32, u32),
 }
 
