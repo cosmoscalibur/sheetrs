@@ -242,7 +242,7 @@ Every tool is a library plus, for the original tools, an executable; the binding
 over those libraries. Where code lives follows who uses it (see `ARCHITECTURE.md`, *Layering*):
 
 - `sheetrs-core` (shared kernel): `reader` (the `Workbook` model, `Grid`, `CellSink`, `ExcelError`,
-  the XLSX/ODS parsers). Add to it only what two tools need and has no meaning outside the
+  the XLSX/ODS parsers, and `Source`/`Format`: the reference to a workbook that every tool takes). Add to it only what two tools need and has no meaning outside the
   workbook model; code used by one tool belongs to that tool's crate.
 - `sheetrs-linter`: `rules` (`WalkerRule`, the registry and the catalog), `config`, `violation`,
   `report` (`group_by_scope`, `ViolationRecord`), `Linter`.

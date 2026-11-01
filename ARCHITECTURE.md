@@ -63,7 +63,9 @@ read workbooks; writing is not, because one does.
 
 The shared kernel: the format-agnostic workbook model and the streaming readers that fill it.
 
-- **`reader`**: Abstracts over file formats (XLSX, ODS).
+- **`reader`**: Abstracts over file formats (XLSX, ODS). `Source` (a file or bytes, with its
+  `Format`) is the input every tool takes: a reference that reads nothing until a tool does, and
+  not a model of the workbook.
   - Uses `zip` and matching XML parsers (`quick-xml` or custom) for efficient data reading.
   - Custom stream-based parsing logic for both formats ensures minimal memory footprint.
   - `WorkbookReader` is the common interface of the formats. Its one required method for cells,
@@ -152,8 +154,9 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
     running them one at a time gives). Rows and columns are typed (`RowRange`, `ColumnRange`, with
     `FromStr`/`Display`), so a deletion with the wrong kind of range cannot be built; the plan is
     a collection (`Extend`, `FromIterator`, `IntoIterator`). Marking the output to be recalculated
-    when opened is a property of the plan (`recalculate_on_open`), applied once in the last
-    pass, not an operation of the sequence. `passes()` plans the sequence into the fewest passes over
+    when opened is the plan's decision (`Recalculation`: `Auto` marks it when an operation leaves
+    stale cached results, `Always`, `Never`), applied once in the last pass, not an operation of
+    the sequence. `passes()` plans the sequence into the fewest passes over
     the file that give the same workbook: deletions of one sheet and axis share a pass, with the
     later positions translated through the earlier deletions; deletions of different sheets and
     on rows vs columns, name and sheet removals and the recalculation mark commute; a conversion
@@ -179,11 +182,12 @@ next to `lint`, not as a separate service.
   `lint_rules`, `workbook_stats`) or the human text report out. Packaged for npm by
   `scripts/package-wasm.sh` (`wasm-bindgen --target web`, template in `sheetrs-wasm/npm`).
 - **`sheetrs-py`** (`cdylib`, PyO3 with `abi3`): the extension `sheetrs._sheetrs`, re-exported flat
-  by the `python/sheetrs` package (type stubs): `Linter` (with `Violation`, its result type),
-  `stats`, and `open`, which gives a `Workbook` to edit: the methods record operations on a
-  `sheetrs_edit::EditPlan` and `save` runs it. There is no eager mode: a workbook is streamed,
-  never loaded, so there is no model to apply an operation to before `save`. The functions take a
-  path or bytes and release the GIL while they work. It is built by maturin, which enables the
+  by the `python/sheetrs` package (type stubs). `open` makes a `Source`, the Python face of
+  `sheetrs_core::reader::Source`: a reference to a workbook that reads nothing, with no `save`.
+  The tools take it: `Linter.lint(source)` (with `Violation`, its result type), `Source.stats()`,
+  and the operations on it, which make an `EditPlan` over a `sheetrs_edit::EditPlan` and are the
+  only objects with `save`. There is no eager mode: a workbook is streamed, never loaded. The
+  functions release the GIL while they work. It is built by maturin, which enables the
   `extension-module` feature; the crate has no Rust test harness (it would have to link
   libpython), its tests are `sheetrs-py/tests` (pytest). Neither binding crate is published to
   crates.io.

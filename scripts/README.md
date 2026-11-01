@@ -204,6 +204,55 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
+### Crate reorganization, edit plan and recalculation (this branch)
+
+The linter, the statistics and the editor moved between crates (`sheetrs-core` keeps the model and
+the readers; the rules and the writer moved to `sheetrs-linter` and `sheetrs-edit`), `sheetedit`
+runs its flags through `EditPlan`, and the writer got the fix of the shape/note paragraph in ODS.
+None of it should cost anything; this entry checks it against `develop` (`57c4c37`) in one
+session.
+
+The production files were not available in this session (`tests/production/` is not in the
+repository), and neither were `perf` or `/usr/bin/time`, so the entry does **not** come from
+`benchmark.sh`: it uses synthetic workbooks (one sheet `Data`, five columns of numbers and
+formulas: 50,000 rows for the linter, 200,000 and 1,600,000 for the statistics and the editor, and
+the ODS twin of the 50,000 and 200,000 ones, converted by LibreOffice), release builds (not the
+`profiling` profile), mean of 2 runs, CPU time (user + system) from `wait4`, peak RAM from the
+child's `ru_maxrss`. The linter runs with `scripts/benchmark.toml`. The editor's current tree runs
+with `--no-recalc-on-open` for the scenarios that delete (the plan now marks the output by default,
+which changes the file, as intended), so that the files are comparable.
+
+| Scenario | develop CPU (s) | branch CPU (s) | Peak RAM (MB) | Output MD5 |
+|---|---|---|---|---|
+| sheetlint, xlsx 50k rows | 28.50 | 29.11 | 73 / 72 | identical |
+| sheetlint, ods 50k rows | 30.61 | 31.39 | 73 / 72 | identical |
+| sheetlint, minimal_test.xlsx | 0.01 | 0.01 | 19 | identical |
+| sheetlint, minimal_test.ods | 0.01 | 0.01 | 19 | identical |
+| sheetstats --format json, xlsx 200k rows | 0.68 | 0.68 | 19 | identical |
+| sheetstats --format json, ods 200k rows | 1.52 | 1.53 | 19 | identical |
+| sheetstats --format json, xlsx 1.6M rows | 5.40 | 5.42 | 19 | identical |
+| sheetedit convert columns, xlsx 200k rows | 2.14 | 2.16 | 23 | identical |
+| sheetedit delete rows, xlsx 200k rows | 2.87 | 2.78 | 23 | identical |
+| sheetedit delete rows+columns and convert, xlsx 200k rows | 2.17 | 2.20 | 23 | identical |
+| sheetedit convert columns, ods 200k rows | 2.40 | 2.39 | 23 | identical |
+| sheetedit delete rows, ods 200k rows | 3.54 | 3.55 | 23 | identical |
+| sheetedit delete rows+columns and convert, ods 200k rows | 3.35 | 3.32 | 23 | identical |
+| sheetedit convert columns, xlsx 1.6M rows | 17.63 | 17.42 | 23 | identical |
+| sheetedit delete rows, xlsx 1.6M rows | 22.86 | 22.44 | 23 | identical |
+| sheetedit delete rows+columns and convert, xlsx 1.6M rows | 17.55 | 17.81 | 23 | identical |
+
+- Every output is byte-identical to `develop`'s: the linter and statistics output, and the files of
+  every edit (the MD5 is that of the extracted parts). CPU time is within the noise (±3 %) of
+  `develop` in every scenario.
+- The editor's peak RAM does not depend on the size of the workbook: the same 23 MB (13 MB of the
+  tool, the rest the harness's own) from 200,000 to 1,600,000 rows, in XLSX and ODS. (A first run of
+  the harness showed 100 to 700 MB: it computed the MD5 of each output by reading whole zip entries
+  in its own process, and every child inherits the parent's resident size.)
+- A plan that needs several passes costs what the passes cost. On the 1,600,000-row XLSX, from
+  Python (`maturin develop --release`): converting and then deleting rows is one pass, 20.3 s and
+  16 MB; deleting rows and then converting is two (a conversion after a change starts a new pass),
+  39.8 s and 16 MB, the same memory with the intermediate file kept in a temporary folder.
+
 ### Output MD5 of the linter since `ac80165`
 
 The linter's output MD5 differs from the entries below on purpose: the reader reads the cached

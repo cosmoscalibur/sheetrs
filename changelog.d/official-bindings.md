@@ -1,13 +1,17 @@
 ### Added
 
 - Add `sheetrs-py`, the official Python bindings (PyO3, abi3 wheels for Python ≥ 3.10), flat:
-  `Linter` (validated configuration, its `lint` and `rules`), `stats`, and `open` for editing:
-  `open(path)`, operations recorded on the `Workbook` that results, and `save(path)`, which runs
-  them. There is no eager mode: a workbook is streamed, never loaded. A workbook is a path or
-  bytes; type stubs and a pytest suite included.
+  `open(path or bytes)` makes a `Source`, a reference to a workbook that reads nothing and has no
+  `save`; the tools take it: `Linter.lint(source)` (validated configuration, and `rules`),
+  `Source.stats()`, and the operations on it, which make an `EditPlan` (the only object with
+  `save`). There is no eager mode: a workbook is streamed, never loaded. Type stubs and a pytest
+  suite included.
+- Add `sheetrs_core::reader::{Source, Format}`: the reference to a workbook (a file or bytes) that
+  the linter, the statistics (`WorkbookStats::from_source`) and the editor
+  (`EditPlan::execute(&Source, output)`) take as input.
 - Add `sheetrs_edit::EditPlan` and `Operation`: a sequence of operations on a workbook, each on the
   result of the previous one (rows and columns are typed `RowRange`/`ColumnRange`; the plan is a
-  collection; the mark to recalculate when opened is a property of the output, applied once), planned by `passes()` into the fewest passes over the file that
+  collection), planned by `passes()` into the fewest passes over the file that
   give what running them one at a time gives (`explain()` shows them). `EditPlan::against_input`
   is the declarative case `sheetedit` uses for its flags (one pass, in no order); `--dry-run`
   prints the passes. Tests run generated sequences both ways in XLSX and ODS.
@@ -29,6 +33,15 @@
 
 ### Changed
 
+- **Breaking:** `sheetedit` marks the output to be recalculated when it is opened whenever rows,
+  columns, sheets or names are removed (their cached results are stale), as the last thing the
+  plan does; `--no-recalc-on-open` avoids it and `--recalc-on-open` forces it. In Rust,
+  `EditPlan::recalculation(Recalculation)`.
+- **Breaking:** public names lose their `get_` prefix: `LinterConfig::param_int`, `param_str`,
+  `param_array`, `param_float_array`, `param_bool`; `registry::rule_metadata`,
+  `registry::valid_tokens`. Public types implement `Debug`; `RuleId`, `Operation`,
+  `Recalculation` and `Format` are `#[non_exhaustive]`; `WalkerRule` requires `Debug`.
+
 - **Breaking:** `sheetrs-core` is the shared kernel, the workbook model and the readers. The rules,
   `LinterConfig`, `Linter` and the violation types moved to `sheetrs-linter`
   (`sheetrs_linter::{rules, config, violation, Linter}`), and the `writer` to `sheetrs-edit`
@@ -43,6 +56,9 @@
 
 ### Fixed
 
+- `sheetedit` on an ODS converted to an empty string a formula cell that had lost its result and
+  carried a shape or a note, because the paragraph of the shape counted as the value of the cell;
+  now such a formula stays a formula, as in the XLSX.
 - `sheetedit` gave different workbooks for the same command: the formula edits of each sheet were
   applied in hash order, which changes the result when deletions in several sheets meet a
   reference across sheets. They are applied in one canonical order, and references across sheets

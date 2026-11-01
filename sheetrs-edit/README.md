@@ -76,10 +76,16 @@ the file that give what running them one at a time gives; operations that cannot
 (a conversion after another change, which must read what that change dropped; two deletions that
 touch, which the writer would see as one band) start a new one. The flags above are the
 declarative case, `EditPlan::against_input`, which is always one pass. Tests run generated
-sequences both ways, in XLSX and ODS, and compare the workbooks. `--recalc-on-open` (and
-`EditPlan::recalculate_on_open`) marks the output and is applied once, in the last pass; it is not
-one of the operations, because an ODS applies it by dropping every cached result and that would
-change what a later conversion finds.
+sequences both ways, in XLSX and ODS, and compare the workbooks.
+
+**Recalculation is decided by the plan.** Deleting rows or columns, or removing sheets or names,
+leaves the cached results of formulas that read what went (their text may not change, so their
+value is stale). A plan with one of them marks the output to be recalculated when it is opened,
+as the last thing it does, after every operation (an ODS applies the mark by dropping every cached
+result, which in the middle of a sequence would change what a later conversion finds). A plan
+that only converts formulas to values changes no other result and does not mark. `--recalc-on-open`
+forces the mark and `--no-recalc-on-open` avoids it (to keep the cached results); in Rust,
+`EditPlan::recalculation(Recalculation::{Auto, Always, Never})`.
 
 Memory does not grow with the workbook: a pass reads and writes each worksheet as a stream, one
 cell (XLSX) or row (ODS) at a time, and the plan is a handful of bands and names (measured at
