@@ -41,6 +41,7 @@ const DEFAULT_MAX_FILE_SIZE_MB: i64 = 10;
 /// - Embedded objects or images bloating file size
 /// - Potential instability or corruption risk
 /// - Performance issues when opening/saving
+#[derive(Debug)]
 pub struct LargeFileSizeRule {
     /// Maximum file size in bytes
     max_file_size_bytes: u64,
@@ -69,7 +70,7 @@ impl LargeFileSizeRule {
     #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         let max_mb = config
-            .get_param_int("max_file_size_mb", None)
+            .param_int("max_file_size_mb", None)
             .unwrap_or(DEFAULT_MAX_FILE_SIZE_MB);
         Self {
             max_file_size_bytes: (max_mb * 1024 * 1024) as u64,

@@ -24,11 +24,14 @@
 //! - A conversion reads the values that every other change would have dropped or rewritten, so
 //!   it cannot move before one: a conversion after any other change starts a new pass.
 //!
-//! Marking the file to be recalculated when it is opened ([`EditPlan::recalculate_on_open`]) is
-//! not an operation of the sequence but a property of the output, applied once, in the last pass:
-//! it changes how the file is opened, not what it holds, so it has no place among the operations
-//! that read and rewrite its content. (An ODS applies it by dropping every cached result; applied
-//! in the middle of a sequence, it would change what a later conversion finds.)
+//! Whether the output is marked to be recalculated when it is opened is the plan's to decide
+//! ([`Recalculation`]), not something to remember to ask for. A deletion or a removal leaves the
+//! cached results of formulas that read what went (their text may not change, and so their value
+//! is stale), so a plan with one marks the output, as the last thing it does before the file is
+//! written: it changes how the file is opened, not what it holds, so it comes after every
+//! operation that reads and rewrites the content. (An ODS applies it by dropping every cached
+//! result; in the middle of a sequence it would change what a later conversion finds.) Whoever
+//! knows better can ask for the mark always or never.
 //!
 //! A plan that addresses a sheet an earlier operation removed is an error when it is planned.
 //!
@@ -39,6 +42,7 @@
 use crate::writer::structure::Bands;
 use crate::writer::{self, ColumnRange, RowRange, ValueScope, ValueTarget, WorkbookModifications};
 use anyhow::{Context, Result, bail};
+use sheetrs_core::reader::Source;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
@@ -46,6 +50,7 @@ use std::path::Path;
 /// One operation on a workbook, on the workbook as the operations before it leave it. The
 /// ranges of one operation are simultaneous: `DeleteRows(["S!3", "S!4"])` deletes two rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Operation {
     /// Remove the sheets of these names.
     RemoveSheets(Vec<String>),
@@ -92,15 +97,29 @@ impl Operation {
     }
 }
 
-/// A sequence of operations on one workbook, and whether the output is marked to be recalculated
-/// when it is opened.
+/// Whether the output is marked so that the application that opens it recalculates every formula.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Recalculation {
+    /// The plan decides: it marks the output when an operation leaves cached results stale (rows,
+    /// columns, sheets or names removed), and leaves it alone otherwise.
+    #[default]
+    Auto,
+    /// Always mark it.
+    Always,
+    /// Never mark it, whatever the operations: the cached results are left as they are.
+    Never,
+}
+
+/// A sequence of operations on one workbook, and what to do about recalculation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EditPlan {
     operations: Vec<Operation>,
-    recalculate_on_open: bool,
+    recalculation: Recalculation,
 }
 
 impl EditPlan {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -143,16 +162,25 @@ impl EditPlan {
         self.push(Operation::DeleteColumns(columns.into_iter().collect()))
     }
 
-    /// Marks the output so the application that opens it recalculates every formula. A property of
-    /// the output, applied once in the last pass, not an operation of the sequence.
-    pub fn recalculate_on_open(&mut self) -> &mut Self {
-        self.recalculate_on_open = true;
+    /// Overrides what the plan decides about marking the output to be recalculated when opened
+    /// (see [`Recalculation`]).
+    pub fn recalculation(&mut self, recalculation: Recalculation) -> &mut Self {
+        self.recalculation = recalculation;
         self
     }
 
-    /// Whether the output is marked to be recalculated when it is opened.
-    pub fn recalculates_on_open(&self) -> bool {
-        self.recalculate_on_open
+    /// Whether the output will be marked to be recalculated when it is opened: what was asked for
+    /// or, by default, what the operations of the plan require.
+    #[must_use]
+    pub fn marks_recalculation(&self) -> bool {
+        match self.recalculation {
+            Recalculation::Always => true,
+            Recalculation::Never => false,
+            Recalculation::Auto => self
+                .operations
+                .iter()
+                .any(|operation| !matches!(operation, Operation::ConvertToValues(_))),
+        }
     }
 
     /// The plan for operations that are all written against the **input** workbook, in any order,
@@ -196,21 +224,25 @@ impl EditPlan {
     }
 
     /// The operations as they were written.
+    #[must_use]
     pub fn operations(&self) -> &[Operation] {
         &self.operations
     }
 
-    /// Whether there is nothing to do: no operation and no mark to recalculate.
+    /// Whether there is nothing to do: no operation, and no mark to recalculate asked for.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.operations.is_empty() && !self.recalculate_on_open
+        self.operations.is_empty() && self.recalculation != Recalculation::Always
     }
 
     /// The passes over the file that run the plan: the operations of each, normalized and in the
     /// order of the pass (see the module documentation), against the input of that pass. Their
     /// number is what the plan costs in reads and writes of the file; `against_input` gives one.
-    /// The mark to recalculate is not in them: it goes with the last.
+    /// The mark to recalculate is not in them: it goes with the last (`marks_recalculation`).
     ///
-    /// Fails for an operation on a sheet that an earlier one removed.
+    /// # Errors
+    ///
+    /// When an operation addresses a sheet that an earlier one removed.
     pub fn passes(&self) -> Result<Vec<Vec<Operation>>> {
         let mut passes = Vec::new();
         let mut current = Pass::default();
@@ -238,6 +270,10 @@ impl EditPlan {
     }
 
     /// The passes as text, one operation per line, for a person to read.
+    ///
+    /// # Errors
+    ///
+    /// As [`passes`](Self::passes).
     pub fn explain(&self) -> Result<String> {
         use std::fmt::Write as _;
         let passes = self.passes()?;
@@ -248,35 +284,47 @@ impl EditPlan {
                 let _ = writeln!(out, "  {operation}");
             }
         }
-        if self.recalculate_on_open {
-            out.push_str("on the output: recalculate when opened\n");
+        if self.marks_recalculation() {
+            out.push_str("last, on the output: recalculate when opened\n");
         }
         Ok(out)
     }
 
-    /// Runs the plan on `input` and writes `output`, which must not be the input. Each pass reads
-    /// and writes the file once, as a stream; a plan of several passes keeps the file between
-    /// them in a temporary folder. A failed run leaves no `output` behind. An empty plan is an
-    /// error: there is nothing to do, and a copy of the file is not what was asked for.
-    pub fn execute(&self, input: impl AsRef<Path>, output: impl AsRef<Path>) -> Result<()> {
+    /// Runs the plan on `input` and writes `output`, which must not be the input file. Each pass
+    /// reads and writes the file once, as a stream; a plan of several passes keeps the file between
+    /// them in a temporary folder, and so does a source of bytes (the writer works on files). A
+    /// failed run leaves no `output` behind. An empty plan is an error: there is nothing to do,
+    /// and a copy of the file is not what was asked for.
+    ///
+    /// # Errors
+    ///
+    /// When the plan is empty or cannot be planned ([`passes`](Self::passes)), when a file cannot
+    /// be read or written, or when a pass fails (a sheet that does not exist, a formula with a 3D
+    /// reference, a change the writer cannot make faithfully).
+    pub fn execute(&self, input: &Source, output: impl AsRef<Path>) -> Result<()> {
         if self.is_empty() {
             bail!("No operations to apply");
         }
-        let (input, output) = (input.as_ref(), output.as_ref());
+        let output = output.as_ref();
         let mut passes = self.passes()?;
         if passes.is_empty() {
-            // Only the mark to recalculate: one pass that does nothing else.
+            // Only the mark to recalculate was asked for: one pass that does nothing else.
             passes.push(Vec::new());
         }
-        let extension = input
-            .extension()
-            .and_then(|e| e.to_str())
-            .context("The input file has no extension")?;
-        let folder = (passes.len() > 1)
+        let extension = input.format().extension();
+        let folder = (passes.len() > 1 || input.path().is_none())
             .then(tempfile::tempdir)
             .transpose()
             .context("Cannot create a temporary folder")?;
-        let mut current = input.to_path_buf();
+        let mut current = match (input, &folder) {
+            (Source::File { path, .. }, _) => path.clone(),
+            (Source::Bytes { data, .. }, Some(folder)) => {
+                let path = folder.path().join(format!("input.{extension}"));
+                std::fs::write(&path, data).context("Cannot write the workbook to edit")?;
+                path
+            }
+            (Source::Bytes { .. }, None) => unreachable!("a source of bytes has a folder"),
+        };
         for (i, pass) in passes.iter().enumerate() {
             let last = i + 1 == passes.len();
             let target = match (&folder, last) {
@@ -284,7 +332,7 @@ impl EditPlan {
                 _ => output.to_path_buf(),
             };
             let mut mods = modifications_of(pass);
-            mods.recalculate_on_open = last && self.recalculate_on_open;
+            mods.recalculate_on_open = last && self.marks_recalculation();
             writer::modify_workbook(&current, &target, &mods)
                 .with_context(|| format!("Failed in pass {} of {}", i + 1, passes.len()))?;
             current = target;
@@ -638,22 +686,52 @@ mod tests {
     }
 
     #[test]
-    fn the_mark_to_recalculate_belongs_to_the_output_and_not_to_the_sequence() {
+    fn the_plan_marks_the_output_for_recalculation_when_an_operation_leaves_stale_results() {
+        let marks = |build: &dyn Fn(&mut EditPlan)| {
+            let mut plan = EditPlan::new();
+            build(&mut plan);
+            plan.marks_recalculation()
+        };
+        // Deleting or removing leaves formulas whose text did not change with a stale result.
+        assert!(marks(&|p| {
+            p.delete_rows(rows(&["T!3"]));
+        }));
+        assert!(marks(&|p| {
+            p.delete_columns(columns(&["T!B"]));
+        }));
+        assert!(marks(&|p| {
+            p.remove_sheets(["U"]);
+        }));
+        assert!(marks(&|p| {
+            p.remove_named_ranges(["N"]);
+        }));
+        // Converting formulas to the values they have changes no other cell.
+        assert!(!marks(&|p| {
+            p.convert_to_values(scopes(&["F"]));
+        }));
+        assert!(!marks(&|_| {}));
+    }
+
+    #[test]
+    fn the_mark_can_be_forced_or_avoided_and_is_never_an_operation_of_the_sequence() {
         let mut plan = EditPlan::new();
         plan.convert_to_values(scopes(&["F"]))
-            .delete_rows(rows(&["T!3"]))
-            .recalculate_on_open();
-        // It splits nothing and is in no pass; it is said apart.
+            .delete_rows(rows(&["T!3"]));
+        // It splits nothing and is in no pass; it is said apart, as the last thing.
         assert_eq!(plan.passes().unwrap().len(), 1);
-        assert!(plan.recalculates_on_open());
+        assert!(plan.marks_recalculation());
         assert!(
             plan.explain()
                 .unwrap()
                 .ends_with("recalculate when opened\n")
         );
-        // Alone it is a plan: the file is marked and nothing else changes.
+        plan.recalculation(Recalculation::Never);
+        assert!(!plan.marks_recalculation());
+        assert!(!plan.explain().unwrap().contains("recalculate"));
+        // Forced, it makes a plan of its own: the file is marked and nothing else changes.
         let mut only_the_mark = EditPlan::new();
-        only_the_mark.recalculate_on_open();
+        assert!(only_the_mark.is_empty());
+        only_the_mark.recalculation(Recalculation::Always);
         assert!(!only_the_mark.is_empty());
         assert!(only_the_mark.passes().unwrap().is_empty());
     }
@@ -703,7 +781,8 @@ mod tests {
     fn an_empty_plan_has_no_passes_and_does_not_execute() {
         let plan = EditPlan::new();
         assert!(plan.passes().unwrap().is_empty());
-        let error = plan.execute("in.xlsx", "out.xlsx").unwrap_err();
+        let input = Source::from_file("in.xlsx").unwrap();
+        let error = plan.execute(&input, "out.xlsx").unwrap_err();
         assert!(error.to_string().contains("No operations"));
     }
 }

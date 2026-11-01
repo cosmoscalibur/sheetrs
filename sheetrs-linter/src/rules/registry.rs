@@ -60,7 +60,8 @@ pub const DEFAULT_ACTIVE_RULES: &[RuleId] = &[
 ];
 
 /// Get all valid configuration tokens (Rule IDs, Category Prefixes, "ALL")
-pub fn get_all_valid_tokens() -> HashSet<String> {
+#[must_use]
+pub fn valid_tokens() -> HashSet<String> {
     let mut tokens = HashSet::new();
     tokens.insert("ALL".to_string());
 
@@ -83,6 +84,7 @@ pub fn get_all_valid_tokens() -> HashSet<String> {
 }
 
 /// Metadata for a single linter rule (for API/UI consumers).
+#[derive(Debug)]
 pub struct RuleMetadata {
     /// Unique rule identifier.
     pub id: RuleId,
@@ -95,7 +97,8 @@ pub struct RuleMetadata {
 }
 
 /// Collect metadata from all rules.
-pub fn get_all_rule_metadata(config: &LinterConfig) -> Vec<RuleMetadata> {
+#[must_use]
+pub fn rule_metadata(config: &LinterConfig) -> Vec<RuleMetadata> {
     let mut metadata: Vec<RuleMetadata> = create_all_walker_rules(config)
         .into_iter()
         .map(|rule| RuleMetadata {
@@ -112,6 +115,7 @@ pub fn get_all_rule_metadata(config: &LinterConfig) -> Vec<RuleMetadata> {
 }
 
 /// Create instances of all available walker rules
+#[must_use]
 pub fn create_all_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerRule>> {
     let mut rules: Vec<Box<dyn WalkerRule>> = vec![
         // Excel Errors (1xx)
@@ -198,6 +202,7 @@ pub fn create_all_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerRule>
 }
 
 /// Create enabled walker rules based on configuration
+#[must_use]
 pub fn create_enabled_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerRule>> {
     create_all_walker_rules(config)
         .into_iter()
@@ -207,6 +212,7 @@ pub fn create_enabled_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerR
 
 /// Returns whether `config` enables `id`: listed in `enabled_rules`, or in
 /// [`DEFAULT_ACTIVE_RULES`] when that list is empty, and not disabled.
+#[must_use]
 pub fn is_rule_active(id: RuleId, config: &LinterConfig) -> bool {
     config.is_rule_enabled(id.as_str())
         && (!config.global.enabled_rules.is_empty() || DEFAULT_ACTIVE_RULES.contains(&id))
@@ -218,6 +224,7 @@ pub fn is_rule_active(id: RuleId, config: &LinterConfig) -> bool {
 /// A provider either emits the rule's violations (CPX504 emits CPX505/506/508/509,
 /// ERR102 emits ERR103) or collects context data the rule reads (CALC202 fills
 /// `cell_dependencies`, `referenced_sheets` and `circular_cells`).
+#[must_use]
 pub fn rule_providers(id: RuleId) -> &'static [RuleId] {
     match id {
         RuleId::Err102 | RuleId::Ref306 | RuleId::Ref309 | RuleId::Ref310 | RuleId::Data706 => {
@@ -232,6 +239,7 @@ pub fn rule_providers(id: RuleId) -> &'static [RuleId] {
 /// Rules to run so that every rule in `reported` gives the same result whether
 /// or not its providers are enabled: `reported` plus their providers, in the
 /// order of `all`.
+#[must_use]
 pub fn run_rule_ids(all: &[RuleId], reported: &HashSet<RuleId>) -> Vec<RuleId> {
     let providers: HashSet<RuleId> = reported
         .iter()
@@ -248,6 +256,7 @@ pub fn run_rule_ids(all: &[RuleId], reported: &HashSet<RuleId>) -> Vec<RuleId> {
 ///
 /// INT401–403 share one [`InterruptionRule`] reporting every requested kind,
 /// placed at the position of the first of them.
+#[must_use]
 pub fn create_walker_rules(ids: &[RuleId], config: &LinterConfig) -> Vec<Box<dyn WalkerRule>> {
     let interruption_kinds: Vec<InterruptionKind> = ids
         .iter()
@@ -380,11 +389,8 @@ mod tests {
     #[test]
     fn test_interruption_rules_listed_individually() {
         let config = LinterConfig::default();
-        let metadata_ids: Vec<RuleId> = get_all_rule_metadata(&config)
-            .iter()
-            .map(|m| m.id)
-            .collect();
-        let tokens = get_all_valid_tokens();
+        let metadata_ids: Vec<RuleId> = rule_metadata(&config).iter().map(|m| m.id).collect();
+        let tokens = valid_tokens();
         for id in [RuleId::Int401, RuleId::Int402, RuleId::Int403] {
             assert!(metadata_ids.contains(&id));
             assert!(tokens.contains(id.as_str()));

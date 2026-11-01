@@ -14,6 +14,7 @@ use std::sync::Arc;
 /// Each variant corresponds to a specific rule implementation. The enum provides
 /// type-safe rule identification with zero-cost string conversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum RuleId {
     // Excel Errors (1xx)
     /// ERR101: Broken Named Ranges
@@ -311,6 +312,7 @@ pub enum ViolationScope {
 
 impl ViolationScope {
     /// Get the sheet index if this is a sheet or cell scope
+    #[must_use]
     pub fn sheet_index(&self) -> Option<u16> {
         match self {
             ViolationScope::Book => None,
@@ -350,6 +352,7 @@ pub struct CellReference {
 }
 
 impl CellReference {
+    #[must_use]
     pub fn new(row: u32, col: u32) -> Self {
         Self { row, col }
     }
@@ -379,6 +382,7 @@ impl std::fmt::Display for CellReference {
 ///
 /// The writer/formatter constructs this context once and passes it when
 /// rendering violation messages, enabling index-to-name resolution.
+#[derive(Debug)]
 pub struct FormatContext<'a> {
     /// Reference to the workbook for resolving sheet indexes to names.
     pub workbook: &'a Workbook,
@@ -464,6 +468,7 @@ impl Violation {
     ///
     /// For legacy violations, returns the stored string. For data-backed
     /// violations, calls [`ViolationData::format_message`] with the context.
+    #[must_use]
     pub fn format_message(&self, ctx: &FormatContext<'_>) -> String {
         match &self.message_inner {
             ViolationMessageInner::Legacy(msg) => msg.clone(),
@@ -475,6 +480,7 @@ impl Violation {
     ///
     /// Returns `None` for data-backed violations (use
     /// [`format_message`](Violation::format_message) instead).
+    #[must_use]
     pub fn legacy_message(&self) -> Option<&str> {
         match &self.message_inner {
             ViolationMessageInner::Legacy(msg) => Some(msg),
@@ -486,6 +492,7 @@ impl Violation {
     ///
     /// Returns `None` if the violation uses a legacy message or if the
     /// concrete type does not match.
+    #[must_use]
     pub fn data<T: ViolationData + 'static>(&self) -> Option<&T> {
         match &self.message_inner {
             ViolationMessageInner::Data(data) => data.as_any().downcast_ref::<T>(),
@@ -499,6 +506,7 @@ impl Violation {
     /// For data-backed violations, renders using a default [`Workbook`] context.
     /// Prefer [`format_message`](Violation::format_message) when a real workbook
     /// is available (e.g., in the formatter) for accurate name resolution.
+    #[must_use]
     pub fn message(&self) -> String {
         match &self.message_inner {
             ViolationMessageInner::Legacy(msg) => msg.clone(),

@@ -5,8 +5,8 @@
 //! formulas, and sheet `F` with formulas over `T`. It holds no reference across sheets
 //! (`Sheet1:Sheet3!A1`), which are not supported (issue #75).
 
-use sheetrs_core::reader::read_workbook;
-use sheetrs_edit::{EditPlan, Operation};
+use sheetrs_core::reader::{Source, read_workbook};
+use sheetrs_edit::{EditPlan, Operation, Recalculation};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -54,15 +54,16 @@ fn op(spec: &str) -> Operation {
     }
 }
 
-/// A plan from specs; `recalc` marks the output, it is not an operation of the sequence.
+/// A plan from specs. `recalc` and `norecalc` are not operations: they override what the plan
+/// decides about marking the output (which by default it marks when something is removed).
 fn sequence(specs: &[&str]) -> EditPlan {
     let mut plan = EditPlan::new();
     for spec in specs {
-        if *spec == "recalc" {
-            plan.recalculate_on_open();
-        } else {
-            plan.push(op(spec));
-        }
+        match *spec {
+            "recalc" => plan.recalculation(Recalculation::Always),
+            "norecalc" => plan.recalculation(Recalculation::Never),
+            spec => plan.push(op(spec)),
+        };
     }
     plan
 }
@@ -70,7 +71,7 @@ fn sequence(specs: &[&str]) -> EditPlan {
 fn run(extension: &str, plan: &EditPlan) -> Result<Snapshot, String> {
     let dir = tempfile::tempdir().unwrap();
     let output = dir.path().join(format!("out.{extension}"));
-    plan.execute(asset(extension), &output)
+    plan.execute(&Source::from_file(asset(extension)).unwrap(), &output)
         .map_err(|e| format!("{e:#}"))?;
     Ok(snapshot(&output))
 }
@@ -81,20 +82,23 @@ fn run_one_at_a_time(extension: &str, plan: &EditPlan) -> Result<Snapshot, Strin
     let dir = tempfile::tempdir().unwrap();
     let mut current = asset(extension);
     for (i, operation) in plan.operations().iter().enumerate() {
+        // Each step on its own, without the mark: the plan marks the output once, at the end.
         let mut single = EditPlan::new();
-        single.push(operation.clone());
+        single
+            .push(operation.clone())
+            .recalculation(Recalculation::Never);
         let output = dir.path().join(format!("step{i}.{extension}"));
         single
-            .execute(&current, &output)
+            .execute(&Source::from_file(&current).unwrap(), &output)
             .map_err(|e| format!("{e:#}"))?;
         current = output;
     }
-    if plan.recalculates_on_open() {
+    if plan.marks_recalculation() {
         let mut marked = EditPlan::new();
-        marked.recalculate_on_open();
+        marked.recalculation(Recalculation::Always);
         let output = dir.path().join(format!("marked.{extension}"));
         marked
-            .execute(&current, &output)
+            .execute(&Source::from_file(&current).unwrap(), &output)
             .map_err(|e| format!("{e:#}"))?;
         current = output;
     }
@@ -134,6 +138,7 @@ const POOL: &[&str] = &[
     "name NameOne",
     "name Gone",
     "recalc",
+    "norecalc",
 ];
 
 #[test]
@@ -375,31 +380,16 @@ fn formulas_only(snapshot: &Snapshot) -> BTreeMap<(String, u32, u32), String> {
         .collect()
 }
 
-/// Whether the sequence converts formulas after something else changed the workbook: a conversion
-/// then reads cached results that the earlier change dropped, and the two formats do not agree on
-/// what remains (see the ignored test below).
-fn converts_after_a_change(specs: &[&str]) -> bool {
-    let mut changed = false;
-    for spec in specs {
-        let verb = spec.split(' ').next().unwrap();
-        match verb {
-            "convert" if changed => return true,
-            "convert" | "recalc" => {}
-            _ => changed = true,
-        }
-    }
-    false
-}
-
-fn cross_format_mismatches(skip_unsupported: bool) -> (usize, Vec<String>) {
+/// The same plan on the XLSX and on the ODS of one workbook gives the same formulas in every cell:
+/// the format differences of streaming (shared formulas and `A1` text in one, repeated rows and
+/// `[$T.A1:.A3]` notation in the other) do not show in what the formulas become.
+#[test]
+fn both_formats_give_the_same_formulas_for_the_same_plan() {
     let mut random = Lcg(0xFACE);
     let (mut compared, mut mismatches) = (0, Vec::new());
-    for _ in 0..120 {
-        let length = 1 + random.next(4);
+    for _ in 0..200 {
+        let length = 1 + random.next(5);
         let specs: Vec<&str> = (0..length).map(|_| POOL[random.next(POOL.len())]).collect();
-        if skip_unsupported == converts_after_a_change(&specs) {
-            continue;
-        }
         let plan = sequence(&specs);
         match (run("xlsx", &plan), run("ods", &plan)) {
             (Ok(x), Ok(o)) => {
@@ -412,34 +402,25 @@ fn cross_format_mismatches(skip_unsupported: bool) -> (usize, Vec<String>) {
             (x, o) => mismatches.push(format!("{specs:?}: xlsx {:?}, ods {:?}", x.err(), o.err())),
         }
     }
-    (compared, mismatches)
-}
-
-/// The same plan on the XLSX and on the ODS of one workbook gives the same formulas in every cell,
-/// for the sequences that do not convert after a change: the format differences of streaming
-/// (shared formulas and `A1` text in one, repeated rows and `[$T.A1:.A3]` notation in the other)
-/// do not show in what the formulas become.
-#[test]
-fn both_formats_give_the_same_formulas_for_the_same_plan() {
-    let (compared, mismatches) = cross_format_mismatches(true);
     assert!(
         mismatches.is_empty(),
         "{} of {compared} differ between formats: {mismatches:#?}",
         mismatches.len()
     );
-    assert!(compared > 40, "{compared} compared");
+    assert!(compared > 100, "{compared} compared");
 }
 
-/// KNOWN DIFFERENCE, not fixed: converting formulas that an earlier deletion rewrote (and so left
-/// without a cached result) gives other workbooks in each format: the XLSX keeps every formula and
-/// the ODS loses the one of the last row. Run with `--ignored` to see the sequences.
+/// A source of bytes edits like the file it came from.
 #[test]
-#[ignore = "known difference between formats when converting after a change"]
-fn both_formats_agree_when_converting_after_a_change() {
-    let (compared, mismatches) = cross_format_mismatches(false);
-    assert!(
-        mismatches.is_empty(),
-        "{} of {compared} differ between formats: {mismatches:#?}",
-        mismatches.len()
-    );
+fn a_plan_runs_on_the_bytes_of_a_workbook_as_on_the_file() {
+    use sheetrs_core::reader::Format;
+    let plan = sequence(&["rows T!4:5", "convert F", "sheet U"]);
+    for (extension, format) in [("xlsx", Format::Xlsx), ("ods", Format::Ods)] {
+        let bytes = std::fs::read(asset(extension)).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join(format!("out.{extension}"));
+        plan.execute(&Source::from_bytes(bytes, format), &output)
+            .unwrap();
+        assert_eq!(Ok(snapshot(&output)), run(extension, &plan), "{extension}");
+    }
 }

@@ -38,6 +38,7 @@ use sheetrs_core::reader::Workbook;
 /// Rule that detects the presence of macros (VBA/Scripts)
 ///
 /// Macros can pose security risks or indicate legacy automation that may need review.
+#[derive(Debug)]
 pub struct HasMacrosRule;
 
 /// Incident data for VBA1101 — no variable fields.

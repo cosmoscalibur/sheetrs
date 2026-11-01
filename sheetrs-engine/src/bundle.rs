@@ -75,6 +75,7 @@ fn payload_len(bytes: &[u8]) -> Option<usize> {
 }
 
 /// What an executable carries: the program, and its constants if they are kept apart.
+#[derive(Debug)]
 pub struct Embedded {
     pub program: Program,
     pub consts: Option<StoredConsts>,

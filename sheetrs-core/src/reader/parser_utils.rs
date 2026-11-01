@@ -36,6 +36,7 @@ pub fn parse_cell_ref(cell_ref: &str) -> Option<(u32, u32)> {
 /// # Returns
 ///
 /// * `Option<(u32, u32, u32, u32)>` - The range coordinates if parsing is successful.
+#[must_use]
 pub fn parse_cell_range(range: &str) -> Option<(u32, u32, u32, u32)> {
     let parts: Vec<&str> = range.split(':').collect();
     if parts.len() != 2 {
@@ -70,6 +71,7 @@ const MAX_COLUMN_LETTERS: usize = 7;
 
 /// Displays a 0-based column index as column letters (`0` → `A`, `26` → `AA`)
 /// without allocating.
+#[must_use]
 pub fn column_letters(index: u32) -> impl fmt::Display {
     fmt::from_fn(move |f| {
         let mut letters = [0u8; MAX_COLUMN_LETTERS];
@@ -135,6 +137,7 @@ pub fn push_general_ref(text: &mut String, reference: &BytesRef) -> Result<()> {
 
 /// Extract basename from a file path
 /// Handles both absolute and relative paths, and strips file:// prefix
+#[must_use]
 pub fn extract_basename(path: &str) -> String {
     // Strip file:// prefix if present
     let clean_path = path.trim_start_matches("file://");

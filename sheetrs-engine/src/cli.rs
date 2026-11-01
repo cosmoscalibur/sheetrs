@@ -8,6 +8,7 @@ use crate::run::Overrides;
 use std::io::{BufRead, Read, Write};
 
 /// Minimal argument bag: flags may be given as `--k v` or `--k=v`.
+#[derive(Debug)]
 pub struct Args(pub Vec<String>);
 
 impl Args {

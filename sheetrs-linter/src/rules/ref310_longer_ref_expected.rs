@@ -153,6 +153,7 @@ fn continues_block(
 }
 
 /// Rule that identifies suspiciously short references.
+#[derive(Debug)]
 pub struct LongerRefExpectedRule {
     /// Minimum number of adjacent data cells beyond the range end to trigger.
     min_adjacent_data: usize,
@@ -160,12 +161,13 @@ pub struct LongerRefExpectedRule {
 
 impl LongerRefExpectedRule {
     /// Create the rule, reading `ref310_min_adjacent_data` from the configuration.
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         Self {
             // A value below 1 is refused when the configuration is validated; a configuration
             // built by hand gets the default instead.
             min_adjacent_data: config
-                .get_param_int("ref310_min_adjacent_data", None)
+                .param_int("ref310_min_adjacent_data", None)
                 .filter(|n| *n >= 1)
                 .map_or(DEFAULT_MIN_ADJACENT_DATA, |n| n as usize),
         }

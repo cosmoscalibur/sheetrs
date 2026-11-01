@@ -2,7 +2,8 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use sheetrs_edit::{ColumnRange, EditPlan, Operation, RowRange, writer};
+use sheetrs_core::reader::Source;
+use sheetrs_edit::{ColumnRange, EditPlan, Operation, Recalculation, RowRange, writer};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -36,9 +37,16 @@ struct Cli {
     #[arg(long, num_args = 1.., value_name = "COLUMNS")]
     delete_cols: Vec<ColumnRange>,
 
-    /// Mark the output so the application that opens it first recalculates every formula
-    #[arg(long)]
+    /// Mark the output so the application that opens it first recalculates every formula, even
+    /// when no operation leaves a stale result. Without this flag the plan decides: it marks the
+    /// output when rows, columns, sheets or names are removed
+    #[arg(long, conflicts_with = "no_recalc_on_open")]
     recalc_on_open: bool,
+
+    /// Never mark the output to be recalculated when it is opened, whatever the operations: the
+    /// cached results are left as they are
+    #[arg(long)]
+    no_recalc_on_open: bool,
 
     /// List all named ranges with their values and status
     #[arg(long)]
@@ -108,16 +116,18 @@ fn main() -> Result<()> {
         Operation::DeleteRows(cli.delete_rows),
         Operation::DeleteColumns(cli.delete_cols),
     ]);
-    if cli.recalc_on_open {
-        plan.recalculate_on_open();
-    }
+    plan.recalculation(match (cli.recalc_on_open, cli.no_recalc_on_open) {
+        (true, _) => Recalculation::Always,
+        (_, true) => Recalculation::Never,
+        _ => Recalculation::Auto,
+    });
     if cli.dry_run {
         println!("[DRY RUN] Operations on '{}':", cli.file.display());
         print!("{}", plan.explain()?);
         println!("\nOutput would be: {}", output_path.display());
     } else {
         println!("Modifying '{}'...", cli.file.display());
-        plan.execute(&cli.file, &output_path)
+        plan.execute(&Source::from_file(&cli.file)?, &output_path)
             .with_context(|| "Failed to modify workbook")?;
 
         println!("✓ Successfully modified workbook");

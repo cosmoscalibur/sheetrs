@@ -219,6 +219,7 @@ impl crate::parse::Formula {
     /// Only the references that change are replaced, so whitespace, letter case,
     /// function-name spelling and everything else in the source stay exactly as
     /// written.
+    #[must_use]
     pub fn rewrite(&self, edit: &Edit<'_>, home_sheet: &str) -> Option<String> {
         self.rewrite_all(std::slice::from_ref(edit), home_sheet)
     }
@@ -231,6 +232,7 @@ impl crate::parse::Formula {
     ///
     /// A 3D reference (`Sheet1:Sheet3!A1`) is not understood: see [`crate::parse::Formula::has_three_d`], which
     /// a caller that cannot accept one asks first.
+    #[must_use]
     pub fn rewrite_all(&self, edits: &[Edit<'_>], home_sheet: &str) -> Option<String> {
         let refs = self.expr.references();
         let mut out = String::with_capacity(self.source.len());
@@ -261,6 +263,7 @@ impl crate::parse::Formula {
     ///
     /// `Name:Sheet!A1` also reads as one: the AST of a range between a name and a sheet-qualified
     /// cell is the same as that of a span, and a name cannot be told from a sheet here.
+    #[must_use]
     pub fn has_three_d(&self) -> bool {
         let mut found = false;
         self.expr.walk(&mut |e| match e {

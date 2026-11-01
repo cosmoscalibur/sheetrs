@@ -66,6 +66,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
 type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
 
 /// Rule that detects usage of deprecated functions.
+#[derive(Debug)]
 pub struct DeprecatedFuncRule {
     /// Per-sheet collected cells with function index.
     sheet_cells: SheetCellMap,
@@ -73,6 +74,7 @@ pub struct DeprecatedFuncRule {
 
 impl DeprecatedFuncRule {
     /// Create a new instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheet_cells: HashMap::new(),

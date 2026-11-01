@@ -106,6 +106,7 @@ pub struct DocumentSettings {
 
 impl Workbook {
     /// Get a sheet by name
+    #[must_use]
     pub fn get_sheet(&self, name: &str) -> Option<&Sheet> {
         self.sheets.iter().find(|s| s.name == name)
     }
@@ -114,6 +115,7 @@ impl Workbook {
     ///
     /// Returns the sheet name for a given 0-based index.
     /// This is useful for resolving ViolationScope which stores sheet_index.
+    #[must_use]
     pub fn sheet_name_by_index(&self, sheet_index: u16) -> Option<&str> {
         self.sheets
             .iter()
@@ -122,6 +124,7 @@ impl Workbook {
     }
 
     /// Get all sheet names
+    #[must_use]
     pub fn sheet_names(&self) -> Vec<&str> {
         self.sheets.iter().map(|s| s.name.as_str()).collect()
     }
@@ -172,6 +175,7 @@ pub struct Sheet {
 
 impl Sheet {
     /// Create a new empty sheet with the given name and index
+    #[must_use]
     pub fn new(name: String, sheet_index: u16) -> Self {
         Self {
             name,
@@ -194,6 +198,7 @@ impl Sheet {
     }
 
     /// Get a cell at the given position
+    #[must_use]
     pub fn get_cell(&self, row: u32, col: u32) -> Option<&Cell> {
         self.cells.get(&(row, col))
     }
@@ -264,11 +269,13 @@ impl std::fmt::Display for NumFmt {
 
 impl Cell {
     /// Check if the cell contains a formula.
+    #[must_use]
     pub fn is_formula(&self) -> bool {
         self.formula.is_some()
     }
 
     /// Get the formula expression if this is a formula cell.
+    #[must_use]
     pub fn as_formula(&self) -> Option<&str> {
         self.formula.as_deref()
     }
@@ -292,16 +299,19 @@ pub enum CellValue {
 
 impl CellValue {
     /// Check if the cell contains an error.
+    #[must_use]
     pub fn is_error(&self) -> bool {
         matches!(self, CellValue::Error(_))
     }
 
     /// Check if the cell is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         matches!(self, CellValue::Empty)
     }
 
     /// Get the error type if this is an error cell.
+    #[must_use]
     pub fn as_error(&self) -> Option<ExcelError> {
         match self {
             CellValue::Error(e) => Some(*e),

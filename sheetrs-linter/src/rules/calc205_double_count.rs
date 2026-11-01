@@ -52,6 +52,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> =
     LazyLock::new(|| SUM_FAMILY.iter().map(|name| format!("{name}(")).collect());
 
 /// Rule that identifies double count issues in formulas.
+#[derive(Debug)]
 pub struct DoubleCountRule;
 
 /// Incident data for CALC205.

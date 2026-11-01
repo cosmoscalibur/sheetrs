@@ -30,14 +30,17 @@ impl<T> Default for Grid<T> {
 }
 
 impl<T> Grid<T> {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -80,6 +83,7 @@ impl<T> Grid<T> {
         }
     }
 
+    #[must_use]
     pub fn get(&self, at: &(u32, u32)) -> Option<&T> {
         self.locate(at.0, at.1).ok().map(|i| &self.items[i])
     }
@@ -88,6 +92,7 @@ impl<T> Grid<T> {
         self.locate(at.0, at.1).ok().map(|i| &mut self.items[i])
     }
 
+    #[must_use]
     pub fn contains_key(&self, at: &(u32, u32)) -> bool {
         self.get(at).is_some()
     }

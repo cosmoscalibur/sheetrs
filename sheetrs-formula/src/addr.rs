@@ -5,6 +5,7 @@ pub const MAX_COLS: u32 = 16_384;
 
 /// Column letters to a 0-based index (`A` → 0). `None` unless 1–3 ASCII
 /// letters within `XFD`.
+#[must_use]
 pub fn col_index(s: &str) -> Option<u32> {
     if s.is_empty() || s.len() > 3 || !s.bytes().all(|b| b.is_ascii_alphabetic()) {
         return None;
@@ -16,6 +17,7 @@ pub fn col_index(s: &str) -> Option<u32> {
 }
 
 /// 0-based column index to letters, allocation free.
+#[must_use]
 pub fn col_name(index: u32) -> impl std::fmt::Display {
     std::fmt::from_fn(move |f| {
         let mut i = index;
@@ -34,6 +36,7 @@ pub fn col_name(index: u32) -> impl std::fmt::Display {
 }
 
 /// `A1` text for a zero-based position.
+#[must_use]
 pub fn a1(row: u32, col: u32) -> String {
     format!("{}{}", col_name(col), row + 1)
 }
@@ -49,6 +52,7 @@ pub struct Area {
 }
 
 /// `[$]COL[$]ROW` → `(row, col, row_abs, col_abs)`, zero-based.
+#[must_use]
 pub fn parse_cell(s: &str) -> Option<(u32, u32, bool, bool)> {
     let (s, col_abs) = match s.strip_prefix('$') {
         Some(r) => (r, true),
@@ -71,6 +75,7 @@ pub fn parse_cell(s: &str) -> Option<(u32, u32, bool, bool)> {
 }
 
 /// `[$]COL` → `(col, abs)`.
+#[must_use]
 pub fn parse_col(s: &str) -> Option<(u32, bool)> {
     let (t, abs) = match s.strip_prefix('$') {
         Some(r) => (r, true),
@@ -80,6 +85,7 @@ pub fn parse_col(s: &str) -> Option<(u32, bool)> {
 }
 
 /// `[$]ROW` → `(row, abs)`, zero-based.
+#[must_use]
 pub fn parse_row(s: &str) -> Option<(u32, bool)> {
     let (t, abs) = match s.strip_prefix('$') {
         Some(r) => (r, true),
@@ -93,6 +99,7 @@ pub fn parse_row(s: &str) -> Option<(u32, bool)> {
 }
 
 /// Parse `A1`, `$A$1`, `A1:B2`, `A:C` or `2:5` (no sheet qualifier).
+#[must_use]
 pub fn parse_area(s: &str) -> Option<Area> {
     match s.split_once(':') {
         None => {
@@ -136,6 +143,7 @@ pub fn parse_area(s: &str) -> Option<Area> {
 
 /// Split an optional sheet qualifier: `Sheet1!A1`, `'My Sheet'!A1:B2`
 /// (`''` escapes a quote). Returns the unquoted sheet name and the remainder.
+#[must_use]
 pub fn split_sheet(s: &str) -> (Option<String>, &str) {
     if let Some(rest) = s.strip_prefix('\'') {
         let mut name = String::new();
@@ -176,6 +184,7 @@ pub fn same_name(a: &str, b: &str) -> bool {
 }
 
 /// Whether a sheet name must be quoted in a reference.
+#[must_use]
 pub fn needs_quotes(name: &str) -> bool {
     name.is_empty()
         || name.starts_with(|c: char| c.is_ascii_digit())

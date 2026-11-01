@@ -6,6 +6,7 @@ use crate::ast::{CellAddr, Expr, RefArea, Reference, UnOp};
 use std::fmt::{self, Display, Write};
 
 /// A sheet name as it appears before `!`: quoted when needed.
+#[must_use]
 pub fn sheet_text(name: &str) -> String {
     if needs_quotes(name) {
         format!("'{}'", name.replace('\'', "''"))

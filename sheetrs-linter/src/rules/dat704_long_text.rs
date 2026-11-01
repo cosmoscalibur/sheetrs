@@ -42,6 +42,7 @@ use std::collections::HashMap;
 type SheetCellMap = HashMap<u16, Vec<(u32, u32)>>;
 
 /// Rule that detects cells with excessive text length
+#[derive(Debug)]
 pub struct LongTextCellRule {
     /// Rule configuration.
     config: LinterConfig,
@@ -51,6 +52,7 @@ pub struct LongTextCellRule {
 
 impl LongTextCellRule {
     /// Create a new instance with configuration.
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         Self {
             config: config.clone(),
@@ -109,7 +111,7 @@ impl WalkerRule for LongTextCellRule {
     ) {
         let threshold = self
             .config
-            .get_param_int("max_text_length", Some(&sheet.name))
+            .param_int("max_text_length", Some(&sheet.name))
             .unwrap_or(255) as usize;
 
         if let CellValue::Text(text) = &cell.value

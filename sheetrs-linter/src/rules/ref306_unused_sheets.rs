@@ -42,6 +42,7 @@ use sheetrs_core::reader::Workbook;
 use std::collections::{HashMap, HashSet};
 
 /// Rule that detects unused (standalone) sheets
+#[derive(Debug)]
 pub struct UnusedSheetsRule;
 
 /// Incident data for REF306.

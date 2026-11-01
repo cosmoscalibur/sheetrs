@@ -4,7 +4,6 @@ from typing import Any, Literal, TypedDict
 __version__: str
 
 Path = str | os.PathLike[str]
-Source = Path | bytes
 
 class SheetrsError(Exception):
     """A workbook could not be read, analyzed or written."""
@@ -41,8 +40,8 @@ class Linter:
     def __init__(
         self, *, config: str | None = None, config_path: Path | None = None
     ) -> None: ...
-    def lint(self, source: Source, *, extension: str | None = None) -> list[Violation]:
-        """Lint a workbook given by path or as bytes (then `extension` is required)."""
+    def lint(self, source: Source) -> list[Violation]:
+        """Lint the workbook of a `Source` (the result of `open`)."""
     def rules(self) -> list[Rule]:
         """The rules ordered by id; `enabled` tells whether this configuration runs each one."""
 
@@ -72,18 +71,32 @@ class WorkbookStats(TypedDict):
     total_xml_size: int
     sheets: list[SheetStats]
 
-def stats(source: Source, *, extension: str | None = None) -> WorkbookStats:
-    """Statistics of a workbook given by path or as bytes (`total_file_size` is 0 for bytes)."""
+class Source:
+    """The input of every tool: a reference to a workbook (a file, or its bytes), made by `open`.
 
-class Workbook:
-    """A workbook to edit: the file and the operations recorded on it. Nothing is read until `save`.
+    It reads nothing and is not a navigable model of the workbook: the tools read it when they
+    run, and the same `Source` can be given to several. `Linter.lint(source)` analyzes it,
+    `stats()` measures it, and the operations start an `EditPlan`. It has no `save`: a workbook
+    is saved once something has been done to it.
+    """
 
-    Every method records an operation and returns the `Workbook` that results (the one it was
-    called on does not change), so calls chain and a workbook can be branched. Each operation
-    addresses the workbook as the previous ones leave it: after `delete_rows("T!3")`, `"T!3"` is
-    what was row 4. The scopes of one call are simultaneous: `delete_rows("T!3", "T!4")` deletes
-    two rows. `save` runs the operations in the fewest passes over the file that give what
-    running them one at a time gives; each pass reads and writes the file once, as a stream.
+    def stats(self) -> WorkbookStats:
+        """Statistics of the workbook (`total_file_size` is 0 for a workbook given as bytes)."""
+    def remove_sheets(self, *names: str) -> EditPlan: ...
+    def remove_ranges(self, *names: str) -> EditPlan: ...
+    def convert_to_values(self, *scopes: str) -> EditPlan: ...
+    def delete_rows(self, *rows: str) -> EditPlan: ...
+    def delete_columns(self, *columns: str) -> EditPlan: ...
+
+class EditPlan:
+    """Operations on a workbook, and the way to save them.
+
+    Every method adds an operation and returns the `EditPlan` that results (the one it was called
+    on does not change), so calls chain and a plan can be branched. Each operation addresses the
+    workbook as the previous ones leave it: after `delete_rows("T!3")`, `"T!3"` is what was row 4.
+    The scopes of one call are simultaneous: `delete_rows("T!3", "T!4")` deletes two rows. `save`
+    runs the operations in the fewest passes over the file that give what running them one at a
+    time gives; each pass reads and writes the file once, as a stream.
 
     Scopes are `"Sheet"`, `"Sheet!B:D"` (columns) and `"Sheet!3:10"` (rows); quote a sheet name
     that contains `!`. A malformed scope, or rows deleted with a column range, raises
@@ -91,22 +104,24 @@ class Workbook:
     3D reference, issue #75) shows at `save`.
     """
 
-    def remove_sheets(self, *names: str) -> Workbook: ...
-    def remove_ranges(self, *names: str) -> Workbook: ...
-    def convert_to_values(self, *scopes: str) -> Workbook: ...
-    def delete_rows(self, *rows: str) -> Workbook: ...
-    def delete_columns(self, *columns: str) -> Workbook: ...
+    def remove_sheets(self, *names: str) -> EditPlan: ...
+    def remove_ranges(self, *names: str) -> EditPlan: ...
+    def convert_to_values(self, *scopes: str) -> EditPlan: ...
+    def delete_rows(self, *rows: str) -> EditPlan: ...
+    def delete_columns(self, *columns: str) -> EditPlan: ...
     @property
     def operations(self) -> list[str]:
         """The operations as they were written, as text."""
-    def explain(self) -> str:
-        """The passes over the file that run the operations, as text."""
-    def save(self, path: Path, *, recalc_on_open: bool = False) -> None:
+    def explain(self, *, recalc_on_open: bool | None = None) -> str:
+        """The passes over the file that run the operations, and the mark to recalculate."""
+    def save(self, path: Path, *, recalc_on_open: bool | None = None) -> None:
         """Run the operations and write the result to `path` (never the file it was opened from).
 
-        `recalc_on_open` marks the saved file so the application that opens it recalculates every
-        formula: a property of the file, applied once, not an operation of the sequence.
+        The plan decides whether the saved file is marked so that the application that opens it
+        recalculates every formula, and puts the mark last: it does when an operation leaves the
+        cached results of formulas stale (rows, columns, sheets or names removed).
+        `recalc_on_open` overrides it: `False` never marks, `True` always does.
         """
 
-def open(source: Path | bytes, *, extension: str | None = None) -> Workbook:
-    """Open a workbook to edit. Bytes need `extension`. Only the path and extension are checked."""
+def open(source: Path | bytes, *, extension: str | None = None) -> Source:
+    """Open a workbook: make the `Source` that every tool takes. Bytes need `extension`."""

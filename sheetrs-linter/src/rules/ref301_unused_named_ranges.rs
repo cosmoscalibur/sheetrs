@@ -35,6 +35,7 @@ use aho_corasick::AhoCorasick;
 use sheetrs_core::reader::{Cell, Sheet, Workbook};
 
 /// Rule that detects unused named ranges
+#[derive(Debug)]
 pub struct UnusedNamedRangesRule {
     /// Defined names to check, sorted, without reserved `_xlnm.` names.
     names: Vec<String>,
@@ -48,6 +49,7 @@ pub struct UnusedNamedRangesRule {
 
 impl UnusedNamedRangesRule {
     /// Create a new instance of the rule.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             names: Vec::new(),

@@ -58,7 +58,7 @@ use std::collections::HashSet;
 /// During the cell walk it records error locations into `LinterContext::error_cells`.
 /// After all cells are visited, `on_workbook_end` cross-references the error set
 /// with the dependency graph and circular-cell set to emit ERR102 or ERR103.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ErrorCellsRule {
     /// The `LONGTEXT` compatibility feature is on: `_xlfn._LONGTEXT(…)` is accepted.
     longtext: bool,
@@ -66,6 +66,7 @@ pub struct ErrorCellsRule {
 
 impl ErrorCellsRule {
     /// Create the rule, reading `enable_features` from the configuration.
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         Self {
             longtext: config.feature_enabled("LONGTEXT"),

@@ -134,6 +134,7 @@ pub fn split(program: &mut Program, min: usize) -> Result<(ConstIndex, Vec<u8>),
 }
 
 /// The constants of an executable, decoded block by block as they are read.
+#[derive(Debug)]
 pub struct StoredConsts {
     index: ConstIndex,
     file: RefCell<File>,

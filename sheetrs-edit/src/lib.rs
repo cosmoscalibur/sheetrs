@@ -8,5 +8,5 @@
 mod plan;
 pub mod writer;
 
-pub use plan::{EditPlan, Operation};
+pub use plan::{EditPlan, Operation, Recalculation};
 pub use writer::{ColumnRange, RowRange, ValueScope};

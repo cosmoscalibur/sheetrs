@@ -26,12 +26,14 @@ use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData
 use sheetrs_core::reader::Sheet;
 
 /// Rule that detects excessive conditional formatting rules
+#[derive(Debug)]
 pub struct ExcessiveConditionalFormattingRule {
     config: LinterConfig,
 }
 
 impl ExcessiveConditionalFormattingRule {
     /// Create a new instance with optional configuration
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         Self {
             config: config.clone(),
@@ -87,7 +89,7 @@ impl WalkerRule for ExcessiveConditionalFormattingRule {
     ) {
         let threshold = self
             .config
-            .get_param_int("max_conditional_formatting", Some(&sheet.name))
+            .param_int("max_conditional_formatting", Some(&sheet.name))
             .unwrap_or(5) as u32;
 
         let cf_count = sheet.conditional_formatting_count;

@@ -50,6 +50,7 @@ type SheetMaxMap = HashMap<u16, (u32, u32)>;
 ///
 /// Uses a constant threshold of 2 rows/columns to detect when the used range
 /// extends significantly beyond actual data.
+#[derive(Debug)]
 pub struct LargeUsedRangeRule {
     /// Per-sheet max data cell coordinates.
     sheet_max: SheetMaxMap,
@@ -57,6 +58,7 @@ pub struct LargeUsedRangeRule {
 
 impl LargeUsedRangeRule {
     /// Create a new instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheet_max: HashMap::new(),

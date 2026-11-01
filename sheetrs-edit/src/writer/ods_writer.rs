@@ -857,6 +857,27 @@ fn check_merged_area(
 /// Write a cell covering `repeated` columns from `first_col` of `row`: the formulas that fall
 /// inside `scopes` become values, the columns that `structure` deletes go, and a formula that
 /// reads what the plan changes is rewritten (it loses its cached result, no longer valid).
+/// Whether the content of a cell holds the paragraph that shows its value: a `text:p` of the cell
+/// itself, not the one inside a shape (`draw:rect`) or a note (`office:annotation`) that the cell
+/// carries.
+fn has_cell_text(events: &[Event]) -> bool {
+    let mut nest = 0usize;
+    for event in events {
+        match event {
+            Event::Start(e) => {
+                if nest == 0 && e.name().as_ref() == "text:p" {
+                    return true;
+                }
+                nest += 1;
+            }
+            Event::Empty(e) if nest == 0 && e.name().as_ref() == "text:p" => return true,
+            Event::End(_) => nest = nest.saturating_sub(1),
+            _ => {}
+        }
+    }
+    false
+}
+
 fn write_cells<W: Write>(
     writer: &mut Writer<W>,
     start: &BytesStart,
@@ -876,11 +897,7 @@ fn write_cells<W: Write>(
     // LibreOffice stores an empty text result as a paragraph without a value
     // type. A formula with neither has no cached value to convert to.
     let value_type = attribute(start, "office:value-type")?;
-    let has_paragraph = content.is_some_and(|events| {
-        events.iter().any(|event| {
-            matches!(event, Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "text:p")
-        })
-    });
+    let has_paragraph = content.is_some_and(|events| has_cell_text(events));
     let convertible = formula.is_some() && !(value_type.is_none() && !has_paragraph);
     let new_formula = match (ctx.structure, formula.as_deref()) {
         (Some(s), Some(f)) => match rewrite_cell_formula(s, f)? {
@@ -1598,5 +1615,20 @@ mod tests {
         let out = structure(&xml, &["S!1"], &[]).unwrap();
         assert!(out.contains(r#"table:end-cell-address="S.C3""#), "{out}");
         assert!(out.contains(r#"table:end-x="1cm""#), "{out}");
+    }
+
+    #[test]
+    fn the_paragraph_of_a_shape_or_a_note_is_not_the_value_of_the_cell() {
+        // A formula whose result was dropped (no value type) and that carries a shape: there is
+        // nothing to convert, so it stays a formula, with its shape.
+        let xml = r#"<table:table table:name="Data"><table:table-row><table:table-cell table:formula="of:=[.A2]"><draw:rect draw:z-index="1"><text:p/></draw:rect></table:table-cell><table:table-cell table:formula="of:=[.A2]"><office:annotation><text:p>note</text:p></office:annotation></table:table-cell></table:table-row></table:table>"#;
+        let converted = convert(xml, &["Data"]);
+        assert!(
+            converted.contains(r#"table:formula="of:=[.A2]""#),
+            "{converted}"
+        );
+        assert!(converted.contains("<draw:rect"), "{converted}");
+        assert!(converted.contains("<text:p>note</text:p>"), "{converted}");
+        assert!(!converted.contains("office:value-type"), "{converted}");
     }
 }

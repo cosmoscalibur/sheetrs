@@ -24,7 +24,7 @@ struct RuleInfo {
 #[wasm_bindgen]
 pub fn lint_rules() -> Result<JsValue, JsValue> {
     let config = LinterConfig::default();
-    let metadata = registry::get_all_rule_metadata(&config);
+    let metadata = registry::rule_metadata(&config);
 
     let rules_info: Vec<RuleInfo> = metadata
         .iter()
@@ -63,7 +63,7 @@ pub fn lint_workbook(
         .map_err(|e| JsValue::from_str(&format!("Linter error: {e}")))?;
 
     // Create a map of rule_id -> rule_name for better output
-    let metadata = registry::get_all_rule_metadata(&config);
+    let metadata = registry::rule_metadata(&config);
     let rule_names: HashMap<String, String> = metadata
         .iter()
         .map(|m| (m.id.to_string(), m.name.clone()))

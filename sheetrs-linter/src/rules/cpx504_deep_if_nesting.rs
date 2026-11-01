@@ -51,6 +51,7 @@ use sheetrs_core::reader::{Cell, Sheet};
 
 /// Rule that detects deeply nested IF statements and serves as the
 /// primary emitter for the CPX5xx formula-complexity dependency chain.
+#[derive(Debug)]
 pub struct DeepIfNestingRule {
     /// Maximum allowed IF nesting depth (CPX504).
     max_if_nesting: usize,
@@ -66,17 +67,15 @@ pub struct DeepIfNestingRule {
 
 impl DeepIfNestingRule {
     /// Create a new instance from configuration.
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         Self {
-            max_if_nesting: config.get_param_int("max_if_nesting", None).unwrap_or(5) as usize,
-            max_nesting: config
-                .get_param_int("max_formula_nesting", None)
-                .unwrap_or(5) as usize,
-            max_operations: config.get_param_int("max_operations", None).unwrap_or(8) as usize,
-            max_references: config.get_param_int("max_references", None).unwrap_or(10) as usize,
-            max_formula_length: config
-                .get_param_int("max_formula_length", None)
-                .unwrap_or(255) as usize,
+            max_if_nesting: config.param_int("max_if_nesting", None).unwrap_or(5) as usize,
+            max_nesting: config.param_int("max_formula_nesting", None).unwrap_or(5) as usize,
+            max_operations: config.param_int("max_operations", None).unwrap_or(8) as usize,
+            max_references: config.param_int("max_references", None).unwrap_or(10) as usize,
+            max_formula_length: config.param_int("max_formula_length", None).unwrap_or(255)
+                as usize,
         }
     }
 }

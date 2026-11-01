@@ -555,7 +555,7 @@ mod sun_erf {
         Some(e / x)
     }
 
-    pub fn erf(x: f64) -> f64 {
+    pub(crate) fn erf(x: f64) -> f64 {
         let hx = high_word(x).cast_signed();
         let ix = (hx & 0x7fff_ffff).cast_unsigned();
         if ix >= 0x7ff0_0000 {
@@ -582,7 +582,7 @@ mod sun_erf {
         if hx >= 0 { 1.0 - r } else { r - 1.0 }
     }
 
-    pub fn erfc(x: f64) -> f64 {
+    pub(crate) fn erfc(x: f64) -> f64 {
         let hx = high_word(x).cast_signed();
         let ix = (hx & 0x7fff_ffff).cast_unsigned();
         if ix >= 0x7ff0_0000 {

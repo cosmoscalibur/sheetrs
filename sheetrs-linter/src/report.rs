@@ -32,6 +32,7 @@ pub struct GroupedViolations<'a> {
 /// Groups `violations` by the book, the sheet and the cell they refer to. A sheet has one entry,
 /// however many of its violations are sheet-level and cell-level; a sheet index without a sheet
 /// is named `Unknown Sheet`.
+#[must_use]
 pub fn group_by_scope<'a>(
     violations: &'a [Violation],
     workbook: &Workbook,
@@ -89,6 +90,7 @@ pub struct ViolationRecord {
 }
 
 /// Name of a severity as it appears in [`ViolationRecord::severity`].
+#[must_use]
 pub const fn severity_name(severity: Severity) -> &'static str {
     match severity {
         Severity::Error => "error",
@@ -99,12 +101,13 @@ pub const fn severity_name(severity: Severity) -> &'static str {
 
 /// Resolves `violations` of `workbook` into records, keeping their order. `config` is the
 /// configuration the linter ran with (rule names do not depend on it, but rules are built from it).
+#[must_use]
 pub fn violation_records(
     violations: &[Violation],
     workbook: &Workbook,
     config: &LinterConfig,
 ) -> Vec<ViolationRecord> {
-    let rule_names: HashMap<&'static str, String> = registry::get_all_rule_metadata(config)
+    let rule_names: HashMap<&'static str, String> = registry::rule_metadata(config)
         .into_iter()
         .map(|meta| (meta.id.as_str(), meta.name))
         .collect();

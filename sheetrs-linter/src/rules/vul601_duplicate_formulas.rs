@@ -42,10 +42,12 @@ enum Positions {
 }
 
 /// Rule that detects duplicate formulas in non-adjacent cells
+#[derive(Debug)]
 pub struct DuplicateFormulasRule;
 
 impl DuplicateFormulasRule {
     /// Create a new instance.
+    #[must_use]
     pub fn new() -> Self {
         Self
     }

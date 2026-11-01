@@ -27,6 +27,7 @@ pub use violation::{FormatContext, RuleId, Severity, Violation, ViolationData, V
 use rules::walker::WorkbookWalker;
 
 /// Main linter interface
+#[derive(Debug)]
 pub struct Linter {
     config: LinterConfig,
     /// Enabled rules and their providers, in execution order; instantiated
@@ -39,11 +40,13 @@ pub struct Linter {
 
 impl Linter {
     /// Create a new linter with default configuration
+    #[must_use]
     pub fn new() -> Self {
         Self::with_config(LinterConfig::default())
     }
 
     /// Create a new linter with custom configuration (a [`LinterConfig`] is valid by construction)
+    #[must_use]
     pub fn with_config(config: LinterConfig) -> Self {
         let all_rule_ids: Vec<RuleId> = rules::registry::create_all_walker_rules(&config)
             .iter()
@@ -124,6 +127,7 @@ impl Linter {
     }
 
     /// Get a reference to the linter configuration
+    #[must_use]
     pub fn config(&self) -> &LinterConfig {
         &self.config
     }

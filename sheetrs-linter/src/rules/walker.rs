@@ -5,6 +5,7 @@ use crate::violation::Violation;
 use sheetrs_core::reader::Workbook;
 
 /// Executor that traverses the workbook once and invokes rules
+#[derive(Debug)]
 pub struct WorkbookWalker<'a> {
     workbook: &'a Workbook,
     rules: Vec<Box<dyn WalkerRule>>,
@@ -13,6 +14,7 @@ pub struct WorkbookWalker<'a> {
 
 impl<'a> WorkbookWalker<'a> {
     /// Create a new walker for the given workbook and rules
+    #[must_use]
     pub fn new(workbook: &'a Workbook, rules: Vec<Box<dyn WalkerRule>>) -> Self {
         Self {
             workbook,
@@ -22,6 +24,7 @@ impl<'a> WorkbookWalker<'a> {
     }
 
     /// Walk the workbook and return all violations found
+    #[must_use]
     pub fn walk(mut self) -> Vec<Violation> {
         let mut violations = Vec::new();
 
@@ -67,6 +70,7 @@ impl<'a> WorkbookWalker<'a> {
     }
 
     /// Get a reference to the accumulated context (useful for debugging/testing)
+    #[must_use]
     pub fn context(&self) -> &LinterContext {
         &self.context
     }

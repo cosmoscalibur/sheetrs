@@ -49,6 +49,7 @@ const MAX_BLANK_ROW: u32 = 2;
 const MAX_BLANK_COLUMN: u32 = 2;
 
 /// Per-sheet occupied tracking.
+#[derive(Debug)]
 struct SheetOccupancy {
     /// Rows that contain at least one non-empty cell.
     occupied_rows: HashSet<u32>,
@@ -85,6 +86,7 @@ impl SheetOccupancy {
 /// Uses a constant threshold of 2 to identify gaps of empty rows or columns.
 /// Optimized: tracks occupied rows/cols during cell walk instead of probing
 /// every (row, col) pair.
+#[derive(Debug)]
 pub struct BlankRowsColumnsRule {
     /// Per-sheet occupancy data.
     sheet_data: HashMap<u16, SheetOccupancy>,
@@ -92,6 +94,7 @@ pub struct BlankRowsColumnsRule {
 
 impl BlankRowsColumnsRule {
     /// Create a new instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheet_data: HashMap::new(),

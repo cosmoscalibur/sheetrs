@@ -46,6 +46,7 @@ static LEN_ZERO_RE: LazyLock<Regex> = LazyLock::new(|| {
 type SheetCellMap = HashMap<u16, Vec<(u32, u32)>>;
 
 /// Rule that detects inefficient empty string tests in formulas.
+#[derive(Debug)]
 pub struct EmptyStringTestRule {
     /// Per-sheet collected cells.
     sheet_cells: SheetCellMap,
@@ -53,6 +54,7 @@ pub struct EmptyStringTestRule {
 
 impl EmptyStringTestRule {
     /// Create a new instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheet_cells: HashMap::new(),

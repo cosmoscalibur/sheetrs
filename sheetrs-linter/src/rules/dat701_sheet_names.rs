@@ -40,7 +40,7 @@ use sheetrs_core::reader::Sheet;
 /// Rule that detects non-descriptive sheet names (e.g. Sheet1, Sheet2)
 ///
 /// Generic names make it hard to understand the purpose of a worksheet.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct NonDescriptiveSheetNameRule {
     config: LinterConfig,
 }
@@ -68,6 +68,7 @@ impl ViolationData for NonDescriptiveSheetNameData {
 
 impl NonDescriptiveSheetNameRule {
     /// Create a new instance with optional configuration
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         Self {
             config: config.clone(),
@@ -97,7 +98,7 @@ impl WalkerRule for NonDescriptiveSheetNameRule {
         let normalized_name = sheet.name.to_lowercase();
         let patterns = self
             .config
-            .get_param_array("avoid_sheet_names", Some(&sheet.name))
+            .param_array("avoid_sheet_names", Some(&sheet.name))
             .unwrap_or_else(|| vec!["sheet".to_string(), "copy".to_string()]);
 
         for pattern in &patterns {

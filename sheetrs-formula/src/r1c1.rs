@@ -52,6 +52,7 @@ fn area_text(r: &Reference, row: u32, col: u32) -> String {
 }
 
 /// The formula in R1C1 form as seen from the zero-based cell `(row, col)`.
+#[must_use]
 pub fn to_r1c1(expr: &Expr, row: u32, col: u32) -> String {
     let mut e = expr.clone();
     e.walk_mut(&mut |x| {

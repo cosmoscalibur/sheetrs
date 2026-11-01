@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 pub type Res<T> = Result<T, ErrorKind>;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum St {
     Pending,
     Busy,
@@ -37,7 +37,7 @@ pub trait ConstSource {
 
 /// First position of each text (case-folded) and number among the keys of a lookup
 /// column.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct LookupIndex {
     text: crate::fastmap::FastMap<String, usize>,
     number: crate::fastmap::FastMap<u64, usize>,
@@ -104,6 +104,16 @@ pub struct Engine<'p> {
     /// Formula cells that met something LibreOffice does and the engine does not reproduce
     /// (see [`crate::notes`]).
     pub violations: Vec<(CellRef, &'static str)>,
+}
+
+impl std::fmt::Debug for Engine<'_> {
+    /// The options and the size of what it holds; its state is not worth printing.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Engine")
+            .field("opts", &self.opts)
+            .field("cells", &self.values.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'p> Engine<'p> {

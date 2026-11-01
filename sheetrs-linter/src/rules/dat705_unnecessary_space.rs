@@ -46,6 +46,7 @@ impl ViolationData for UnnecessarySpaceData {
 }
 
 /// Rule that identifies unnecessary leading or trailing whitespace in text cells.
+#[derive(Debug)]
 pub struct UnnecessarySpaceRule;
 
 impl WalkerRule for UnnecessarySpaceRule {

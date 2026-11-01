@@ -40,6 +40,7 @@ use crate::violation::{
 use sheetrs_core::reader::{Cell, CellValue, NumFmt, Sheet};
 
 /// Rule that detects date-formatted cells whose format differs from the required one.
+#[derive(Debug)]
 pub struct InconsistentDateFormatRule {
     /// Default date format from config.
     default_date_format: String,
@@ -49,9 +50,10 @@ pub struct InconsistentDateFormatRule {
 
 impl InconsistentDateFormatRule {
     /// Create a new instance with configuration.
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         let default_date_format = config
-            .get_param_str("date_format", None)
+            .param_str("date_format", None)
             .unwrap_or("mm/dd/yyyy")
             .to_string();
 
@@ -120,7 +122,7 @@ impl WalkerRule for InconsistentDateFormatRule {
             let normalized_fmt = fmt.replace('\\', "");
             let required_format = self
                 .config
-                .get_param_str("date_format", Some(&sheet.name))
+                .param_str("date_format", Some(&sheet.name))
                 .unwrap_or(&self.default_date_format);
 
             if Self::is_date_format(&normalized_fmt)

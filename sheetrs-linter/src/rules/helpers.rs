@@ -35,6 +35,7 @@ pub static CELL_REF_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 /// Returns `None` unless the pair is a cell of a sheet, up to column `XFD` and
 /// row 1,048,576: a token such as `A0`, `ABCD1` or `TOTALSALES2024` has the
 /// shape of a reference and is a name.
+#[must_use]
 pub fn parse_cell_coords(row_str: &str, col_str: &str) -> Option<(u32, u32)> {
     let row = row_str
         .parse::<u32>()
@@ -48,6 +49,7 @@ pub fn parse_cell_coords(row_str: &str, col_str: &str) -> Option<(u32, u32)> {
 ///
 /// Returns `(min_row, min_col, max_row, max_col)`. Falls back to `(0,0,0,0)`
 /// when `cells` is empty.
+#[must_use]
 pub fn bounding_box(cells: &[(u32, u32)]) -> (u32, u32, u32, u32) {
     let min_row = cells.iter().map(|(r, _)| *r).min().unwrap_or(0);
     let min_col = cells.iter().map(|(_, c)| *c).min().unwrap_or(0);
@@ -60,6 +62,7 @@ pub fn bounding_box(cells: &[(u32, u32)]) -> (u32, u32, u32, u32) {
 ///
 /// Returns a `Vec` where each element is a group of cells that form a
 /// contiguous block via row/column adjacency.
+#[must_use]
 pub fn find_contiguous_ranges(cells: &[(u32, u32)]) -> Vec<Vec<(u32, u32)>> {
     let cell_set: HashSet<(u32, u32)> = cells.iter().copied().collect();
     let mut visited: HashSet<(u32, u32)> = HashSet::new();
@@ -103,6 +106,7 @@ pub fn find_contiguous_ranges(cells: &[(u32, u32)]) -> Vec<Vec<(u32, u32)>> {
 ///
 /// Returns the single cell reference for single-cell groups,
 /// or a `start:end` bounding-box range for multi-cell groups.
+#[must_use]
 pub fn format_single_range(cells: &[(u32, u32)]) -> String {
     use crate::violation::CellReference;
 
@@ -124,6 +128,7 @@ pub fn format_single_range(cells: &[(u32, u32)]) -> String {
 ///
 /// Scans from the start of `formula` up to `pos`, toggling an in-string flag
 /// on each `"` character. Returns `true` if `pos` falls inside a literal.
+#[must_use]
 pub fn is_inside_string(formula: &str, pos: usize) -> bool {
     let mut in_string = false;
     for (i, ch) in formula.char_indices() {
@@ -145,6 +150,7 @@ pub fn is_inside_string(formula: &str, pos: usize) -> bool {
 ///
 /// Nested parentheses (e.g., `SUM(IF(cond,A1,A2),B1)`) are preserved inside
 /// the argument string — only top-level commas split arguments.
+#[must_use]
 pub fn extract_args(formula: &str, paren_pos: usize) -> Option<Vec<String>> {
     let bytes = formula.as_bytes();
     if paren_pos >= bytes.len() || bytes[paren_pos] != b'(' {
@@ -204,6 +210,7 @@ pub fn extract_args(formula: &str, paren_pos: usize) -> Option<Vec<String>> {
 /// Returns `None` unless every end is a cell of a sheet (up to column `XFD` and
 /// row 1,048,576), so a nested call such as `ABS(A1)` or a whole-column `A:A`
 /// is not a range.
+#[must_use]
 pub fn parse_formula_range(range_str: &str) -> Option<(u32, u32, u32, u32)> {
     let cell = |s: &str| sheetrs_formula::addr::parse_cell(s).map(|(row, col, ..)| (row, col));
     match range_str.split_once(':') {
@@ -437,6 +444,7 @@ pub struct FormulaLinks {
 
 /// The links of a formula, from its parsed form (a reference-like text inside a string literal
 /// is not one). `None` when the formula cannot be parsed.
+#[must_use]
 pub fn formula_links(
     formula: &str,
     current_sheet: u16,
@@ -480,6 +488,7 @@ pub fn formula_links(
 /// The formula with the text of its string literals (`"..."`) and quoted sheet names (`'...'`)
 /// replaced by spaces, so that what is searched for in the rest cannot be found inside them. Quotes
 /// are doubled to escape them in both (`"say ""hi"""`).
+#[must_use]
 pub fn mask_quoted(formula: &str) -> std::borrow::Cow<'_, str> {
     if !formula.contains(['"', '\'']) {
         return std::borrow::Cow::Borrowed(formula);
@@ -524,6 +533,7 @@ pub struct FutureCalls {
 }
 
 /// The prefixed function calls of `formula`.
+#[must_use]
 pub fn future_calls(formula: &str) -> FutureCalls {
     if !formula.contains(['_', '.']) {
         return FutureCalls::default();
@@ -538,6 +548,7 @@ pub fn future_calls(formula: &str) -> FutureCalls {
 /// Whether `name(` (uppercase) appears as a function call in an uppercase formula whose quoted
 /// text has been masked ([`mask_quoted`]): not as the end of a longer name (`SUMIF(` is not `IF(`)
 /// and not as the end of a prefixed one (`_XLFN.IFS(`) or an external reference.
+#[must_use]
 pub fn has_call(masked_upper: &str, name: &str) -> bool {
     let call = format!("{name}(");
     masked_upper.match_indices(&call).any(|(i, _)| {
@@ -550,6 +561,7 @@ pub fn has_call(masked_upper: &str, name: &str) -> bool {
 
 /// Whether a formula names a whole column (`A:A`) and whether it names a whole row (`1:1`), from
 /// its parsed form. `None` when the formula cannot be parsed.
+#[must_use]
 pub fn whole_line_refs(formula: &str) -> Option<(bool, bool)> {
     use sheetrs_formula::ast::{Expr, RefArea};
     fn walk(e: &Expr, found: &mut (bool, bool)) {

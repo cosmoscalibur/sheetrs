@@ -676,6 +676,7 @@ fn normalize_arg_separator(formula: &str) -> String {
 ///
 /// Only caches lightweight metadata needed by subsequent reader methods.
 /// Sheet data is returned directly and not cached, avoiding a full clone.
+#[derive(Debug)]
 struct OdsData {
     hidden_sheets: Vec<String>,
     has_macros: bool,
@@ -685,6 +686,7 @@ struct OdsData {
 /// ODS (OpenDocument Spreadsheet) reader implementation
 ///
 /// Handles parsing of .ods content.xml and styles.xml
+#[derive(Debug)]
 pub struct OdsReader<'a, R: std::io::Read + std::io::Seek> {
     archive: &'a mut ZipArchive<R>,
     data: Option<OdsData>,

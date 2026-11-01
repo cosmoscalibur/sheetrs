@@ -27,6 +27,7 @@ use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData
 use sheetrs_core::reader::Workbook;
 
 /// Rule that checks if the workbook has an excessive number of sheets.
+#[derive(Debug)]
 pub struct ExcessiveSheetCountsRule {
     threshold: u32,
 }
@@ -49,8 +50,9 @@ impl ViolationData for ExcessiveSheetCountsData {
 }
 
 impl ExcessiveSheetCountsRule {
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
-        let threshold = config.get_param_int("max_sheets", None).unwrap_or(50);
+        let threshold = config.param_int("max_sheets", None).unwrap_or(50);
 
         Self {
             threshold: threshold as u32,

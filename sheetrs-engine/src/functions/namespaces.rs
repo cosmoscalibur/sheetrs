@@ -139,7 +139,7 @@ pub(super) static OUTSIDE_CORE: &[(&str, Ns)] = &[
 
 /// Names an XLSX writes without `_xlfn.` for a function that is not in `core`: they mean the function of
 /// that namespace there, and the core one of the same text in an ODS.
-pub static XLSX_BARE: &[(&str, Ns)] = &[
+pub(super) static XLSX_BARE: &[(&str, Ns)] = &[
     ("CEILING", Ns::Microsoft),
     ("CHIDIST", Ns::Legacy),
     ("CHIINV", Ns::Legacy),
@@ -166,7 +166,7 @@ pub static XLSX_BARE: &[(&str, Ns)] = &[
 /// Every function of LibreOffice's catalogue, by the name a formula writes it with, uppercase and
 /// without prefix. A function here that the engine does not implement stops the build; a name that
 /// is not here is unknown to LibreOffice too (`#NAME?`).
-pub static CATALOGUE: &[&str] = &[
+pub(super) static CATALOGUE: &[&str] = &[
     "ABS",
     "ACCRINT",
     "ACCRINTM",

@@ -36,6 +36,7 @@ use sheetrs_core::reader::Sheet;
 use sheetrs_core::reader::parser_utils::column_letters;
 
 /// Rule that detects hidden columns and rows
+#[derive(Debug)]
 pub struct HiddenColumnsRowsRule;
 
 /// Incident data for HID902.

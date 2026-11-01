@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 
-#[derive(Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct FxHasher(u64);
 
 const SEED: u64 = 0x517c_c1b7_2722_0a95;

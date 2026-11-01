@@ -57,6 +57,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
 type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
 
 /// Rule that detects usage of volatile functions.
+#[derive(Debug)]
 pub struct VolatileFunctionsRule {
     /// Per-sheet collected cells with function index.
     sheet_cells: SheetCellMap,
@@ -64,6 +65,7 @@ pub struct VolatileFunctionsRule {
 
 impl VolatileFunctionsRule {
     /// Create a new instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheet_cells: HashMap::new(),

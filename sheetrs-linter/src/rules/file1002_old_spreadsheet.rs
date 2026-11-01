@@ -43,6 +43,7 @@ const DEFAULT_MAX_AGE_DAYS: i64 = 365;
 /// - Outdated data requiring review or update
 /// - Stale references or links
 /// - Information no longer relevant to current processes
+#[derive(Debug)]
 pub struct OldSpreadsheetRule {
     /// Maximum age in days
     max_age_days: i64,
@@ -70,7 +71,7 @@ impl OldSpreadsheetRule {
     #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         let max_days = config
-            .get_param_int("max_age_days", None)
+            .param_int("max_age_days", None)
             .unwrap_or(DEFAULT_MAX_AGE_DAYS);
         Self {
             max_age_days: max_days,

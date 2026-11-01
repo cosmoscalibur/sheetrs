@@ -79,6 +79,7 @@ impl LinkStatus {
 ///
 /// * `url_links_status` - Status to check: "ALL" (default, all URLs) or "INVALID" (only broken URLs).
 /// * `url_timeout_seconds` - Timeout for link validation in seconds (default: 5).
+#[derive(Debug)]
 pub struct WebUrlsRule {
     status: LinkStatus,
     timeout_secs: u64,
@@ -90,13 +91,11 @@ impl WebUrlsRule {
     /// Create a new instance configured from the linter config.
     pub fn new(config: &LinterConfig) -> Self {
         let status = config
-            .get_param_str("url_links_status", None)
+            .param_str("url_links_status", None)
             .map(LinkStatus::from_str)
             .unwrap_or(LinkStatus::All);
 
-        let timeout_secs = config
-            .get_param_int("url_timeout_seconds", None)
-            .unwrap_or(5) as u64;
+        let timeout_secs = config.param_int("url_timeout_seconds", None).unwrap_or(5) as u64;
 
         Self {
             status,

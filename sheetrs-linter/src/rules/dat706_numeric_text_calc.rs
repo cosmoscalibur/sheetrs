@@ -42,6 +42,7 @@ use sheetrs_core::reader::{Cell, Sheet, Workbook};
 ///
 /// **Dependency:** requires CALC202 (Circular References) to be active,
 /// as it populates `ctx.cell_dependencies`.
+#[derive(Debug)]
 pub struct NumericTextCalcRule;
 
 /// Incident data for DAT706.

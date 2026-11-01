@@ -1,40 +1,43 @@
 """Lint, inspect and edit XLSX and ODS spreadsheets.
 
-Python bindings of the SheetRS suite (``sheetlint``, ``sheetstats``, ``sheetedit``). A workbook
-is a path or its bytes::
+Python bindings of the SheetRS suite (``sheetlint``, ``sheetstats``, ``sheetedit``).
+
+``open`` makes the input of every tool: a ``Source``, a reference to a workbook that reads nothing
+and is not a navigable model of it. Each tool takes it::
 
     import sheetrs
 
-    linter = sheetrs.Linter(config_path="sheetlint.toml")   # the configuration is validated
-    for violation in linter.lint("book.xlsx"):
+    source = sheetrs.open("book.xlsx")
+
+    linter = sheetrs.Linter(config_path="sheetlint.toml")    # the configuration is validated
+    for violation in linter.lint(source):
         print(violation.rule_id, violation.sheet, violation.cell, violation.message)
 
-    sheetrs.stats("book.xlsx")["total_formulas"]
+    source.stats()["total_formulas"]
 
-    # open, record operations, save: nothing is read until save(), which runs them over the
-    # file in as few passes as it can
-    (sheetrs.open("book.xlsx")
-        .remove_sheets("Secrets")
+    # Editing: the operations on a source make an EditPlan, which is what has save().
+    # Nothing is read until save(), which runs them in as few passes over the file as it can.
+    (source.remove_sheets("Secrets")
         .delete_rows("Data!3:10")
         .save("clean.xlsx"))
 """
 
 from ._sheetrs import (
+    EditPlan,
     Linter,
     SheetrsError,
+    Source,
     Violation,
-    Workbook,
     __version__,
     open,
-    stats,
 )
 
 __all__ = [
+    "EditPlan",
     "Linter",
     "SheetrsError",
+    "Source",
     "Violation",
-    "Workbook",
     "__version__",
     "open",
-    "stats",
 ]

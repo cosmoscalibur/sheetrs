@@ -54,6 +54,7 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
 });
 
 /// Rule that identifies approximate lookup functions.
+#[derive(Debug)]
 pub struct ApproximateLookupRule;
 
 /// Incident data for CALC204.

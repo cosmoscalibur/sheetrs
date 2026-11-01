@@ -31,6 +31,7 @@ use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData
 use sheetrs_core::reader::Sheet;
 
 /// Rule that detects completely empty sheets
+#[derive(Debug)]
 pub struct EmptySheetsRule;
 
 /// Incident data for REF303.

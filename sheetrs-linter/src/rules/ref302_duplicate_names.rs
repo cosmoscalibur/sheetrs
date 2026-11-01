@@ -32,6 +32,7 @@ use sheetrs_core::reader::Workbook;
 use std::collections::HashMap;
 
 /// Rule that checks for duplicate sheet names (case-insensitive)
+#[derive(Debug)]
 pub struct DuplicateSheetNamesRule;
 
 /// Incident data for REF302.

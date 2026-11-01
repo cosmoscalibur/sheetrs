@@ -74,6 +74,7 @@ pub enum InterruptionKind {
 
 impl InterruptionKind {
     /// Returns the kind reported under `rule_id`, or `None` for non-INT rules.
+    #[must_use]
     pub fn from_rule_id(rule_id: RuleId) -> Option<Self> {
         match rule_id {
             RuleId::Int401 => Some(Self::Data),
@@ -84,6 +85,7 @@ impl InterruptionKind {
     }
 
     /// Returns the rule ID under which this kind is reported.
+    #[must_use]
     pub fn rule_id(self) -> RuleId {
         match self {
             Self::Data => RuleId::Int401,
@@ -127,6 +129,7 @@ struct Interruption {
 }
 
 /// Rule that detects formula interruptions.
+#[derive(Debug)]
 pub struct InterruptionRule {
     /// Kinds of interruption this instance reports; the first one gives its
     /// [`WalkerRule::id`] and [`WalkerRule::name`].
@@ -197,13 +200,14 @@ impl InterruptionRule {
     /// # Panics
     ///
     /// Panics if `kinds` is empty.
+    #[must_use]
     pub fn new(kinds: Vec<InterruptionKind>, config: &LinterConfig) -> Self {
         assert!(
             !kinds.is_empty(),
             "InterruptionRule needs at least one kind"
         );
         let min_seq = config
-            .get_param_int("int_min_formula_sequence", None)
+            .param_int("int_min_formula_sequence", None)
             .unwrap_or(3) as usize;
         Self {
             kinds,
@@ -806,7 +810,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "at least one kind")]
     fn test_new_rejects_empty_kinds() {
-        InterruptionRule::new(Vec::new(), &LinterConfig::default());
+        let _ = InterruptionRule::new(Vec::new(), &LinterConfig::default());
     }
 
     // --- Config ---

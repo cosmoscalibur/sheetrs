@@ -40,6 +40,7 @@ use crate::violation::{CellReference, FormatContext, RuleId, ViolationData};
 ///
 /// This walker rule is a no-op. Actual violations are emitted by ERR102's
 /// `on_workbook_end` to avoid duplicate graph traversal.
+#[derive(Debug)]
 pub struct RefToErrorRule;
 
 /// Incident data for ERR103 (walker path).

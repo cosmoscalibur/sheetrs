@@ -18,6 +18,7 @@ use std::sync::Arc;
 pub use sheetrs_formula::ParseError;
 
 /// Name resolution context of a formula.
+#[derive(Debug)]
 pub struct ParseCtx<'a> {
     pub sheets: &'a [String],
     pub current_sheet: u16,

@@ -33,6 +33,7 @@ use sheetrs_core::reader::Sheet;
 /// Rule that detects hidden worksheets
 ///
 /// Hidden sheets can sometimes contain sensitive data or deprecated logic that should be removed.
+#[derive(Debug)]
 pub struct HiddenWorksheetRule;
 
 /// Incident data for HID901.

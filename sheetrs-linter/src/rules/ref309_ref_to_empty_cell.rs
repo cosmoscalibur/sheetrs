@@ -47,6 +47,7 @@ use std::collections::{HashMap, HashSet};
 ///
 /// **Dependency:** requires CALC202 (Circular References) to be active,
 /// as it populates `ctx.cell_dependencies`.
+#[derive(Debug)]
 pub struct RefToEmptyCellRule;
 
 /// Incident data for REF309.

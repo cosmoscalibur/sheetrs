@@ -31,12 +31,14 @@ use sheetrs_core::reader::{Cell, Sheet};
 use std::collections::HashMap;
 
 /// Rule that identifies legacy CSE array formulas.
+#[derive(Debug)]
 pub struct LegacyArrayRule {
     /// Per-sheet collected cells: sheet_index → Vec<(row, col)>.
     sheet_cells: HashMap<u16, Vec<(u32, u32)>>,
 }
 
 impl LegacyArrayRule {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheet_cells: HashMap::new(),

@@ -1,0 +1,204 @@
+//! Where a workbook comes from: a reference to it, not the workbook.
+//!
+//! A [`Source`] is what every tool takes as input (the linter reads a model from it, the
+//! statistics stream it, the editor streams it into another file). It names a file, or holds the
+//! bytes of one, and nothing is read until a tool reads it, so it is cheap to make, to clone and to
+//! hand to several tools. It is not a navigable model of the workbook: that is
+//! [`Workbook`], which only the tools that need every cell ask for.
+
+use super::{Workbook, read_workbook, read_workbook_from_reader};
+use anyhow::{Result, bail};
+use std::fmt;
+use std::io::Cursor;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::Arc;
+
+/// The formats of workbook that are read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Format {
+    Xlsx,
+    Xlsm,
+    Ods,
+}
+
+impl Format {
+    /// The extension a file of this format has, in lowercase and without the dot.
+    #[must_use]
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::Xlsx => "xlsx",
+            Self::Xlsm => "xlsm",
+            Self::Ods => "ods",
+        }
+    }
+
+    /// The format of a file by its extension (any case), `None` for an extension that is not one
+    /// of a workbook the suite reads.
+    #[must_use]
+    pub fn from_path(path: &Path) -> Option<Self> {
+        path.extension()?.to_str()?.parse().ok()
+    }
+}
+
+impl FromStr for Format {
+    type Err = anyhow::Error;
+
+    fn from_str(extension: &str) -> Result<Self> {
+        match extension
+            .trim_start_matches('.')
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "xlsx" => Ok(Self::Xlsx),
+            "xlsm" => Ok(Self::Xlsm),
+            "ods" => Ok(Self::Ods),
+            _ => bail!("'{extension}' is not an XLSX, XLSM or ODS workbook"),
+        }
+    }
+}
+
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.extension())
+    }
+}
+
+/// A workbook to be read: a file, or the bytes of one. It is a reference, not a model of the
+/// workbook, and reads nothing until a tool does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    /// A file, whose format is the one of its extension. Whether it exists is found out when it is
+    /// read.
+    File { path: PathBuf, format: Format },
+    /// The bytes of a workbook of the given format.
+    Bytes { data: Arc<[u8]>, format: Format },
+}
+
+impl Source {
+    /// A file; it does not look at the file.
+    ///
+    /// # Errors
+    ///
+    /// When its extension is not one of a workbook the suite reads (`xlsx`, `xlsm`, `ods`).
+    pub fn from_file(path: impl Into<PathBuf>) -> Result<Self> {
+        let path = path.into();
+        let Some(format) = Format::from_path(&path) else {
+            bail!(
+                "'{}' is not an XLSX, XLSM or ODS workbook (by its extension)",
+                path.display()
+            );
+        };
+        Ok(Self::File { path, format })
+    }
+
+    /// The bytes of a workbook of `format`.
+    pub fn from_bytes(data: impl Into<Arc<[u8]>>, format: Format) -> Self {
+        Self::Bytes {
+            data: data.into(),
+            format,
+        }
+    }
+
+    #[must_use]
+    pub fn format(&self) -> Format {
+        match self {
+            Self::File { format, .. } | Self::Bytes { format, .. } => *format,
+        }
+    }
+
+    /// The path of the file, `None` for bytes.
+    #[must_use]
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Self::File { path, .. } => Some(path),
+            Self::Bytes { .. } => None,
+        }
+    }
+
+    /// Reads the whole workbook into the model the linter analyzes.
+    ///
+    /// # Errors
+    ///
+    /// When the file cannot be opened or the archive is not a valid workbook of its format.
+    pub fn read_workbook(&self) -> Result<Workbook> {
+        match self {
+            Self::File { path, .. } => read_workbook(path),
+            Self::Bytes { data, format } => {
+                read_workbook_from_reader(Cursor::new(data), Some(format.extension()))
+            }
+        }
+    }
+}
+
+impl TryFrom<&Path> for Source {
+    type Error = anyhow::Error;
+
+    fn try_from(path: &Path) -> Result<Self> {
+        Self::from_file(path)
+    }
+}
+
+impl TryFrom<PathBuf> for Source {
+    type Error = anyhow::Error;
+
+    fn try_from(path: PathBuf) -> Result<Self> {
+        Self::from_file(path)
+    }
+}
+
+impl TryFrom<&str> for Source {
+    type Error = anyhow::Error;
+
+    fn try_from(path: &str) -> Result<Self> {
+        Self::from_file(path)
+    }
+}
+
+impl fmt::Display for Source {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::File { path, .. } => write!(f, "{}", path.display()),
+            Self::Bytes { data, format } => write!(f, "{} bytes of {format}", data.len()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const XLSX: &[u8] = include_bytes!("../../../tests/minimal_test.xlsx");
+
+    #[test]
+    fn a_format_is_read_from_an_extension_in_any_case() {
+        assert_eq!("XLSX".parse::<Format>().unwrap(), Format::Xlsx);
+        assert_eq!(".ods".parse::<Format>().unwrap(), Format::Ods);
+        assert!("csv".parse::<Format>().is_err());
+        assert_eq!(Format::from_path(Path::new("a/b.XlsM")), Some(Format::Xlsm));
+        assert_eq!(Format::from_path(Path::new("a/b")), None);
+        assert_eq!(Format::Ods.to_string(), "ods");
+    }
+
+    #[test]
+    fn a_file_source_is_a_reference_and_reads_nothing() {
+        let source = Source::from_file("does/not/exist.xlsx").unwrap();
+        assert_eq!(source.format(), Format::Xlsx);
+        assert_eq!(source.path(), Some(Path::new("does/not/exist.xlsx")));
+        // It is found out when it is read.
+        assert!(source.read_workbook().is_err());
+        assert!(Source::from_file("notes.txt").is_err());
+        assert_eq!(Source::try_from("a.ods").unwrap().format(), Format::Ods);
+    }
+
+    #[test]
+    fn a_source_of_bytes_reads_like_a_file() {
+        let source = Source::from_bytes(XLSX, Format::Xlsx);
+        assert_eq!(source.path(), None);
+        let book = source.read_workbook().unwrap();
+        assert!(!book.sheets.is_empty());
+        assert!(source.to_string().contains("bytes of xlsx"));
+        assert_eq!(source.clone(), source);
+    }
+}

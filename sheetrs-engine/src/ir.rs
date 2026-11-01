@@ -276,7 +276,7 @@ pub enum Queryable {
 mod json_text {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S: Serializer>(v: &serde_json::Value, s: S) -> Result<S::Ok, S::Error> {
+    pub(super) fn serialize<S: Serializer>(v: &serde_json::Value, s: S) -> Result<S::Ok, S::Error> {
         if s.is_human_readable() {
             v.serialize(s)
         } else {
@@ -284,7 +284,9 @@ mod json_text {
         }
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<serde_json::Value, D::Error> {
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<serde_json::Value, D::Error> {
         if d.is_human_readable() {
             serde_json::Value::deserialize(d)
         } else {

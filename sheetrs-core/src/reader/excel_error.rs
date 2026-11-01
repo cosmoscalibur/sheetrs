@@ -41,6 +41,7 @@ impl ExcelError {
     ///
     /// Returns `None` for unrecognized patterns. Handles both exact matches
     /// (e.g. `"#REF!"`) and ODS error codes (e.g. `"Err:508"`).
+    #[must_use]
     pub fn from_cell_str(s: &str) -> Option<Self> {
         s.parse().ok()
     }

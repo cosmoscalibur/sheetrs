@@ -66,6 +66,7 @@ pub enum ValueTarget {
 
 impl ValueScope {
     /// Whether the 0-based cell `(row, col)` falls inside this scope.
+    #[must_use]
     pub fn contains(&self, row: u32, col: u32) -> bool {
         match self.target {
             ValueTarget::Sheet => true,
@@ -76,6 +77,7 @@ impl ValueScope {
 
     /// Whether the 0-based range from `first` to `last` (`(row, col)`, both
     /// inclusive) falls inside this scope.
+    #[must_use]
     pub fn contains_range(&self, first: (u32, u32), last: (u32, u32)) -> bool {
         // A scope is a whole sheet, a column band or a row band, so holding
         // two opposite corners means holding the whole range.

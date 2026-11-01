@@ -20,6 +20,7 @@ pub struct CalcSyntax {
 
 impl CalcSyntax {
     /// The defaults LibreOffice derives from the decimal separator.
+    #[must_use]
     pub fn for_decimal(decimal: char) -> Self {
         if decimal == ',' {
             Self {
@@ -99,6 +100,7 @@ fn reference(out: &mut String, r: &Reference, home: &str) {
 
 /// The function an ODS names by its add-in service (`COM.SUN.STAR.SHEET.ADDIN.PRICINGFUNCTIONS.
 /// GETOPTBARRIER`), by the name an XLSX gives it (`OPT_BARRIER`); `name` is uppercase.
+#[must_use]
 pub fn addin_function(name: &str) -> Option<&'static str> {
     Some(
         match name.strip_prefix("COM.SUN.STAR.SHEET.ADDIN.PRICINGFUNCTIONS.GETOPT")? {
@@ -123,6 +125,7 @@ const FUNCTION_NAMESPACES: [&str; 6] = [
 ];
 
 /// The number of characters of the namespace prefix that `raw` carries, 0 when it has none.
+#[must_use]
 pub fn namespace_len(raw: &str) -> usize {
     let up = raw.to_ascii_uppercase();
     FUNCTION_NAMESPACES
@@ -134,6 +137,7 @@ pub fn namespace_len(raw: &str) -> usize {
 /// The characters of the formula `source` as a user sees them: those of its text without the
 /// namespace prefix of the functions, so `_xlfn.CONCAT(…)` and `COM.MICROSOFT.CONCAT(…)` count as
 /// `CONCAT(…)`. A text that is not a formula counts as it is.
+#[must_use]
 pub fn visible_length(source: &str) -> usize {
     let total = source.chars().count();
     let Ok(expr) = crate::parse::parse(source) else {
@@ -231,6 +235,7 @@ fn expr(out: &mut String, e: &Expr, home: &str, syn: &CalcSyntax) {
 
 /// `e` in LibreOffice notation, without the leading `=`. `home` is the sheet the
 /// formula is in.
+#[must_use]
 pub fn to_calc(e: &Expr, home: &str, syn: &CalcSyntax) -> String {
     let mut out = String::new();
     expr(&mut out, e, home, syn);

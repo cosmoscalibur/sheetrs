@@ -52,12 +52,14 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
 type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
 
 /// Rule that detects error-prone functions like VLOOKUP, HLOOKUP, and LOOKUP.
+#[derive(Debug)]
 pub struct ErrorProneFunctionsRule {
     /// Per-sheet collected cells with function index.
     sheet_cells: SheetCellMap,
 }
 
 impl ErrorProneFunctionsRule {
+    #[must_use]
     pub fn new(_config: &LinterConfig) -> Self {
         Self {
             sheet_cells: HashMap::new(),

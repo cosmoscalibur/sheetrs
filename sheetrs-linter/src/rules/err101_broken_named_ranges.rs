@@ -35,6 +35,7 @@ use sheetrs_core::reader::Workbook;
 /// Rule that identifies broken named ranges (references to invalid/deleted locations)
 ///
 /// Checks all defined names (named ranges) for reference strings containing "#REF!".
+#[derive(Debug)]
 pub struct BrokenNamedRangesRule;
 
 /// Incident data for ERR101.

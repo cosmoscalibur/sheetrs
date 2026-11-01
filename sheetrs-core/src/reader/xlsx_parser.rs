@@ -110,6 +110,7 @@ pub fn get_xlsx_sheet_path(
 ///
 /// Targets are relative to `xl/` (`worksheets/sheet1.xml`) or absolute part
 /// names (`/xl/worksheets/sheet1.xml`).
+#[must_use]
 pub fn workbook_part_name(target: &str) -> String {
     match target.strip_prefix('/') {
         Some(part) => part.to_string(),
@@ -373,6 +374,7 @@ fn count_sheet_objects(
 }
 
 /// Handles parsing of .xlsx workbook.xml, worksheets/*.xml and other parts
+#[derive(Debug)]
 pub struct XlsxReader<'a, R: std::io::Read + std::io::Seek> {
     archive: &'a mut ZipArchive<R>,
     shared_strings: Vec<Arc<str>>,
@@ -1123,6 +1125,7 @@ fn bracket_group_end(text: &str, at: usize) -> usize {
 /// sheet (past column `XFD` or row 1,048,576, or before the first) is `Sheet!#REF!`, with the sheet
 /// it was on (`home_sheet` for one without qualifier): LibreOffice reads that as `#REF!`, which is
 /// what it computes for a formula it moves outside the sheet.
+#[must_use]
 pub fn translate_shared_formula(
     formula: &str,
     row_shift: i32,
@@ -1724,6 +1727,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
 /// Dynamic array formulas (`cm`) cache `#VALUE!` and keep their result in a
 /// rich value (`vm`), such as a spill error. A `#VALUE!` of any formula that
 /// holds `:` is read the same way (#62).
+#[must_use]
 pub fn is_array_error_placeholder(err: &str, formula: &str, is_array: bool) -> bool {
     err == "#VALUE!" && (is_array || formula.contains(':'))
 }

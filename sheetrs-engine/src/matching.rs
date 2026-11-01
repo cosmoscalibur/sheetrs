@@ -7,6 +7,7 @@
 use crate::options::{Search, SearchMode};
 use fancy_regex::Regex;
 
+#[derive(Debug)]
 pub enum Matcher {
     /// No special characters: compare directly.
     Plain {

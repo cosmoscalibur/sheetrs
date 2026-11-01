@@ -59,6 +59,7 @@ use std::collections::{HashMap, HashSet};
 ///
 /// Note: Whole column/row references (e.g., `A:A`, `1:1`) are not matched by the cell reference
 /// pattern and are flagged by rule REF307.
+#[derive(Debug)]
 pub struct CircularReferenceRule {
     /// Formula cells whose saved value is an error: how a spreadsheet stores a circular
     /// result, so a loop through one of them is active.
@@ -66,6 +67,7 @@ pub struct CircularReferenceRule {
 }
 
 impl CircularReferenceRule {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             errored: HashSet::new(),

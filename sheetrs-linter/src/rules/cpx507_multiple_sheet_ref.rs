@@ -34,6 +34,7 @@ use sheetrs_core::reader::{Cell, Sheet};
 use std::collections::HashSet;
 
 /// Rule that identifies formulas referencing many different sheets.
+#[derive(Debug)]
 pub struct MultipleSheetRefRule {
     /// Maximum allowed distinct sheet references before flagging.
     max_sheet_refs: usize,
@@ -41,8 +42,9 @@ pub struct MultipleSheetRefRule {
 
 impl MultipleSheetRefRule {
     /// Create a new instance from configuration.
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
-        let max_sheet_refs = config.get_param_int("max_sheet_refs", None).unwrap_or(3) as usize;
+        let max_sheet_refs = config.param_int("max_sheet_refs", None).unwrap_or(3) as usize;
         Self { max_sheet_refs }
     }
 }

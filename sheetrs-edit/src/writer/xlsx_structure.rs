@@ -26,12 +26,12 @@ pub(super) struct SheetStructure<'a> {
 
 impl SheetStructure<'_> {
     /// Whether the sheet has rows or columns deleted.
-    pub fn changes_layout(&self) -> bool {
+    pub(super) fn changes_layout(&self) -> bool {
         !self.rows.is_empty() || !self.cols.is_empty()
     }
 
     /// The text of a formula of this sheet after the plan, `None` when it does not change.
-    pub fn rewrite(&self, formula: &str) -> Result<Option<String>> {
+    pub(super) fn rewrite(&self, formula: &str) -> Result<Option<String>> {
         if formula.is_empty()
             || (!self.changes_layout() && !self.plan.may_reach_edited_sheet(formula))
         {
@@ -42,7 +42,7 @@ impl SheetStructure<'_> {
 
     /// `A1`, `A1:B2`, `C:D` or `3:5` once the plan is applied, `None` when no cell of it remains.
     /// A text that is none of them (names) is returned as it is.
-    pub fn range_text(&self, range: &str) -> Option<String> {
+    pub(super) fn range_text(&self, range: &str) -> Option<String> {
         use sheetrs_formula::addr::{col_name, parse_col, parse_row};
         if let Some((a, b)) = range.split_once(':') {
             if let (Some((c0, _)), Some((c1, _))) = (parse_col(a), parse_col(b)) {
@@ -77,7 +77,7 @@ impl SheetStructure<'_> {
 
     /// A list of ranges separated by spaces (`sqref`) once the plan is applied, `None` when no
     /// cell of any remains.
-    pub fn sqref_text(&self, sqref: &str) -> Option<String> {
+    pub(super) fn sqref_text(&self, sqref: &str) -> Option<String> {
         let kept: Vec<String> = sqref
             .split_whitespace()
             .filter_map(|range| self.range_text(range))

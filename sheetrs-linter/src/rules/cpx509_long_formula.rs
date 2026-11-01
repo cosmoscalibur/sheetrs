@@ -31,6 +31,7 @@ use crate::violation::RuleId;
 ///
 /// This walker rule is a no-op. Actual violations are emitted by CPX504's
 /// `on_cell` to enforce the dependency cascade.
+#[derive(Debug)]
 pub struct LongFormulaRule;
 
 impl WalkerRule for LongFormulaRule {

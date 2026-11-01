@@ -48,6 +48,7 @@ static DOUBLE_OP_RE: LazyLock<Regex> =
 static STRING_LITERAL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""[^"]*""#).unwrap());
 
 /// Rule that identifies double operators in formulas.
+#[derive(Debug)]
 pub struct DoubleOperatorRule {
     /// Whether to allow `--` as intentional double-negative coercion.
     allow_double_negative: bool,
@@ -55,10 +56,11 @@ pub struct DoubleOperatorRule {
 
 impl DoubleOperatorRule {
     /// Create a new instance with configuration.
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         Self {
             allow_double_negative: config
-                .get_param_bool("calc203_allow_double_negative", None)
+                .param_bool("calc203_allow_double_negative", None)
                 .unwrap_or(false),
         }
     }

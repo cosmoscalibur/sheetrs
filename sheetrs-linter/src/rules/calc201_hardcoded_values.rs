@@ -67,12 +67,14 @@ static NUMBER_RE: LazyLock<Regex> =
 /// Walks each cell; for cells containing formulas, extracts all numeric
 /// constants, filters out ignored values, and emits a single violation
 /// per cell listing every unique hardcoded constant found.
+#[derive(Debug)]
 pub struct HardcodedValuesInFormulasRule {
     config: LinterConfig,
 }
 
 impl HardcodedValuesInFormulasRule {
     /// Create a new rule instance.
+    #[must_use]
     pub fn new(config: &LinterConfig) -> Self {
         Self {
             config: config.clone(),
@@ -202,7 +204,7 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
         if let Some(formula) = cell.as_formula() {
             let ignored_values = self
                 .config
-                .get_param_float_array("ignore_hardcoded_num_values", Some(&sheet.name))
+                .param_float_array("ignore_hardcoded_num_values", Some(&sheet.name))
                 .unwrap_or_else(|| {
                     vec![
                         0.0, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 12.0, 24.0, 30.0, 31.0,
@@ -212,12 +214,12 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
 
             let ignore_ints = self
                 .config
-                .get_param_bool("ignore_hardcoded_int_values", Some(&sheet.name))
+                .param_bool("ignore_hardcoded_int_values", Some(&sheet.name))
                 .unwrap_or(false);
 
             let ignore_pow10 = self
                 .config
-                .get_param_bool("ignore_hardcoded_power_of_ten", Some(&sheet.name))
+                .param_bool("ignore_hardcoded_power_of_ten", Some(&sheet.name))
                 .unwrap_or(true);
 
             let values =

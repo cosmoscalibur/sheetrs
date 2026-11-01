@@ -10,6 +10,7 @@ use zip::ZipArchive;
 pub mod excel_error;
 pub mod ods_parser;
 pub mod parser_utils;
+mod source;
 pub mod workbook;
 pub mod xlsx_parser;
 
@@ -17,6 +18,7 @@ use self::ods_parser::OdsReader;
 use self::xlsx_parser::XlsxReader;
 pub use excel_error::ExcelError;
 pub use sheetrs_formula::grid::Grid;
+pub use source::{Format, Source};
 pub use workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, NumFmt, Sheet, Workbook,
 };
@@ -64,7 +66,7 @@ impl GridSink {
     }
 
     /// The cells read go to the sheets, with no room left over.
-    pub fn into_sheets(self, sheets: &mut [Sheet]) {
+    pub(crate) fn into_sheets(self, sheets: &mut [Sheet]) {
         for (sheet, mut cells) in sheets.iter_mut().zip(self.sheets) {
             cells.shrink_to_fit();
             sheet.cells = cells;

@@ -19,7 +19,7 @@ pub(crate) struct Bands(Vec<(u32, u32)>, Vec<u32>);
 
 impl Bands {
     /// The bands of `ranges`, which may overlap or touch.
-    pub fn new(mut ranges: Vec<(u32, u32)>) -> Self {
+    pub(crate) fn new(mut ranges: Vec<(u32, u32)>) -> Self {
         ranges.sort_unstable();
         let mut merged: Vec<(u32, u32)> = Vec::with_capacity(ranges.len());
         for (first, last) in ranges {
@@ -40,7 +40,7 @@ impl Bands {
         Self(merged, deleted_before_each)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
@@ -58,13 +58,13 @@ impl Bands {
     }
 
     /// How many of `first..first + count` stay.
-    pub fn kept_in(&self, first: u32, count: u32) -> u32 {
+    pub(crate) fn kept_in(&self, first: u32, count: u32) -> u32 {
         let end = first.saturating_add(count);
         count - (self.deleted_before(end) - self.deleted_before(first))
     }
 
     /// Whether `index` is deleted.
-    pub fn contains(&self, index: u32) -> bool {
+    pub(crate) fn contains(&self, index: u32) -> bool {
         self.0
             .binary_search_by(|&(first, last)| {
                 if index < first {
@@ -82,29 +82,29 @@ impl Bands {
     /// is deleted. LibreOffice keeps the position of a shape whose cell goes and anchors it to the
     /// cell that is there now, which is the cell of that index when the rows or columns that pass
     /// have the same height or width; the size of those is not in the file.
-    pub fn anchored_at(&self, index: u32) -> u32 {
+    pub(crate) fn anchored_at(&self, index: u32) -> u32 {
         self.moved(index).unwrap_or(index)
     }
 
     /// The index that the first row or column at or after `index` that stays has once the bands
     /// are gone.
-    pub fn shifted(&self, index: u32) -> u32 {
+    pub(crate) fn shifted(&self, index: u32) -> u32 {
         index - self.deleted_before(index)
     }
 
     /// Whether `index` is deleted together with the index before it, which a shape anchored
     /// there has in a band that starts above it.
-    pub fn deleted_below_a_deleted(&self, index: u32) -> bool {
+    pub(crate) fn deleted_below_a_deleted(&self, index: u32) -> bool {
         index > 0 && self.contains(index) && self.contains(index - 1)
     }
 
     /// Where `index` is once the bands are gone, `None` when it is deleted.
-    pub fn moved(&self, index: u32) -> Option<u32> {
+    pub(crate) fn moved(&self, index: u32) -> Option<u32> {
         (!self.contains(index)).then(|| index - self.deleted_before(index))
     }
 
     /// The bounds of `first..=last` once the bands are gone, `None` when nothing of it remains.
-    pub fn span(&self, first: u32, last: u32) -> Option<(u32, u32)> {
+    pub(crate) fn span(&self, first: u32, last: u32) -> Option<(u32, u32)> {
         let band_of = |index: u32| self.0.iter().find(|&&(a, b)| (a..=b).contains(&index));
         let first = band_of(first).map_or(first, |&(_, b)| b.saturating_add(1));
         let last = match band_of(last) {
@@ -119,7 +119,7 @@ impl Bands {
 
     /// The index in the input of the row (or column) that is at `current` once the bands are
     /// gone: what a position given after an earlier deletion refers to.
-    pub fn input_index(&self, current: u32) -> u32 {
+    pub(crate) fn input_index(&self, current: u32) -> u32 {
         let mut index = current;
         for &(first, last) in &self.0 {
             if first <= index {
@@ -132,12 +132,12 @@ impl Bands {
     }
 
     /// The bands as inclusive `(first, last)` ranges, in order.
-    pub fn ranges(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+    pub(crate) fn ranges(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
         self.0.iter().copied()
     }
 
     /// The bands as `(first, count)`, the last one first.
-    pub fn last_first(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+    pub(crate) fn last_first(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
         self.0
             .iter()
             .rev()
@@ -255,7 +255,7 @@ pub(crate) struct StructureEdits {
 impl StructureEdits {
     /// The plan of a command. A scope on a removed sheet is dropped with its sheet; a scope on a
     /// sheet the workbook does not have is an error.
-    pub fn new(
+    pub(crate) fn new(
         sheets: Option<&[String]>,
         removed_sheets: &HashSet<String>,
         delete_rows: &[ValueScope],
@@ -311,12 +311,12 @@ impl StructureEdits {
     }
 
     /// Whether the command moves or deletes any cell or reference.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.rows.is_empty() && self.cols.is_empty() && self.removed_sheets.is_empty()
     }
 
     /// Whether the plan deletes any row or column.
-    pub fn deletes_rows_or_columns(&self) -> bool {
+    pub(crate) fn deletes_rows_or_columns(&self) -> bool {
         !self.rows.is_empty() || !self.cols.is_empty()
     }
 
@@ -325,7 +325,7 @@ impl StructureEdits {
     /// spans sheets it does not name), so no formula in it can change. Only for names whose text
     /// is the same in the XML (no `&`, quotes or angle brackets to escape); otherwise `None`, and
     /// the part is read.
-    pub fn text_names_no_edited_sheet(
+    pub(crate) fn text_names_no_edited_sheet(
         &self,
         text: impl std::io::Read,
     ) -> std::io::Result<Option<bool>> {
@@ -358,7 +358,7 @@ impl StructureEdits {
     /// Whether `formula`, held by a sheet whose layout does not change, can have a reference
     /// the plan changes: only if it names an edited or removed sheet, or holds a reference across
     /// sheets, which spans sheets it does not name.
-    pub fn may_reach_edited_sheet(&self, formula: &str) -> bool {
+    pub(crate) fn may_reach_edited_sheet(&self, formula: &str) -> bool {
         self.mentions.as_ref().is_none_or(|finder| {
             finder.is_match(formula) || {
                 let mut scan = SpanScan::default();
@@ -369,12 +369,12 @@ impl StructureEdits {
     }
 
     /// The deleted rows of `sheet`.
-    pub fn rows_of(&self, sheet: &str) -> Bands {
+    pub(crate) fn rows_of(&self, sheet: &str) -> Bands {
         self.rows.get(sheet).cloned().unwrap_or_default()
     }
 
     /// The deleted columns of `sheet`.
-    pub fn cols_of(&self, sheet: &str) -> Bands {
+    pub(crate) fn cols_of(&self, sheet: &str) -> Bands {
         self.cols.get(sheet).cloned().unwrap_or_default()
     }
 
@@ -388,7 +388,7 @@ impl StructureEdits {
     /// depend on each other, because a reference moves only with the rows and columns of the sheet
     /// it names (a reference that spans sheets would tie them, and is refused), so the order
     /// between sheets is free; they go by name, only so that it is always the same.
-    pub fn edits(&self) -> Vec<Edit<'_>> {
+    pub(crate) fn edits(&self) -> Vec<Edit<'_>> {
         let mut sheets: Vec<&str> = self
             .rows
             .keys()
@@ -425,7 +425,7 @@ impl StructureEdits {
 
     /// The text of the formula `source` held by a cell of `home_sheet` once the plan is applied,
     /// `None` when it does not change.
-    pub fn rewrite_formula(
+    pub(crate) fn rewrite_formula(
         &self,
         edits: &[Edit<'_>],
         source: &str,
@@ -441,7 +441,7 @@ impl StructureEdits {
 
     /// The range `r0..=r1` by `c0..=c1` of `sheet` once the plan is applied, `None` when no cell
     /// of it remains.
-    pub fn range(
+    pub(crate) fn range(
         &self,
         sheet: &str,
         r0: u32,

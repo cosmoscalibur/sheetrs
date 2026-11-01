@@ -152,6 +152,7 @@ impl Value {
 /// and one that breaks ties by case, lowercase first. See [`crate::collate`].
 pub type Coll = Collator;
 
+#[derive(Debug)]
 pub struct Collators {
     ci: Coll,
     cs: Coll,

@@ -36,6 +36,7 @@ use sheetrs_core::reader::Workbook;
 /// - Uses January 1, 1904 as the epoch instead of January 1, 1900
 /// - Can cause date values to be off by 4 years and 1 day when shared
 /// - Most modern spreadsheets use the 1900 date system (default)
+#[derive(Debug)]
 pub struct DateSystem1904Rule;
 
 /// Incident data for FILE1003 — no variable fields.

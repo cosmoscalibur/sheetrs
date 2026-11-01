@@ -4,7 +4,7 @@ use anyhow::Result;
 use serde::Serialize;
 use sheetrs_core::reader::parser_utils::column_letters;
 use sheetrs_core::reader::{
-    Cell, CellSink, Sheet, Workbook, read_workbook_from_reader_into, read_workbook_into,
+    Cell, CellSink, Sheet, Source, Workbook, read_workbook_from_reader_into, read_workbook_into,
 };
 use std::io::{Read, Seek};
 use std::path::Path;
@@ -51,7 +51,7 @@ pub struct SheetStats {
 
 /// What is counted of the cells of one sheet as they are read.
 #[derive(Debug, Default, Clone)]
-pub struct Tally {
+pub(crate) struct Tally {
     used_cells: u64,
     formulas: u64,
     errors: u64,
@@ -61,7 +61,7 @@ pub struct Tally {
 
 /// Counts the cells of each sheet as the reader hands them over, so the workbook's cells are never
 /// held in memory.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StatsSink {
     sheets: Vec<Tally>,
 }
@@ -101,6 +101,20 @@ impl WorkbookStats {
         Ok(Self::from_workbook(&workbook, &sink))
     }
 
+    /// The statistics of a workbook given as a [`Source`], read in a single streaming pass.
+    ///
+    /// # Errors
+    ///
+    /// When the workbook cannot be read (see [`Source::read_workbook`]).
+    pub fn from_source(source: &Source) -> Result<Self> {
+        match source {
+            Source::File { path, .. } => Self::from_path(path),
+            Source::Bytes { data, format } => {
+                Self::from_reader(std::io::Cursor::new(data), Some(format.extension()))
+            }
+        }
+    }
+
     /// The statistics of a workbook read from `reader`; `extension` (`xlsx`, `xlsm`, `ods`) tells
     /// its format. The reported file size is 0: a reader does not know it.
     pub fn from_reader<R: Read + Seek>(reader: R, extension: Option<&str>) -> Result<Self> {
@@ -110,6 +124,7 @@ impl WorkbookStats {
     }
 
     /// The statistics of `workbook`, whose cells were counted by `sink` while it was read.
+    #[must_use]
     pub fn from_workbook(workbook: &Workbook, sink: &StatsSink) -> Self {
         let sheets: Vec<SheetStats> = workbook
             .sheets
@@ -172,6 +187,7 @@ fn is_used(cell: &Cell) -> bool {
 }
 
 /// Share of `part` in `total`, as a percentage (0 when `total` is 0).
+#[must_use]
 pub fn percentage(part: u64, total: u64) -> f64 {
     if total == 0 {
         0.0

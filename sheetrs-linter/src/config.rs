@@ -35,26 +35,38 @@ impl<'de> Deserialize<'de> for LinterConfig {
         let RawLinterConfig { global, sheets } = RawLinterConfig::deserialize(deserializer)?;
         let config = Self { global, sheets };
         config
-            .validate_rules(&crate::rules::registry::get_all_valid_tokens())
+            .validate_rules(&crate::rules::registry::valid_tokens())
             .map_err(serde::de::Error::custom)?;
         Ok(config)
     }
 }
 
 impl LinterConfig {
-    /// Load and validate the configuration in a TOML file
+    /// Load and validate the configuration in a TOML file.
+    ///
+    /// # Errors
+    ///
+    /// When the file cannot be read, or its content is not a valid configuration (see
+    /// [`from_toml`](Self::from_toml)).
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(path)?;
         Self::from_toml(&content)
     }
 
-    /// Parse and validate a configuration in TOML
+    /// Parse and validate a configuration in TOML.
+    ///
+    /// # Errors
+    ///
+    /// When the text is not valid TOML of the configuration, names a rule or category the linter
+    /// does not know, puts `ALL` among the disabled rules, or gives a parameter a value outside
+    /// its range.
     pub fn from_toml(content: &str) -> Result<Self> {
         let config: LinterConfig = toml::from_str(content)?;
         Ok(config)
     }
 
     /// Check if a rule is enabled globally
+    #[must_use]
     pub fn is_rule_enabled(&self, rule_id: &str) -> bool {
         // If explicitly disabled, return false
         if self
@@ -80,6 +92,7 @@ impl LinterConfig {
     }
 
     /// Check if a rule is enabled for a specific sheet
+    #[must_use]
     pub fn is_rule_enabled_for_sheet(&self, rule_id: &str, sheet_name: &str) -> bool {
         // First check global setting
         if !self.is_rule_enabled(rule_id) {
@@ -194,21 +207,24 @@ impl LinterConfig {
     const FEATURE_KEYS: &'static [&'static str] = &["enable_features", "enable-features"];
 
     /// Whether the global parameter `key` is set.
+    #[must_use]
     pub fn has_param(&self, key: &str) -> bool {
         self.global.params.contains_key(key)
     }
 
     /// Whether the feature `name` is listed in `enable_features` (any case). Every feature is off
     /// unless listed.
+    #[must_use]
     pub fn feature_enabled(&self, name: &str) -> bool {
         Self::FEATURE_KEYS.iter().any(|key| {
-            self.get_param_array(key, None)
+            self.param_array(key, None)
                 .is_some_and(|list| list.iter().any(|n| n.trim().eq_ignore_ascii_case(name)))
         })
     }
 
     /// Get a parameter value with fallback chain: sheet -> global
-    pub fn get_param_int(&self, key: &str, sheet_name: Option<&str>) -> Option<i64> {
+    #[must_use]
+    pub fn param_int(&self, key: &str, sheet_name: Option<&str>) -> Option<i64> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
             && let Some(value) = sheet.params.get(key).and_then(|v| v.as_integer())
@@ -221,7 +237,8 @@ impl LinterConfig {
     }
 
     /// Get a parameter value as string with fallback chain: sheet -> global
-    pub fn get_param_str<'a>(&'a self, key: &str, sheet_name: Option<&str>) -> Option<&'a str> {
+    #[must_use]
+    pub fn param_str<'a>(&'a self, key: &str, sheet_name: Option<&str>) -> Option<&'a str> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
             && let Some(value) = sheet.params.get(key).and_then(|v| v.as_str())
@@ -234,7 +251,8 @@ impl LinterConfig {
     }
 
     /// Get a parameter value as array with fallback chain: sheet -> global
-    pub fn get_param_array(&self, key: &str, sheet_name: Option<&str>) -> Option<Vec<String>> {
+    #[must_use]
+    pub fn param_array(&self, key: &str, sheet_name: Option<&str>) -> Option<Vec<String>> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
             && let Some(arr) = sheet.params.get(key).and_then(|v| {
@@ -259,7 +277,8 @@ impl LinterConfig {
     }
 
     /// Get a parameter value as float array with fallback chain: sheet -> global
-    pub fn get_param_float_array(&self, key: &str, sheet_name: Option<&str>) -> Option<Vec<f64>> {
+    #[must_use]
+    pub fn param_float_array(&self, key: &str, sheet_name: Option<&str>) -> Option<Vec<f64>> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
             && let Some(arr) = sheet.params.get(key).and_then(|v| {
@@ -284,7 +303,8 @@ impl LinterConfig {
     }
 
     /// Get a parameter value as boolean with fallback chain: sheet -> global
-    pub fn get_param_bool(&self, key: &str, sheet_name: Option<&str>) -> Option<bool> {
+    #[must_use]
+    pub fn param_bool(&self, key: &str, sheet_name: Option<&str>) -> Option<bool> {
         // Try sheet-specific first
         if let Some(sheet) = sheet_name.and_then(|name| self.sheets.get(name))
             && let Some(value) = sheet.params.get(key).and_then(|v| v.as_bool())

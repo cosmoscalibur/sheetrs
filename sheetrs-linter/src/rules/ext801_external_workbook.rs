@@ -48,6 +48,7 @@ use std::sync::LazyLock;
 type SheetCellMap = HashMap<u16, Vec<(u32, u32, usize)>>;
 
 /// Rule that detects references to external workbooks
+#[derive(Debug)]
 pub struct ExternalWorkbooksRule {
     /// Cells referencing external workbooks per sheet.
     sheet_cells: SheetCellMap,
@@ -55,6 +56,7 @@ pub struct ExternalWorkbooksRule {
 
 impl ExternalWorkbooksRule {
     /// Create a new instance of the rule.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheet_cells: HashMap::new(),

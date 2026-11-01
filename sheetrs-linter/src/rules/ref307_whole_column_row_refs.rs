@@ -51,6 +51,7 @@ static ROW_PATTERN: LazyLock<Regex> =
 type SheetCellMap = HashMap<u16, Vec<(u32, u32, bool)>>;
 
 /// Rule that detects whole-column (e.g., A:A) or whole-row (e.g., 1:1) references.
+#[derive(Debug)]
 pub struct WholeColumnRowRefsRule {
     /// Per-sheet collected cells.
     sheet_cells: SheetCellMap,
@@ -58,6 +59,7 @@ pub struct WholeColumnRowRefsRule {
 
 impl WholeColumnRowRefsRule {
     /// Create a new instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheet_cells: HashMap::new(),

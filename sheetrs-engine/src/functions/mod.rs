@@ -100,12 +100,13 @@ pub type EagerFn = fn(&mut Engine, &[Value]) -> Res<Value>;
 /// Special forms receive their arguments unevaluated.
 pub type LazyFn = fn(&mut Engine, &[Expr]) -> Res<Value>;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Imp {
     Eager(EagerFn),
     Lazy(LazyFn),
 }
 
+#[derive(Debug)]
 pub struct FuncDef {
     pub ns: Ns,
     pub name: &'static str,

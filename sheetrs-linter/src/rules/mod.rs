@@ -110,7 +110,7 @@ use std::collections::{HashMap, HashSet};
 pub type CellDependencyMap = HashMap<(u16, u32, u32), Vec<(u16, u32, u32)>>;
 
 /// Shared context for walker rules during single-pass execution
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct LinterContext {
     /// Map sheet names to indices for reference resolution
     pub name_to_index: HashMap<String, u16>,
@@ -160,7 +160,7 @@ impl LinterContext {
 }
 
 /// Trait for optimized single-pass walker rules
-pub trait WalkerRule: Send {
+pub trait WalkerRule: Send + std::fmt::Debug {
     /// Unique rule identifier
     fn id(&self) -> RuleId;
 
@@ -255,6 +255,7 @@ pub enum RuleCategory {
 
 impl RuleCategory {
     /// Get the human-readable string representation of the category
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             RuleCategory::ExcelErrors => "Excel Errors",

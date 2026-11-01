@@ -40,6 +40,7 @@ use std::collections::HashMap;
 type SheetCellMap = HashMap<u16, Vec<(u32, u32)>>;
 
 /// Rule that detects numbers stored as text
+#[derive(Debug)]
 pub struct InconsistentNumberFormatRule {
     /// Per-sheet collected cells.
     sheet_cells: SheetCellMap,
@@ -47,6 +48,7 @@ pub struct InconsistentNumberFormatRule {
 
 impl InconsistentNumberFormatRule {
     /// Create a new instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheet_cells: HashMap::new(),

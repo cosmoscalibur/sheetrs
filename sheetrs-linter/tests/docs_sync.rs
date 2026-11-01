@@ -2,7 +2,7 @@
 //! sync with the rule registry.
 
 use sheetrs_linter::LinterConfig;
-use sheetrs_linter::rules::registry::get_all_rule_metadata;
+use sheetrs_linter::rules::registry::rule_metadata;
 use std::collections::BTreeSet;
 
 const README: &str = include_str!("../README.md");
@@ -32,7 +32,7 @@ fn readme_lists_each_registered_rule_once() {
     );
 
     let config = LinterConfig::default();
-    let registered: BTreeSet<&str> = get_all_rule_metadata(&config)
+    let registered: BTreeSet<&str> = rule_metadata(&config)
         .iter()
         .map(|m| m.id.as_str())
         .collect();

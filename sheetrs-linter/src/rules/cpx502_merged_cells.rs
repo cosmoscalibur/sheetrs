@@ -26,6 +26,7 @@ use crate::violation::{
 use sheetrs_core::reader::Sheet;
 
 /// Rule that detects merged cells
+#[derive(Debug)]
 pub struct MergedCellsRule;
 
 /// Incident data for CPX502.

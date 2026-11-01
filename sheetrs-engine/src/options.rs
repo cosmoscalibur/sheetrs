@@ -103,6 +103,7 @@ impl Default for Search {
 }
 
 /// A locale of the generated table (`locale_data.rs`), as LibreOffice reports it.
+#[derive(Debug)]
 pub struct LocaleRow {
     pub tag: &'static str,
     /// The language id of `[$-409]` in a format code.
