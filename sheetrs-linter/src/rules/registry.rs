@@ -13,9 +13,9 @@ use super::{
     ref301_unused_named_ranges, ref302_duplicate_names, ref303_empty_sheets,
     ref304_large_used_range, ref305_blank_rows_columns, ref306_unused_sheets,
     ref307_whole_column_row_refs, ref309_ref_to_empty_cell, ref310_longer_ref_expected,
-    vba1101_has_macros, vul601_duplicate_formulas, vul602_volatile_functions,
-    vul603_empty_string_test, vul604_error_prone_functions, vul605_legacy_array,
-    vul606_deprecated_func,
+    ref311_duplicate_defined_names, vba1101_has_macros, vul601_duplicate_formulas,
+    vul602_volatile_functions, vul603_empty_string_test, vul604_error_prone_functions,
+    vul605_legacy_array, vul606_deprecated_func,
 };
 use crate::config::LinterConfig;
 use crate::violation::RuleId;
@@ -41,6 +41,7 @@ pub const DEFAULT_ACTIVE_RULES: &[RuleId] = &[
     RuleId::Ref307,
     RuleId::Ref309,
     RuleId::Ref310,
+    RuleId::Ref311,
     RuleId::Int401,
     RuleId::Int402,
     RuleId::Int403,
@@ -157,6 +158,7 @@ pub fn create_all_walker_rules(config: &LinterConfig) -> Vec<Box<dyn WalkerRule>
         Box::new(ref310_longer_ref_expected::LongerRefExpectedRule::new(
             config,
         )),
+        Box::new(ref311_duplicate_defined_names::DuplicateDefinedNamesRule),
     ];
 
     // Formula Interruptions (4xx)
@@ -317,6 +319,7 @@ fn create_walker_rule(id: RuleId, config: &LinterConfig) -> Box<dyn WalkerRule> 
         RuleId::Ref310 => Box::new(ref310_longer_ref_expected::LongerRefExpectedRule::new(
             config,
         )),
+        RuleId::Ref311 => Box::new(ref311_duplicate_defined_names::DuplicateDefinedNamesRule),
         RuleId::Int401 | RuleId::Int402 | RuleId::Int403 => Box::new(InterruptionRule::new(
             InterruptionKind::from_rule_id(id).into_iter().collect(),
             config,

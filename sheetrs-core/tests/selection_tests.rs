@@ -76,7 +76,8 @@ fn expected(source: &Source, selection: &Selection, windows: &[(String, Window)]
                 } else {
                     None
                 },
-                is_array: cell.is_array && props.array,
+                // A selective read does not say whether a formula is an array formula.
+                is_array: false,
                 num_fmt: if props.number_format {
                     cell.num_fmt.clone()
                 } else {
@@ -98,13 +99,11 @@ fn all_properties() -> [Properties; 4] {
         Properties {
             value: false,
             formula: true,
-            array: true,
             number_format: false,
         },
         Properties {
             value: true,
             formula: true,
-            array: false,
             number_format: true,
         },
     ]

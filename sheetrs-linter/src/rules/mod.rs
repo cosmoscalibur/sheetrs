@@ -52,6 +52,7 @@ pub mod ref306_unused_sheets;
 pub mod ref307_whole_column_row_refs;
 pub mod ref309_ref_to_empty_cell;
 pub mod ref310_longer_ref_expected;
+pub mod ref311_duplicate_defined_names;
 
 // Rule implementations - Formula Interruptions (4xx)
 pub mod int401_interrupted_by_data;

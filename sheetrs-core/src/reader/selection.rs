@@ -5,7 +5,8 @@
 //! everything to the receiver: a sheet nobody asked for is not parsed, the reading of a sheet
 //! stops after the last row asked for, the cells outside the windows are skipped, and the
 //! properties that were not asked for are not built (the text of a formula, the format of a
-//! number). The memory of a read is that of what was asked.
+//! number). A selective read does not report whether a formula is an array formula: `is_array` is
+//! left `false`. The memory of a read is that of what was asked.
 //!
 //! Rows are read in order: the reading of a sheet ends at the first row after the last one a
 //! window reaches. An ODS has them in order by its structure. An XLSX is expected to have them
@@ -54,14 +55,11 @@ impl Window {
 /// The properties of a cell that the reader builds. What is not asked for is left empty in the
 /// [`Cell`](super::Cell) it hands over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools)] // independent choices of what to build: a set, not a state
 pub struct Properties {
     /// The cached value (`Cell::value`).
     pub value: bool,
     /// The text of the formula (`Cell::formula`).
     pub formula: bool,
-    /// Whether the formula is an array formula (`Cell::is_array`).
-    pub array: bool,
     /// The number format (`Cell::num_fmt`).
     pub number_format: bool,
 }
@@ -71,7 +69,6 @@ impl Properties {
     pub const ALL: Self = Self {
         value: true,
         formula: true,
-        array: true,
         number_format: true,
     };
 
@@ -79,7 +76,6 @@ impl Properties {
     pub const VALUE: Self = Self {
         value: true,
         formula: false,
-        array: false,
         number_format: false,
     };
 }

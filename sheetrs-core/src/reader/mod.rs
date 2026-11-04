@@ -22,8 +22,8 @@ pub use selection::{Properties, Selection, SheetInfo, Window};
 pub use sheetrs_formula::grid::Grid;
 pub use source::{Format, Source};
 pub use workbook::{
-    Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, NumFmt, Sheet,
-    SheetState, Workbook,
+    Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, NameConflict,
+    NameScope, NumFmt, Sheet, SheetState, Workbook,
 };
 
 /// Trait for spreadsheet format readers
@@ -77,6 +77,23 @@ impl GridSink {
     }
 }
 
+/// The names that were defined in more than one scope, from every scope each one was defined in:
+/// alphabetical order of the name, the workbook scope first and then the sheets in the order they
+/// were found.
+pub(crate) fn conflicts_of(scopes: HashMap<String, Vec<NameScope>>) -> Vec<NameConflict> {
+    let mut conflicts: Vec<NameConflict> = scopes
+        .into_iter()
+        .filter(|(_, scopes)| scopes.len() > 1)
+        .map(|(name, mut scopes)| {
+            // Stable: the workbook (`false`) before the sheets, which keep their order.
+            scopes.sort_by_key(|scope| matches!(scope, NameScope::Sheet(_)));
+            NameConflict { name, scopes }
+        })
+        .collect();
+    conflicts.sort_by(|a, b| a.name.cmp(&b.name));
+    conflicts
+}
+
 /// This trait defines the common interface that different file format parsers (XLSX, ODS)
 /// must implement. It allows the main logic to abstract over specific file formats.
 pub trait WorkbookReader {
@@ -121,6 +138,15 @@ pub trait WorkbookReader {
     ///
     /// When the part cannot be read or is malformed.
     fn read_defined_names(&mut self) -> Result<HashMap<String, String>>;
+
+    /// The defined names that the document defines in more than one scope (see
+    /// [`NameConflict`]), in alphabetical order. Reserved names (`_xlnm.`) are not names of the
+    /// user and are left out.
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
+    fn read_name_conflicts(&mut self) -> Result<Vec<NameConflict>>;
 
     /// Read the list of hidden sheet names
     ///
@@ -296,6 +322,7 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
     let (
         sheets,
         defined_names,
+        name_conflicts,
         hidden_sheets,
         has_macros,
         external_workbooks,
@@ -308,6 +335,7 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
         (
             reader.read_sheets_into(sink)?,
             reader.read_defined_names()?,
+            reader.read_name_conflicts()?,
             reader.read_hidden_sheets()?,
             reader.has_macros()?,
             reader.read_external_workbooks()?,
@@ -324,6 +352,7 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
         (
             sheets,
             defined_names,
+            reader.read_name_conflicts()?,
             reader.read_hidden_sheets()?,
             reader.has_macros()?,
             reader.read_external_workbooks()?,
@@ -338,6 +367,7 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
         (
             reader.read_sheets_into(sink)?,
             reader.read_defined_names()?,
+            reader.read_name_conflicts()?,
             reader.read_hidden_sheets()?,
             reader.has_macros()?,
             reader.read_external_workbooks()?,
@@ -356,6 +386,7 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
         path: Path::new("").to_path_buf(), // Default empty path for reader
         sheets,
         defined_names,
+        name_conflicts,
         hidden_sheets,
         has_macros,
         external_workbooks,

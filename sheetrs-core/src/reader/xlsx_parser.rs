@@ -13,10 +13,11 @@ use super::parser_utils::{
     attr_value, column_letters, parse_cell_range, parse_cell_ref, push_general_ref, read_text_node,
 };
 use super::{
-    Cell, CellSink, CellValue, DocumentSettings, IterationSettings, NumFmt, Properties, Selection,
-    Sheet, SheetInfo, SheetState, WorkbookReader,
+    Cell, CellSink, CellValue, DocumentSettings, IterationSettings, NameConflict, NameScope,
+    NumFmt, Properties, Selection, Sheet, SheetInfo, SheetState, WorkbookReader,
 };
 use crate::reader::ExcelError;
+use crate::reader::conflicts_of;
 use crate::reader::selection::SheetSelection;
 
 /// Resolve sheet name to its XML path in the XLSX archive
@@ -478,6 +479,10 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'_, R> {
             infos.push(SheetInfo { name, index, state });
         }
         Ok(infos)
+    }
+
+    fn read_name_conflicts(&mut self) -> Result<Vec<NameConflict>> {
+        extract_name_conflicts_from_xlsx(self.archive)
     }
 
     fn read_defined_names(&mut self) -> Result<HashMap<String, String>> {
@@ -1489,7 +1494,8 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         let mut cell = Cell {
                             value: if props.value { value } else { CellValue::Empty },
                             formula: None,
-                            is_array: is_array_formula && props.array,
+                            // A selective read does not say whether a formula is an array formula.
+                            is_array: is_array_formula && selected.is_none(),
                             num_fmt,
                         };
                         if let Some(mut f) = formula {
@@ -1976,6 +1982,57 @@ pub fn extract_hidden_sheets_from_xlsx(
         .filter(|(_, state)| *state != SheetState::Visible)
         .map(|(name, _)| name)
         .collect())
+}
+
+/// The defined names that the workbook defines in more than one scope: the same name for the
+/// workbook (no `localSheetId`) and for a sheet, or for several sheets. Reserved names (`_xlnm.`)
+/// are left out, as [`extract_defined_names_from_xlsx`] does.
+///
+/// # Errors
+///
+/// When the XML of the workbook is malformed.
+pub fn extract_name_conflicts_from_xlsx(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<Vec<NameConflict>> {
+    let sheet_names: Vec<String> = extract_sheet_states_from_xlsx(archive)?
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    let Ok(workbook_xml) = archive.by_name("xl/workbook.xml") else {
+        return Ok(Vec::new());
+    };
+    let mut reader = Reader::from_reader(BufReader::new(workbook_xml));
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    let mut scopes: HashMap<String, Vec<NameScope>> = HashMap::new();
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "definedName" => {
+                let mut name = String::new();
+                let mut local = None;
+                for attr in e.attributes().flatten() {
+                    match attr.key.as_ref() {
+                        "name" => name = attr_value(&attr)?.into_owned(),
+                        "localSheetId" => local = attr_value(&attr)?.parse::<usize>().ok(),
+                        _ => {}
+                    }
+                }
+                if name.is_empty() || name.starts_with("_xlnm.") || name.contains("_FilterDatabase")
+                {
+                    // Reserved: the application's, not the user's.
+                } else {
+                    let scope = local
+                        .and_then(|i| sheet_names.get(i))
+                        .map_or(NameScope::Workbook, |sheet| NameScope::Sheet(sheet.clone()));
+                    scopes.entry(name).or_default().push(scope);
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(conflicts_of(scopes))
 }
 
 /// The state of every sheet of the workbook (`state` of `<sheet>` in `xl/workbook.xml`), in the
@@ -2550,6 +2607,39 @@ mod tests {
             zip.write_all(text.as_bytes()).unwrap();
         }
         ZipArchive::new(zip.finish().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_name_defined_in_more_than_one_scope_is_a_conflict_and_the_reserved_ones_are_not() {
+        let mut archive = archive(&[(
+            "xl/workbook.xml",
+            r#"<workbook><sheets><sheet name="A" sheetId="1"/><sheet name="B" sheetId="2"/></sheets><definedNames>
+<definedName name="L" localSheetId="0">A!$A$1</definedName>
+<definedName name="L" localSheetId="1">B!$A$1</definedName>
+<definedName name="G">A!$A$1:$A$2</definedName>
+<definedName name="G" localSheetId="1">B!$B$1</definedName>
+<definedName name="Only" localSheetId="0">A!$C$1</definedName>
+<definedName name="_xlnm.Print_Area" localSheetId="0">A!$A$1:$C$5</definedName>
+<definedName name="_xlnm.Print_Area" localSheetId="1">B!$A$1:$C$5</definedName>
+</definedNames></workbook>"#,
+        )]);
+        let conflicts = extract_name_conflicts_from_xlsx(&mut archive).unwrap();
+        assert_eq!(
+            conflicts,
+            [
+                NameConflict {
+                    name: "G".to_string(),
+                    scopes: vec![NameScope::Workbook, NameScope::Sheet("B".to_string())],
+                },
+                NameConflict {
+                    name: "L".to_string(),
+                    scopes: vec![
+                        NameScope::Sheet("A".to_string()),
+                        NameScope::Sheet("B".to_string())
+                    ],
+                },
+            ]
+        );
     }
 
     #[test]

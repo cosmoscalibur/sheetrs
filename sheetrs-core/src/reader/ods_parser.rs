@@ -4,7 +4,10 @@ use super::parser_utils::{attr_value, push_general_ref, read_text_node};
 use super::workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, Sheet,
 };
-use super::{CellSink, NumFmt, Properties, Selection, SheetInfo, SheetState, WorkbookReader};
+use super::{
+    CellSink, NameConflict, NameScope, NumFmt, Properties, Selection, SheetInfo, SheetState,
+    WorkbookReader,
+};
 use crate::error::Result;
 use crate::reader::ExcelError;
 use crate::reader::selection::SheetSelection;
@@ -786,6 +789,8 @@ struct OdsData {
     /// Named ranges, named expressions and named database ranges, read in the same pass as the
     /// cells.
     defined_names: HashMap<String, String>,
+    /// The names defined in more than one scope.
+    name_conflicts: Vec<NameConflict>,
 }
 
 /// ODS (`OpenDocument` Spreadsheet) reader implementation
@@ -830,6 +835,13 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                 state: sheet.state,
             })
             .collect())
+    }
+
+    fn read_name_conflicts(&mut self) -> Result<Vec<NameConflict>> {
+        if self.data.is_none() {
+            self.read_sheets()?;
+        }
+        Ok(self.data.as_ref().unwrap().name_conflicts.clone())
     }
 
     fn read_defined_names(&mut self) -> Result<HashMap<String, String>> {
@@ -959,6 +971,8 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
         let mut remaining = selection.map_or(0, Selection::sheet_count);
         let mut finished = false;
         let mut defined_names: HashMap<String, String> = HashMap::new();
+        // Every scope each name is defined in, to tell the ones defined more than once.
+        let mut name_scopes: HashMap<String, Vec<NameScope>> = HashMap::new();
         let mut in_named_expressions = false;
         let mut in_database_ranges = false;
         // Whether the reader is inside a `<table:table>`: a name written there belongs to its sheet.
@@ -1965,7 +1979,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                             } else {
                                                 None
                                             },
-                                            is_array: is_matrix_array && props.array,
+                                            is_array: is_matrix_array && selection.is_none(),
                                             num_fmt: num_fmt.clone(),
                                         };
                                         cells_max =
@@ -2100,7 +2114,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                             } else {
                                                 None
                                             },
-                                            is_array: is_matrix_array && props.array,
+                                            is_array: is_matrix_array && selection.is_none(),
                                             num_fmt: num_fmt.clone(),
                                         };
                                         cells_max =
@@ -2333,6 +2347,11 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 None,
                                 &mut external_workbooks,
                             );
+                            let scope = match (in_table, current_sheet.as_ref()) {
+                                (true, Some(sheet)) => NameScope::Sheet(sheet.name.clone()),
+                                _ => NameScope::Workbook,
+                            };
+                            name_scopes.entry(name.clone()).or_default().push(scope);
                             defined_names.insert(name, normalized);
                         }
                     }
@@ -2360,6 +2379,10 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                     None,
                                     &mut external_workbooks,
                                 );
+                                name_scopes
+                                    .entry(name.clone())
+                                    .or_default()
+                                    .push(NameScope::Workbook);
                                 defined_names.insert(name, normalized);
                             }
                             database_range_targets.push(target);
@@ -2442,6 +2465,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
             has_macros,
             external_workbooks,
             defined_names,
+            name_conflicts: super::conflicts_of(name_scopes),
         });
 
         Ok(sheets)
@@ -3359,6 +3383,47 @@ mod tests {
         assert_eq!(external_paths("of:=['book.ods'#Sheet1.A1]"), ["book.ods"]);
         assert_eq!(external_paths("of:=[book.ods#Sheet1.A1]"), ["book.ods"]);
         assert_eq!(external_paths("of:=['#Sheet1.A1]"), ["'"]);
+    }
+
+    #[test]
+    fn a_name_in_two_sheets_or_in_a_sheet_and_the_document_is_a_conflict_in_ods() {
+        use std::io::Write;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zip.start_file("content.xml", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><office:body><office:spreadsheet>
+<table:table table:name="A"><table:table-row><table:table-cell/></table:table-row>
+<table:named-expressions><table:named-expression table:name="L" table:base-cell-address="$A.$A$1" table:expression="of:=1"/><table:named-expression table:name="G" table:base-cell-address="$A.$A$1" table:expression="of:=2"/></table:named-expressions></table:table>
+<table:table table:name="B"><table:table-row><table:table-cell/></table:table-row>
+<table:named-expressions><table:named-expression table:name="L" table:base-cell-address="$B.$A$1" table:expression="of:=3"/></table:named-expressions></table:table>
+<table:named-expressions><table:named-expression table:name="G" table:base-cell-address="$A.$A$1" table:expression="of:=4"/><table:named-range table:name="Own" table:base-cell-address="$A.$A$1" table:cell-range-address="$A.$A$1"/></table:named-expressions>
+</office:spreadsheet></office:body></office:document-content>"#,
+        )
+        .unwrap();
+        let mut archive = ZipArchive::new(zip.finish().unwrap()).unwrap();
+        let mut reader = OdsReader::new(&mut archive).unwrap();
+        let conflicts = reader.read_name_conflicts().unwrap();
+        assert_eq!(
+            conflicts,
+            [
+                NameConflict {
+                    name: "G".to_string(),
+                    scopes: vec![NameScope::Workbook, NameScope::Sheet("A".to_string())],
+                },
+                NameConflict {
+                    name: "L".to_string(),
+                    scopes: vec![
+                        NameScope::Sheet("A".to_string()),
+                        NameScope::Sheet("B".to_string())
+                    ],
+                },
+            ]
+        );
+        // The map keeps one definition of each, and the names that are not repeated.
+        let names = reader.read_defined_names().unwrap();
+        assert_eq!(names.len(), 3);
+        assert!(names.contains_key("Own"));
     }
 
     #[test]

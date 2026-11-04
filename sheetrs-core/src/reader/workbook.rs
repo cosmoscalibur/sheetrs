@@ -21,6 +21,28 @@ pub struct ExternalWorkbook {
     pub path: String,
 }
 
+/// Where a defined name applies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NameScope {
+    /// The whole workbook.
+    Workbook,
+    /// One sheet, by name: the name is written inside the sheet, and means that in the sheet.
+    Sheet(String),
+}
+
+/// A defined name that the document defines more than once, each time with another scope.
+///
+/// Excel and `LibreOffice` accept it: a name of a sheet wins, inside the sheet, over one of the
+/// workbook, and two sheets can each have their own. [`Workbook::defined_names`] is a map from a
+/// name to one definition, so it keeps one of them; the choice between them depends on the sheet a
+/// formula is in, which the map does not say. The workbook says it has this ambiguity instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameConflict {
+    pub name: String,
+    /// The scopes that define it: two or more, workbook first, then the sheets in order.
+    pub scopes: Vec<NameScope>,
+}
+
 #[derive(Debug, Clone, Default)]
 /// The main structure representing a parsed spreadsheet workbook
 pub struct Workbook {
@@ -28,8 +50,12 @@ pub struct Workbook {
     pub path: PathBuf,
     /// Collection of worksheets in the workbook
     pub sheets: Vec<Sheet>,
-    /// Map of defined names (named ranges) to their values/formulas
+    /// Map of defined names (named ranges) to their values/formulas. A name that the document
+    /// defines in more than one scope has one entry here, and is in
+    /// [`name_conflicts`](Self::name_conflicts).
     pub defined_names: HashMap<String, String>,
+    /// The names that are defined more than once, in alphabetical order.
+    pub name_conflicts: Vec<NameConflict>,
     /// List of hidden sheet names
     pub hidden_sheets: Vec<String>,
     /// Whether the workbook contains macros or VBA code

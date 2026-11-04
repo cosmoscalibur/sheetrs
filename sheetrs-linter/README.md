@@ -72,6 +72,7 @@ different input can make it real. Ranges are tracked by their corners.
 | **REF307** | Whole column or row reference | None |
 | **REF309** | Reference to empty cell | None |
 | **REF310** | Longer cell reference expected | `ref310_min_adjacent_data` |
+| **REF311** | Defined name defined more than once (workbook and sheet, or several sheets) | None |
 
 ### 4. Formula Interruptions (INT4xx)
 

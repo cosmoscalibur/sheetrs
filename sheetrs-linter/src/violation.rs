@@ -55,6 +55,8 @@ pub enum RuleId {
     Ref309,
     /// REF310: Longer Reference Expected
     Ref310,
+    /// REF311: Defined name defined more than once
+    Ref311,
 
     // Formula Interruptions (4xx)
     /// INT401: Interrupted by Data
@@ -159,6 +161,7 @@ impl RuleId {
             Self::Ref307 => "REF307",
             Self::Ref309 => "REF309",
             Self::Ref310 => "REF310",
+            Self::Ref311 => "REF311",
             Self::Int401 => "INT401",
             Self::Int402 => "INT402",
             Self::Int403 => "INT403",
@@ -235,6 +238,7 @@ impl FromStr for RuleId {
             "REF307" => Ok(Self::Ref307),
             "REF309" => Ok(Self::Ref309),
             "REF310" => Ok(Self::Ref310),
+            "REF311" => Ok(Self::Ref311),
             "INT401" => Ok(Self::Int401),
             "INT402" => Ok(Self::Int402),
             "INT403" => Ok(Self::Int403),

@@ -5,12 +5,19 @@
   what is asked and nothing else, in XLSX and ODS. A sheet that is not selected is not parsed (an
   XLSX does not open its part of the archive), the reading of a sheet stops after the last row a
   window reaches (an ODS ends with the last table selected), the cells outside the windows are
-  skipped, and the properties that are not asked for (`value`, `formula`, `array`,
-  `number_format`) are not built. On a sheet of 4 million cells, ten rows read in under 10 ms and
+  skipped, and the properties that are not asked for (`value`, `formula`, `number_format`) are not
+  built; a selective read does not say whether a formula is an array formula (`is_array` is
+  `false`). On a sheet of 4 million cells, ten rows read in under 10 ms and
   13 MB, in either format. Rows are expected in ascending order, as Excel requires: in an XLSX
   that has them out of order the cells after the stop are not read (a full read is not affected).
 - `ods`: the names of a document now include `table:named-expression` (constants and formulas such
   as `K = 42` or `F = Sheet1!$A$1*2`), which only the XLSX reader gave before.
+- Add `Workbook::name_conflicts` (`NameConflict`, `NameScope`) and the rule **REF311** (Defined name
+  defined more than once, `Warning`): a name that the document defines for the workbook and for a
+  sheet, or for several sheets, means a different thing depending on the sheet of the formula, and
+  `Workbook::defined_names` (a map from a name to one definition) cannot say which. The map keeps
+  one of them and the workbook now says there are several; the rule reports each such name with its
+  scopes. It reads `localSheetId` in an XLSX and the position of the `named-expressions` in an ODS.
 - `HID901` tells a very hidden sheet from a hidden one: the message of the first says that it does
   not appear in the list of sheets to unhide.
 
