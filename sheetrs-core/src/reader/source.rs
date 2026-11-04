@@ -7,8 +7,8 @@
 //! [`Workbook`], which only the tools that need every cell ask for.
 
 use super::{
-    CellSink, Workbook, read_workbook, read_workbook_from_reader, read_workbook_from_reader_into,
-    read_workbook_into,
+    CellSink, Selection, SheetInfo, Workbook, read_selection_from_reader_into, read_workbook,
+    read_workbook_from_reader, read_workbook_from_reader_into, read_workbook_into,
 };
 use crate::error::{Error, Result};
 use std::fmt;
@@ -148,6 +148,38 @@ impl Source {
             Self::Bytes { data, format } => {
                 read_workbook_from_reader_into(Cursor::new(data), Some(format.extension()), sink)
             }
+        }
+    }
+}
+
+impl Source {
+    /// Reads what `selection` asks for and nothing else, handing the cells to `sink`: a sheet
+    /// that is not selected is not parsed, the reading of a sheet stops after the last row a
+    /// window reaches, and the properties not asked for are not built. Returns the sheets the
+    /// reader went through (see [`WorkbookReader::read_selection_into`](super::WorkbookReader::read_selection_into)).
+    ///
+    /// # Errors
+    ///
+    /// When the file cannot be opened or the archive is not a valid workbook of its format.
+    pub fn read_selection_into(
+        &self,
+        selection: &Selection,
+        sink: &mut dyn CellSink,
+    ) -> Result<Vec<SheetInfo>> {
+        match self {
+            Self::File { path, format } => {
+                let file = std::fs::File::open(path).map_err(|source| Error::Open {
+                    path: path.clone(),
+                    source,
+                })?;
+                read_selection_from_reader_into(file, Some(format.extension()), selection, sink)
+            }
+            Self::Bytes { data, format } => read_selection_from_reader_into(
+                Cursor::new(data),
+                Some(format.extension()),
+                selection,
+                sink,
+            ),
         }
     }
 }

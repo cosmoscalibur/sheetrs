@@ -8,8 +8,9 @@
 //!
 //! One violation per hidden worksheet (unit: the sheet). The message gives the sheet name. A sheet
 //! is hidden when the workbook marks it `hidden` or `veryHidden` (XLSX) or when its table style
-//! is hidden (ODS). The two XLSX states are not told apart, although a very hidden sheet cannot
-//! be unhidden from the Excel menu.
+//! is hidden (ODS). The two XLSX states are told apart in the message: a very hidden sheet does
+//! not appear in the "Unhide" list of Excel, so nobody can find it from the menu. Both are
+//! warnings.
 //!
 //! # Does not report
 //!
@@ -28,7 +29,7 @@
 
 use super::{LinterContext, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Sheet;
+use sheetrs_core::reader::{Sheet, SheetState};
 
 /// Rule that detects hidden worksheets
 ///
@@ -41,6 +42,8 @@ pub struct HiddenWorksheetRule;
 pub struct HiddenWorksheetData {
     /// 0-based sheet index of the hidden sheet.
     pub sheet_index: u16,
+    /// `Hidden` or `VeryHidden`.
+    pub state: SheetState,
 }
 
 impl ViolationData for HiddenWorksheetData {
@@ -49,7 +52,12 @@ impl ViolationData for HiddenWorksheetData {
             .workbook
             .sheet_name_by_index(self.sheet_index)
             .unwrap_or("Unknown");
-        format!("Hidden sheet: {name}")
+        match self.state {
+            SheetState::VeryHidden => format!(
+                "Very hidden sheet: {name} (it does not appear in the list of sheets to unhide)"
+            ),
+            SheetState::Hidden | SheetState::Visible => format!("Hidden sheet: {name}"),
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -76,15 +84,19 @@ impl WalkerRule for HiddenWorksheetRule {
         _ctx: &mut LinterContext,
         out: &mut Vec<Violation>,
     ) {
-        if !sheet.visible {
-            out.push(Violation::with_data(
-                RuleId::Hid901,
-                ViolationScope::Sheet(sheet.sheet_index),
-                HiddenWorksheetData {
-                    sheet_index: sheet.sheet_index,
-                },
-                Severity::Warning,
-            ));
+        match sheet.state {
+            SheetState::Visible => {}
+            state @ (SheetState::Hidden | SheetState::VeryHidden) => {
+                out.push(Violation::with_data(
+                    RuleId::Hid901,
+                    ViolationScope::Sheet(sheet.sheet_index),
+                    HiddenWorksheetData {
+                        sheet_index: sheet.sheet_index,
+                        state,
+                    },
+                    Severity::Warning,
+                ));
+            }
         }
     }
 }
@@ -93,14 +105,14 @@ impl WalkerRule for HiddenWorksheetRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::Sheet;
+    use sheetrs_core::reader::workbook::{Sheet, SheetState};
 
     #[test]
     fn test_hidden_sheet() {
         let hidden_sheet = Sheet {
             name: "HiddenSheet1".to_string(),
             sheet_index: 1,
-            visible: false,
+            state: SheetState::Hidden,
             ..Default::default()
         };
 
@@ -113,6 +125,24 @@ mod tests {
         assert_eq!(violations[0].rule_id, RuleId::Hid901);
         assert_eq!(violations[0].scope, ViolationScope::Sheet(1));
         assert!(violations[0].message().contains("Hidden sheet"));
+    }
+
+    #[test]
+    fn a_very_hidden_sheet_is_told_apart_from_a_hidden_one() {
+        let sheet = Sheet {
+            name: "Secret".to_string(),
+            sheet_index: 0,
+            state: SheetState::VeryHidden,
+            ..Default::default()
+        };
+
+        let mut rule = HiddenWorksheetRule;
+        let mut ctx = LinterContext::default();
+        let violations = collect_violations(|out| rule.on_sheet_start(&sheet, &mut ctx, out));
+
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].severity, Severity::Warning);
+        assert!(violations[0].message().starts_with("Very hidden sheet"));
     }
 
     #[test]

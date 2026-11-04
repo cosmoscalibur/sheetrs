@@ -10,6 +10,7 @@ use zip::ZipArchive;
 pub mod excel_error;
 pub mod ods_parser;
 pub mod parser_utils;
+mod selection;
 mod source;
 pub mod workbook;
 pub mod xlsx_parser;
@@ -17,10 +18,12 @@ pub mod xlsx_parser;
 use self::ods_parser::OdsReader;
 use self::xlsx_parser::XlsxReader;
 pub use excel_error::ExcelError;
+pub use selection::{Properties, Selection, SheetInfo, Window};
 pub use sheetrs_formula::grid::Grid;
 pub use source::{Format, Source};
 pub use workbook::{
-    Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, NumFmt, Sheet, Workbook,
+    Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, NumFmt, Sheet,
+    SheetState, Workbook,
 };
 
 /// Trait for spreadsheet format readers
@@ -84,6 +87,21 @@ pub trait WorkbookReader {
     ///
     /// When the part cannot be read or is malformed.
     fn read_sheets_into(&mut self, sink: &mut dyn CellSink) -> Result<Vec<Sheet>>;
+
+    /// Read what a [`Selection`] asks for and nothing else, handing the cells to `sink`: the
+    /// sheets that are not selected are not parsed, the reading of a sheet stops after the last
+    /// row a window reaches, and the properties not asked for are not built. Returns the sheets
+    /// the reader went through, in the order of the workbook (an ODS ends with the last sheet
+    /// selected). A cell reaches the sink with the index of its sheet in that order.
+    ///
+    /// # Errors
+    ///
+    /// When the part cannot be read or is malformed.
+    fn read_selection_into(
+        &mut self,
+        selection: &Selection,
+        sink: &mut dyn CellSink,
+    ) -> Result<Vec<SheetInfo>>;
 
     /// Read all sheets from the workbook, with their cells in a [`Grid`].
     ///
@@ -347,6 +365,35 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
         properties,
         file_size_bytes: 0, // Will be set by read_workbook when path is known
     })
+}
+
+/// Reads what `selection` asks for of the workbook in `reader`, handing the cells to `sink` (see
+/// [`WorkbookReader::read_selection_into`]); `extension` (`xlsx`, `xlsm`, `ods`) tells its format.
+///
+/// # Errors
+///
+/// When the file cannot be read or is not a workbook of a supported format.
+pub fn read_selection_from_reader_into<R: std::io::Read + std::io::Seek>(
+    reader: R,
+    extension: Option<&str>,
+    selection: &Selection,
+    sink: &mut dyn CellSink,
+) -> Result<Vec<SheetInfo>> {
+    let mut archive = ZipArchive::new(reader)?;
+    let is_xlsx =
+        extension.is_some_and(|s| s.eq_ignore_ascii_case("xlsx") || s.eq_ignore_ascii_case("xlsm"));
+    let is_ods = extension.is_some_and(|s| s.eq_ignore_ascii_case("ods"));
+    if is_xlsx {
+        XlsxReader::new(&mut archive)?.read_selection_into(selection, sink)
+    } else if is_ods || archive.by_name("content.xml").is_ok() {
+        OdsReader::new(&mut archive)?.read_selection_into(selection, sink)
+    } else if archive.by_name("[Content_Types].xml").is_ok() {
+        XlsxReader::new(&mut archive)?.read_selection_into(selection, sink)
+    } else {
+        Err(Error::unsupported(
+            "Unsupported or unrecognizable file format",
+        ))
+    }
 }
 
 #[cfg(test)]

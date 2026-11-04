@@ -204,7 +204,46 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
-### Crate reorganization, editor and recalculation (this branch)
+### Reader allocations, one pass over an ODS, and selective reads (this branch)
+
+The XLSX reader allocated about seven times per cell (a list of the attributes seen, a buffer and
+a `String` per cell, copies of the `r` and `t` attributes), and an ODS was read three times (the
+cells, the names and the macros). The reader now borrows the attributes, keeps its buffers between
+cells and reads the names and the macros in the pass of the cells. It also has a selective read
+(`Source::read_selection_into`) that skips the sheets that are not selected and stops after the last
+row asked for.
+
+Neither `tests/production/`, `perf` nor `/usr/bin/time` was available, so the entry does **not**
+come from `benchmark.sh`: it uses synthetic workbooks (one sheet `Data`, five columns: numbers and
+formulas, or numbers and shared strings, or numbers only), release builds, a harness outside the
+repository that reads the workbook with the reader and with Calamine 0.38.0 (its streaming reader
+for XLSX, its dense range for ODS) in one session, instructions from `callgrind` (500,000 cells,
+deterministic) and wall time as the best of 3 runs (it varies between moments of the session: the
+same binary measured 2.0 and 3.0 s), peak RAM from the child's `ru_maxrss`.
+
+| Workbook | Instructions before | after | Calamine |
+|---|---|---|---|
+| XLSX, 60 % formulas | 3.68 G | 2.96 G (−20 %) | 2.71 G |
+| XLSX, 60 % shared strings | 3.20 G | 2.48 G (−22 %) | 2.04 G |
+| ODS, 60 % formulas | 7.42 G | 4.76 G (−36 %) | 3.23 G |
+
+| Wall time, best of 3 | before | after | Calamine |
+|---|---|---|---|
+| XLSX 4 M cells, formulas | 2.69 s | 2.13 s | 2.01 s |
+| XLSX 4 M cells, shared strings | 2.40 s | 1.79 s | 1.34 s |
+| XLSX 4 M cells, numbers | 2.16 s | 1.64 s | 1.26 s |
+| ODS 1 M cells, formulas | 1.38 s | 0.97 s | 0.76 s (dense) |
+
+- Peak RAM of a streaming read is 13 MB before and after, for 4 million cells.
+- The cells read are identical: the dump of every cell of eleven workbooks (corner cases of both
+  formats, `minimal_test.*`, the structure book) has the same MD5 before and after. What changed
+  is the names of an ODS (now with `table:named-expression`) and the state of a sheet.
+- Selective reads, on a sheet of 4 M cells in XLSX and 1 M in ODS: rows 1 to 10 in under 10 ms,
+  rows 5001 to 6000 in 20 ms, 13 MB, in both formats. A full read of the same sheets takes 2.1 and
+  1.0 s. Calamine's streaming reader also stops early on XLSX; `fastexcel`'s `n_rows` does not (it
+  reads the whole sheet first).
+
+### Crate reorganization, editor and recalculation
 
 The linter, the statistics and the editor moved between crates (`sheetrs-core` keeps the model and
 the readers; the rules and the writer moved to `sheetrs-linter` and `sheetrs-edit`), `sheetedit`

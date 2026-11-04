@@ -78,6 +78,15 @@ The shared kernel: the format-agnostic workbook model and the streaming readers 
     in row order. A `Cell` holds the value, formula, array flag and number format, and not its own
     position: the position is the cell's place in the `Grid`, which iteration and `CellSink::cell`
     hand over with it. The cell is 56 bytes (the hash map's entry was 80 plus its table).
+  - `Selection` (sheets, `Window`s of rows and columns, and the `Properties` wanted of each cell) is
+    what a selective read takes: `read_selection_into(selection, sink)` does not parse a sheet that
+    is not selected, stops the reading of a sheet after the last row a window reaches (an ODS ends
+    with the last table selected), skips the cells outside the windows and does not build the
+    properties that were not asked for. A cell reaches the sink as in a full read, so the two agree
+    on what a cell is (the tests compare them over both formats). XLSX rows are expected in
+    ascending order, as Excel requires.
+  - `SheetState` (`Visible`, `Hidden`, `VeryHidden`) is what a sheet's `state` says; an ODS has the
+    first two.
   - `ExcelError` is the error value a cell can hold (`#DIV/0!`, …).
 
 ## 1b. sheetrs-formula

@@ -4,9 +4,10 @@ use super::parser_utils::{attr_value, push_general_ref, read_text_node};
 use super::workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, Sheet,
 };
-use super::{CellSink, NumFmt, WorkbookReader};
+use super::{CellSink, NumFmt, Properties, Selection, SheetInfo, SheetState, WorkbookReader};
 use crate::error::Result;
 use crate::reader::ExcelError;
+use crate::reader::selection::SheetSelection;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use regex::Regex;
@@ -32,6 +33,23 @@ use zip::ZipArchive;
 ///
 /// When the archive cannot be read.
 pub fn has_macros(archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>) -> Result<bool> {
+    if has_macro_libraries(archive)? {
+        return Ok(true);
+    }
+    // Macros bound to events (`script:event-listener` with a `vnd.sun.star.script:` target).
+    if let Ok(content) = archive.by_name("content.xml") {
+        return stream_has_event_macro(content);
+    }
+
+    Ok(false)
+}
+
+/// Whether the archive holds macro libraries: entries under `Basic/` or `Scripts/`, or the
+/// manifest listing one. The macros bound to events live in `content.xml` and are not looked for
+/// here: the reader that reads that part anyway finds them while it goes by (see [`MarkTap`]).
+fn has_macro_libraries(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<bool> {
     let is_library = |path: &str| path.starts_with("Basic/") || path.starts_with("Scripts/");
 
     // 1. Libraries present in the archive.
@@ -65,18 +83,55 @@ pub fn has_macros(archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>) 
         }
     }
 
-    // 3. Macros bound to events (`script:event-listener` with a `vnd.sun.star.script:` target).
-    if let Ok(content) = archive.by_name("content.xml") {
-        return stream_has_event_macro(content);
-    }
-
     Ok(false)
+}
+
+/// The text a macro bound to an event holds in `content.xml`.
+const EVENT_MACRO_MARK: &[u8] = b"vnd.sun.star.script:";
+
+/// Passes the bytes of a reader through and notes whether the mark of an event macro went by, so
+/// that `content.xml` is read once for the cells and for the macros. The mark is searched block
+/// by block, keeping the end of the previous one so a mark split between two reads is found.
+struct MarkTap<R> {
+    inner: R,
+    search: aho_corasick::AhoCorasick,
+    tail: Vec<u8>,
+    found: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl<R> MarkTap<R> {
+    fn new(inner: R, found: std::rc::Rc<std::cell::Cell<bool>>) -> Self {
+        Self {
+            inner,
+            search: aho_corasick::AhoCorasick::new([EVENT_MACRO_MARK])
+                .expect("the mark is a valid pattern"),
+            tail: Vec::new(),
+            found,
+        }
+    }
+}
+
+impl<R: std::io::Read> std::io::Read for MarkTap<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if !self.found.get() {
+            self.tail.extend_from_slice(&buf[..n]);
+            if self.search.is_match(&self.tail) {
+                self.found.set(true);
+                self.tail = Vec::new();
+            } else {
+                let keep = self.tail.len().min(EVENT_MACRO_MARK.len() - 1);
+                self.tail.drain(..self.tail.len() - keep);
+            }
+        }
+        Ok(n)
+    }
 }
 
 /// Whether the document content read from `content` holds a macro bound to an event: the text
 /// `vnd.sun.star.script:`, searched block by block so a mark split between two reads is found.
 fn stream_has_event_macro(mut content: impl std::io::Read) -> Result<bool> {
-    const MARK: &[u8] = b"vnd.sun.star.script:";
+    const MARK: &[u8] = EVENT_MACRO_MARK;
     let mark = aho_corasick::AhoCorasick::new([MARK]).expect("the mark is a valid pattern");
     let mut chunk = vec![0u8; 1 << 16];
     let mut tail: Vec<u8> = Vec::new();
@@ -287,6 +342,49 @@ pub fn normalize_ods_reference(
 /// Split a formula into code and double-quoted text literals (`""` inside a
 /// literal is an escaped quote). Each item says whether it is a literal, quotes
 /// included.
+/// Reads on to the end of the table the reader is in, without building anything: the tables of a
+/// sheet nobody asked for, and the rest of the one whose last wanted row went by. Tables nest only
+/// as database ranges do not, so the depth is what makes the end of this one the right one.
+fn skip_table<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<()> {
+    let mut depth = 0u32;
+    let mut skip_buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut skip_buf)? {
+            Event::Start(e) if e.name().as_ref() == "table:table" => depth += 1,
+            Event::End(e) if e.name().as_ref() == "table:table" => {
+                if depth == 0 {
+                    return Ok(());
+                }
+                depth -= 1;
+            }
+            Event::Eof => return Ok(()),
+            _ => {}
+        }
+        skip_buf.clear();
+    }
+}
+
+/// The expression with the references written without a sheet (`[.A1]`, `[.A1:.B2]`) given the
+/// sheet `sheet` (`[$Data.A1]`, `[$'Q1 2024'.A1]`), outside text literals.
+fn qualify_local_refs(expression: &str, sheet: &str) -> String {
+    let quoted = if sheet.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        sheet.to_string()
+    } else {
+        format!("'{}'", sheet.replace('\'', "''"))
+    };
+    let with_sheet = format!("[${quoted}.");
+    split_text_literals(expression)
+        .into_iter()
+        .map(|(is_text, segment)| {
+            if is_text {
+                segment.to_string()
+            } else {
+                segment.replace("[.", &with_sheet)
+            }
+        })
+        .collect()
+}
+
 fn split_text_literals(formula: &str) -> Vec<(bool, &str)> {
     let mut out = Vec::new();
     let (mut start, mut in_text) = (0, false);
@@ -685,6 +783,9 @@ struct OdsData {
     hidden_sheets: Vec<String>,
     has_macros: bool,
     external_workbooks: Vec<ExternalWorkbook>,
+    /// Named ranges, named expressions and named database ranges, read in the same pass as the
+    /// cells.
+    defined_names: HashMap<String, String>,
 }
 
 /// ODS (`OpenDocument` Spreadsheet) reader implementation
@@ -712,6 +813,103 @@ impl<'a, R: std::io::Read + std::io::Seek> OdsReader<'a, R> {
 
 impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
     fn read_sheets_into(&mut self, sink: &mut dyn CellSink) -> Result<Vec<Sheet>> {
+        self.read_sheets_inner(sink, None)
+    }
+
+    fn read_selection_into(
+        &mut self,
+        selection: &Selection,
+        sink: &mut dyn CellSink,
+    ) -> Result<Vec<SheetInfo>> {
+        let sheets = self.read_sheets_inner(sink, Some(selection))?;
+        Ok(sheets
+            .into_iter()
+            .map(|sheet| SheetInfo {
+                name: sheet.name,
+                index: sheet.sheet_index,
+                state: sheet.state,
+            })
+            .collect())
+    }
+
+    fn read_defined_names(&mut self) -> Result<HashMap<String, String>> {
+        // The names were read with the cells.
+        if self.data.is_none() {
+            self.read_sheets()?;
+        }
+        Ok(self.data.as_ref().unwrap().defined_names.clone())
+    }
+
+    fn read_hidden_sheets(&mut self) -> Result<Vec<String>> {
+        // Ensure data is parsed
+        if self.data.is_none() {
+            self.read_sheets()?;
+        }
+        Ok(self.data.as_ref().unwrap().hidden_sheets.clone())
+    }
+
+    fn has_macros(&mut self) -> Result<bool> {
+        // Ensure data is parsed
+        if self.data.is_none() {
+            self.read_sheets()?;
+        }
+        Ok(self.data.as_ref().unwrap().has_macros)
+    }
+
+    fn read_external_links(&mut self) -> Result<Vec<String>> {
+        // Ensure data is parsed
+        if self.data.is_none() {
+            self.read_sheets()?;
+        }
+        // Derive from external_workbooks
+        Ok(self
+            .data
+            .as_ref()
+            .unwrap()
+            .external_workbooks
+            .iter()
+            .map(|wb| wb.path.clone())
+            .collect())
+    }
+
+    fn read_external_workbooks(&mut self) -> Result<Vec<super::ExternalWorkbook>> {
+        // Ensure data is parsed
+        if self.data.is_none() {
+            self.read_sheets()?;
+        }
+        Ok(self.data.as_ref().unwrap().external_workbooks.clone())
+    }
+
+    fn read_modified_date(&mut self) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
+        extract_modified_date_ods(self.archive)
+    }
+
+    fn read_date1904(&mut self) -> Result<bool> {
+        extract_date1904_ods(self.archive)
+    }
+
+    fn read_properties(&mut self) -> Result<Vec<(String, String)>> {
+        extract_properties_ods(self.archive)
+    }
+
+    fn read_settings(&mut self) -> Result<DocumentSettings> {
+        let mut settings = extract_settings_ods(self.archive)?;
+        settings.locale = extract_locale_ods(self.archive);
+        settings.string_ref_syntax = extract_string_ref_syntax_ods(self.archive);
+        settings.auto_calculate = extract_auto_calculate_ods(self.archive);
+        Ok(settings)
+    }
+}
+
+impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
+    /// Reads the sheets, handing their cells to `sink`. With a selection, only what it asks for:
+    /// a table that is not selected is skipped, a table is left after the last row a window
+    /// reaches, and the reading ends with the last table selected.
+    fn read_sheets_inner(
+        &mut self,
+        sink: &mut dyn CellSink,
+        selection: Option<&Selection>,
+    ) -> Result<Vec<Sheet>> {
         // ============================================================
         // SINGLE PASS: Parse content.xml once for all concerns
         // ============================================================
@@ -754,6 +952,21 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
         let mut current_cf_range: Option<String> = None;
         let mut skip_current_sheet = false; // Flag to skip external sheets
         let mut database_range_targets: Vec<String> = Vec::new();
+        let props = selection.map_or(Properties::ALL, Selection::properties);
+        // The windows of the table being read, when a selection was given and selects it.
+        let mut wanted: Option<SheetSelection<'_>> = None;
+        // How many of the selected sheets are still to be read; the reading ends with the last.
+        let mut remaining = selection.map_or(0, Selection::sheet_count);
+        let mut finished = false;
+        let mut defined_names: HashMap<String, String> = HashMap::new();
+        let mut in_named_expressions = false;
+        let mut in_database_ranges = false;
+        // Whether the reader is inside a `<table:table>`: a name written there belongs to its sheet.
+        let mut in_table = false;
+        // Whether an event macro went by in `content.xml`.
+        let macro_mark = std::rc::Rc::new(std::cell::Cell::new(false));
+        // Events inside a cell, kept between cells.
+        let mut text_buf: Vec<u8> = Vec::new();
         let mut object_hrefs: Vec<(String, String)> = Vec::new();
         // Largest row and column (0-based) of the cells of the current sheet.
         let mut cells_max: Option<(u32, u32)> = None;
@@ -988,7 +1201,10 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                 return Ok(sheets);
             };
 
-            let mut reader = Reader::from_reader(BufReader::new(content_xml));
+            let mut reader = Reader::from_reader(BufReader::new(MarkTap::new(
+                content_xml,
+                macro_mark.clone(),
+            )));
             reader.config_mut().trim_text(false);
 
             let mut buf = Vec::new();
@@ -1001,7 +1217,9 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
 
             loop {
                 let event_start = reader.buffer_position();
-                match reader.read_event_into(&mut buf)? {
+                let event = reader.read_event_into(&mut buf)?;
+                let empty_tag = matches!(event, Event::Empty(_));
+                match event {
                     // --------------------------------------------------------
                     // DATE STYLES: number:date-style
                     // --------------------------------------------------------
@@ -1276,13 +1494,33 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                         // Check if this sheet's style is in hidden_styles
                         let is_hidden =
                             !style_name.is_empty() && hidden_styles.contains(&style_name);
-                        new_sheet.visible = !is_hidden;
+                        new_sheet.state = if is_hidden {
+                            SheetState::Hidden
+                        } else {
+                            SheetState::Visible
+                        };
 
                         current_sheet = Some(new_sheet);
                         current_row = 0;
                         current_col = 0; // Reset column tracking for new sheet
                         skip_current_sheet = false; // Reset skip flag for new sheet
                         cells_max = None;
+                        in_table = !empty_tag;
+                        if let Some(selection) = selection {
+                            wanted = current_sheet
+                                .as_ref()
+                                .and_then(|sheet| selection.of(&sheet.name));
+                            if wanted.is_none() && !empty_tag {
+                                // Not selected: listed, not read.
+                                skip_table(&mut reader)?;
+                                in_table = false;
+                            } else if wanted.is_some() && empty_tag {
+                                // A selected table with no rows: nothing to read in it.
+                                wanted = None;
+                                remaining = remaining.saturating_sub(1);
+                                finished = remaining == 0;
+                            }
+                        }
                     }
 
                     // Detect external sheets by checking for table:table-source
@@ -1413,6 +1651,25 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                                     .push((current_row, current_row + row_repeated - 1));
                             }
                         }
+                        if let Some(rows) = wanted {
+                            if current_row > rows.last_row {
+                                // Nothing wanted is left in this table: rows only go forward.
+                                // The rest of it is read through only to get to the next table
+                                // that is wanted, if there is one.
+                                wanted = None;
+                                remaining = remaining.saturating_sub(1);
+                                finished = remaining == 0;
+                                if !finished {
+                                    skip_table(&mut reader)?;
+                                    in_table = false;
+                                }
+                            } else if current_row.saturating_add(row_repeated) <= rows.first_row {
+                                // Rows before the first one wanted are not read.
+                                reader.read_to_end_into(e.name(), &mut text_buf)?;
+                                current_row += row_repeated;
+                                current_col = 0;
+                            }
+                        }
                     }
 
                     Event::Empty(e) if e.name().as_ref() == "table:table-row" => {
@@ -1442,6 +1699,15 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                         }
                         current_row += row_repeated;
                         current_col = 0;
+                        if wanted.is_some_and(|rows| current_row > rows.last_row) {
+                            wanted = None;
+                            remaining = remaining.saturating_sub(1);
+                            finished = remaining == 0;
+                            if !finished {
+                                skip_table(&mut reader)?;
+                                in_table = false;
+                            }
+                        }
                     }
                     Event::Start(e)
                         if matches!(
@@ -1471,15 +1737,19 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                                     rows_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
                                 }
                                 "table:formula" => {
-                                    let raw_formula = attr_value(&attr)?;
-                                    let normalized = normalize_ods_reference(
-                                        &raw_formula,
-                                        false,
-                                        Some(&sheet.name),
-                                        &mut external_workbooks,
-                                    );
-                                    // Apply external workbook normalization
-                                    formula = Some(normalized);
+                                    // Whether the cell has one is told without converting it
+                                    // when the text of the formula is not wanted.
+                                    formula = Some(if props.formula {
+                                        let raw_formula = attr_value(&attr)?;
+                                        normalize_ods_reference(
+                                            &raw_formula,
+                                            false,
+                                            Some(&sheet.name),
+                                            &mut external_workbooks,
+                                        )
+                                    } else {
+                                        String::new()
+                                    });
                                 }
                                 "table:style-name" => {
                                     style_name = attr_value(&attr)?.into_owned();
@@ -1538,6 +1808,19 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                             }
                         }
 
+                        // A cell, or a run of repeated ones, that no window reaches is not read.
+                        let skip_cell = wanted.is_some_and(|w| {
+                            !w.may_contain_block(
+                                current_row,
+                                row_repeated,
+                                current_col,
+                                col_repeated,
+                            )
+                        });
+                        if skip_cell {
+                            reader.read_to_end_into(e.name(), &mut text_buf)?;
+                        }
+
                         if cols_spanned > 1 || rows_spanned > 1 {
                             sheet.merged_cells.push((
                                 current_row,
@@ -1550,8 +1833,11 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                         // Read text content from <text:p> elements
                         // This handles both error cells and regular text cells
                         let mut text_content = String::new();
-                        let mut text_buf = Vec::new();
+                        text_buf.clear();
                         loop {
+                            if skip_cell {
+                                break;
+                            }
                             match reader.read_event_into(&mut text_buf)? {
                                 // A comment's paragraphs are not the cell's content.
                                 Event::Start(ref te)
@@ -1638,7 +1924,8 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                             }
                         }
 
-                        if has_value || formula.is_some() || !style_name.is_empty() {
+                        if !skip_cell && (has_value || formula.is_some() || !style_name.is_empty())
+                        {
                             // Optimization: Ignore empty styled cells that extend to the sheet edge
                             // These are often used as "row filler" in ODS (e.g., repeatedly 16300+ times)
                             // and cause massive memory usage if stored as individual cells.
@@ -1654,7 +1941,7 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                                 let formula_for_cell = formula;
 
                                 // Look up format string from style
-                                let num_fmt = if style_name.is_empty() {
+                                let num_fmt = if style_name.is_empty() || !props.number_format {
                                     None
                                 } else {
                                     date_styles.get(&style_name).cloned()
@@ -1664,10 +1951,21 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                                 for r in 0..row_repeated {
                                     for c in 0..col_repeated {
                                         let at = (current_row + r, current_col + c);
+                                        if wanted.is_some_and(|w| !w.contains(at.0, at.1)) {
+                                            continue;
+                                        }
                                         let cell = Cell {
-                                            value: cell_value.clone(),
-                                            formula: formula_for_cell.as_deref().map(Box::from),
-                                            is_array: is_matrix_array,
+                                            value: if props.value {
+                                                cell_value.clone()
+                                            } else {
+                                                CellValue::Empty
+                                            },
+                                            formula: if props.formula {
+                                                formula_for_cell.as_deref().map(Box::from)
+                                            } else {
+                                                None
+                                            },
+                                            is_array: is_matrix_array && props.array,
                                             num_fmt: num_fmt.clone(),
                                         };
                                         cells_max =
@@ -1722,13 +2020,17 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                                     rows_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
                                 }
                                 "table:formula" => {
-                                    let raw_formula = attr_value(&attr)?;
-                                    formula = Some(normalize_ods_reference(
-                                        &raw_formula,
-                                        false,
-                                        Some(&sheet.name),
-                                        &mut external_workbooks,
-                                    ));
+                                    formula = Some(if props.formula {
+                                        let raw_formula = attr_value(&attr)?;
+                                        normalize_ods_reference(
+                                            &raw_formula,
+                                            false,
+                                            Some(&sheet.name),
+                                            &mut external_workbooks,
+                                        )
+                                    } else {
+                                        String::new()
+                                    });
                                 }
                                 "table:style-name" => {
                                     style_name = attr_value(&attr)?.into_owned();
@@ -1754,7 +2056,15 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                         }
 
                         // If it's an empty cell but has a formula or style, we should store it.
-                        if formula.is_some() || !style_name.is_empty() {
+                        let skip_cell = wanted.is_some_and(|w| {
+                            !w.may_contain_block(
+                                current_row,
+                                row_repeated,
+                                current_col,
+                                col_repeated,
+                            )
+                        });
+                        if !skip_cell && (formula.is_some() || !style_name.is_empty()) {
                             // Optimization: Ignore empty styled cells that extend to the sheet edge
                             let is_empty_content = formula.is_none(); // empty cell has no value by definition here
                             if is_empty_content
@@ -1767,7 +2077,7 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                                 let formula_for_cell = formula;
 
                                 // Look up format string from style
-                                let num_fmt = if style_name.is_empty() {
+                                let num_fmt = if style_name.is_empty() || !props.number_format {
                                     None
                                 } else {
                                     date_styles.get(&style_name).cloned()
@@ -1776,10 +2086,21 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                                 for r in 0..row_repeated {
                                     for c in 0..col_repeated {
                                         let at = (current_row + r, current_col + c);
+                                        if wanted.is_some_and(|w| !w.contains(at.0, at.1)) {
+                                            continue;
+                                        }
                                         let cell = Cell {
-                                            value: cell_value.clone(),
-                                            formula: formula_for_cell.as_deref().map(Box::from),
-                                            is_array: is_matrix_array,
+                                            value: if props.value {
+                                                cell_value.clone()
+                                            } else {
+                                                CellValue::Empty
+                                            },
+                                            formula: if props.formula {
+                                                formula_for_cell.as_deref().map(Box::from)
+                                            } else {
+                                                None
+                                            },
+                                            is_array: is_matrix_array && props.array,
                                             num_fmt: num_fmt.clone(),
                                         };
                                         cells_max =
@@ -1887,6 +2208,11 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                             && let Some(sheet) = current_sheet.as_mut() =>
                     {
                         sheet.xml_size_bytes = reader.buffer_position() - table_start;
+                        in_table = false;
+                        if wanted.take().is_some() {
+                            remaining = remaining.saturating_sub(1);
+                            finished = remaining == 0;
+                        }
 
                         // Calculate used range for the sheet before finalizing
                         // This must happen here (not at sheet finalization) because it needs to run
@@ -1948,6 +2274,68 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                             }
                         }
                     }
+                    // Names: the ranges, expressions and database ranges the document names. They
+                    // come after the sheets, or inside the sheet they belong to.
+                    Event::Start(e) if e.name().as_ref() == "table:named-expressions" => {
+                        in_named_expressions = true;
+                    }
+                    Event::End(e) if e.name().as_ref() == "table:named-expressions" => {
+                        in_named_expressions = false;
+                    }
+                    Event::Start(e) if e.name().as_ref() == "table:database-ranges" => {
+                        in_database_ranges = true;
+                    }
+                    Event::End(e) if e.name().as_ref() == "table:database-ranges" => {
+                        in_database_ranges = false;
+                    }
+                    Event::Start(e) | Event::Empty(e)
+                        if in_named_expressions
+                            && matches!(
+                                e.name().as_ref(),
+                                "table:named-range" | "table:named-expression"
+                            ) =>
+                    {
+                        let is_range = e.name().as_ref() == "table:named-range";
+                        let mut name = String::new();
+                        let mut target = String::new();
+                        let mut base = None;
+                        for attr in e.attributes().flatten() {
+                            match (attr.key.as_ref(), is_range) {
+                                ("table:name", _) => name = attr_value(&attr)?.into_owned(),
+                                ("table:cell-range-address", true)
+                                | ("table:expression", false) => {
+                                    target = attr_value(&attr)?.into_owned();
+                                }
+                                // The cell that references without a sheet are relative to.
+                                ("table:base-cell-address", false) => {
+                                    base = sheet_of_address(&attr_value(&attr)?);
+                                }
+                                _ => {}
+                            }
+                        }
+                        if !name.is_empty() && !target.is_empty() {
+                            let sheet = base.as_deref().or_else(|| {
+                                in_table
+                                    .then(|| {
+                                        current_sheet.as_ref().map(|sheet| sheet.name.as_str())
+                                    })
+                                    .flatten()
+                            });
+                            // A name is global: its references keep their sheet, as in XLSX. The
+                            // ones written without a sheet (`[.A1]`) are of the sheet of its base cell.
+                            let target = match (is_range, sheet) {
+                                (false, Some(sheet)) => qualify_local_refs(&target, sheet),
+                                _ => target,
+                            };
+                            let normalized = normalize_ods_reference(
+                                &target,
+                                true,
+                                None,
+                                &mut external_workbooks,
+                            );
+                            defined_names.insert(name, normalized);
+                        }
+                    }
                     // A named database range is the table of the sheet its target is on; the
                     // anonymous one of an autofilter is not a table.
                     Event::Start(e) | Event::Empty(e)
@@ -1965,6 +2353,15 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                             }
                         }
                         if !name.starts_with("__Anonymous_Sheet_DB__") && !target.is_empty() {
+                            if in_database_ranges {
+                                let normalized = normalize_ods_reference(
+                                    &target,
+                                    true,
+                                    None,
+                                    &mut external_workbooks,
+                                );
+                                defined_names.insert(name, normalized);
+                            }
                             database_range_targets.push(target);
                         }
                     }
@@ -1972,6 +2369,9 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                     _ => {}
                 }
                 buf.clear();
+                if finished {
+                    break;
+                }
             }
 
             // Finalize the last sheet if it exists and it's not external
@@ -1979,6 +2379,10 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
                 && !skip_current_sheet
             {
                 sheets.push(sheet);
+            }
+            if selection.is_some() {
+                // The sheets, as far as the reading went: nothing else of the document is read.
+                return Ok(sheets);
             }
             for target in &database_range_targets {
                 let name = sheet_of_address(target);
@@ -2030,176 +2434,17 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
         // ============================================================
         // MACROS: Check if file contains macros
         // ============================================================
-        let has_macros = has_macros(self.archive)?;
+        let has_macros = macro_mark.get() || has_macro_libraries(self.archive)?;
 
         // Store metadata for future method calls (sheets are returned directly)
         self.data = Some(OdsData {
             hidden_sheets,
             has_macros,
             external_workbooks,
+            defined_names,
         });
 
         Ok(sheets)
-    }
-
-    fn read_defined_names(&mut self) -> Result<HashMap<String, String>> {
-        let mut defined_names = HashMap::new();
-
-        // Ensure data is parsed to have access to external_workbooks
-        if self.data.is_none() {
-            self.read_sheets()?;
-        }
-
-        let Ok(content_xml) = self.archive.by_name("content.xml") else {
-            return Ok(defined_names);
-        };
-
-        let mut reader = Reader::from_reader(BufReader::new(content_xml));
-        reader.config_mut().trim_text(true);
-
-        let mut buf = Vec::new();
-        let mut in_named_expressions = false;
-        let mut in_database_ranges = false;
-
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(ref e) if e.name().as_ref() == "table:named-expressions" => {
-                    in_named_expressions = true;
-                }
-                Event::Start(ref e) if e.name().as_ref() == "table:database-ranges" => {
-                    in_database_ranges = true;
-                }
-                // Combined match for Start/Empty of item tags
-                Event::Empty(ref e) | Event::Start(ref e) => {
-                    if in_named_expressions && e.name().as_ref() == "table:named-range" {
-                        let mut name = String::new();
-                        let mut cell_range_address = String::new();
-
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                "table:name" => {
-                                    name = attr_value(&attr)?.into_owned();
-                                }
-                                "table:cell-range-address" => {
-                                    cell_range_address = attr_value(&attr)?.into_owned();
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        if !name.is_empty() && !cell_range_address.is_empty() {
-                            let normalized = normalize_ods_reference(
-                                &cell_range_address,
-                                true,
-                                None,
-                                &mut self.data.as_mut().unwrap().external_workbooks,
-                            );
-                            defined_names.insert(name, normalized);
-                        }
-                    } else if in_database_ranges && e.name().as_ref() == "table:database-range" {
-                        let mut name = String::new();
-                        let mut target_range_address = String::new();
-
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                "table:name" => {
-                                    name = attr_value(&attr)?.into_owned();
-                                }
-                                "table:target-range-address" => {
-                                    target_range_address = attr_value(&attr)?.into_owned();
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        if !name.is_empty() && !target_range_address.is_empty() {
-                            // Filter out internal ODS names that start with __Anonymous_Sheet_DB__
-                            if !name.starts_with("__Anonymous_Sheet_DB__") {
-                                let normalized = normalize_ods_reference(
-                                    &target_range_address,
-                                    true,
-                                    None,
-                                    &mut self.data.as_mut().unwrap().external_workbooks,
-                                );
-                                defined_names.insert(name, normalized);
-                            }
-                        }
-                    }
-                }
-                Event::End(e) => {
-                    if e.name().as_ref() == "table:named-expressions" {
-                        in_named_expressions = false;
-                    } else if e.name().as_ref() == "table:database-ranges" {
-                        in_database_ranges = false;
-                    }
-                }
-                Event::Eof => break,
-                _ => {}
-            }
-            buf.clear();
-        }
-
-        Ok(defined_names)
-    }
-
-    fn read_hidden_sheets(&mut self) -> Result<Vec<String>> {
-        // Ensure data is parsed
-        if self.data.is_none() {
-            self.read_sheets()?;
-        }
-        Ok(self.data.as_ref().unwrap().hidden_sheets.clone())
-    }
-
-    fn has_macros(&mut self) -> Result<bool> {
-        // Ensure data is parsed
-        if self.data.is_none() {
-            self.read_sheets()?;
-        }
-        Ok(self.data.as_ref().unwrap().has_macros)
-    }
-
-    fn read_external_links(&mut self) -> Result<Vec<String>> {
-        // Ensure data is parsed
-        if self.data.is_none() {
-            self.read_sheets()?;
-        }
-        // Derive from external_workbooks
-        Ok(self
-            .data
-            .as_ref()
-            .unwrap()
-            .external_workbooks
-            .iter()
-            .map(|wb| wb.path.clone())
-            .collect())
-    }
-
-    fn read_external_workbooks(&mut self) -> Result<Vec<super::ExternalWorkbook>> {
-        // Ensure data is parsed
-        if self.data.is_none() {
-            self.read_sheets()?;
-        }
-        Ok(self.data.as_ref().unwrap().external_workbooks.clone())
-    }
-
-    fn read_modified_date(&mut self) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
-        extract_modified_date_ods(self.archive)
-    }
-
-    fn read_date1904(&mut self) -> Result<bool> {
-        extract_date1904_ods(self.archive)
-    }
-
-    fn read_properties(&mut self) -> Result<Vec<(String, String)>> {
-        extract_properties_ods(self.archive)
-    }
-
-    fn read_settings(&mut self) -> Result<DocumentSettings> {
-        let mut settings = extract_settings_ods(self.archive)?;
-        settings.locale = extract_locale_ods(self.archive);
-        settings.string_ref_syntax = extract_string_ref_syntax_ods(self.archive);
-        settings.auto_calculate = extract_auto_calculate_ods(self.archive);
-        Ok(settings)
     }
 }
 
@@ -3449,8 +3694,14 @@ fn test_sheet_visibility_ods() {
     let sheets = reader.read_sheets().unwrap();
 
     // Count visible and hidden sheets
-    let visible_count = sheets.iter().filter(|s| s.visible).count();
-    let hidden_count = sheets.iter().filter(|s| !s.visible).count();
+    let visible_count = sheets
+        .iter()
+        .filter(|s| s.state == SheetState::Visible)
+        .count();
+    let hidden_count = sheets
+        .iter()
+        .filter(|s| s.state != SheetState::Visible)
+        .count();
 
     assert!(visible_count > 0, "Should have at least one visible sheet");
     assert!(hidden_count > 0, "Test file should have hidden sheets");
@@ -3458,7 +3709,11 @@ fn test_sheet_visibility_ods() {
     // Verify hidden sheets have visible=false
     for sheet in &sheets {
         if sheet.name.contains("hidden") || sheet.name.contains("empty_hidden") {
-            assert!(!sheet.visible, "Sheet '{}' should be hidden", sheet.name);
+            assert!(
+                sheet.state != SheetState::Visible,
+                "Sheet '{}' should be hidden",
+                sheet.name
+            );
         }
     }
 }

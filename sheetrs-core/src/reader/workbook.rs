@@ -130,6 +130,22 @@ impl Workbook {
     }
 }
 
+/// Whether a sheet is shown, and who can show it again.
+///
+/// XLSX stores three states in the workbook (`state` of `<sheet>`). ODS has two: a sheet is
+/// hidden when its table style is. A very hidden sheet does not appear in the "Unhide" list of
+/// Excel; it can only be shown from the VBA editor or by editing the file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SheetState {
+    /// Shown.
+    #[default]
+    Visible,
+    /// Hidden, and the user can unhide it from the menu.
+    Hidden,
+    /// Hidden so that the menu does not offer it (XLSX `veryHidden`).
+    VeryHidden,
+}
+
 /// Represents a single worksheet within a workbook
 #[derive(Debug, Clone, Default)]
 pub struct Sheet {
@@ -163,8 +179,8 @@ pub struct Sheet {
     pub conditional_formatting_count: usize,
     /// Ranges where conditional formatting rules are applied
     pub conditional_formatting_ranges: Vec<String>,
-    /// Whether the sheet is visible (not hidden)
-    pub visible: bool,
+    /// Whether the sheet is shown, hidden, or very hidden.
+    pub state: SheetState,
     /// Notes (comments) of the sheet's cells.
     pub comments: usize,
     /// Charts the sheet shows.
@@ -193,7 +209,7 @@ impl Sheet {
             charts: 0,
             tables: 0,
             conditional_formatting_ranges: Vec::new(),
-            visible: true,
+            state: SheetState::Visible,
         }
     }
 

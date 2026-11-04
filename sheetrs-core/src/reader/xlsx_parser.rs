@@ -13,9 +13,11 @@ use super::parser_utils::{
     attr_value, column_letters, parse_cell_range, parse_cell_ref, push_general_ref, read_text_node,
 };
 use super::{
-    Cell, CellSink, CellValue, DocumentSettings, IterationSettings, NumFmt, Sheet, WorkbookReader,
+    Cell, CellSink, CellValue, DocumentSettings, IterationSettings, NumFmt, Properties, Selection,
+    Sheet, SheetInfo, SheetState, WorkbookReader,
 };
 use crate::reader::ExcelError;
+use crate::reader::selection::SheetSelection;
 
 /// Resolve sheet name to its XML path in the XLSX archive
 ///
@@ -414,7 +416,7 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'_, R> {
     fn read_sheets_into(&mut self, sink: &mut dyn CellSink) -> Result<Vec<Sheet>> {
         let mut sheets = Vec::new();
         let sheet_names = self.get_sheet_names()?;
-        let hidden_sheets = self.read_hidden_sheets()?;
+        let states = extract_sheet_states_from_xlsx(self.archive)?;
 
         for (idx, name) in sheet_names.into_iter().enumerate() {
             let path = get_xlsx_sheet_path(self.archive, &name)?;
@@ -422,11 +424,14 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'_, R> {
             let mut sheet = Sheet::new(name.clone(), sheet_index);
             sheet.sheet_path = Some(path.clone());
             sheet.xml_size_bytes = self.archive.by_name(&path)?.size();
-            sheet.visible = !hidden_sheets.contains(&name);
+            sheet.state = states
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map_or(SheetState::Visible, |(_, state)| *state);
 
             // Parse sheet data
             let (hidden_cols, hidden_rows, merged_cells, cf_count, cf_ranges, dim_range) =
-                self.parse_sheet_xml(&path, sheet_index, &name, sink)?;
+                self.parse_sheet_xml(&path, sheet_index, &name, sink, None, Properties::ALL)?;
 
             sheet.hidden_columns = hidden_cols;
             sheet.hidden_rows = hidden_rows;
@@ -441,6 +446,38 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'_, R> {
         }
 
         Ok(sheets)
+    }
+
+    fn read_selection_into(
+        &mut self,
+        selection: &Selection,
+        sink: &mut dyn CellSink,
+    ) -> Result<Vec<SheetInfo>> {
+        let mut infos = Vec::new();
+        let sheet_names = self.get_sheet_names()?;
+        let states = extract_sheet_states_from_xlsx(self.archive)?;
+
+        for (idx, name) in sheet_names.into_iter().enumerate() {
+            let index = idx as u16;
+            let state = states
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map_or(SheetState::Visible, |(_, state)| *state);
+            // A sheet that is not selected is not opened: each one is a part of the archive.
+            if let Some(wanted) = selection.of(&name) {
+                let path = get_xlsx_sheet_path(self.archive, &name)?;
+                self.parse_sheet_xml(
+                    &path,
+                    index,
+                    &name,
+                    sink,
+                    Some(wanted),
+                    selection.properties(),
+                )?;
+            }
+            infos.push(SheetInfo { name, index, state });
+        }
+        Ok(infos)
     }
 
     fn read_defined_names(&mut self) -> Result<HashMap<String, String>> {
@@ -1250,6 +1287,8 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
         sheet_index: u16,
         sheet_name: &str,
         sink: &mut dyn CellSink,
+        selected: Option<SheetSelection<'_>>,
+        props: Properties,
     ) -> Result<ParsedSheetData> {
         let mut hidden_columns = Vec::new();
         let mut hidden_rows = Vec::new();
@@ -1267,6 +1306,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
         reader.config_mut().trim_text(false);
 
         let mut buf = Vec::new();
+        let mut scratch = CellScratch::default();
         let mut current_row = 0u32;
         let mut current_col = 0u32;
 
@@ -1274,7 +1314,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => match e.name().as_ref() {
                     "dimension" => {
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             if attr.key.as_ref() == "ref" {
                                 let ref_str = attr_value(&attr)?;
                                 if let Some((_, _, end_row, end_col)) = parse_cell_range(&ref_str) {
@@ -1299,7 +1339,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         let mut min = 0u32;
                         let mut max = 0u32;
                         let mut hidden = false;
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             match attr.key.as_ref() {
                                 "min" => {
                                     min = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
@@ -1324,7 +1364,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                             sink.hint(sheet_index, max_cells / 2);
                         }
                         let mut hidden = false;
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             match attr.key.as_ref() {
                                 "r" => {
                                     current_row =
@@ -1340,16 +1380,21 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                             hidden_rows.push((current_row, current_row));
                         }
                         current_col = 0;
+                        // Rows come in ascending order: nothing wanted is left past the last row
+                        // a window reaches.
+                        if selected.is_some_and(|wanted| current_row > wanted.last_row) {
+                            break;
+                        }
                     }
                     "c" => {
-                        let mut r_attr = String::new();
+                        let mut r_attr: std::borrow::Cow<str> = std::borrow::Cow::Borrowed("");
                         let mut s_attr = None;
-                        let mut t_attr = String::new();
-                        for attr in e.attributes().flatten() {
+                        let mut t_attr: std::borrow::Cow<str> = std::borrow::Cow::Borrowed("");
+                        for attr in e.attributes().with_checks(false).flatten() {
                             match attr.key.as_ref() {
-                                "r" => r_attr = attr_value(&attr)?.into_owned(),
+                                "r" => r_attr = attr_value(&attr)?,
                                 "s" => s_attr = Some(attr_value(&attr)?.parse::<usize>()?),
-                                "t" => t_attr = attr_value(&attr)?.into_owned(),
+                                "t" => t_attr = attr_value(&attr)?,
                                 _ => {}
                             }
                         }
@@ -1365,11 +1410,27 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                             (r, c)
                         };
 
-                        let num_fmt = s_attr.and_then(|idx| self.styles.get(idx).cloned());
+                        // A cell outside every window is not read. With formulas wanted it is read
+                        // all the same, up to the last row, because a cell below may be written
+                        // as a shared formula of this one.
+                        let in_window = selected.is_none_or(|wanted| wanted.contains(row, col));
+                        if !in_window && !props.formula {
+                            reader.read_to_end_into(e.name(), &mut scratch.events)?;
+                            buf.clear();
+                            continue;
+                        }
+
+                        let num_fmt = if props.number_format {
+                            s_attr.and_then(|idx| self.styles.get(idx).cloned())
+                        } else {
+                            None
+                        };
 
                         let (value, mut formula, shared_si, shared_ref, is_array_formula) =
                             parse_cell_contents(
                                 &mut reader,
+                                &mut scratch,
+                                props,
                                 &t_attr,
                                 &self.shared_strings,
                                 &self.styles,
@@ -1421,10 +1482,14 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                             }
                         }
 
+                        if !in_window {
+                            buf.clear();
+                            continue;
+                        }
                         let mut cell = Cell {
-                            value,
+                            value: if props.value { value } else { CellValue::Empty },
                             formula: None,
-                            is_array: is_array_formula,
+                            is_array: is_array_formula && props.array,
                             num_fmt,
                         };
                         if let Some(mut f) = formula {
@@ -1436,7 +1501,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         sink.cell(sheet_index, (row, col), cell);
                     }
                     "mergeCell" => {
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             if attr.key.as_ref() == "ref" {
                                 let ref_str = attr_value(&attr)?;
                                 if let Some(range) = parse_cell_range(&ref_str) {
@@ -1449,7 +1514,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         cf_count += 1;
                     }
                     "conditionalFormatting" => {
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             if attr.key.as_ref() == "sqref" {
                                 let sqref = attr_value(&attr)?;
                                 cf_ranges.push(sqref.to_string());
@@ -1461,7 +1526,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                 },
                 Event::Empty(e) => match e.name().as_ref() {
                     "dimension" => {
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             if attr.key.as_ref() == "ref" {
                                 let ref_str = attr_value(&attr)?;
                                 if let Some((_, _, end_row, end_col)) = parse_cell_range(&ref_str) {
@@ -1476,7 +1541,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         let mut min = 0u32;
                         let mut max = 0u32;
                         let mut hidden = false;
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             match attr.key.as_ref() {
                                 "min" => {
                                     min = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
@@ -1497,7 +1562,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                     "c" => {
                         let mut r_attr = String::new();
                         let mut s_attr = None;
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             match attr.key.as_ref() {
                                 "r" => r_attr = attr_value(&attr)?.into_owned(),
                                 "s" => s_attr = Some(attr_value(&attr)?.parse::<usize>()?),
@@ -1514,22 +1579,27 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                             current_col = c + 1;
                             (r, c)
                         };
-                        let num_fmt = s_attr.and_then(|idx| self.styles.get(idx).cloned());
-                        sink.cell(
-                            sheet_index,
-                            (row, col),
-                            Cell {
-                                value: CellValue::Empty,
-                                formula: None,
-                                is_array: false,
-                                num_fmt,
-                            },
-                        );
+                        // A cell with nothing but a format holds nothing unless the format is wanted.
+                        if props.number_format
+                            && selected.is_none_or(|wanted| wanted.contains(row, col))
+                        {
+                            let num_fmt = s_attr.and_then(|idx| self.styles.get(idx).cloned());
+                            sink.cell(
+                                sheet_index,
+                                (row, col),
+                                Cell {
+                                    value: CellValue::Empty,
+                                    formula: None,
+                                    is_array: false,
+                                    num_fmt,
+                                },
+                            );
+                        }
                     }
                     "row" => {
                         // Empty row tag
                         let mut hidden = false;
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             match attr.key.as_ref() {
                                 "r" => {
                                     current_row =
@@ -1545,9 +1615,12 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                             hidden_rows.push((current_row, current_row));
                         }
                         current_col = 0;
+                        if selected.is_some_and(|wanted| current_row > wanted.last_row) {
+                            break;
+                        }
                     }
                     "mergeCell" => {
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             if attr.key.as_ref() == "ref" {
                                 let ref_str = attr_value(&attr)?;
                                 if let Some(range) = parse_cell_range(&ref_str) {
@@ -1560,7 +1633,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         cf_count += 1;
                     }
                     "conditionalFormatting" => {
-                        for attr in e.attributes().flatten() {
+                        for attr in e.attributes().with_checks(false).flatten() {
                             if attr.key.as_ref() == "sqref" {
                                 let sqref = attr_value(&attr)?;
                                 // Strict normalization reverted to preserve original format (e.g. A1 instead of A1:A1):
@@ -1615,8 +1688,46 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
 // Type alias to avoid clippy::type_complexity warning
 type ParsedCellData = (CellValue, Option<String>, Option<u32>, Option<String>, bool);
 
+/// The buffers a cell is read with, kept between cells: a worksheet has millions of them and a
+/// buffer made for each one is most of what the reader allocates.
+#[derive(Default)]
+struct CellScratch {
+    /// Events inside a value or formula element.
+    inner: Vec<u8>,
+    /// Events of the cell itself.
+    events: Vec<u8>,
+    /// Text of the value (`<v>`).
+    value: String,
+    /// Text of the formula (`<f>`).
+    formula: String,
+}
+
+/// Reads the text of the element the reader is in, up to its end, into `text` (which is cleared
+/// first), the way [`read_text_node`] does but with buffers the caller keeps.
+fn read_text_into<R: std::io::BufRead>(
+    reader: &mut Reader<R>,
+    buf: &mut Vec<u8>,
+    text: &mut String,
+) -> Result<()> {
+    text.clear();
+    buf.clear();
+    loop {
+        match reader.read_event_into(buf)? {
+            Event::Text(e) => text.push_str(&e),
+            Event::CData(e) => text.push_str(&e),
+            Event::GeneralRef(e) => push_general_ref(text, &e)?,
+            Event::End(_) | Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(())
+}
+
 fn parse_cell_contents<R: std::io::BufRead>(
     reader: &mut Reader<R>,
+    scratch: &mut CellScratch,
+    props: Properties,
     t_attr: &str,
     shared_strings: &[Arc<str>],
     _styles: &[NumFmt],
@@ -1628,56 +1739,67 @@ fn parse_cell_contents<R: std::io::BufRead>(
     let mut shared_ref = None;
     let mut potential_error = None; // Store potential error value from t="e"
     let mut is_array_formula = false;
-    let mut buf = Vec::new();
+    let CellScratch {
+        inner,
+        events,
+        value: value_text,
+        formula: formula_text,
+    } = scratch;
+    events.clear();
 
     loop {
-        let event = reader.read_event_into(&mut buf)?;
+        let event = reader.read_event_into(events)?;
         match event {
             Event::Start(ref e) | Event::Empty(ref e) => match e.name().as_ref() {
                 "v" => {
-                    let v_text = if let Event::Start(_) = event {
-                        read_text_node(reader)?
+                    if let Event::Start(_) = event {
+                        read_text_into(reader, inner, value_text)?;
                     } else {
-                        String::new()
-                    };
+                        value_text.clear();
+                    }
+                    let v_text = value_text.as_str();
                     // Typed values ignore surrounding whitespace; text keeps it
                     let v_typed = v_text.trim();
-                    value = match t_attr {
-                        "s" => {
-                            let idx = v_typed.parse::<usize>().unwrap_or(0);
-                            CellValue::Text(
-                                shared_strings
-                                    .get(idx)
-                                    .cloned()
-                                    .unwrap_or_else(|| Arc::from("")),
-                            )
-                        }
-                        "b" => CellValue::Boolean(v_typed == "1"),
-                        // The cached string result of a formula: text even when it
-                        // reads as a number (`"007"`, `"1010"`).
-                        "str" => CellValue::Text(Arc::from(v_text.as_str())),
-                        "e" => {
-                            // Store the error value but don't create error cell yet
-                            // We need to check if there's a formula first
-                            potential_error = Some(v_typed.to_string());
-                            CellValue::Empty // Temporary, will be set later if needed
-                        }
-                        _ => {
-                            // A number stays a number whatever its format: a cell formatted
-                            // as Text that holds `<v>7490</v>` is numeric in Excel and
-                            // LibreOffice (text is `t="s"`/`t="str"`).
-                            if let Ok(n) = v_typed.parse::<f64>() {
-                                CellValue::Number(n)
-                            } else {
-                                CellValue::Text(Arc::from(v_text.as_str()))
+                    // A value that is not wanted is not built, except an error: whether a cell
+                    // is one decides what a formula leaves.
+                    if props.value || t_attr == "e" {
+                        value = match t_attr {
+                            "s" => {
+                                let idx = v_typed.parse::<usize>().unwrap_or(0);
+                                CellValue::Text(
+                                    shared_strings
+                                        .get(idx)
+                                        .cloned()
+                                        .unwrap_or_else(|| Arc::from("")),
+                                )
                             }
-                        }
-                    };
+                            "b" => CellValue::Boolean(v_typed == "1"),
+                            // The cached string result of a formula: text even when it
+                            // reads as a number (`"007"`, `"1010"`).
+                            "str" => CellValue::Text(Arc::from(v_text)),
+                            "e" => {
+                                // Store the error value but don't create error cell yet
+                                // We need to check if there's a formula first
+                                potential_error = Some(v_typed.to_string());
+                                CellValue::Empty // Temporary, will be set later if needed
+                            }
+                            _ => {
+                                // A number stays a number whatever its format: a cell formatted
+                                // as Text that holds `<v>7490</v>` is numeric in Excel and
+                                // LibreOffice (text is `t="s"`/`t="str"`).
+                                if let Ok(n) = v_typed.parse::<f64>() {
+                                    CellValue::Number(n)
+                                } else {
+                                    CellValue::Text(Arc::from(v_text))
+                                }
+                            }
+                        };
+                    }
                 }
                 "f" => {
                     let mut si = None;
                     let mut is_shared = false;
-                    for attr in e.attributes().flatten() {
+                    for attr in e.attributes().with_checks(false).flatten() {
                         match attr.key.as_ref() {
                             "si" => {
                                 si = attr_value(&attr)?.parse::<u32>().ok();
@@ -1687,7 +1809,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
                                 "array" => is_array_formula = true,
                                 _ => {}
                             },
-                            "ref" => {
+                            "ref" if props.formula => {
                                 shared_ref = Some(attr_value(&attr)?.into_owned());
                             }
                             _ => {}
@@ -1695,13 +1817,13 @@ fn parse_cell_contents<R: std::io::BufRead>(
                     }
 
                     if let Event::Start(_) = event {
-                        let f_text = read_text_node(reader)?;
-                        if !f_text.is_empty() {
-                            formula = Some(f_text);
+                        read_text_into(reader, inner, formula_text)?;
+                        if props.formula && !formula_text.is_empty() {
+                            formula = Some(formula_text.clone());
                         }
                     }
 
-                    if is_shared {
+                    if is_shared && props.formula {
                         shared_si = si;
                     }
                 }
@@ -1730,7 +1852,7 @@ fn parse_cell_contents<R: std::io::BufRead>(
             Event::Eof => break,
             _ => {}
         }
-        buf.clear();
+        events.clear();
     }
 
     // t="e" marks error results, error constants and array error placeholders
@@ -1849,11 +1971,27 @@ pub fn has_vba_project_xlsx(
 pub fn extract_hidden_sheets_from_xlsx(
     archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
 ) -> Result<Vec<String>> {
-    let mut hidden_sheets = Vec::new();
+    Ok(extract_sheet_states_from_xlsx(archive)?
+        .into_iter()
+        .filter(|(_, state)| *state != SheetState::Visible)
+        .map(|(name, _)| name)
+        .collect())
+}
+
+/// The state of every sheet of the workbook (`state` of `<sheet>` in `xl/workbook.xml`), in the
+/// order of the workbook.
+///
+/// # Errors
+///
+/// When the XML of the workbook is malformed.
+pub fn extract_sheet_states_from_xlsx(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<Vec<(String, SheetState)>> {
+    let mut sheets = Vec::new();
 
     // Try to read workbook.xml
     let Ok(workbook_xml) = archive.by_name("xl/workbook.xml") else {
-        return Ok(hidden_sheets); // No workbook.xml, return empty
+        return Ok(sheets); // No workbook.xml, return empty
     };
 
     let buf_reader = BufReader::new(workbook_xml);
@@ -1865,33 +2003,35 @@ pub fn extract_hidden_sheets_from_xlsx(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e) | Event::Empty(e)) => {
-                match e.name().as_ref() {
-                    "sheets" => in_sheets = true,
-                    "sheet" if in_sheets => {
-                        let mut name = String::new();
-                        let mut state = String::new();
+            Ok(Event::Start(e) | Event::Empty(e)) => match e.name().as_ref() {
+                "sheets" => in_sheets = true,
+                "sheet" if in_sheets => {
+                    let mut name = String::new();
+                    let mut state = String::new();
 
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                "name" => {
-                                    name = attr_value(&attr)?.into_owned();
-                                }
-                                "state" => {
-                                    state = attr_value(&attr)?.into_owned();
-                                }
-                                _ => {}
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            "name" => {
+                                name = attr_value(&attr)?.into_owned();
                             }
-                        }
-
-                        // If state is "hidden" or "veryHidden", add to list
-                        if !name.is_empty() && (state == "hidden" || state == "veryHidden") {
-                            hidden_sheets.push(name);
+                            "state" => {
+                                state = attr_value(&attr)?.into_owned();
+                            }
+                            _ => {}
                         }
                     }
-                    _ => {}
+
+                    if !name.is_empty() {
+                        let state = match state.as_str() {
+                            "hidden" => SheetState::Hidden,
+                            "veryHidden" => SheetState::VeryHidden,
+                            _ => SheetState::Visible,
+                        };
+                        sheets.push((name, state));
+                    }
                 }
-            }
+                _ => {}
+            },
             Ok(Event::End(e)) if e.name().as_ref() == "sheets" => {
                 in_sheets = false;
             }
@@ -1902,7 +2042,7 @@ pub fn extract_hidden_sheets_from_xlsx(
         buf.clear();
     }
 
-    Ok(hidden_sheets)
+    Ok(sheets)
 }
 
 // Type alias to avoid clippy::type_complexity warning
@@ -2413,6 +2553,29 @@ mod tests {
     }
 
     #[test]
+    fn a_sheet_is_visible_hidden_or_very_hidden_as_the_workbook_says() {
+        let mut archive = archive(&[(
+            "xl/workbook.xml",
+            r#"<workbook><sheets><sheet name="A" sheetId="1"/><sheet name="B" sheetId="2" state="hidden"/><sheet name="C" sheetId="3" state="veryHidden"/><sheet name="D" sheetId="4" state="visible"/></sheets></workbook>"#,
+        )]);
+        let states = extract_sheet_states_from_xlsx(&mut archive).unwrap();
+        assert_eq!(
+            states,
+            [
+                ("A".to_string(), SheetState::Visible),
+                ("B".to_string(), SheetState::Hidden),
+                ("C".to_string(), SheetState::VeryHidden),
+                ("D".to_string(), SheetState::Visible),
+            ]
+        );
+        // The list of hidden sheets keeps both hidden states.
+        assert_eq!(
+            extract_hidden_sheets_from_xlsx(&mut archive).unwrap(),
+            ["B", "C"]
+        );
+    }
+
+    #[test]
     fn xlsx_properties_come_from_core_app_and_custom_parts() {
         let mut archive = archive(&[
             (
@@ -2703,9 +2866,17 @@ mod tests {
     fn parse_cell_value(cell_xml: &str, t_attr: &str, num_fmt: Option<&str>) -> CellValue {
         let mut reader = Reader::from_str(cell_xml);
         reader.read_event().unwrap();
-        parse_cell_contents(&mut reader, t_attr, &[], &[], num_fmt)
-            .unwrap()
-            .0
+        parse_cell_contents(
+            &mut reader,
+            &mut CellScratch::default(),
+            Properties::ALL,
+            t_attr,
+            &[],
+            &[],
+            num_fmt,
+        )
+        .unwrap()
+        .0
     }
 
     #[test]
@@ -2919,6 +3090,8 @@ mod tests {
                 0,
                 "S",
                 &mut crate::reader::GridSink::default(),
+                None,
+                Properties::ALL,
             )
             .unwrap();
 
@@ -2995,8 +3168,14 @@ fn test_sheet_visibility_xlsx() {
     let sheets = reader.read_sheets().unwrap();
 
     // Count visible and hidden sheets
-    let visible_count = sheets.iter().filter(|s| s.visible).count();
-    let hidden_count = sheets.iter().filter(|s| !s.visible).count();
+    let visible_count = sheets
+        .iter()
+        .filter(|s| s.state == SheetState::Visible)
+        .count();
+    let hidden_count = sheets
+        .iter()
+        .filter(|s| s.state != SheetState::Visible)
+        .count();
 
     assert!(visible_count > 0, "Should have at least one visible sheet");
     assert!(hidden_count > 0, "Test file should have hidden sheets");
@@ -3004,7 +3183,11 @@ fn test_sheet_visibility_xlsx() {
     // Verify hidden sheets have visible=false
     for sheet in &sheets {
         if sheet.name.contains("hidden") || sheet.name.contains("empty_hidden") {
-            assert!(!sheet.visible, "Sheet '{}' should be hidden", sheet.name);
+            assert!(
+                sheet.state != SheetState::Visible,
+                "Sheet '{}' should be hidden",
+                sheet.name
+            );
         }
     }
 }
