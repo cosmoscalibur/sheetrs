@@ -9,6 +9,7 @@ use zip::ZipArchive;
 
 pub mod excel_error;
 pub mod ods_parser;
+mod ods_styles;
 pub mod parser_utils;
 mod selection;
 mod source;

@@ -9,8 +9,17 @@
   `style:style`, which `LibreOffice` writes for dates) is read; those cells had no format and a
   date read as a number.
 
+### Added
+
+- `ods`: the number formats of a cell are read for every family of data style (number, grouping,
+  percentage, scientific, fraction, time, duration, currency, boolean, text, and the sections with
+  colours and conditions of `style:map`), written as the format code the XLSX of the same cell
+  holds (`0.00%`, `[hh]:mm:ss`, `#,##0.00 [$EUR]`, `0.00;[RED]-0.00`), and a cell style without a data
+  style takes the one of its parent. 38 formats of `LibreOffice` read the same in both formats; the
+  one that differs is the built-in `0`, which `LibreOffice` writes to an ODS as no style (General).
+  The reading of the styles lives in one module instead of three copies.
+
 ### Known differences
 
-- `ods`: time, duration, percentage and currency formats are not read yet (the XLSX gives them).
 - `ods`: a `LibreOffice` error that Excel does not have (`Err:502`, `Err:522`) reads as `#VALUE!`,
   as `LibreOffice` itself writes it to an XLSX.

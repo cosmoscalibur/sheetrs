@@ -124,3 +124,33 @@ fn an_error_that_only_libreoffice_has_is_the_value_error_an_xlsx_writes_for_it()
         assert_eq!(format!("{:?}", o[&(row, 0)].0), "Error(Value)");
     }
 }
+
+/// `formats.*` has 39 number formats of every family (number, grouping, percentage, scientific,
+/// fraction, time, duration, date, currency, sections with colours and conditions, text) in column
+/// A and the code that was asked for in column B. The ODS of `LibreOffice` and the XLSX it writes
+/// give the same format code for each, locale mark aside.
+#[test]
+fn a_number_format_is_the_same_code_in_both() {
+    let (xlsx, ods) = (read("formats.xlsx"), read("formats.ods"));
+    let (x, o) = (cells(&xlsx, "T"), cells(&ods, "T"));
+    let mut different = Vec::new();
+    for row in 0..39 {
+        let wanted = &x[&(row, 1)].0;
+        let from_xlsx = x[&(row, 0)]
+            .2
+            .as_deref()
+            .map(without_locale)
+            .unwrap_or("General");
+        let from_ods = o[&(row, 0)].2.as_deref().unwrap_or("General");
+        // `LibreOffice` writes the format `0` of the first row as no style at all in an ODS, so the
+        // cell is General there: it reads back as it is written.
+        if row == 0 {
+            assert_eq!((from_xlsx, from_ods), ("0", "General"));
+            continue;
+        }
+        if from_xlsx != from_ods {
+            different.push(format!("{wanted:?}: {from_xlsx:?} / {from_ods:?}"));
+        }
+    }
+    assert!(different.is_empty(), "{}", different.join("\n"));
+}

@@ -1,5 +1,6 @@
 //! ODS (`OpenDocument` Spreadsheet) parser implementation
 
+use super::ods_styles::NumberStyles;
 use super::parser_utils::{attr_value, push_general_ref, read_text_node};
 use super::workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, Sheet,
@@ -950,15 +951,12 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
         let mut sheets = Vec::new();
 
         // ============================================================
-        // STATE: Date styles extraction (from content.xml)
+        // STATE: Number formats (styles.xml, and the automatic styles of content.xml)
         // ============================================================
-        let mut data_styles: HashMap<String, NumFmt> = HashMap::new();
-        let mut cell_styles = HashMap::new();
-        let mut date_styles: HashMap<String, NumFmt> = HashMap::new(); // Resolved styles for cell lookup
-        let mut current_data_style_name = String::new();
-        let mut current_format = String::new();
-        let mut in_date_style = false;
-        let mut automatic_order = false;
+        let mut number_styles = NumberStyles::default();
+        // Format of every cell style and data style, built when the first table starts.
+        let mut date_styles: HashMap<String, NumFmt> = HashMap::new();
+        let mut tables_started = false;
 
         // ============================================================
         // STATE: Hidden sheets detection
@@ -1015,211 +1013,18 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
             reader.config_mut().trim_text(false);
             let mut buf = Vec::new();
 
-            let mut current_data_style_name = String::new();
-            let mut current_format = String::new();
-            let mut in_date_style = false;
-            let mut automatic_order = false;
-
             loop {
-                match reader.read_event_into(&mut buf)? {
-                    Event::Start(e) => {
-                        match e.name().as_ref() {
-                            "number:date-style" => {
-                                in_date_style = true;
-                                current_format.clear();
-                                automatic_order = false;
-                                for attr in e.attributes().flatten() {
-                                    match attr.key.as_ref() {
-                                        "style:name" => {
-                                            current_data_style_name =
-                                                attr_value(&attr)?.into_owned();
-                                        }
-                                        "number:automatic-order" if attr.value == "true" => {
-                                            automatic_order = true;
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                            "number:text-style" => {
-                                for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == "style:name" {
-                                        let style_name = attr_value(&attr)?.into_owned();
-                                        data_styles.insert(style_name.clone(), NumFmt::from("@"));
-                                        date_styles.insert(style_name, NumFmt::from("@"));
-                                    }
-                                }
-                            }
-                            "style:style" => {
-                                let mut is_cell_style = false;
-                                let mut style_name = String::new();
-                                let mut data_style_name = String::new();
-
-                                for attr in e.attributes().flatten() {
-                                    match attr.key.as_ref() {
-                                        "style:family" if attr.value == "table-cell" => {
-                                            is_cell_style = true;
-                                        }
-                                        "style:name" => {
-                                            style_name = attr_value(&attr)?.into_owned();
-                                        }
-                                        "style:data-style-name" => {
-                                            data_style_name = attr_value(&attr)?.into_owned();
-                                        }
-                                        _ => {}
-                                    }
-                                }
-
-                                if is_cell_style
-                                    && !style_name.is_empty()
-                                    && !data_style_name.is_empty()
-                                {
-                                    cell_styles.insert(style_name.clone(), data_style_name.clone());
-                                    // Immediately resolve if data style is known
-                                    if let Some(format) = data_styles.get(&data_style_name) {
-                                        date_styles.insert(style_name, format.clone());
-                                    }
-                                }
-                            }
-                            "number:day" if in_date_style => {
-                                let mut long = automatic_order;
-                                for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == "number:style" {
-                                        long = attr.value == "long";
-                                    }
-                                }
-                                current_format.push_str(if long { "dd" } else { "d" });
-                            }
-                            "number:month" if in_date_style => {
-                                let mut long = automatic_order;
-                                let mut textual = false;
-                                for attr in e.attributes().flatten() {
-                                    match attr.key.as_ref() {
-                                        "number:style" => {
-                                            long = attr.value == "long";
-                                        }
-                                        "number:textual" if attr.value == "true" => {
-                                            textual = true;
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                                if textual {
-                                    current_format.push_str(if long { "mmmm" } else { "mmm" });
-                                } else {
-                                    current_format.push_str(if long { "mm" } else { "m" });
-                                }
-                            }
-                            "number:year" if in_date_style => {
-                                let mut long = false;
-                                for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == "number:style" && attr.value == "long" {
-                                        long = true;
-                                    }
-                                }
-                                current_format.push_str(if long { "yyyy" } else { "yy" });
-                            }
-                            "number:hours" if in_date_style => {
-                                current_format.push_str("hh");
-                            }
-                            "number:minutes" if in_date_style => {
-                                current_format.push_str("mm");
-                            }
-                            "number:seconds" if in_date_style => {
-                                current_format.push_str("ss");
-                            }
-                            "number:text" if in_date_style => {
-                                // Will read text event next
-                            }
-                            _ => {}
-                        }
-                    }
-                    Event::Empty(e) => match e.name().as_ref() {
-                        "table:null-date" => {
-                            for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == "table:date-value"
-                                    && let Some(d) = null_date_shift(&attr_value(&attr)?)
-                                {
-                                    null_shift = d;
-                                }
+                let event = reader.read_event_into(&mut buf)?;
+                number_styles.feed(&event)?;
+                match event {
+                    Event::Empty(e) if e.name().as_ref() == "table:null-date" => {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == "table:date-value"
+                                && let Some(d) = null_date_shift(&attr_value(&attr)?)
+                            {
+                                null_shift = d;
                             }
                         }
-                        "number:day" if in_date_style => {
-                            let mut long = automatic_order;
-                            for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == "number:style" {
-                                    long = attr.value == "long";
-                                }
-                            }
-                            current_format.push_str(if long { "dd" } else { "d" });
-                        }
-                        "number:month" if in_date_style => {
-                            let mut long = automatic_order;
-                            let mut textual = false;
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
-                                    "number:style" => {
-                                        long = attr.value == "long";
-                                    }
-                                    "number:textual" if attr.value == "true" => {
-                                        textual = true;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            if textual {
-                                current_format.push_str(if long { "mmmm" } else { "mmm" });
-                            } else {
-                                current_format.push_str(if long { "mm" } else { "m" });
-                            }
-                        }
-                        "number:year" if in_date_style => {
-                            let mut long = false;
-                            for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == "number:style" && attr.value == "long" {
-                                    long = true;
-                                }
-                            }
-                            current_format.push_str(if long { "yyyy" } else { "yy" });
-                        }
-                        "number:hours" if in_date_style => {
-                            current_format.push_str("hh");
-                        }
-                        "number:minutes" if in_date_style => {
-                            current_format.push_str("mm");
-                        }
-                        "number:seconds" if in_date_style => {
-                            current_format.push_str("ss");
-                        }
-                        _ => {}
-                    },
-                    Event::Text(e) if in_date_style => {
-                        current_format.push_str(&e);
-                    }
-                    Event::GeneralRef(e) if in_date_style => {
-                        push_general_ref(&mut current_format, &e)?;
-                    }
-                    Event::End(e) if e.name().as_ref() == "number:date-style" => {
-                        if !current_data_style_name.is_empty() {
-                            data_styles.insert(
-                                current_data_style_name.clone(),
-                                NumFmt::from(current_format.as_str()),
-                            );
-                            date_styles.insert(
-                                current_data_style_name.clone(),
-                                NumFmt::from(current_format.as_str()),
-                            );
-                            // Resolve any cell styles that reference this data style
-                            for (cell_style, data_style) in &cell_styles {
-                                if data_style == &current_data_style_name {
-                                    date_styles.insert(
-                                        cell_style.clone(),
-                                        NumFmt::from(current_format.as_str()),
-                                    );
-                                }
-                            }
-                        }
-                        in_date_style = false;
                     }
                     Event::Eof => break,
                     _ => {}
@@ -1254,75 +1059,25 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                 let event_start = reader.buffer_position();
                 let event = reader.read_event_into(&mut buf)?;
                 let empty_tag = matches!(event, Event::Empty(_));
+                if !tables_started {
+                    number_styles.feed(&event)?;
+                }
                 match event {
                     // --------------------------------------------------------
-                    // DATE STYLES: number:date-style
+                    // TABLE STYLES: which ones hide their table. A style with nothing inside
+                    // (`<style:style ... style:data-style-name="N49"/>`) is how `LibreOffice`
+                    // writes the cell style of a cell that only has a number format.
                     // --------------------------------------------------------
-                    Event::Start(e) if e.name().as_ref() == "number:date-style" => {
-                        in_date_style = true;
-                        current_format.clear();
-                        automatic_order = false;
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                "style:name" => {
-                                    current_data_style_name = attr_value(&attr)?.into_owned();
-                                }
-                                "number:automatic-order" if attr.value == "true" => {
-                                    automatic_order = true;
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    // DATE STYLES: number:text-style
-                    Event::Start(e) if e.name().as_ref() == "number:text-style" => {
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == "style:name" {
-                                let style_name = attr_value(&attr)?.into_owned();
-                                data_styles.insert(style_name.clone(), NumFmt::from("@"));
-                                date_styles.insert(style_name, NumFmt::from("@"));
-                            }
-                        }
-                    }
-                    // DATE STYLES: style:style (for cell styles mapping)
-                    // A style with nothing inside (`<style:style ... style:data-style-name="N49"/>`)
-                    // is how `LibreOffice` writes the cell style of a cell that only has a number
-                    // format.
                     Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "style:style" => {
-                        let mut is_cell_style = false;
                         let mut style_name = String::new();
-                        let mut data_style_name = String::new();
                         let mut is_table_style = false;
-
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                "style:family" => {
-                                    if attr.value == "table-cell" {
-                                        is_cell_style = true;
-                                    } else if attr.value == "table" {
-                                        is_table_style = true;
-                                    }
-                                }
-                                "style:name" => {
-                                    style_name = attr_value(&attr)?.into_owned();
-                                }
-                                "style:data-style-name" => {
-                                    data_style_name = attr_value(&attr)?.into_owned();
-                                }
+                                "style:family" if attr.value == "table" => is_table_style = true,
+                                "style:name" => style_name = attr_value(&attr)?.into_owned(),
                                 _ => {}
                             }
                         }
-
-                        // Map cell styles to data styles for date formatting
-                        if is_cell_style && !style_name.is_empty() && !data_style_name.is_empty() {
-                            cell_styles.insert(style_name.clone(), data_style_name.clone());
-                            // Immediately resolve to date_styles if data style is already known
-                            if let Some(format) = data_styles.get(&data_style_name) {
-                                date_styles.insert(style_name.clone(), format.clone());
-                            }
-                        }
-
-                        // Check for hidden table styles
                         if is_table_style && !empty_tag && !style_name.is_empty() {
                             let mut inner_buf = Vec::new();
                             loop {
@@ -1348,146 +1103,14 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             }
                         }
                     }
-                    // DATE STYLES: date components (Start events)
-                    Event::Start(e) if in_date_style => {
-                        match e.name().as_ref() {
-                            "number:day" => {
-                                let mut long = automatic_order;
-                                for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == "number:style" {
-                                        long = attr.value == "long";
-                                    }
-                                }
-                                current_format.push_str(if long { "dd" } else { "d" });
-                            }
-                            "number:month" => {
-                                let mut long = automatic_order;
-                                let mut textual = false;
-                                for attr in e.attributes().flatten() {
-                                    match attr.key.as_ref() {
-                                        "number:style" => {
-                                            long = attr.value == "long";
-                                        }
-                                        "number:textual" if attr.value == "true" => {
-                                            textual = true;
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                                if textual {
-                                    current_format.push_str(if long { "mmmm" } else { "mmm" });
-                                } else {
-                                    current_format.push_str(if long { "mm" } else { "m" });
-                                }
-                            }
-                            "number:year" => {
-                                let mut long = false;
-                                for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == "number:style" && attr.value == "long" {
-                                        long = true;
-                                    }
-                                }
-                                current_format.push_str(if long { "yyyy" } else { "yy" });
-                            }
-                            "number:hours" => {
-                                current_format.push_str("hh");
-                            }
-                            "number:minutes" => {
-                                current_format.push_str("mm");
-                            }
-                            "number:seconds" => {
-                                current_format.push_str("ss");
-                            }
-                            // "number:text" reads its text event next
-                            _ => {}
-                        }
-                    }
-                    // DATE STYLES: date components (Empty events)
-                    Event::Empty(e) if in_date_style => match e.name().as_ref() {
-                        "number:day" => {
-                            let mut long = automatic_order;
-                            for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == "number:style" {
-                                    long = attr.value == "long";
-                                }
-                            }
-                            current_format.push_str(if long { "dd" } else { "d" });
-                        }
-                        "number:month" => {
-                            let mut long = automatic_order;
-                            let mut textual = false;
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
-                                    "number:style" => {
-                                        long = attr.value == "long";
-                                    }
-                                    "number:textual" if attr.value == "true" => {
-                                        textual = true;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            if textual {
-                                current_format.push_str(if long { "mmmm" } else { "mmm" });
-                            } else {
-                                current_format.push_str(if long { "mm" } else { "m" });
-                            }
-                        }
-                        "number:year" => {
-                            let mut long = false;
-                            for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == "number:style" && attr.value == "long" {
-                                    long = true;
-                                }
-                            }
-                            current_format.push_str(if long { "yyyy" } else { "yy" });
-                        }
-                        "number:hours" => {
-                            current_format.push_str("hh");
-                        }
-                        "number:minutes" => {
-                            current_format.push_str("mm");
-                        }
-                        "number:seconds" => {
-                            current_format.push_str("ss");
-                        }
-                        _ => {}
-                    },
-                    // DATE STYLES: text content within date style
-                    Event::Text(e) if in_date_style => {
-                        current_format.push_str(&e);
-                    }
-                    Event::GeneralRef(e) if in_date_style => {
-                        push_general_ref(&mut current_format, &e)?;
-                    }
-                    // DATE STYLES: end of date-style
-                    Event::End(e) if e.name().as_ref() == "number:date-style" => {
-                        if !current_data_style_name.is_empty() {
-                            data_styles.insert(
-                                current_data_style_name.clone(),
-                                NumFmt::from(current_format.as_str()),
-                            );
-                            // Also add to date_styles directly
-                            date_styles.insert(
-                                current_data_style_name.clone(),
-                                NumFmt::from(current_format.as_str()),
-                            );
-                            // Resolve any cell styles that reference this data style
-                            for (cell_style, data_style) in &cell_styles {
-                                if data_style == &current_data_style_name {
-                                    date_styles.insert(
-                                        cell_style.clone(),
-                                        NumFmt::from(current_format.as_str()),
-                                    );
-                                }
-                            }
-                        }
-                        in_date_style = false;
-                    }
                     // --------------------------------------------------------
                     // MAIN SHEET DATA: table:table
                     // --------------------------------------------------------
                     Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "table:table" => {
+                        if !tables_started {
+                            tables_started = true;
+                            date_styles = number_styles.resolve();
+                        }
                         // Collect sheet style for hidden detection
                         let mut sheet_name = String::new();
                         let mut style_name = String::new();
@@ -2449,24 +2072,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
             {
                 sheet.charts += 1;
             }
-        }
-
-        // ============================================================
-        // POST-PROCESSING: Final resolution of any remaining styles
-        // ============================================================
-        // Resolve any cell styles that weren't resolved during parsing
-        for (cell_style, data_style) in &cell_styles {
-            if !date_styles.contains_key(cell_style)
-                && let Some(format) = data_styles.get(data_style)
-            {
-                date_styles.insert(cell_style.clone(), format.clone());
-            }
-        }
-        // Also add data styles directly to date_styles
-        for (data_style, format) in &data_styles {
-            date_styles
-                .entry(data_style.clone())
-                .or_insert(format.clone());
         }
 
         // ============================================================
