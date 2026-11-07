@@ -6,7 +6,10 @@ use super::xlsx_structure::{
     Handled, SheetStructure, handle_element, map_attributes, rewrite_comments, rewrite_drawing,
     rewrite_vml, text_of,
 };
-use super::{ValueScope, WorkbookModifications, attribute, read_element_body, write_element};
+use super::{
+    CellEdit, SheetEdits, ValueScope, WorkbookModifications, attribute, read_element_body,
+    write_element,
+};
 use crate::error::{Context, Error, Result};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
@@ -99,6 +102,21 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
         let part = workbook_part_name(sheet_target(sheet)?);
         value_scopes.entry(part).or_default().push(scope);
     }
+    // The worksheet part of every sheet with cells to replace.
+    let mut edit_parts: HashMap<String, &SheetEdits> = HashMap::new();
+    for (name, edits) in &modifications.replacements {
+        if removes_sheet(name) {
+            continue;
+        }
+        let sheet = sheets
+            .iter()
+            .find(|sheet| &sheet.name == name)
+            .ok_or_else(|| Error::SheetNotFound {
+                sheet: name.clone(),
+                part: WORKBOOK_PART.to_string(),
+            })?;
+        edit_parts.insert(workbook_part_name(sheet_target(sheet)?), edits);
+    }
     let sheet_names: Vec<String> = sheets.iter().map(|sheet| sheet.name.clone()).collect();
     let removed_sheet_names: HashSet<String> = removed_indices
         .iter()
@@ -146,8 +164,10 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
     // Excel rebuilds the calculation chain when it is missing, but reports a
     // corrupt file when it lists cells that no longer hold formulas or sheets
     // that no longer exist.
-    let drop_calc_chain =
-        !value_scopes.is_empty() || !removed_indices.is_empty() || !plan.is_empty();
+    let drop_calc_chain = !value_scopes.is_empty()
+        || !removed_indices.is_empty()
+        || !plan.is_empty()
+        || !edit_parts.is_empty();
     let removes_part = |part_name: &str| {
         removed_parts.contains(part_name) || (drop_calc_chain && part_name == CALC_CHAIN_PART)
     };
@@ -213,15 +233,17 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
                         .unwrap_or(false),
                     _ => false,
                 };
+                let cell_edits = edit_parts.get(&name).copied();
                 if unaffected {
                     zip_writer.raw_copy_file(archive.by_index_raw(i)?)?;
-                } else if !scopes.is_empty() || structure.is_some() {
+                } else if !scopes.is_empty() || structure.is_some() || cell_edits.is_some() {
                     zip_writer.start_file(&name, SimpleFileOptions::default())?;
                     transform_sheet(
                         BufReader::new(archive.by_index(i)?),
                         &mut zip_writer,
                         scopes,
                         structure.as_ref(),
+                        cell_edits,
                         sheet_of_part.get(&name).copied().unwrap_or_default(),
                     )
                     .with_context(|| format!("Failed to rewrite {name}"))?;
@@ -953,9 +975,12 @@ fn transform_sheet<R: BufRead, W: Write>(
     output: W,
     scopes: &[&ValueScope],
     structure: Option<&SheetStructure>,
+    edits: Option<&SheetEdits>,
     sheet: &str,
 ) -> Result<()> {
     let mut reader = Reader::from_reader(input);
+    // The ranges of the array formulas seen so far: the cells inside them are results, not content.
+    let mut arrays: Vec<(u32, u32, u32, u32)> = Vec::new();
     let mut writer = Writer::new(BufWriter::new(output));
     let mut cursor = CellCursor::default();
     let mut masters: HashMap<u32, SharedMaster> = HashMap::new();
@@ -1026,6 +1051,35 @@ fn transform_sheet<R: BufRead, W: Write>(
                     None => None,
                 };
                 let start = relocated_cell(&e, at, false)?;
+                if let Some(f) = &formula
+                    && matches!(f.kind.as_deref(), Some("array" | "dataTable"))
+                    && let Some(range) = f.range
+                {
+                    arrays.push(range);
+                }
+                let inside_array = formula.is_none()
+                    && arrays.iter().any(|&(r0, c0, r1, c1)| {
+                        (r0..=r1).contains(&row)
+                            && (c0..=c1).contains(&col)
+                            && (row, col) != (r0, c0)
+                    });
+                if let Some(edit) = edits.and_then(|m| m.get(&(row, col)))
+                    && !inside_array
+                    && !formula
+                        .as_ref()
+                        .is_some_and(|f| matches!(f.kind.as_deref(), Some("array" | "dataTable")))
+                {
+                    // A group of shared formulas reads its text from the first cell: when that
+                    // one is replaced, the rest take a formula of their own.
+                    if let Some(f) = &formula
+                        && f.is_shared()
+                        && let Some(master) = f.shared_index.and_then(|si| masters.get_mut(&si))
+                    {
+                        master.converted = true;
+                    }
+                    write_edited_cell(&mut writer, &start, edit)?;
+                    continue;
+                }
                 let Some(formula) = formula else {
                     write_element(&mut writer, start, Some(&body))?;
                     continue;
@@ -1391,6 +1445,57 @@ fn write_formula_cell<W: Write>(
     Ok(())
 }
 
+/// Write a cell with the content a replacement gives it: the style of the cell stays, its type, its
+/// formula and its cached value are the new ones. A text is written as an inline string, which
+/// leaves the table of shared strings as it is.
+fn write_edited_cell<W: Write>(
+    writer: &mut Writer<W>,
+    start: &BytesStart,
+    edit: &CellEdit,
+) -> Result<()> {
+    let mut cell = BytesStart::new("c");
+    for attr in start.attributes() {
+        let attr = attr?;
+        // The type is the new one; `cm` and `vm` mark the metadata of a dynamic array.
+        if !matches!(attr.key.as_ref(), "t" | "cm" | "vm") {
+            cell.push_attribute(attr);
+        }
+    }
+    let element = |writer: &mut Writer<W>, name: &str, text: &str, preserve: bool| -> Result<()> {
+        let mut e = BytesStart::new(name);
+        if preserve {
+            e.push_attribute(("xml:space", "preserve"));
+        }
+        writer.write_event(Event::Start(e))?;
+        writer.write_event(Event::Text(BytesText::new(text)))?;
+        writer.write_event(Event::End(BytesEnd::new(name)))?;
+        Ok(())
+    };
+    match edit {
+        CellEdit::Clear => {
+            writer.write_event(Event::Empty(cell))?;
+            return Ok(());
+        }
+        CellEdit::Text(_) => cell.push_attribute(("t", "inlineStr")),
+        CellEdit::Boolean(_) => cell.push_attribute(("t", "b")),
+        CellEdit::Number(_) | CellEdit::Formula(_) => {}
+    }
+    writer.write_event(Event::Start(cell))?;
+    match edit {
+        CellEdit::Text(text) => {
+            writer.write_event(Event::Start(BytesStart::new("is")))?;
+            element(writer, "t", text, true)?;
+            writer.write_event(Event::End(BytesEnd::new("is")))?;
+        }
+        CellEdit::Number(n) => element(writer, "v", &n.to_string(), false)?,
+        CellEdit::Boolean(b) => element(writer, "v", if *b { "1" } else { "0" }, false)?,
+        CellEdit::Formula(f) => element(writer, "f", f, false)?,
+        CellEdit::Clear => {}
+    }
+    writer.write_event(Event::End(BytesEnd::new("c")))?;
+    Ok(())
+}
+
 /// Write a cell without its `<f>` element. A formula string result
 /// (`t="str"`) becomes an inline string, since `str` marks formula cells.
 fn write_value_cell<W: Write>(
@@ -1468,6 +1573,52 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    fn edited_sheet(xml: &str, edits: &SheetEdits) -> String {
+        let mut out = Vec::new();
+        transform_sheet(xml.as_bytes(), &mut out, &[], None, Some(edits), "S").unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    const SHARED: &str = r#"<worksheet><sheetData><row r="1"><c r="A1" s="3"><f t="shared" ref="A1:A3" si="0">B1*2</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>4</v></c></row><row r="3"><c r="A3" t="str"><f t="shared" si="0"/><v>x</v></c></row></sheetData></worksheet>"#;
+
+    #[test]
+    fn the_cells_of_a_shared_group_take_a_formula_of_their_own_when_the_first_is_replaced() {
+        let mut edits = SheetEdits::new();
+        edits.insert((0, 0), CellEdit::Text("hi & <bye>".into()));
+        edits.insert((2, 0), CellEdit::Number(7.5));
+        let out = edited_sheet(SHARED, &edits);
+        assert!(out.contains(r#"<c r="A1" s="3" t="inlineStr"><is><t xml:space="preserve">hi &amp; &lt;bye&gt;</t></is></c>"#), "{out}");
+        assert!(
+            out.contains(r#"<c r="A2"><f>B2*2</f><v>4</v></c>"#),
+            "{out}"
+        );
+        assert!(out.contains(r#"<c r="A3"><v>7.5</v></c>"#), "{out}");
+    }
+
+    #[test]
+    fn a_formula_edit_drops_the_cached_value_and_the_type() {
+        let mut edits = SheetEdits::new();
+        edits.insert((2, 0), CellEdit::Formula("SUM(B1,B2)".into()));
+        edits.insert((1, 0), CellEdit::Boolean(true));
+        let out = edited_sheet(SHARED, &edits);
+        assert!(out.contains(r#"<c r="A3"><f>SUM(B1,B2)</f></c>"#), "{out}");
+        assert!(out.contains(r#"<c r="A2" t="b"><v>1</v></c>"#), "{out}");
+        // The first cell is a master whose group is intact except for the edited members.
+        assert!(
+            out.contains(r#"<f t="shared" ref="A1:A3" si="0">B1*2</f>"#),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn the_cells_of_an_array_formula_are_not_replaced() {
+        let xml = r#"<worksheet><sheetData><row r="1"><c r="A1"><f t="array" ref="A1:A2">{1;2}</f><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c></row></sheetData></worksheet>"#;
+        let mut edits = SheetEdits::new();
+        edits.insert((0, 0), CellEdit::Number(9.0));
+        edits.insert((1, 0), CellEdit::Number(9.0));
+        assert_eq!(edited_sheet(xml, &edits), xml);
     }
 
     const WORKBOOK_XML: &str = r#"<workbook><sheets><sheet name="R&amp;D" sheetId="1" r:id="rId1"/><sheet name="Data" sheetId="2" r:id="rId2"/></sheets><definedNames><definedName name="A&amp;B">Data!$A$1</definedName><definedName name="Keep">Data!$B$1</definedName></definedNames></workbook>"#;

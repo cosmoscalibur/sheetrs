@@ -41,9 +41,11 @@
 //! of a pass does not depend on the size of the workbook.
 
 use crate::error::{Context, Error, Result};
+use crate::replace::{ReplaceSpec, Report};
 use crate::writer::structure::Bands;
 use crate::writer::{self, ColumnRange, RowRange, ValueScope, WorkbookModifications};
 use sheetrs_io::reader::Source;
+use sheetrs_protocol::{Replace, Scope};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
@@ -63,6 +65,10 @@ pub(crate) enum Operation {
     DeleteRows(Vec<RowRange>),
     /// Delete the columns of the ranges.
     DeleteColumns(Vec<ColumnRange>),
+    /// Find and replace text in the cells of the scopes, as `LibreOffice` does. It reads the
+    /// content of the cells, so it is a pass of its own: what it decides is decided against the
+    /// workbook as the operations before it leave it.
+    Replace(ReplaceSpec),
 }
 
 impl fmt::Display for Operation {
@@ -82,6 +88,36 @@ impl fmt::Display for Operation {
             }
             Self::DeleteRows(rows) => write!(f, "delete rows {}", list(rows)),
             Self::DeleteColumns(columns) => write!(f, "delete columns {}", list(columns)),
+            Self::Replace(spec) => {
+                let find = &spec.replace.find;
+                write!(f, "replace {:?} with {:?}", find.text, spec.replace.with)?;
+                let mut how = vec![format!("{:?}", find.mode).to_lowercase()];
+                if find.match_case {
+                    how.push("match case".into());
+                }
+                if find.entire_cells {
+                    how.push("entire cells".into());
+                }
+                how.push(format!("in {:?}", find.search_in).to_lowercase());
+                if find.include_formulas {
+                    how.push("including formulas".into());
+                }
+                write!(f, " ({})", how.join(", "))?;
+                if spec.scopes.is_empty() {
+                    f.write_str(" in the workbook")
+                } else {
+                    let scopes: Vec<String> = spec
+                        .scopes
+                        .iter()
+                        .map(|s| match s {
+                            Scope::Workbook => "the workbook".to_string(),
+                            Scope::Sheet(name) => format!("sheet {name}"),
+                            Scope::Range(r) => r.as_str().to_string(),
+                        })
+                        .collect();
+                    write!(f, " in {}", scopes.join(", "))
+                }
+            }
         }
     }
 }
@@ -93,6 +129,7 @@ impl Operation {
             Self::ConvertToValues(items) => items.is_empty(),
             Self::DeleteRows(items) => items.is_empty(),
             Self::DeleteColumns(items) => items.is_empty(),
+            Self::Replace(_) => false,
         }
     }
 }
@@ -153,6 +190,10 @@ impl Plan {
         self.push(Operation::DeleteColumns(columns.into_iter().collect()))
     }
 
+    pub(crate) fn replace(&mut self, scopes: Vec<Scope>, replace: Replace) -> &mut Self {
+        self.push(Operation::Replace(ReplaceSpec { scopes, replace }))
+    }
+
     /// Whether the output will be marked to be recalculated when it is opened. The plan decides:
     /// it does when an operation leaves cached results stale (rows, columns, sheets or names
     /// removed), and it does not when the plan only converts formulas to values.
@@ -195,6 +236,15 @@ impl Plan {
                         sheet: sheet.to_string(),
                     });
                 }
+            }
+            if let Operation::Replace(_) = operation {
+                // It reads what the operations before it leave and decides the cells it changes:
+                // a pass of its own, and what comes after starts another.
+                if !current.is_empty() {
+                    passes.push(std::mem::take(&mut current).into_operations());
+                }
+                passes.push(vec![operation.clone()]);
+                continue;
             }
             if !current.admits(operation) {
                 passes.push(std::mem::take(&mut current).into_operations());
@@ -242,7 +292,7 @@ impl Plan {
     /// When the plan is empty or cannot be planned ([`passes`](Self::passes)), when a file cannot
     /// be read or written, or when a pass fails (a sheet that does not exist, a formula with a 3D
     /// reference, a change the writer cannot make faithfully).
-    pub(crate) fn execute(&self, input: &Source, output: impl AsRef<Path>) -> Result<()> {
+    pub(crate) fn execute(&self, input: &Source, output: impl AsRef<Path>) -> Result<Report> {
         if self.is_empty() {
             return Err(Error::EmptyPlan);
         }
@@ -262,6 +312,7 @@ impl Plan {
             }
             (Source::Bytes { .. }, None) => unreachable!("a source of bytes has a folder"),
         };
+        let mut report = Report::default();
         for (i, pass) in passes.iter().enumerate() {
             let last = i + 1 == passes.len();
             let target = match (&folder, last) {
@@ -269,12 +320,18 @@ impl Plan {
                 _ => output.to_path_buf(),
             };
             let mut mods = modifications_of(pass);
+            if let [Operation::Replace(spec)] = pass.as_slice() {
+                let (edits, done) = crate::replace::decide(&current, spec)
+                    .with_context(|| format!("Failed in pass {} of {}", i + 1, passes.len()))?;
+                mods.replacements = edits;
+                report.absorb(done);
+            }
             mods.recalculate_on_open = last && self.marks_recalculation();
             writer::modify_workbook(&current, &target, &mods)
                 .with_context(|| format!("Failed in pass {} of {}", i + 1, passes.len()))?;
             current = target;
         }
-        Ok(())
+        Ok(report)
     }
 }
 
@@ -285,6 +342,15 @@ fn sheets_of(operation: &Operation) -> Vec<&str> {
         Operation::ConvertToValues(scopes) => scopes.iter().map(|s| s.sheet.as_str()).collect(),
         Operation::DeleteRows(rows) => rows.iter().map(|r| r.sheet.as_str()).collect(),
         Operation::DeleteColumns(columns) => columns.iter().map(|c| c.sheet.as_str()).collect(),
+        Operation::Replace(spec) => spec
+            .scopes
+            .iter()
+            .filter_map(|scope| match scope {
+                Scope::Sheet(name) => Some(name.as_str()),
+                Scope::Range(r) => r.sheet.as_deref(),
+                Scope::Workbook => None,
+            })
+            .collect(),
         Operation::RemoveSheets(_) | Operation::RemoveNamedRanges(_) => Vec::new(),
     }
 }
@@ -313,6 +379,8 @@ fn modifications_of(pass: &[Operation]) -> WorkbookModifications {
                 mods.delete_columns
                     .extend(columns.iter().cloned().map(ValueScope::from));
             }
+            // Decided against the input of its pass, when the pass runs.
+            Operation::Replace(_) => {}
         }
     }
     mods
@@ -393,6 +461,7 @@ impl Pass {
             }
             Operation::RemoveNamedRanges(names) => self.names.extend(names.iter().cloned()),
             Operation::RemoveSheets(names) => self.sheets.extend(names.iter().cloned()),
+            Operation::Replace(_) => unreachable!("a replacement is a pass of its own"),
         }
         if !matches!(operation, Operation::ConvertToValues(_)) {
             self.changes = true;

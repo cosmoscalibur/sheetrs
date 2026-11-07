@@ -17,6 +17,21 @@ use sheetrs_formula::calc_print::{CalcSyntax, to_calc};
 use sheetrs_io::reader::{Cell, CellValue};
 use sheetrs_protocol::SearchIn;
 
+/// What a text becomes when it is typed into a cell, as `LibreOffice` reads it: the replacement of a
+/// Find & Replace is entered in the cell as if it were typed (observed in 24.2.7: replacing the
+/// text of a cell by `12` makes a number, by `=1+1` a formula, by `TRUE` a boolean, by `''12` a text,
+/// and by nothing an empty cell).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Typed {
+    /// An empty cell.
+    Empty,
+    Text(String),
+    Number(f64),
+    Boolean(bool),
+    /// A formula in the notation of `LibreOffice`, without the `=`.
+    Formula(String),
+}
+
 /// What decides how a number is written: the locale and the date system of the workbook.
 #[derive(Debug, Clone)]
 pub struct TextContext {
@@ -118,6 +133,38 @@ impl TextContext {
                 DateSystem::NULL_1899
             },
         })
+    }
+
+    /// What `input` becomes when it is typed into a cell; `text_format` is whether the cell has the
+    /// text format (`@`), which keeps everything as text.
+    #[must_use]
+    pub fn typed(&self, input: &str, text_format: bool) -> Typed {
+        if input.is_empty() {
+            return Typed::Empty;
+        }
+        if text_format {
+            return Typed::Text(input.to_string());
+        }
+        if let Some(rest) = input.strip_prefix('\'') {
+            return Typed::Text(rest.to_string());
+        }
+        if let Some(rest) = input.strip_prefix('=')
+            && !rest.is_empty()
+        {
+            return Typed::Formula(rest.to_string());
+        }
+        let trimmed = input.trim();
+        if trimmed.eq_ignore_ascii_case(&self.locale.true_text) {
+            return Typed::Boolean(true);
+        }
+        if trimmed.eq_ignore_ascii_case(&self.locale.false_text) {
+            return Typed::Boolean(false);
+        }
+        let dates = sheetrs_engine::datetext::DateCtx::new(self.sys, None);
+        match sheetrs_engine::coerce::parse_number(trimmed, &self.locale, dates) {
+            Some(x) => Typed::Number(x),
+            None => Typed::Text(input.to_string()),
+        }
     }
 
     /// The number as `General` writes it.
@@ -280,6 +327,29 @@ mod tests {
             "03/15/2023 18:00:00"
         );
         assert_eq!(c.input_line(0.75, Some("[hh]:mm:ss")), "18:00:00");
+    }
+
+    // Observed in `LibreOffice` 24.2.7: the replacement is entered as if it were typed.
+    #[test]
+    fn a_replacement_is_typed_into_the_cell() {
+        let c = ctx();
+        assert_eq!(c.typed("", false), Typed::Empty);
+        assert_eq!(c.typed("12", false), Typed::Number(12.0));
+        assert_eq!(c.typed("  12 ", false), Typed::Number(12.0));
+        assert_eq!(c.typed("50%", false), Typed::Number(0.5));
+        assert_eq!(c.typed("1e3", false), Typed::Number(1000.0));
+        assert_eq!(c.typed("03/15/2024", false), Typed::Number(45366.0));
+        assert_eq!(c.typed("true", false), Typed::Boolean(true));
+        assert_eq!(c.typed("=1+1", false), Typed::Formula("1+1".into()));
+        assert_eq!(c.typed("=", false), Typed::Text("=".into()));
+        assert_eq!(c.typed("'12", false), Typed::Text("12".into()));
+        assert_eq!(c.typed("abc", false), Typed::Text("abc".into()));
+        assert_eq!(c.typed("   b", false), Typed::Text("   b".into()));
+        assert_eq!(
+            c.typed("12", true),
+            Typed::Text("12".into()),
+            "a text format keeps text"
+        );
     }
 
     #[test]

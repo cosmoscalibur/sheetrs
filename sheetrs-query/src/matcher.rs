@@ -3,8 +3,9 @@
 //! Observed in `LibreOffice` 24.2:
 //!
 //! - Case is ignored unless `match_case`; `entire_cells` asks the whole text of the cell, not a
-//!   part of it.
-//! - `Wildcards`: `*` any text, `?` one character, `\` the next character as it is (not `~`, which
+//!   part of it: the **first** match must cover it all (`a|ab` does not match `ab`, and `a*b` does
+//!   not match `abab`, because the first match of `a*b` is `ab`).
+//! - `Wildcards`: `*` any text (as little as it can), `?` one character, `\` the next character as it is (not `~`, which
 //!   is the escape of `COUNTIF`).
 //! - `Regex`: ICU syntax; the part of it that was compared with `LibreOffice` is the subset of
 //!   `sheetrs_engine::regex_subset`, and a pattern outside it is refused instead of giving another
@@ -23,6 +24,7 @@ use sheetrs_protocol::{Find, Mode};
 pub struct Matcher {
     re: Regex,
     regex_mode: bool,
+    entire: bool,
 }
 
 /// The pattern of a literal text.
@@ -36,7 +38,7 @@ fn wildcards(text: &str) -> String {
     let mut chars = text.chars();
     while let Some(c) = chars.next() {
         match c {
-            '*' => out.push_str("(?s:.*)"),
+            '*' => out.push_str("(?s:.*?)"),
             '?' => out.push_str("(?s:.)"),
             '\\' => match chars.next() {
                 Some(next) => out.push_str(&escape(&next.to_string())),
@@ -59,24 +61,35 @@ impl Matcher {
             Mode::Regex => sheetrs_engine::regex_subset::translate_capturing(&find.text)
                 .map_err(|e| Error::Unsupported(e.to_string()))?,
         };
-        let body = if find.entire_cells {
-            format!("\\A(?:{body})\\z")
-        } else {
-            body
-        };
         let flags = if find.match_case { "" } else { "(?i)" };
         let re =
             Regex::new(&format!("{flags}{body}")).map_err(|e| Error::Unsupported(e.to_string()))?;
         Ok(Self {
             re,
             regex_mode: find.mode == Mode::Regex,
+            entire: find.entire_cells,
         })
     }
 
     /// Whether the text holds a hit.
     #[must_use]
     pub fn is_match(&self, text: &str) -> bool {
-        self.re.find_iter(text).any(|m| !m.as_str().is_empty())
+        self.hits(text).next().is_some()
+    }
+
+    /// The hits to take: every non-empty match, or, when the whole cell is asked, the first match if
+    /// it covers the text.
+    fn hits<'a>(&'a self, text: &'a str) -> impl Iterator<Item = regex::Captures<'a>> {
+        let whole = |c: &regex::Captures<'_>| {
+            c.get(0)
+                .is_some_and(|m| m.start() == 0 && m.end() == text.len())
+        };
+        let entire = self.entire;
+        self.re
+            .captures_iter(text)
+            .filter(|c| c.get(0).is_some_and(|m| !m.as_str().is_empty()))
+            .take(if entire { 1 } else { usize::MAX })
+            .filter(move |c| !entire || whole(c))
     }
 
     /// The text with every hit replaced by `with`, or `None` when it holds none.
@@ -85,11 +98,8 @@ impl Matcher {
         let mut out = String::with_capacity(text.len());
         let mut last = 0;
         let mut hit = false;
-        for caps in self.re.captures_iter(text) {
+        for caps in self.hits(text) {
             let whole = caps.get(0)?;
-            if whole.as_str().is_empty() {
-                continue;
-            }
             hit = true;
             out.push_str(&text[last..whole.start()]);
             if self.regex_mode {
@@ -227,6 +237,35 @@ mod tests {
             ..w("a*c")
         };
         assert_eq!(replaced(&whole, "xabbcx", "Z"), None);
+    }
+
+    #[test]
+    fn the_whole_cell_is_the_first_match_and_a_star_takes_as_little_as_it_can() {
+        let whole = |t: &str, mode| Find {
+            entire_cells: true,
+            ..find(t, mode)
+        };
+        // `LibreOffice` 24.2.7: the first match must be the whole text.
+        assert_eq!(replaced(&whole("a*b", Mode::Wildcards), "abab", "X"), None);
+        assert_eq!(
+            replaced(&whole("a*b", Mode::Wildcards), "axb", "X").as_deref(),
+            Some("X")
+        );
+        assert_eq!(replaced(&whole("a|ab", Mode::Regex), "ab", "X"), None);
+        assert_eq!(
+            replaced(&whole("ab|a", Mode::Regex), "ab", "X").as_deref(),
+            Some("X")
+        );
+        assert_eq!(
+            replaced(&whole("a.*b", Mode::Regex), "abab", "X").as_deref(),
+            Some("X")
+        );
+        assert_eq!(replaced(&whole("a.*?b", Mode::Regex), "abab", "X"), None);
+        // Not the whole cell: `a*b` stops at the first `b`.
+        assert_eq!(
+            replaced(&find("a*b", Mode::Wildcards), "xabcbx", "X").as_deref(),
+            Some("xXcbx")
+        );
     }
 
     #[test]

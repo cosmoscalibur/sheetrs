@@ -52,6 +52,9 @@ pub enum Error {
     NoFile,
     #[error("Unsupported file format")]
     UnsupportedFormat,
+    /// A search or a locale the replacement does not reproduce.
+    #[error("unsupported search: {0}")]
+    Search(String),
 
     // What cannot be done faithfully.
     /// A reference across sheets (`Sheet1:Sheet3!A1`): not supported yet.

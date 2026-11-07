@@ -2,8 +2,10 @@
 
 use crate::error::{Context, Error, Result};
 use crate::plan::Plan;
+use crate::replace::Report;
 use crate::writer::{ColumnRange, RowRange, ValueScope};
 use sheetrs_io::reader::Source;
+use sheetrs_protocol::{Replace, Scope};
 use std::path::Path;
 
 /// Changes to one workbook, saved as a new file.
@@ -85,6 +87,20 @@ impl Editor {
         self
     }
 
+    /// Find and replace text in the cells of `scopes` (the whole workbook when there are none), as
+    /// `LibreOffice`'s Find & Replace does: see [`sheetrs_protocol::Replace`] for what is searched
+    /// and how, and the module documentation of the replacement for what it does to each kind of
+    /// cell. What was replaced and what was left is in the [`Report`] that [`save`](Self::save)
+    /// returns.
+    pub fn replace(
+        &mut self,
+        scopes: impl IntoIterator<Item = Scope>,
+        replace: Replace,
+    ) -> &mut Self {
+        self.plan.replace(scopes.into_iter().collect(), replace);
+        self
+    }
+
     /// Whether there is nothing to do.
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -110,14 +126,14 @@ impl Editor {
     }
 
     /// Runs the changes and writes the result to `output`, which is not the file being edited. A
-    /// failed run leaves no `output` behind.
+    /// failed run leaves no `output` behind. The [`Report`] says what the replacements did.
     ///
     /// # Errors
     ///
     /// When there are no changes (a copy of the file is not what was asked for), when a sheet
     /// addressed does not exist or was removed, when a formula has a 3D reference, when a file
     /// cannot be read or written, or when the writer cannot make a change faithfully.
-    pub fn save(&self, output: impl AsRef<Path>) -> Result<()> {
+    pub fn save(&self, output: impl AsRef<Path>) -> Result<Report> {
         self.plan.execute(&self.source, output.as_ref())
     }
 
@@ -131,7 +147,7 @@ impl Editor {
     /// # Errors
     ///
     /// When the workbook was given as bytes, and for the reasons [`save`](Self::save) lists.
-    pub fn overwrite(&self) -> Result<()> {
+    pub fn overwrite(&self) -> Result<Report> {
         let path = self.source.path().ok_or(Error::NoFile)?;
         let folder = path
             .parent()
@@ -143,7 +159,7 @@ impl Editor {
             .suffix(&format!(".{extension}"))
             .tempfile_in(folder)
             .context("Cannot create a temporary file next to the workbook")?;
-        self.plan.execute(&self.source, temporary.path())?;
+        let report = self.plan.execute(&self.source, temporary.path())?;
         let permissions = std::fs::metadata(path)
             .context("Cannot read the permissions of the workbook")?
             .permissions();
@@ -153,6 +169,6 @@ impl Editor {
             .persist(path)
             .map_err(|e| e.error)
             .context("Cannot replace the workbook")?;
-        Ok(())
+        Ok(report)
     }
 }

@@ -194,6 +194,9 @@ A swiss-army knife for spreadsheet manipulation.
 
 - **Modification**: Remove sheets, delete named ranges, convert formulas to
   their values by sheet, column or row, in XLSX and ODS files.
+- **Find & Replace**: `--replace TEXT --with TEXT` over the workbook, a sheet or a
+  range, as LibreOffice's Find & Replace does it (literal, regular expression or
+  wildcards; match case; entire cells; in values or in formulas).
 
 **Usage:**
 
@@ -206,6 +209,12 @@ sheetedit input.xlsx --remove-ranges "OldRange" --output cleaned.xlsx
 
 # Freeze the inputs sheet and columns B:D of the model as values
 sheetedit master.xlsx --convert-to-values "Inputs" "Model!B:D" --output run.xlsx
+
+# Replace text in a sheet; the replacement is entered as if it were typed (12 makes a number)
+sheetedit book.ods --replace "2023" --with "2024" --scope Data --in-place
+
+# Replace inside formulas, written in LibreOffice's notation (=SUM($'My Sheet'.A1,B1))
+sheetedit book.xlsx --replace "B1" --with "C1" --in formula -o out.xlsx
 ```
 
 ## Roadmap

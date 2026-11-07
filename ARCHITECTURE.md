@@ -216,6 +216,14 @@ original tools, the executable (`src/main.rs`) that adapts it to the command lin
     in `StructureEdits::edits`. A test generates sequences and compares the plan with the
     operations run one at a time, in both formats. A reference that spans sheets would tie
     sheets together, and is refused (issue #75).
+  - `replace` (private, `Editor::replace`): Find & Replace as `LibreOffice` runs it. A replacement
+    is a pass of its own: a first read of the pass's input (`read_workbook_into` into a sink that
+    keeps only the cells that change) decides, with `sheetrs-query` (`Matcher`, the text a search
+    sees, the text as typed) and `sheetrs-formula::calc_read` (a formula typed in the notation of
+    LibreOffice, read back in Excel's or `OpenFormula`'s), what each cell becomes (`CellEdit`);
+    the writers then rewrite just those cells while streaming (`write_edited_cell` for XLSX,
+    `edited_rows` for ODS, which splits repeated rows and cells where a replacement falls). The
+    `Report` of `save` counts what was replaced and lists what was found and left as it was.
   - `writer` (private): `xlsx_writer.rs` and `ods_writer.rs` are the mechanism of a pass; neither
     the writer nor the plan is public, so the editor is the one way in.
   - The writer streams: each pass reads and writes every worksheet event by event, and the plan

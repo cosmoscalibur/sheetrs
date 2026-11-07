@@ -1,0 +1,169 @@
+[
+ {
+  "name": "text_ci",
+  "text": "hello",
+  "with_": "bye"
+ },
+ {
+  "name": "match_case",
+  "text": "hello",
+  "with_": "bye",
+  "match_case": true
+ },
+ {
+  "name": "entire",
+  "text": "abc",
+  "with_": "xyz",
+  "entire_cells": true
+ },
+ {
+  "name": "number_digits",
+  "text": "34",
+  "with_": "99"
+ },
+ {
+  "name": "number_to_text",
+  "text": "1234",
+  "with_": "x"
+ },
+ {
+  "name": "text_to_number",
+  "text": "abc",
+  "with_": "12",
+  "entire_cells": true
+ },
+ {
+  "name": "text_to_bool",
+  "text": "abc",
+  "with_": "true",
+  "entire_cells": true
+ },
+ {
+  "name": "text_to_formula",
+  "text": "abc",
+  "with_": "=1+1",
+  "entire_cells": true
+ },
+ {
+  "name": "clear",
+  "text": "abc",
+  "with_": "",
+  "entire_cells": true
+ },
+ {
+  "name": "date_year",
+  "text": "2023",
+  "with_": "2024"
+ },
+ {
+  "name": "percent",
+  "text": "25",
+  "with_": "30"
+ },
+ {
+  "name": "formula_ref",
+  "text": "B1",
+  "with_": "B2",
+  "search_in": "formula"
+ },
+ {
+  "name": "formula_sheet_ref",
+  "text": "A1",
+  "with_": "A2",
+  "search_in": "formula",
+  "case": true
+ },
+ {
+  "name": "formula_string_literal",
+  "text": "abc",
+  "with_": "xyz",
+  "search_in": "formula"
+ },
+ {
+  "name": "formula_function",
+  "text": "SUM",
+  "with_": "AVERAGE",
+  "search_in": "formula"
+ },
+ {
+  "name": "formula_to_text",
+  "text": "=",
+  "with_": "",
+  "search_in": "formula",
+  "entire_cells": false
+ },
+ {
+  "name": "value_include_formulas",
+  "text": "abcd",
+  "with_": "zz",
+  "include_formulas": true
+ },
+ {
+  "name": "value_excludes_formulas",
+  "text": "abcd",
+  "with_": "zz"
+ },
+ {
+  "name": "regex_groups",
+  "text": "(l+)o",
+  "with_": "[$1|&]",
+  "mode": "regex"
+ },
+ {
+  "name": "wildcards",
+  "text": "h*o",
+  "with_": "X",
+  "mode": "wildcards",
+  "entire_cells": true
+ },
+ {
+  "name": "range_scope",
+  "text": "hello",
+  "with_": "bye",
+  "scope": [
+   {
+    "range": "T!A1:A2"
+   }
+  ]
+ },
+ {
+  "name": "repeated_cells",
+  "text": "repeat",
+  "with_": "again"
+ },
+ {
+  "name": "repeated_cells_partial",
+  "text": "repeat",
+  "with_": "again",
+  "scope": [
+   {
+    "range": "T!F14"
+   }
+  ]
+ },
+ {
+  "name": "repeated_rows",
+  "text": "rowrep",
+  "with_": "row"
+ },
+ {
+  "name": "repeated_rows_partial",
+  "text": "rowrep",
+  "with_": "row",
+  "scope": [
+   {
+    "range": "T!A21"
+   }
+  ]
+ },
+ {
+  "name": "sheet_scope",
+  "text": "Hello",
+  "with_": "Bye",
+  "scope": [
+   {
+    "sheet": "U Sheet"
+   }
+  ]
+ }
+]

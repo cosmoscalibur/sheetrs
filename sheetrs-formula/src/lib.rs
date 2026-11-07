@@ -14,6 +14,7 @@
 pub mod addr;
 pub mod ast;
 pub mod calc_print;
+pub mod calc_read;
 pub mod edit;
 pub mod grid;
 pub mod parse;

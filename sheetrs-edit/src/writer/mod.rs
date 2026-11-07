@@ -29,6 +29,20 @@ const MAX_COL: u32 = 16_383;
 /// Last 1-based row number of a worksheet.
 const MAX_ROW: u32 = 1_048_576;
 
+/// What a cell holds after a replacement, written in the notation of the file: a formula in Excel's
+/// syntax for an XLSX and in `OpenFormula` (without the `of:=`) for an ODS.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum CellEdit {
+    Clear,
+    Text(String),
+    Number(f64),
+    Boolean(bool),
+    Formula(String),
+}
+
+/// The cells of one sheet to rewrite, by `(row, column)`, 0-based.
+pub(crate) type SheetEdits = std::collections::BTreeMap<(u32, u32), CellEdit>;
+
 /// Struct used to define modifications to be applied to a workbook
 #[derive(Debug, Default)]
 pub(crate) struct WorkbookModifications {
@@ -40,6 +54,9 @@ pub(crate) struct WorkbookModifications {
     pub delete_rows: Vec<ValueScope>,
     /// Delete these columns (`Sheet!B:D`), in the coordinates of the input.
     pub delete_columns: Vec<ValueScope>,
+    /// Cells whose content is replaced, by sheet name (the replacements of a pass, already
+    /// decided against the input of the pass).
+    pub replacements: std::collections::HashMap<String, SheetEdits>,
     /// Mark the workbook so the application that opens it first recalculates every formula.
     pub recalculate_on_open: bool,
 }

@@ -86,6 +86,7 @@ fn declared(operations: impl IntoIterator<Item = Operation>) -> Plan {
             Operation::DeleteColumns(ranges) => unique(&mut columns, ranges),
             Operation::RemoveNamedRanges(n) => names.extend(n),
             Operation::RemoveSheets(n) => sheets.extend(n),
+            Operation::Replace(_) => unreachable!("these plans hold no replacement"),
         }
     }
     names.sort();
@@ -137,6 +138,7 @@ fn modifications(operation: &Operation) -> WorkbookModifications {
         Operation::DeleteColumns(columns) => {
             mods.delete_columns = columns.iter().cloned().map(Into::into).collect();
         }
+        Operation::Replace(_) => unreachable!("these plans hold no replacement"),
     }
     mods
 }

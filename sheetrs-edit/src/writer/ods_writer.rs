@@ -8,7 +8,8 @@ use super::structure::{Bands, StructureEdits, shape_depends_on_sizes};
 use super::xlsx_structure::{SheetStructure, map_attributes};
 use super::xlsx_writer::replace_names;
 use super::{
-    ValueScope, ValueTarget, WorkbookModifications, attribute, read_element_body, write_element,
+    CellEdit, SheetEdits, ValueScope, ValueTarget, WorkbookModifications, attribute,
+    read_element_body, write_element,
 };
 use crate::error::{Context, Error, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
@@ -129,6 +130,8 @@ fn modify_content_xml<R: BufRead, W: Write>(
     // Nesting of `table:table`: cells may hold tables of their own.
     let mut table_depth = 0u32;
     let mut scopes: Vec<&ValueScope> = Vec::new();
+    // The cells to replace in the sheet being read.
+    let mut sheet_edits: Option<&SheetEdits> = None;
     let mut sheet = String::new();
     let mut row = 0u32;
     let mut buf = Vec::new();
@@ -176,6 +179,7 @@ fn modify_content_xml<R: BufRead, W: Write>(
                         .filter(|scope| scope.sheet == name)
                         .collect();
                     kept_sheets.insert(name.clone());
+                    sheet_edits = modifications.replacements.get(&name);
                     structure =
                         (!plan.is_empty() || modifications.recalculate_on_open).then(|| {
                             SheetStructure {
@@ -226,7 +230,7 @@ fn modify_content_xml<R: BufRead, W: Write>(
             }
             Event::Start(e) if e.name().as_ref() == ROW && table_depth == 1 => {
                 let repeated = repeat_count(&e, ROWS_REPEATED)?;
-                if scopes.is_empty() && structure.is_none() {
+                if scopes.is_empty() && structure.is_none() && sheet_edits.is_none() {
                     writer.write_event(Event::Start(e))?;
                 } else {
                     let body = read_element_body(&mut reader, ROW)?;
@@ -235,8 +239,31 @@ fn modify_content_xml<R: BufRead, W: Write>(
                         structure: structure.as_ref(),
                         orphans: &mut orphans,
                     };
-                    write_rows(&mut writer, &e, &body, row, repeated, &mut ctx)
-                        .with_context(|| format!("in sheet '{sheet}', row {}", row + 1))?;
+                    let parts = match sheet_edits {
+                        Some(edits) => edited_rows(&e, &body, row, repeated, edits)?,
+                        None => vec![RowPart {
+                            start: e.clone().into_owned(),
+                            body,
+                            row,
+                            repeated,
+                        }],
+                    };
+                    for part in parts {
+                        let plain = scopes.is_empty() && structure.is_none();
+                        if plain {
+                            write_element(&mut writer, part.start, Some(&part.body))?;
+                        } else {
+                            write_rows(
+                                &mut writer,
+                                &part.start,
+                                &part.body,
+                                part.row,
+                                part.repeated,
+                                &mut ctx,
+                            )
+                            .with_context(|| format!("in sheet '{sheet}', row {}", part.row + 1))?;
+                        }
+                    }
                 }
                 row = row.saturating_add(repeated);
             }
@@ -446,6 +473,221 @@ fn row_items<'b, 'a>(body: &'b [Event<'a>]) -> Vec<RowItem<'b, 'a>> {
         }
     }
     items
+}
+
+/// A row (or a run of equal rows) as it is written after a replacement.
+struct RowPart {
+    start: BytesStart<'static>,
+    body: Vec<Event<'static>>,
+    /// The first row it stands for, and how many.
+    row: u32,
+    repeated: u32,
+}
+
+/// The paragraphs that show a text: one `text:p` for each line, a `text:s` for the spaces that
+/// follow another space or start the paragraph and a `text:tab` for a tab, as `LibreOffice` writes
+/// them.
+fn text_paragraphs(text: &str) -> Vec<Event<'static>> {
+    let mut events = Vec::new();
+    for line in text.split('\n') {
+        events.push(Event::Start(BytesStart::new("text:p")));
+        let mut chunk = String::new();
+        let flush = |events: &mut Vec<Event<'static>>, chunk: &mut String| {
+            if !chunk.is_empty() {
+                events.push(Event::Text(
+                    quick_xml::events::BytesText::new(chunk).into_owned(),
+                ));
+                chunk.clear();
+            }
+        };
+        let mut chars = line.chars().peekable();
+        let mut previous_space = true;
+        while let Some(c) = chars.next() {
+            match c {
+                ' ' if previous_space => {
+                    let mut run = 1;
+                    while chars.next_if_eq(&' ').is_some() {
+                        run += 1;
+                    }
+                    flush(&mut events, &mut chunk);
+                    let mut space = BytesStart::new("text:s");
+                    if run > 1 {
+                        space.push_attribute(("text:c", run.to_string().as_str()));
+                    }
+                    events.push(Event::Empty(space));
+                    previous_space = true;
+                }
+                ' ' => {
+                    chunk.push(' ');
+                    previous_space = true;
+                }
+                '\t' => {
+                    flush(&mut events, &mut chunk);
+                    events.push(Event::Empty(BytesStart::new("text:tab")));
+                    previous_space = false;
+                }
+                c => {
+                    chunk.push(c);
+                    previous_space = false;
+                }
+            }
+        }
+        flush(&mut events, &mut chunk);
+        events.push(Event::End(BytesEnd::new("text:p")));
+    }
+    events
+}
+
+/// The cell a replacement leaves: the style, the spans and the content that is not the result of
+/// the cell (notes, shapes) stay; the type, the value, the formula and the paragraphs are the new
+/// ones.
+fn edited_cell(
+    start: &BytesStart,
+    content: Option<&[Event<'static>]>,
+    edit: &CellEdit,
+) -> Result<(BytesStart<'static>, Option<Vec<Event<'static>>>)> {
+    let mut cell = BytesStart::new("table:table-cell").into_owned();
+    for attr in start.attributes() {
+        let attr = attr?;
+        let key = attr.key.as_ref();
+        if !CACHED_VALUE_ATTRIBUTES.contains(&key)
+            && !matches!(
+                key,
+                FORMULA | MATRIX_COLUMNS | MATRIX_ROWS | COLUMNS_REPEATED
+            )
+        {
+            cell.push_attribute(attr);
+        }
+    }
+    let mut kept = content.map(without_paragraphs).unwrap_or_default();
+    match edit {
+        CellEdit::Clear => {}
+        CellEdit::Text(text) => {
+            cell.push_attribute(("office:value-type", "string"));
+            cell.push_attribute(("calcext:value-type", "string"));
+            kept.extend(text_paragraphs(text));
+        }
+        CellEdit::Number(n) => {
+            cell.push_attribute(("office:value-type", "float"));
+            cell.push_attribute(("office:value", n.to_string().as_str()));
+            cell.push_attribute(("calcext:value-type", "float"));
+            kept.extend(text_paragraphs(&n.to_string()));
+        }
+        CellEdit::Boolean(b) => {
+            let text = if *b { "true" } else { "false" };
+            cell.push_attribute(("office:value-type", "boolean"));
+            cell.push_attribute(("office:boolean-value", text));
+            cell.push_attribute(("calcext:value-type", "boolean"));
+            kept.extend(text_paragraphs(&text.to_uppercase()));
+        }
+        CellEdit::Formula(f) => {
+            cell.push_attribute((FORMULA, format!("of:={f}").as_str()));
+        }
+    }
+    Ok((cell, (!kept.is_empty()).then_some(kept)))
+}
+
+/// A row of the sheet written with the replacements of `edits`: the rows that hold none stay as
+/// they are, and a repeated row or cell is split where a replacement falls, so each element written
+/// stands for cells that are all replaced or none.
+fn edited_rows(
+    start: &BytesStart,
+    body: &[Event<'static>],
+    first_row: u32,
+    repeated: u32,
+    edits: &SheetEdits,
+) -> Result<Vec<RowPart>> {
+    let end = first_row.saturating_add(repeated);
+    let mut edited: Vec<u32> = edits
+        .range((first_row, 0)..(end, 0))
+        .map(|(&(row, _), _)| row)
+        .collect();
+    edited.dedup();
+    let mut parts = Vec::new();
+    let plain = |from: u32, to: u32, parts: &mut Vec<RowPart>| -> Result<()> {
+        if to > from {
+            parts.push(RowPart {
+                start: rebuild_start(start, ROWS_REPEATED, to - from, |_| false)?.into_owned(),
+                body: body.to_vec(),
+                row: from,
+                repeated: to - from,
+            });
+        }
+        Ok(())
+    };
+    let mut next = first_row;
+    for row in edited {
+        plain(next, row, &mut parts)?;
+        parts.push(RowPart {
+            start: rebuild_start(start, ROWS_REPEATED, 1, |_| false)?.into_owned(),
+            body: edited_cells(body, row, edits)?,
+            row,
+            repeated: 1,
+        });
+        next = row + 1;
+    }
+    plain(next, end, &mut parts)?;
+    Ok(parts)
+}
+
+/// The content of one row with the cells of `edits` replaced.
+fn edited_cells(
+    body: &[Event<'static>],
+    row: u32,
+    edits: &SheetEdits,
+) -> Result<Vec<Event<'static>>> {
+    let mut out: Vec<Event<'static>> = Vec::with_capacity(body.len());
+    let mut col = 0u32;
+    for item in row_items(body) {
+        match item {
+            RowItem::Other(event) => out.push(event.clone()),
+            RowItem::Cell { start, content } => {
+                let count = repeat_count(start, COLUMNS_REPEATED)?;
+                let content = content.map(<[Event<'static>]>::to_vec);
+                let here: Vec<(u32, &CellEdit)> = if start.name().as_ref() == "table:table-cell" {
+                    edits
+                        .range((row, col)..(row, col.saturating_add(count)))
+                        .map(|(&(_, c), e)| (c, e))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let mut push =
+                    |start: BytesStart<'static>, content: Option<Vec<Event<'static>>>| match content
+                    {
+                        None => out.push(Event::Empty(start)),
+                        Some(events) => {
+                            let end = start.to_end().into_owned();
+                            out.push(Event::Start(start));
+                            out.extend(events);
+                            out.push(Event::End(end));
+                        }
+                    };
+                let mut next = col;
+                for (at, edit) in here {
+                    if at > next {
+                        push(
+                            rebuild_start(start, COLUMNS_REPEATED, at - next, |_| false)?
+                                .into_owned(),
+                            content.clone(),
+                        );
+                    }
+                    let (cell, new_content) = edited_cell(start, content.as_deref(), edit)?;
+                    push(cell, new_content);
+                    next = at + 1;
+                }
+                let end = col.saturating_add(count);
+                if next < end {
+                    push(
+                        rebuild_start(start, COLUMNS_REPEATED, end - next, |_| false)?.into_owned(),
+                        content,
+                    );
+                }
+                col = end;
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// A shape that was in a cell that goes. `LibreOffice` keeps it where it was, anchored to the cell
@@ -1192,6 +1434,39 @@ mod tests {
         let mut output = Vec::new();
         modify_content_xml(xml.as_bytes(), &mut output, modifications)?;
         Ok(String::from_utf8(output)?)
+    }
+
+    fn replaced(xml: &str, edits: SheetEdits) -> String {
+        let mut mods = WorkbookModifications::default();
+        mods.replacements.insert("Data".into(), edits);
+        modify_xml(xml, &mods).unwrap()
+    }
+
+    #[test]
+    fn a_replacement_splits_the_repeated_rows_and_cells_it_falls_in() {
+        let xml = r#"<table:table table:name="Data"><table:table-row table:number-rows-repeated="3"><table:table-cell table:number-columns-repeated="3" office:value-type="string" calcext:value-type="string"><text:p>x</text:p></table:table-cell></table:table-row></table:table>"#;
+        let mut edits = SheetEdits::new();
+        edits.insert((1, 1), CellEdit::Text("a  b\tc\nd".into()));
+        let out = replaced(xml, edits);
+        let cell = r#"<table:table-cell office:value-type="string" calcext:value-type="string"><text:p>x</text:p></table:table-cell>"#;
+        let edited = r#"<table:table-cell office:value-type="string" calcext:value-type="string"><text:p>a <text:s/>b<text:tab/>c</text:p><text:p>d</text:p></table:table-cell>"#;
+        let run = r#"<table:table-cell table:number-columns-repeated="3" office:value-type="string" calcext:value-type="string"><text:p>x</text:p></table:table-cell>"#;
+        let expected = format!(
+            r#"<table:table table:name="Data"><table:table-row>{run}</table:table-row><table:table-row>{cell}{edited}{cell}</table:table-row><table:table-row>{run}</table:table-row></table:table>"#
+        );
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn a_replacement_keeps_the_note_and_the_style_of_the_cell() {
+        let xml = r#"<table:table table:name="Data"><table:table-row><table:table-cell table:style-name="ce1" table:formula="of:=[.B1]" office:value-type="float" office:value="1"><office:annotation><text:p>note</text:p></office:annotation><text:p>1</text:p></table:table-cell></table:table-row></table:table>"#;
+        let mut edits = SheetEdits::new();
+        edits.insert((0, 0), CellEdit::Formula("[.C1]*2".into()));
+        let out = replaced(xml, edits);
+        assert_eq!(
+            out,
+            r#"<table:table table:name="Data"><table:table-row><table:table-cell table:style-name="ce1" table:formula="of:=[.C1]*2"><office:annotation><text:p>note</text:p></office:annotation></table:table-cell></table:table-row></table:table>"#
+        );
     }
 
     #[test]

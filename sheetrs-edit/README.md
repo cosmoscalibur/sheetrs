@@ -29,6 +29,43 @@ sheetedit <FILE> --remove-sheets "Temp" --remove-ranges "TempRange" -o cleaned.x
 sheetedit <FILE>.ods --remove-sheets "Temp" -o cleaned.ods
 ```
 
+### 2. Find & Replace
+
+```bash
+sheetedit <FILE> --replace TEXT --with TEXT [--scope SHEET | --scope 'Sheet!A1:C9']... \
+    [--regex | --wildcards] [--match-case] [--entire-cells] [--in value|formula] \
+    [--include-formulas] (--output <OUT_FILE> | --in-place)
+```
+
+It does what the Find & Replace of LibreOffice does (observed in **24.2.7**, the reference version
+26.8 could not be installed where this was made; the check is `tests/replace.rs`, which compares the
+result with the workbook LibreOffice leaves after the same `replaceAll`, in XLSX and ODS):
+
+- Case is ignored unless `--match-case`. `--entire-cells` asks the whole text of the cell, and the
+  **first** match must be the whole text (`a|ab` does not match `ab`; `a*b` does not match `abab`).
+- `--wildcards`: `*` (as little as it can), `?`, and `\` to escape (not `~`, which is `COUNTIF`'s).
+- `--regex`: ICU syntax, the subset that was compared with LibreOffice (groups `$1`, `&` for the
+  whole match, `\t`, `\&`, `\$`, `\\` in the replacement); a pattern outside it is refused.
+- The text searched in a cell is the one of its **input line**: `1234.5` for a cell that shows
+  `1,234.50`, `25.6%`, the date `03/15/2023` (the ISO date when the format of the cell is an ISO
+  one). Every hit of the cell is replaced.
+- The replacement is **entered as if it were typed**: `12` makes a number, `50%` a percentage,
+  `03/15/2024` a date, `TRUE` a boolean, `=1+1` a formula, `'12` a text, nothing an empty cell; a
+  cell with the text format keeps text.
+- `--in formula` searches the formula in LibreOffice's notation (`=SUM($'My Sheet'.A1,B1)`, string
+  literals included) and writes the result in the notation of the file (Excel's in an XLSX,
+  OpenFormula's in an ODS). A shared formula group whose first cell is replaced gets a formula of
+  its own in each cell.
+- A search by value does not reach formula cells unless `--include-formulas`; then the cell
+  becomes a constant, as in LibreOffice (which reaches them always).
+- The output is marked to be recalculated when opened.
+
+Where it differs from LibreOffice on purpose, the cell is left as it was and the command says so:
+a replacement that leaves a formula that is not one (`=((*2`, which LibreOffice keeps as an error
+cell with the text lowercased) or that names a sheet the workbook does not have, and the cells of an
+array formula. A cell that gets a percentage, a date or a boolean keeps its style (LibreOffice also
+gives it the format of what was typed). Searching comments is not supported.
+
 The reference behavior of every operation is **LibreOffice 26.8 on Linux**: what a formula
 becomes after an operation is what LibreOffice gives when the same operation is made in it
 (`docs/FIDELITY.md` of `sheetrs-compiler` lists where Excel differs). The check is made on XLSX
