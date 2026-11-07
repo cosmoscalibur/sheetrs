@@ -241,3 +241,13 @@ fn an_unsupported_pattern_is_an_error_and_an_unknown_locale_too() {
     };
     assert!(sheetrs_query::run(&source, &locale).is_err());
 }
+
+#[test]
+fn general_is_no_format_in_either_file() {
+    // An XLSX writes `General`, an ODS writes nothing: the answer is the same.
+    let q = query(json!({"scope": {"range": "T!A2:A3"}, "properties": ["number_format"]}));
+    for file in both("formulas") {
+        let r = ask(&file, &q);
+        assert!(r.cells.iter().all(|c| c.number_format.is_none()), "{file}");
+    }
+}

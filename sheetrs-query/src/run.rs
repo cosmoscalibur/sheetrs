@@ -200,8 +200,12 @@ fn record(
         } else {
             None
         },
+        // `General` is the absence of a format: an XLSX says it, an ODS leaves it out.
         number_format: if wants(Property::NumberFormat) {
-            cell.num_fmt.as_deref().map(str::to_string)
+            cell.num_fmt
+                .as_deref()
+                .filter(|f| !f.eq_ignore_ascii_case("general"))
+                .map(str::to_string)
         } else {
             None
         },
