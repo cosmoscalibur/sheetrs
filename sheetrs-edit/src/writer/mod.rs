@@ -22,7 +22,7 @@ use std::str::FromStr;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
-use sheetrs_core::reader::parser_utils::{attr_value, column_letters, column_letters_to_index};
+use sheetrs_io::reader::parser_utils::{attr_value, column_letters, column_letters_to_index};
 
 /// Last 0-based column index of a worksheet (`XFD`).
 const MAX_COL: u32 = 16_383;

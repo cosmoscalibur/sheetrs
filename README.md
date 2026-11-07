@@ -29,7 +29,7 @@ Python package (see [Distribution](#distribution)):
 | Surface | Package | What it gives |
 | ------- | ------- | ------------- |
 | Executables | GitHub release assets (`sheetrs-vX.Y.Z-<target>`) | `sheetlint`, `sheetstats`, `sheetedit`, `sheetc`, `sheetrs-rt` |
-| Rust libraries | `sheetrs-linter` (rules, configuration, violations), `sheetrs-stats`, `sheetrs-edit`, `sheetrs-core` (workbook model and readers, shared by all), `sheetrs-formula`, `sheetrs-engine`, `sheetrs-compiler` | The same code the executables run |
+| Rust libraries | `sheetrs-linter` (rules, configuration, violations), `sheetrs-stats`, `sheetrs-edit`, `sheetrs-io` (workbook model and readers, shared by all), `sheetrs-formula`, `sheetrs-engine`, `sheetrs-compiler` | The same code the executables run |
 | WebAssembly | `sheetrs-wasm` (npm tarball in the release) | Lint and statistics in the browser, structured and text output |
 | Python | `sheetrs` (wheels and sdist in the release; [sheetrs-py](sheetrs-py/README.md)) | `open` → `Source`, taken by `linter.Linter`, `stats.collect` and `edit.Editor` |
 
@@ -112,7 +112,7 @@ No environment variables are required. Configuration is via `sheetlint.toml`.
 
 ```text
 sheetrs/
-├── sheetrs-core/   # Shared kernel: workbook model and XLSX/ODS readers
+├── sheetrs-io/   # Input: workbook model and XLSX/ODS readers (was sheetrs-core)
 ├── sheetrs-formula/# Formula AST: parse, print, rewrite references
 ├── sheetrs-engine/ # IR, functions, run-time evaluation (JSON in/out)
 ├── sheetrs-compiler/ # Workbook → program compiler (`sheetc`)

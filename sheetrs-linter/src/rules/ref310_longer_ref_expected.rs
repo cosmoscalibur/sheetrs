@@ -64,8 +64,8 @@ use crate::config::LinterConfig;
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::Workbook;
-use sheetrs_core::reader::workbook::CellValue;
+use sheetrs_io::reader::Workbook;
+use sheetrs_io::reader::workbook::CellValue;
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 
@@ -116,7 +116,7 @@ struct PatternIds {
 
 impl PatternIds {
     /// Returns the id of the pattern of `formula`, the formula of the cell at `at`.
-    fn of(&mut self, sheet: &sheetrs_core::reader::Sheet, at: (u32, u32), formula: &str) -> u32 {
+    fn of(&mut self, sheet: &sheetrs_io::reader::Sheet, at: (u32, u32), formula: &str) -> u32 {
         let key = (sheet.sheet_index, at.0, at.1);
         if let Some(&id) = self.by_cell.get(&key) {
             return id;
@@ -134,7 +134,7 @@ impl PatternIds {
 /// relative to each cell) after a formula. A formula next to constants is a result (a total, a
 /// subtotal) and constants next to a block of formulas are inputs, so neither extends the block.
 fn continues_block(
-    sheet: &sheetrs_core::reader::Sheet,
+    sheet: &sheetrs_io::reader::Sheet,
     patterns: &mut PatternIds,
     source: (u32, u32),
     candidate: (u32, u32),
@@ -231,7 +231,7 @@ fn categorize_value(value: &CellValue) -> Option<ValueCategory> {
 /// treating an empty cell as its own category. A formula without a cached
 /// value has an unknown type and matches any category.
 fn boundary_types_match(
-    sheet: &sheetrs_core::reader::Sheet,
+    sheet: &sheetrs_io::reader::Sheet,
     mut pairs: impl Iterator<Item = ((u32, u32), (u32, u32))>,
 ) -> bool {
     let category = |(row, col)| {
@@ -366,7 +366,7 @@ impl WalkerRule for LongerRefExpectedRule {
         }
 
         // Build sheet lookup
-        let sheets_by_index: HashMap<u16, &sheetrs_core::reader::Sheet> =
+        let sheets_by_index: HashMap<u16, &sheetrs_io::reader::Sheet> =
             workbook.sheets.iter().map(|s| (s.sheet_index, s)).collect();
 
         // Extent of the block of each range, which many formulas share.
@@ -444,7 +444,7 @@ impl WalkerRule for LongerRefExpectedRule {
 /// or 0 when the range does not qualify: fewer than `min_lines` continue it, or the cells at its
 /// end do not have the type of their neighbours on the first line after it.
 fn block_extent(
-    sheet: &sheetrs_core::reader::Sheet,
+    sheet: &sheetrs_io::reader::Sheet,
     patterns: &mut PatternIds,
     range: &RangeRef,
     vertical: bool,
@@ -506,9 +506,9 @@ fn suggestion(display: &str, sheet_name: &str, vertical: bool, lines: usize) -> 
         return unchanged();
     };
     let (Some(start_col), Ok(start_row), Some(end_col), Ok(end_row)) = (
-        sheetrs_core::reader::parser_utils::column_letters_to_index(sc),
+        sheetrs_io::reader::parser_utils::column_letters_to_index(sc),
         sr.parse::<u32>(),
-        sheetrs_core::reader::parser_utils::column_letters_to_index(ec),
+        sheetrs_io::reader::parser_utils::column_letters_to_index(ec),
         er.parse::<u32>(),
     ) else {
         return unchanged();
@@ -522,7 +522,7 @@ fn suggestion(display: &str, sheet_name: &str, vertical: bool, lines: usize) -> 
     } else {
         (end_col + 1, start_row, end_col + n, end_row)
     };
-    let letters = |col: u32| sheetrs_core::reader::parser_utils::column_letters(col).to_string();
+    let letters = |col: u32| sheetrs_io::reader::parser_utils::column_letters(col).to_string();
     let new_end = format!("{}{}{}{}", flag(eca), letters(new_col), flag(era), new_row);
     let replacement = format!("{head}:{new_end}");
     let named = if qualifier.is_empty() {
@@ -555,7 +555,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet, Workbook};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet, Workbook};
     use std::collections::HashMap;
     use std::sync::Arc;
 

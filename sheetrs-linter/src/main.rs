@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use sheetrs_core::reader::Source;
+use sheetrs_io::reader::Source;
 use sheetrs_linter::{Linter, LinterConfig, Severity};
 use std::path::PathBuf;
 

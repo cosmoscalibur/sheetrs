@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use sheetrs_core::reader::Source;
+use sheetrs_io::reader::Source;
 use sheetrs_stats::{WorkbookStats, percentage};
 use std::path::PathBuf;
 

@@ -2,8 +2,8 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use sheetrs_core::reader::Source;
 use sheetrs_edit::{ColumnRange, Editor, RowRange, ValueScope};
+use sheetrs_io::reader::Source;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
 
     if cli.list_ranges {
         println!("Listing named ranges for '{}':", cli.file.display());
-        let workbook = sheetrs_core::reader::read_workbook(&cli.file)
+        let workbook = sheetrs_io::reader::read_workbook(&cli.file)
             .with_context(|| format!("Failed to read file: {}", cli.file.display()))?;
 
         println!("Found {} defined names", workbook.defined_names.len());

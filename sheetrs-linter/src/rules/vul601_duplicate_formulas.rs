@@ -30,7 +30,7 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::Sheet;
+use sheetrs_io::reader::Sheet;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
@@ -174,7 +174,7 @@ impl WalkerRule for DuplicateFormulasRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
 
     #[test]

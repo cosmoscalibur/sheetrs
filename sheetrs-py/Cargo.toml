@@ -22,7 +22,7 @@ doctest = false
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core", version = "0.4.0" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }
 sheetrs-linter = { path = "../sheetrs-linter", version = "0.4.0" }
 sheetrs-edit = { path = "../sheetrs-edit", version = "0.4.0" }
 sheetrs-stats = { path = "../sheetrs-stats", version = "0.4.0" }

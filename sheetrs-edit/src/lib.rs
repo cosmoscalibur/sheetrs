@@ -1,7 +1,7 @@
 //! sheetrs-edit: modifications of XLSX and ODS workbooks.
 //!
 //! The library behind the `sheetedit` executable and the language bindings. An [`Editor`] is
-//! bound to a [`Source`](sheetrs_core::reader::Source), collects the changes to make (sheets and
+//! bound to a [`Source`](sheetrs_io::reader::Source), collects the changes to make (sheets and
 //! names removed, formulas replaced by their values, rows and columns deleted) and saves the
 //! result as a new file, streaming the archive without rewriting what it does not change.
 //! The sequence of changes is planned into the fewest passes over the file that give the result

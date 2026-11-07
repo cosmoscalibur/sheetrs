@@ -32,8 +32,8 @@
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Sheet;
-use sheetrs_core::reader::parser_utils::column_letters;
+use sheetrs_io::reader::Sheet;
+use sheetrs_io::reader::parser_utils::column_letters;
 
 /// Rule that detects hidden columns and rows
 #[derive(Debug)]
@@ -150,14 +150,14 @@ fn format_row_range((start, end): (u32, u32)) -> String {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::Sheet;
+    use sheetrs_io::reader::workbook::Sheet;
 
     #[test]
     fn test_hidden_columns() {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: sheetrs_core::reader::Grid::default(),
+            cells: sheetrs_io::reader::Grid::default(),
             hidden_columns: vec![(0, 1), (2, 2), (5, 5)], // A:B, C, F
             ..Default::default()
         };
@@ -176,7 +176,7 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: sheetrs_core::reader::Grid::default(),
+            cells: sheetrs_io::reader::Grid::default(),
             hidden_rows: vec![(10, 11), (0, 2), (1, 1)], // 11:12, 1:3, 2
             ..Default::default()
         };

@@ -1,5 +1,5 @@
 use regex::Regex;
-use sheetrs_core::reader::read_workbook;
+use sheetrs_io::reader::read_workbook;
 use std::env;
 
 fn extract_cell_references(

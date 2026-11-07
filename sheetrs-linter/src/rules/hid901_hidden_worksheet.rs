@@ -29,7 +29,7 @@
 
 use super::{LinterContext, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::{Sheet, SheetState};
+use sheetrs_io::reader::{Sheet, SheetState};
 
 /// Rule that detects hidden worksheets
 ///
@@ -105,7 +105,7 @@ impl WalkerRule for HiddenWorksheetRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Sheet, SheetState};
+    use sheetrs_io::reader::workbook::{Sheet, SheetState};
 
     #[test]
     fn test_hidden_sheet() {

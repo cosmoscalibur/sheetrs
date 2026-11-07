@@ -33,7 +33,7 @@ The package is laid out as the crates are, so each tool has one home:
 
 | Python | Crate | Executable |
 | ------ | ----- | ---------- |
-| `sheetrs` (`open`, `Source`, `SheetrsError`) | `sheetrs-core` | |
+| `sheetrs` (`open`, `Source`, `SheetrsError`) | `sheetrs-io` | |
 | `sheetrs.linter` (`Linter`, `Violation`) | `sheetrs-linter` | `sheetlint` |
 | `sheetrs.stats` (`collect`) | `sheetrs-stats` | `sheetstats` |
 | `sheetrs.edit` (`Editor`) | `sheetrs-edit` | `sheetedit` |

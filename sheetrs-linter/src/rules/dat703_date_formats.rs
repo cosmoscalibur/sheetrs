@@ -37,7 +37,7 @@ use crate::config::LinterConfig;
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, CellValue, NumFmt, Sheet};
+use sheetrs_io::reader::{Cell, CellValue, NumFmt, Sheet};
 
 /// Rule that detects date-formatted cells whose format differs from the required one.
 #[derive(Debug)]
@@ -150,7 +150,7 @@ impl WalkerRule for InconsistentDateFormatRule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_core::reader::Sheet;
+    use sheetrs_io::reader::Sheet;
     use std::collections::HashMap;
 
     #[test]

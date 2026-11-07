@@ -35,8 +35,8 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::workbook::CellValue;
-use sheetrs_core::reader::{Cell, Sheet, Workbook};
+use sheetrs_io::reader::workbook::CellValue;
+use sheetrs_io::reader::{Cell, Sheet, Workbook};
 
 /// Rule that identifies numeric text cells referenced in calculations.
 ///
@@ -137,7 +137,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet, Workbook};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet, Workbook};
     use std::collections::HashMap;
     use std::sync::Arc;
 

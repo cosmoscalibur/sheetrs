@@ -29,7 +29,7 @@ The code is split in three crates: `sheetrs-formula` parses and prints formulas;
 
 | Module | Role |
 | ------ | ---- |
-| `loader` (feature `load`) | `sheetrs-core` workbook → `Model`. The only code that knows XLSX vs ODS: the settings the document carries, defined-name syntax, error codes. |
+| `loader` (feature `load`) | `sheetrs-io` workbook → `Model`. The only code that knows XLSX vs ODS: the settings the document carries, defined-name syntax, error codes. |
 | `model` | Format-independent workbook: cells, formula text, names, date system. |
 | `formula` | Lowers the `sheetrs-formula` AST (lossless; parsing lives there) to IR: resolves sheets and names, resolves function names and their namespaces, folds literal ranges. |
 | `ir` | `Expr`, `Program`, namespaced `FuncId`. Serializable. |
@@ -46,7 +46,7 @@ The requirement is explicit: no double execution engine. Everything after the
 loader sees only `Model`/`Program`. Cell values (`Value`), references
 (`CellRef`/`Rect`), operators and function calls are the same whatever the
 source. ODS-isms (`;` separators, `[.A1]` references, `of:=`,
-`COM.MICROSOFT.` prefixes, `Err:522`) are resolved by `sheetrs-core` and the loader
+`COM.MICROSOFT.` prefixes, `Err:522`) are resolved by `sheetrs-io` and the loader
 or by the function-name resolution described next.
 
 ## Function namespaces
@@ -263,18 +263,18 @@ Range dependencies are modeled with shared *range nodes* (one per distinct
 rectangle) so `SUM(A$1:A$10000)` used by 50 000 cells costs one node, not 500 M
 edges.
 
-## Reusing `sheetrs-core`
+## Reusing `sheetrs-io`
 
 Yes, reuse it. Container parsing (zip, shared strings, shared formulas, ODS
 table repetition, covered cells, defined names, error cells) is where
-format-specific bugs live, and `sheetrs-core` already carries the fixes and the XLSX/ODS
+format-specific bugs live, and `sheetrs-io` already carries the fixes and the XLSX/ODS
 test files. Re-implementing it would add a second reader to keep faithful for no
 gain in the engine.
 
 Reuse is conditional on the reader being faithful, so the contract is: **the
 reader returns what the file stores; the engine owns every semantic decision.**
 Auditing against LibreOffice (see FIDELITY.md) found one violation, fixed in the
-`sheetrs-core` reader (same workspace): ODS dates were numbered from 1899-12-31, a convention of
+`sheetrs-io` reader (same workspace): ODS dates were numbered from 1899-12-31, a convention of
 the reader's own that is neither LibreOffice's nor Excel's (one lower from
 1900-03-01 on), and `office:time-value` was returned as display text. Dates are
 now days since the document's `table:null-date`, times a fraction of a day. No
@@ -363,7 +363,7 @@ loaded by `sheetc run program.json`.
 
 * **External references** (`[1]Sheet!A1`) and structured references keep the
   value cached in the file. Defined names lose their sheet scope in XLSX when
-  read through `sheetrs-core`.
+  read through `sheetrs-io`.
 * **Arrays**: operators over ranges use legacy implicit intersection outside
   array context (`SUMPRODUCT`, `INDEX`, `MATCH`, `XLOOKUP` and CSE formulas
   evaluate element-wise, scalar functions are lifted there). There is no
@@ -385,7 +385,7 @@ The IR already separates inputs from the rest of the program. Validation rules
 (list, whole/decimal bounds, date ranges, text length, custom formula) become
 predicates (`Expr`) attached to input bindings, evaluated before the run:
 
-1. `sheetrs-core` exposes data validations (XLSX `<dataValidations>`, ODS
+1. `sheetrs-io` exposes data validations (XLSX `<dataValidations>`, ODS
    `table:content-validations`) — upstream change.
 2. `compile` lowers each rule to an IR predicate over the input cell and, for
    list rules, a constant set or a range reference (itself part of the

@@ -2,7 +2,7 @@
 
 use crate::rules::{LinterContext, WalkerRule};
 use crate::violation::Violation;
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 
 /// Executor that traverses the workbook once and invokes rules
 #[derive(Debug)]

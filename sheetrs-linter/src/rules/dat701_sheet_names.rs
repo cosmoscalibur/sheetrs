@@ -35,7 +35,7 @@
 use super::{LinterContext, WalkerRule};
 use crate::config::LinterConfig;
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Sheet;
+use sheetrs_io::reader::Sheet;
 
 /// Rule that detects non-descriptive sheet names (e.g. Sheet1, Sheet2)
 ///

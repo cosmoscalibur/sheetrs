@@ -1,8 +1,8 @@
 //! Every formula in the repository's real workbooks must parse (but for the
 //! documented unsupported syntax) and print to a fixed point.
 
-use sheetrs_core::reader::read_workbook;
 use sheetrs_formula::{Expr, parse, parse_spanned};
+use sheetrs_io::reader::read_workbook;
 use std::path::Path;
 
 fn files() -> Vec<std::path::PathBuf> {

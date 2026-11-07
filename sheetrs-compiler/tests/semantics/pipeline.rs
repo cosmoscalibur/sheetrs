@@ -732,9 +732,8 @@ fn a_one_cell_array_formula_over_a_range_shows_its_first_element() {
 #[test]
 fn an_xlsx_is_read_by_its_format_and_computed_like_any_other_file() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/assets/loan.xlsx");
-    let m =
-        sheetrs_compiler::loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap())
-            .unwrap();
+    let m = sheetrs_compiler::loader::load(&sheetrs_io::reader::Source::from_file(&path).unwrap())
+        .unwrap();
     // The format decides what the file carries: an XLSX has no case-sensitivity setting and
     // its dates count from 1899-12-30 unless it says `date1904`.
     assert!(m.from_xlsx);
@@ -982,9 +981,8 @@ fn a_shared_formula_moved_outside_the_sheet_builds_and_is_a_ref_error() {
         ),
     )
     .unwrap();
-    let m =
-        sheetrs_compiler::loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap())
-            .unwrap();
+    let m = sheetrs_compiler::loader::load(&sheetrs_io::reader::Source::from_file(&path).unwrap())
+        .unwrap();
     let (p, _) = build(&m, &spec(&[], &["XFC1", "XFD1"]));
     let out = p
         .execute(&Json::Null, &sheetrs_engine::run::Overrides::default())

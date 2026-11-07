@@ -7,7 +7,7 @@ use std::time::Instant;
 
 fn main() {
     let file = std::env::args().nth(1).expect("file");
-    let wb = sheetrs_core::reader::read_workbook(&file).unwrap();
+    let wb = sheetrs_io::reader::read_workbook(&file).unwrap();
     let mut model: Model = loader::from_workbook_owned(wb, false);
     let s = model.sheet_id("Summary").unwrap();
     let cases = [

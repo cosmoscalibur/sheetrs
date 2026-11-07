@@ -1,5 +1,5 @@
 [workspace]
-members = ["sheetrs-core", "sheetrs-formula", "sheetrs-engine", "sheetrs-compiler", "sheetrs-linter", "sheetrs-stats", "sheetrs-edit", "sheetrs-wasm", "sheetrs-py"]
+members = ["sheetrs-io", "sheetrs-formula", "sheetrs-engine", "sheetrs-compiler", "sheetrs-linter", "sheetrs-stats", "sheetrs-edit", "sheetrs-wasm", "sheetrs-py"]
 resolver = "2"
 
 [workspace.package]

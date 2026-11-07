@@ -23,7 +23,7 @@ sheetstats <FILE> [OPTIONS]
 The crate is also a library, used by the Python and WASM bindings:
 
 ```rust
-use sheetrs_core::reader::Source;
+use sheetrs_io::reader::Source;
 
 let source = Source::from_file("book.xlsx")?;   // or Source::from_bytes(data, Format::Xlsx)
 let stats = sheetrs_stats::collect(&source)?;

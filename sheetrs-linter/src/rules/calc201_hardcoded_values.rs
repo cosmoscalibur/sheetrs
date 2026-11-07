@@ -45,7 +45,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use regex::Regex;
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::{Cell, Sheet};
 use std::sync::LazyLock;
 
 /// Matches quoted strings (to strip before number extraction).
@@ -246,9 +246,9 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
 mod tests {
     use super::*;
     use crate::rules::walker::WorkbookWalker;
-    use sheetrs_core::reader::Workbook;
-    use sheetrs_core::reader::workbook::CellValue;
-    use sheetrs_core::reader::{Cell, Sheet};
+    use sheetrs_io::reader::Workbook;
+    use sheetrs_io::reader::workbook::CellValue;
+    use sheetrs_io::reader::{Cell, Sheet};
     use std::collections::HashMap;
     use std::path::PathBuf;
     use toml::Value;

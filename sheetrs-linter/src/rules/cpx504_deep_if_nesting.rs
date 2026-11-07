@@ -47,7 +47,7 @@ use crate::config::LinterConfig;
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::{Cell, Sheet};
 
 /// Rule that detects deeply nested IF statements and serves as the
 /// primary emitter for the `CPX5xx` formula-complexity dependency chain.
@@ -445,7 +445,7 @@ impl WalkerRule for DeepIfNestingRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
 
     fn make_sheet(formula: &str) -> Sheet {

@@ -1,4 +1,4 @@
-use sheetrs_core::reader::{Cell, CellValue, Sheet, Workbook};
+use sheetrs_io::reader::{Cell, CellValue, Sheet, Workbook};
 use sheetrs_linter::violation::CellReference;
 use sheetrs_linter::{Linter, RuleId, ViolationScope};
 

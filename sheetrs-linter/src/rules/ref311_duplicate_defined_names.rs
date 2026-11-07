@@ -30,7 +30,7 @@
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::{NameScope, Workbook};
+use sheetrs_io::reader::{NameScope, Workbook};
 
 /// Rule that detects defined names defined in more than one scope
 #[derive(Debug)]
@@ -104,7 +104,7 @@ impl WalkerRule for DuplicateDefinedNamesRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::NameConflict;
+    use sheetrs_io::reader::NameConflict;
 
     #[test]
     fn a_name_defined_in_two_scopes_is_reported_with_its_scopes() {

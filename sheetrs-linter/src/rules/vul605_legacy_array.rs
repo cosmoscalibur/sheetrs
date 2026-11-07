@@ -27,7 +27,7 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::{Cell, Sheet};
 use std::collections::HashMap;
 
 /// Rule that identifies legacy CSE array formulas.
@@ -133,7 +133,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
 
     fn make_cell(row: u32, col: u32, formula: Option<&str>, is_array: bool) -> ((u32, u32), Cell) {

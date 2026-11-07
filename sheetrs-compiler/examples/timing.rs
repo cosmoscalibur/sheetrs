@@ -27,7 +27,7 @@ fn main() {
         }
     }
     let t = Instant::now();
-    let wb = sheetrs_core::reader::read_workbook(&file).unwrap();
+    let wb = sheetrs_io::reader::read_workbook(&file).unwrap();
     println!(
         "read (sheetrs)      {:>8.1?}   peak {:.0} MB",
         t.elapsed(),

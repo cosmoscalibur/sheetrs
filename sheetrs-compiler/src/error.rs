@@ -23,10 +23,10 @@ pub enum Error {
     #[cfg(feature = "load")]
     #[error("{what}: {source:#}")]
     Workbook {
-        /// The workbook, as its [`Source`](sheetrs_core::reader::Source) names it.
+        /// The workbook, as its [`Source`](sheetrs_io::reader::Source) names it.
         what: String,
         #[source]
-        source: sheetrs_core::Error,
+        source: sheetrs_io::Error,
     },
     /// A build configuration that is not valid TOML for the configuration.
     #[error("{origin}: {source}")]

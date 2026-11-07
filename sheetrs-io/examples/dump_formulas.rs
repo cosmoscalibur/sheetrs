@@ -1,5 +1,5 @@
-use sheetrs_core::reader::CellValue;
-use sheetrs_core::reader::read_workbook;
+use sheetrs_io::reader::CellValue;
+use sheetrs_io::reader::read_workbook;
 use std::env;
 
 fn main() {

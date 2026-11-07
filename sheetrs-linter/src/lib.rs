@@ -3,7 +3,7 @@
 //!
 //! The library behind the `sheetlint` executable and the language bindings. The rules exist only
 //! to be run by the [`Linter`], which reads nothing itself: it analyzes a
-//! [`sheetrs_core::reader::Workbook`] the caller obtained from the readers of `sheetrs-core`.
+//! [`sheetrs_io::reader::Workbook`] the caller obtained from the readers of `sheetrs-io`.
 //!
 //! - [`config`]: the `sheetlint.toml` model.
 //! - [`rules`]: the rules, their registry and the catalog ([`rules::registry`]).
@@ -17,7 +17,7 @@ pub mod report;
 pub mod rules;
 pub mod violation;
 
-use sheetrs_core::reader::{self, Source};
+use sheetrs_io::reader::{self, Source};
 use std::collections::HashSet;
 
 pub use config::LinterConfig;
@@ -75,7 +75,7 @@ impl Linter {
     /// # Errors
     ///
     /// When the workbook cannot be read.
-    pub fn lint(&self, source: &Source) -> sheetrs_core::Result<Vec<Violation>> {
+    pub fn lint(&self, source: &Source) -> sheetrs_io::Result<Vec<Violation>> {
         Ok(self.lint_workbook(&source.read_workbook()?))
     }
 
@@ -134,7 +134,7 @@ impl Default for Linter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_core::reader::Format;
+    use sheetrs_io::reader::Format;
 
     const XLSX: &[u8] = include_bytes!("../../tests/minimal_test.xlsx");
 
@@ -154,7 +154,7 @@ mod tests {
         let missing = Source::from_file("does-not-exist.xlsx").unwrap();
         assert!(matches!(
             Linter::new().lint(&missing),
-            Err(sheetrs_core::Error::Open { .. })
+            Err(sheetrs_io::Error::Open { .. })
         ));
     }
 }

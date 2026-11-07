@@ -29,7 +29,7 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::{Cell, Sheet};
 
 /// Incident data for DATA705.
 #[derive(Debug)]
@@ -70,7 +70,7 @@ impl WalkerRule for UnnecessarySpaceRule {
         _ctx: &mut LinterContext,
         out: &mut Vec<Violation>,
     ) {
-        if let sheetrs_core::reader::CellValue::Text(text) = &cell.value {
+        if let sheetrs_io::reader::CellValue::Text(text) = &cell.value {
             let bytes = text.as_bytes();
             let has_whitespace = bytes.first().is_some_and(u8::is_ascii_whitespace)
                 || bytes.last().is_some_and(u8::is_ascii_whitespace);
@@ -92,7 +92,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
     use std::sync::Arc;
 

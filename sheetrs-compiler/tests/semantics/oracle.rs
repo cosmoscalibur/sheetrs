@@ -42,7 +42,7 @@ fn ods_errors(twin: &str) -> std::collections::HashSet<String> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(twin);
-    let model = loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap()).unwrap();
+    let model = loader::load(&sheetrs_io::reader::Source::from_file(&path).unwrap()).unwrap();
     let calc = model.sheet_id("Calc").unwrap();
     model
         .cells
@@ -66,7 +66,7 @@ fn check_rows(file: &str, locale: &str, min_rows: usize) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(file);
-    let model = loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap()).unwrap();
+    let model = loader::load(&sheetrs_io::reader::Source::from_file(&path).unwrap()).unwrap();
     let calc = model.sheet_id("Calc").unwrap();
     let mut rows: Vec<u32> = model
         .cells

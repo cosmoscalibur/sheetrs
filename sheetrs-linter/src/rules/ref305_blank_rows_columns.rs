@@ -38,8 +38,8 @@
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::parser_utils::column_letters;
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::parser_utils::column_letters;
+use sheetrs_io::reader::{Cell, Sheet};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Write};
 
@@ -362,7 +362,7 @@ where
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -843,7 +843,7 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: sheetrs_core::reader::Grid::default(),
+            cells: sheetrs_io::reader::Grid::default(),
             used_range: Some((100, 100)),
             ..Default::default()
         };

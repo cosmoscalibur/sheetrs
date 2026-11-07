@@ -30,7 +30,7 @@ use crate::config::LinterConfig;
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::{Cell, Sheet};
 use std::collections::HashSet;
 
 /// Rule that identifies formulas referencing many different sheets.
@@ -173,7 +173,7 @@ impl WalkerRule for MultipleSheetRefRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
 
     fn run_violations(sheet: &Sheet) -> Vec<Violation> {

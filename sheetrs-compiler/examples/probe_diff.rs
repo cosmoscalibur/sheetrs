@@ -8,7 +8,7 @@ fn main() {
     let file = std::env::args()
         .nth(1)
         .unwrap_or("tests/assets/probe.ods".into());
-    let m = loader::load(&sheetrs_core::reader::Source::from_file(&file).unwrap()).unwrap();
+    let m = loader::load(&sheetrs_io::reader::Source::from_file(&file).unwrap()).unwrap();
     let calc = m.sheet_id("Calc").unwrap();
     let n = m
         .cells

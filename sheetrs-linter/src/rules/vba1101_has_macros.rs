@@ -33,7 +33,7 @@
 
 use super::{LinterContext, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 
 /// Rule that detects the presence of macros (VBA/Scripts)
 ///

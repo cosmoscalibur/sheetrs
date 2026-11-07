@@ -23,7 +23,7 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::Sheet;
+use sheetrs_io::reader::Sheet;
 
 /// Rule that detects merged cells
 #[derive(Debug)]
@@ -85,8 +85,8 @@ impl WalkerRule for MergedCellsRule {
 mod tests {
     use super::*;
     use crate::rules::walker::WorkbookWalker;
-    use sheetrs_core::reader::Workbook;
-    use sheetrs_core::reader::workbook::Sheet;
+    use sheetrs_io::reader::Workbook;
+    use sheetrs_io::reader::workbook::Sheet;
     use std::path::PathBuf;
 
     #[test]

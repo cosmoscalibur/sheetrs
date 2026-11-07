@@ -1,5 +1,5 @@
 use crate::writer::{ValueScope, ValueTarget, WorkbookModifications, modify_workbook};
-use sheetrs_core::reader::{CellValue, read_workbook};
+use sheetrs_io::reader::{CellValue, read_workbook};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::fs::File;
@@ -314,7 +314,7 @@ fn convert_sheet_xlsx(
     Ok(output_path)
 }
 
-fn formula_at(workbook: &sheetrs_core::reader::Workbook, cell: (u32, u32)) -> Option<String> {
+fn formula_at(workbook: &sheetrs_io::reader::Workbook, cell: (u32, u32)) -> Option<String> {
     workbook.sheets[0].cells[&cell]
         .formula
         .as_deref()

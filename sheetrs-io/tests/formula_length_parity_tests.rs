@@ -1,8 +1,8 @@
 //! The length CPX509 measures is that of the formula the user sees, the same in XLSX and ODS: the
 //! namespace prefix of a function (`_xlfn.`, `COM.MICROSOFT.`) is not part of it.
 
-use sheetrs_core::reader::read_workbook;
 use sheetrs_formula::calc_print::visible_length;
+use sheetrs_io::reader::read_workbook;
 
 /// The formula of `Sheet7!G13` of `tests/minimal_test.<extension>`.
 fn formula(extension: &str) -> String {

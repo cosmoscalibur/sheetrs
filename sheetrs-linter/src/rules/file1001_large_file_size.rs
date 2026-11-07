@@ -29,7 +29,7 @@
 use super::{LinterContext, WalkerRule};
 use crate::config::LinterConfig;
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 
 /// Default maximum file size threshold in megabytes
 const DEFAULT_MAX_FILE_SIZE_MB: i64 = 10;

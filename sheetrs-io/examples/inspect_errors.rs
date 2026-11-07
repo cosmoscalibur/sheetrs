@@ -1,5 +1,5 @@
-use sheetrs_core::Result;
-use sheetrs_core::reader::read_workbook;
+use sheetrs_io::Result;
+use sheetrs_io::reader::read_workbook;
 use std::env;
 
 fn main() -> Result<()> {

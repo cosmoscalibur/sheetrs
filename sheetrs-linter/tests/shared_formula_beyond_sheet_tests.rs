@@ -2,7 +2,7 @@
 //! `#REF!` there. The reader writes `Sheet!#REF!` in the formula, and the linter reports the error
 //! cell.
 
-use sheetrs_core::reader::read_workbook_from_reader;
+use sheetrs_io::reader::read_workbook_from_reader;
 use sheetrs_linter::{Linter, RuleId};
 use std::io::{Cursor, Write};
 

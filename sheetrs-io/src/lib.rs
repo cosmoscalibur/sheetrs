@@ -1,4 +1,5 @@
-//! sheetrs-core: the shared kernel of the `SheetRS` suite.
+//! sheetrs-io: the input of the `SheetRS` suite (named `sheetrs-core` before 0.4.0), and its shared
+//! kernel.
 //!
 //! It holds what every tool needs and no tool owns: the format-agnostic workbook model
 //! ([`reader::Workbook`], [`reader::Cell`], [`reader::Grid`]) and the streaming XLSX/ODS readers

@@ -13,7 +13,7 @@ description = "Lossless spreadsheet formula AST: parser, printer, reference rewr
 [dependencies]
 
 [dev-dependencies]
-sheetrs-core = { path = "../sheetrs-core", default-features = false }
+sheetrs-io = { path = "../sheetrs-io", default-features = false }
 
 [lints]
 workspace = true

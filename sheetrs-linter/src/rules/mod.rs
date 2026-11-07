@@ -103,8 +103,8 @@ pub mod file1003_date_system_1904;
 pub mod vba1101_has_macros;
 
 use crate::violation::{RuleId, Violation};
-use sheetrs_core::reader::ExcelError;
-use sheetrs_core::reader::{Cell, Sheet, Workbook};
+use sheetrs_io::reader::ExcelError;
+use sheetrs_io::reader::{Cell, Sheet, Workbook};
 use std::collections::{HashMap, HashSet};
 
 /// Type alias for cell dependency graph: (`SheetIndex`, Row, Col) -> Vec<(`SheetIndex`, Row, Col)>
@@ -277,7 +277,7 @@ impl RuleCategory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_core::reader::workbook::CellValue;
+    use sheetrs_io::reader::workbook::CellValue;
 
     fn make_cell(row: u32, col: u32, formula: Option<&str>) -> ((u32, u32), Cell) {
         (

@@ -33,7 +33,7 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, CellValue, Sheet};
+use sheetrs_io::reader::{Cell, CellValue, Sheet};
 use std::collections::HashMap;
 
 /// Per-sheet cell collection: `sheet_index` → Vec<(row, col)>.
@@ -154,7 +154,7 @@ impl WalkerRule for InconsistentNumberFormatRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
     use std::sync::Arc;
 

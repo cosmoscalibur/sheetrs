@@ -32,7 +32,7 @@ use super::{LinterContext, WalkerRule};
 use crate::config::LinterConfig;
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
 use chrono::Utc;
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 
 /// Default maximum age threshold in days
 const DEFAULT_MAX_AGE_DAYS: i64 = 365;

@@ -55,8 +55,8 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use regex::{Captures, Regex, Replacer};
-use sheetrs_core::reader::parser_utils::{column_letters, column_letters_to_index};
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::parser_utils::{column_letters, column_letters_to_index};
+use sheetrs_io::reader::{Cell, Sheet};
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::LazyLock;
@@ -534,7 +534,7 @@ impl InterruptionRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
 
     fn make_formula_cell(row: u32, col: u32, formula: &str) -> ((u32, u32), Cell) {

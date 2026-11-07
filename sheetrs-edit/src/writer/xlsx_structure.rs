@@ -6,10 +6,10 @@ use super::{attribute, read_element_body};
 use crate::error::{Error, Result};
 use quick_xml::events::{BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
-use sheetrs_core::reader::parser_utils::{
+use sheetrs_formula::edit::Edit;
+use sheetrs_io::reader::parser_utils::{
     attr_value, column_letters, parse_cell_range, parse_cell_ref, push_general_ref,
 };
-use sheetrs_formula::edit::Edit;
 use std::io::{BufRead, Write};
 
 /// What a command does to one worksheet.

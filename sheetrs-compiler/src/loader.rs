@@ -1,6 +1,6 @@
-//! Frontend for XLSX/ODS files, built on the `sheetrs-core` readers.
+//! Frontend for XLSX/ODS files, built on the `sheetrs-io` readers.
 //!
-//! `sheetrs-core` already resolves the container formats (shared strings, shared
+//! `sheetrs-io` already resolves the container formats (shared strings, shared
 //! formulas, ODS table repetition) and normalizes ODS references and argument
 //! separators to the Excel syntax, so the only format knowledge left here is
 //! the syntax of function names.
@@ -8,10 +8,10 @@
 use crate::cellstore::CellStore;
 use crate::error::{Error, Result};
 use crate::model::{Model, ModelCell, ModelSettings};
-use sheetrs_core::reader::{CellValue, DocumentSettings, Format, Source, Workbook};
 use sheetrs_engine::addr::CellRef;
 use sheetrs_engine::options::{DateSystem, Iteration, Search, SearchMode};
 use sheetrs_engine::value::{ErrorKind, Value};
+use sheetrs_io::reader::{CellValue, DocumentSettings, Format, Source, Workbook};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -74,12 +74,12 @@ struct ModelSink {
     cells: CellStore,
 }
 
-impl sheetrs_core::reader::CellSink for ModelSink {
+impl sheetrs_io::reader::CellSink for ModelSink {
     fn hint(&mut self, sheet: u16, cells: usize) {
         self.cells.reserve(sheet, cells);
     }
 
-    fn cell(&mut self, sheet: u16, at: (u32, u32), cell: sheetrs_core::reader::Cell) {
+    fn cell(&mut self, sheet: u16, at: (u32, u32), cell: sheetrs_io::reader::Cell) {
         if let Some(c) = model_cell(&cell.value, cell.formula, cell.is_array) {
             self.cells.insert(CellRef::new(sheet, at.0, at.1), c);
         }

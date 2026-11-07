@@ -3,7 +3,7 @@
 use anyhow::Result;
 use colored::Colorize;
 use serde::Serialize;
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 use sheetrs_linter::report::group_by_scope;
 use sheetrs_linter::{FormatContext, RuleId, Severity, Violation, ViolationScope};
 use std::io::{BufWriter, Write};

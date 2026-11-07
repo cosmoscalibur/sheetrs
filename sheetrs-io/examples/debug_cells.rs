@@ -1,7 +1,7 @@
-use sheetrs_core::reader::{CellValue, read_workbook};
+use sheetrs_io::reader::{CellValue, read_workbook};
 use std::env;
 
-fn main() -> sheetrs_core::Result<()> {
+fn main() -> sheetrs_io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <file.ods|file.xlsx>", args[0]);

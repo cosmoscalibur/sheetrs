@@ -1,6 +1,6 @@
 # Test Assets
 
-This directory contains test files used across all sheetrs project components (sheetrs-core, sheetrs-linter, sheetrs-edit, sheetrs-stats).
+This directory contains test files used across all sheetrs project components (sheetrs-io, sheetrs-linter, sheetrs-edit, sheetrs-stats).
 
 ## Files
 

@@ -7,7 +7,7 @@
   The tool is the subject and takes the `Source`: an object when it has a configuration or
   accumulates state, a function when it has neither. There is no eager mode: a workbook is
   streamed, never loaded. Type stubs and a pytest suite included.
-- Add `sheetrs_core::reader::{Source, Format}`: the reference to a workbook (a file or bytes) that
+- Add `sheetrs_io::reader::{Source, Format}`: the reference to a workbook (a file or bytes) that
   the linter (`Linter::lint(&Source)`), the statistics (`sheetrs_stats::collect(&Source)`), the
   editor (`Editor::new(&Source)`) and the compiler (`loader::load(&Source)`) take as input.
 - Add `sheetrs_edit::Editor`: collects changes to one workbook in order, each on the result of the
@@ -33,7 +33,11 @@
 
 ### Changed
 
-- **Breaking:** the libraries report typed errors (`thiserror`): `sheetrs_core::Error`,
+- **Breaking:** `sheetrs-core` is renamed `sheetrs-io` (crate `sheetrs_io`): it holds the workbook
+  model and the readers, which is what it always held after the rules and the writer moved out,
+  and it is where the input of the suite lives.
+
+- **Breaking:** the libraries report typed errors (`thiserror`): `sheetrs_io::Error`,
   `sheetrs_linter::Error` (configuration), `sheetrs_edit::Error`, `sheetrs_engine::Error` and
   `sheetrs_compiler::Error`; `anyhow` is used only by the executables. `sheetrs-compiler` no longer
   re-exports the engine (`sheetrs_compiler::{ir, addr, value, ...}`; import `sheetrs_engine`),
@@ -56,10 +60,10 @@
   `registry::valid_tokens`. Public types implement `Debug`; `RuleId` and
   `Format` are `#[non_exhaustive]`; `WalkerRule` requires `Debug`.
 
-- **Breaking:** `sheetrs-core` is the shared kernel, the workbook model and the readers. The rules,
+- **Breaking:** `sheetrs-io` is the shared kernel, the workbook model and the readers. The rules,
   `LinterConfig`, `Linter` and the violation types moved to `sheetrs-linter`
   (`sheetrs_linter::{rules, config, violation, Linter}`), and the `writer` to `sheetrs-edit`
-  (`sheetrs_edit::writer`). `ExcelError` is `sheetrs_core::reader::ExcelError`. The `link-validation`
+  (`sheetrs_edit::writer`). `ExcelError` is `sheetrs_io::reader::ExcelError`. The `link-validation`
   feature is now a feature of `sheetrs-linter`.
 - `sheetrs-linter` and `sheetrs-edit` are libraries as well as executables, and `sheetrs-stats`
   too (`stats::WorkbookStats`, `StatsSink`).

@@ -1,7 +1,7 @@
 //! A selective read gives what a full read gives, restricted to what was asked, and does less
 //! work to get it. Both formats, the same expectations.
 
-use sheetrs_core::reader::{
+use sheetrs_io::reader::{
     Cell, CellSink, CellValue, Format, Properties, Selection, SheetState, Source, Window,
 };
 use std::collections::BTreeMap;

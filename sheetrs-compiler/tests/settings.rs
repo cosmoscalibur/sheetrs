@@ -11,7 +11,7 @@ fn load(name: &str) -> sheetrs_compiler::Model {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(name);
-    loader::load(&sheetrs_core::reader::Source::from_file(path).unwrap()).unwrap()
+    loader::load(&sheetrs_io::reader::Source::from_file(path).unwrap()).unwrap()
 }
 
 fn loop_values(model: &sheetrs_compiler::Model, spec: Spec) -> Vec<Json> {

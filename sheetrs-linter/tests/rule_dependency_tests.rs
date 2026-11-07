@@ -1,8 +1,8 @@
 //! Disabling a rule only removes its own violations, even when other enabled
 //! rules depend on it (issue #53).
 
-use sheetrs_core::reader::ExcelError;
-use sheetrs_core::reader::{Cell, CellValue, Sheet, Workbook, read_workbook};
+use sheetrs_io::reader::ExcelError;
+use sheetrs_io::reader::{Cell, CellValue, Sheet, Workbook, read_workbook};
 use sheetrs_linter::{FormatContext, Linter, LinterConfig, RuleId};
 
 const TEST_XLSX: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/minimal_test.xlsx");

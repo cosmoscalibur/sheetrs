@@ -20,7 +20,7 @@ name = "sheetedit"
 path = "src/main.rs"
 
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core", version = "0.4.0" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }
 sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
 clap.workspace = true
 anyhow.workspace = true

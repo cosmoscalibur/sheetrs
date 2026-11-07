@@ -24,7 +24,7 @@
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::config::LinterConfig;
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 
 /// Rule that checks if the workbook has an excessive number of sheets.
 #[derive(Debug)]
@@ -102,7 +102,7 @@ impl WalkerRule for ExcessiveSheetCountsRule {
 mod tests {
     use super::*;
     use crate::rules::walker::WorkbookWalker;
-    use sheetrs_core::reader::workbook::Sheet;
+    use sheetrs_io::reader::workbook::Sheet;
     use std::path::PathBuf;
 
     #[test]

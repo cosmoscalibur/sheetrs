@@ -79,7 +79,7 @@ pub enum Error {
     #[error("Error parsing XML: {0}")]
     Xml(#[from] quick_xml::Error),
     #[error(transparent)]
-    Read(#[from] sheetrs_core::Error),
+    Read(#[from] sheetrs_io::Error),
 
     /// Another error, with what was being done when it happened.
     #[error("{message}: {source}")]

@@ -85,8 +85,8 @@ mod tests {
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
     use crate::rules::err102_error_cells::ErrorCellsRule;
-    use sheetrs_core::reader::ExcelError;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Workbook};
+    use sheetrs_io::reader::ExcelError;
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Workbook};
     use std::collections::HashMap;
 
     #[test]
@@ -95,10 +95,10 @@ mod tests {
             error_source: (0, 2, 3),
         };
 
-        let sheets = vec![sheetrs_core::reader::workbook::Sheet {
+        let sheets = vec![sheetrs_io::reader::workbook::Sheet {
             name: "Data".to_string(),
             sheet_index: 0,
-            cells: sheetrs_core::reader::Grid::default(),
+            cells: sheetrs_io::reader::Grid::default(),
             ..Default::default()
         }];
         let workbook = Workbook {
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn test_err103_multiple_error_sources_uses_first() {
         // A1 error, C1 error, B1 formula depends on both → ERR103 uses first dep
-        let sheet = sheetrs_core::reader::workbook::Sheet {
+        let sheet = sheetrs_io::reader::workbook::Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: {

@@ -7,7 +7,7 @@
 
 use crate::plan::{Operation, Plan};
 use crate::writer::{ValueTarget, WorkbookModifications, modify_workbook};
-use sheetrs_core::reader::{Source, read_workbook};
+use sheetrs_io::reader::{Source, read_workbook};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -472,7 +472,7 @@ fn both_formats_give_the_same_formulas_for_the_same_plan() {
 /// A source of bytes edits like the file it came from.
 #[test]
 fn a_plan_runs_on_the_bytes_of_a_workbook_as_on_the_file() {
-    use sheetrs_core::reader::Format;
+    use sheetrs_io::reader::Format;
     let plan = sequence(&["rows T!4:5", "convert F", "sheet U"]);
     for (extension, format) in [("xlsx", Format::Xlsx), ("ods", Format::Ods)] {
         let bytes = std::fs::read(asset(extension)).unwrap();

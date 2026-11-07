@@ -21,15 +21,15 @@ required-features = ["load"]
 
 [features]
 default = ["load"]
-# Frontend that reads XLSX/ODS files through the sheetrs-core readers.
-load = ["dep:sheetrs-core", "dep:sha2"]
+# Frontend that reads XLSX/ODS files through the sheetrs-io readers.
+load = ["dep:sheetrs-io", "dep:sha2"]
 # `SHEETC_FLAMEGRAPH=out.svg sheetc …` writes a sampled flamegraph (no perf needed).
 profile = ["dep:pprof"]
 
 [dependencies]
 sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.0" }
 sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
-sheetrs-core = { path = "../sheetrs-core", version = "0.4.0", default-features = false, optional = true }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.0", default-features = false, optional = true }
 sha2 = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true

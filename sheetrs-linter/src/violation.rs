@@ -2,8 +2,8 @@
 
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
-use sheetrs_core::reader::Workbook;
-use sheetrs_core::reader::parser_utils::column_letters;
+use sheetrs_io::reader::Workbook;
+use sheetrs_io::reader::parser_utils::column_letters;
 use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;

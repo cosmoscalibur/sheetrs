@@ -35,7 +35,7 @@ use crate::config::LinterConfig;
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, CellValue, Sheet};
+use sheetrs_io::reader::{Cell, CellValue, Sheet};
 use std::collections::HashMap;
 
 /// Per-sheet cell collection: `sheet_index` → Vec<(row, col)>.
@@ -148,7 +148,7 @@ impl WalkerRule for LongTextCellRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::Sheet;
+    use sheetrs_io::reader::workbook::Sheet;
     use std::collections::HashMap;
     use std::sync::Arc;
 

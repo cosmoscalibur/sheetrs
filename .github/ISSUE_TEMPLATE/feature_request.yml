@@ -37,7 +37,7 @@ body:
         - sheetstats
         - sheetedit
         - sheetc
-        - Rust libraries (sheetrs-core, sheetrs-linter, sheetrs-stats, sheetrs-edit)
+        - Rust libraries (sheetrs-io, sheetrs-linter, sheetrs-stats, sheetrs-edit)
         - sheetrs-py (Python)
         - sheetrs-wasm
         - Multiple / All

@@ -28,7 +28,7 @@
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Sheet;
+use sheetrs_io::reader::Sheet;
 
 /// Rule that detects completely empty sheets
 #[derive(Debug)]
@@ -92,7 +92,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -101,7 +101,7 @@ mod tests {
         let empty_sheet = Sheet {
             name: "Empty".to_string(),
             sheet_index: 2,
-            cells: sheetrs_core::reader::Grid::default(),
+            cells: sheetrs_io::reader::Grid::default(),
             used_range: None,
             ..Default::default()
         };

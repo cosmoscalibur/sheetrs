@@ -17,8 +17,8 @@
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
-use sheetrs_core::reader::{Format, Source};
 use sheetrs_edit::{ColumnRange, Editor, RowRange, ValueScope};
+use sheetrs_io::reader::{Format, Source};
 use sheetrs_linter::report::{ViolationRecord, violation_records};
 use sheetrs_linter::rules::registry;
 use sheetrs_linter::{Linter, LinterConfig};

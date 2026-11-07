@@ -43,7 +43,7 @@
 use crate::error::{Context, Error, Result};
 use crate::writer::structure::Bands;
 use crate::writer::{self, ColumnRange, RowRange, ValueScope, WorkbookModifications};
-use sheetrs_core::reader::Source;
+use sheetrs_io::reader::Source;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;

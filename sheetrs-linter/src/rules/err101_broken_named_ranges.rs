@@ -30,7 +30,7 @@
 
 use super::{LinterContext, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 
 /// Rule that identifies broken named ranges (references to invalid/deleted locations)
 ///
@@ -109,7 +109,7 @@ fn is_broken_reference(reference: &str) -> bool {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::Sheet;
+    use sheetrs_io::reader::workbook::Sheet;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -118,7 +118,7 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: sheetrs_core::reader::Grid::default(),
+            cells: sheetrs_io::reader::Grid::default(),
             used_range: None,
             ..Default::default()
         };

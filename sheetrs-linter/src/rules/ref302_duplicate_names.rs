@@ -28,7 +28,7 @@
 
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 use std::collections::HashMap;
 
 /// Rule that checks for duplicate sheet names (case-insensitive)
@@ -119,7 +119,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::Sheet;
+    use sheetrs_io::reader::workbook::Sheet;
     use std::path::PathBuf;
 
     #[test]
@@ -128,21 +128,21 @@ mod tests {
             Sheet {
                 name: "Data".to_string(),
                 sheet_index: 0,
-                cells: sheetrs_core::reader::Grid::default(),
+                cells: sheetrs_io::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "data".to_string(),
                 sheet_index: 1,
-                cells: sheetrs_core::reader::Grid::default(),
+                cells: sheetrs_io::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "Summary".to_string(),
                 sheet_index: 2,
-                cells: sheetrs_core::reader::Grid::default(),
+                cells: sheetrs_io::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
@@ -168,35 +168,35 @@ mod tests {
             Sheet {
                 name: "Sheet1".to_string(),
                 sheet_index: 0,
-                cells: sheetrs_core::reader::Grid::default(),
+                cells: sheetrs_io::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "sheet 1".to_string(),
                 sheet_index: 1,
-                cells: sheetrs_core::reader::Grid::default(),
+                cells: sheetrs_io::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "Sheet-1".to_string(),
                 sheet_index: 2,
-                cells: sheetrs_core::reader::Grid::default(),
+                cells: sheetrs_io::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "Data_2024".to_string(),
                 sheet_index: 3,
-                cells: sheetrs_core::reader::Grid::default(),
+                cells: sheetrs_io::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },
             Sheet {
                 name: "data2024".to_string(),
                 sheet_index: 4,
-                cells: sheetrs_core::reader::Grid::default(),
+                cells: sheetrs_io::reader::Grid::default(),
                 used_range: None,
                 ..Default::default()
             },

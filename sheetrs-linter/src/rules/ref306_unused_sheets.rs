@@ -38,7 +38,7 @@
 use super::helpers::formula_links;
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 use std::collections::{HashMap, HashSet};
 
 /// Rule that detects unused (standalone) sheets
@@ -138,7 +138,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -147,7 +147,7 @@ mod tests {
         let sheet1 = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: sheetrs_core::reader::Grid::default(),
+            cells: sheetrs_io::reader::Grid::default(),
             ..Default::default()
         };
 
@@ -194,7 +194,7 @@ mod tests {
         let sheet = Sheet {
             name: "OnlySheet".to_string(),
             sheet_index: 0,
-            cells: sheetrs_core::reader::Grid::default(),
+            cells: sheetrs_io::reader::Grid::default(),
             ..Default::default()
         };
 

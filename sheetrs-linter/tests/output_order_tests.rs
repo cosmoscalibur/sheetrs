@@ -1,4 +1,4 @@
-use sheetrs_core::reader::read_workbook;
+use sheetrs_io::reader::read_workbook;
 use sheetrs_linter::{FormatContext, Linter};
 
 const TEST_XLSX: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/minimal_test.xlsx");

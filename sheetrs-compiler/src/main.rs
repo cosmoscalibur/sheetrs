@@ -3,10 +3,10 @@
 use sheetrs_compiler::config::{self, Config};
 use sheetrs_compiler::locale::LocaleOverride;
 use sheetrs_compiler::{Model, Spec, compile, loader};
-use sheetrs_core::reader::Source;
 use sheetrs_engine::Program;
 use sheetrs_engine::bundle;
 use sheetrs_engine::cli::{self, Args, parse_overrides};
+use sheetrs_io::reader::Source;
 use std::path::{Path, PathBuf};
 
 const HELP: &str = "\

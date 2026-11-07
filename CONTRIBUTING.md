@@ -82,7 +82,7 @@ docs match it:
 | New/changed lint rule | `sheetrs-linter/README.md` rule reference; `docs/coding-patterns.md` if it introduces a pattern (rules live in `sheetrs-linter/src/rules`) |
 | CLI args or behavior | the tool README (`sheetlint`/`sheetstats`/`sheetedit`); `README.md` if the getting-started experience changes |
 | Config format (`sheetlint.toml`) | `docs/coding-patterns.md`; the relevant tool README |
-| Module layout or new crate | `ARCHITECTURE.md` (a module goes in `sheetrs-core` only if two tools need it); `docs/README.md`; `README.md` project structure |
+| Module layout or new crate | `ARCHITECTURE.md` (a module goes in `sheetrs-io` only if two tools need it); `docs/README.md`; `README.md` project structure |
 | Dependencies or commands | `README.md`; this guide |
 | API of the Python or WASM bindings | `sheetrs-py/README.md` and `sheetrs-py/python/sheetrs/_sheetrs.pyi`, or `sheetrs-wasm/README.md`; a pytest case for Python |
 | Engine behavior that differs between Excel and LibreOffice | `sheetrs-compiler/docs/FIDELITY.md`; a probe in `sheetrs-compiler/scripts/probe_behavior.py` |
@@ -116,7 +116,7 @@ Before each release, fragments are merged into the `[Unreleased]` section of
    matches the workspace version, builds the executables, Python wheels and sdist and the npm
    tarball, attaches them to a draft release and publishes it.
 3. Publishing to the registries is manual, with the maintainer's credentials:
-   - crates.io, in dependency order: `sheetrs-formula`, `sheetrs-core`, `sheetrs-stats`,
+   - crates.io, in dependency order: `sheetrs-formula`, `sheetrs-io`, `sheetrs-stats`,
      `sheetrs-linter`, `sheetrs-edit`, `sheetrs-engine`, `sheetrs-compiler`
      (`sheetrs-wasm` and `sheetrs-py` have `publish = false`).
    - PyPI: `twine upload` the wheels and sdist of the release (or configure trusted publishing).

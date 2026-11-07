@@ -32,7 +32,7 @@
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
 use aho_corasick::AhoCorasick;
-use sheetrs_core::reader::{Cell, Sheet, Workbook};
+use sheetrs_io::reader::{Cell, Sheet, Workbook};
 
 /// Rule that detects unused named ranges
 #[derive(Debug)]
@@ -172,8 +172,8 @@ mod tests {
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
     use crate::rules::walker::WorkbookWalker;
-    use sheetrs_core::reader::read_workbook_from_reader;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::read_workbook_from_reader;
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
     use std::path::PathBuf;
 

@@ -1,7 +1,7 @@
 //! The public API of the editor: made for a `Source`, changes in order, `explain`, `save`.
 
-use sheetrs_core::reader::{Source, read_workbook};
 use sheetrs_edit::{Editor, Error};
+use sheetrs_io::reader::{Source, read_workbook};
 use std::path::{Path, PathBuf};
 
 fn book(extension: &str) -> PathBuf {

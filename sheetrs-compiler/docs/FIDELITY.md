@@ -131,7 +131,7 @@ not have. Every feature is off unless the list names it, so the default is the r
 
 ## Document settings (stored in the file)
 
-Read by `sheetrs-core` as stored (`Workbook::settings`, `None` = not stated) and
+Read by `sheetrs-io` as stored (`Workbook::settings`, `None` = not stated) and
 resolved into engine options by the loader:
 
 | Setting | XLSX | ODS | Engine |
@@ -361,9 +361,9 @@ Fidelity also depends on reading what the file stores, not on a convention:
 
 * **ODS dates and times.** An ODS date cell stores an ISO date; the engine needs
   the number the spreadsheet uses, which is the number of days since the
-  document's `table:null-date`. `sheetrs-core` used to count from 1899-12-31 (one less
+  document's `table:null-date`. `sheetrs-io` used to count from 1899-12-31 (one less
   than the spreadsheet's number from 1900-03-01 on) and read `office:time-value`
-  as display text. That is fixed in the `sheetrs-core` reader (same workspace); the
+  as display text. That is fixed in the `sheetrs-io` reader (same workspace); the
   reader does no further adjustment, and the engine applies the date-system rules
   of the table above to the numbers.
 * **Error codes.** LibreOffice stores `Err:5xx` for a family of errors and
@@ -371,9 +371,9 @@ Fidelity also depends on reading what the file stores, not on a convention:
   all become `Err:502`/`#VALUE!`; Excel says `#NUM!`). The engine always
   computes Excel's kind; when comparing with LibreOffice caches only "is an
   error" is checked for those cases.
-* **Document settings.** `sheetrs-core` now exposes the calculation settings above (`DocumentSettings`).
+* **Document settings.** `sheetrs-io` now exposes the calculation settings above (`DocumentSettings`).
 * **Typed cached strings.** XLSX formula results typed `str` that look numeric
-  (`"005"`) are read by `sheetrs-core` as numbers, and a cached `#VALUE!` of a formula
+  (`"005"`) are read by `sheetrs-io` as numbers, and a cached `#VALUE!` of a formula
   that contains `:` is read as no value (`sheetrs` issue #62). The oracle avoids
   those shapes; they only affect *cached* values, which the engine does not use.
 

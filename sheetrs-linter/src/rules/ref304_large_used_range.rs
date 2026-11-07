@@ -35,7 +35,7 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::{Cell, Sheet};
 use std::collections::HashMap;
 
 /// Threshold for rows/columns beyond data.
@@ -101,8 +101,8 @@ impl ViolationData for LargeUsedRangeData {
 /// Check whether a cell value should count as real data.
 fn is_data_cell(cell: &Cell) -> bool {
     match &cell.value {
-        sheetrs_core::reader::workbook::CellValue::Empty => false,
-        sheetrs_core::reader::workbook::CellValue::Text(s) => !s.trim().is_empty(),
+        sheetrs_io::reader::workbook::CellValue::Empty => false,
+        sheetrs_io::reader::workbook::CellValue::Text(s) => !s.trim().is_empty(),
         _ => true,
     }
 }
@@ -169,7 +169,7 @@ impl WalkerRule for LargeUsedRangeRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
 
     #[test]
@@ -249,7 +249,7 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
-            cells: sheetrs_core::reader::Grid::default(),
+            cells: sheetrs_io::reader::Grid::default(),
             used_range: Some((100, 100)),
             ..Default::default()
         };

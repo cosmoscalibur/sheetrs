@@ -67,7 +67,7 @@ fn reproduces(file: &str, expect: impl Fn(&Model)) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(file);
-    let m = loader::load(&sheetrs_core::reader::Source::from_file(&path).unwrap()).unwrap();
+    let m = loader::load(&sheetrs_io::reader::Source::from_file(&path).unwrap()).unwrap();
     expect(&m);
     let calc = m.sheet_id("Calc").unwrap();
     let n = m

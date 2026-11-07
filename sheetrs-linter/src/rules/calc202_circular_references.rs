@@ -43,7 +43,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use regex::Regex;
-use sheetrs_core::reader::{Cell, Sheet, Workbook};
+use sheetrs_io::reader::{Cell, Sheet, Workbook};
 use std::collections::{HashMap, HashSet};
 
 /// Rule that detects circular references in formulas.
@@ -434,7 +434,7 @@ fn find_cycles(dependencies: &HashMap<Node, Vec<Node>>) -> Vec<Vec<Node>> {
 mod tests {
     use super::*;
     use crate::rules::walker::WorkbookWalker;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -598,7 +598,7 @@ mod tests {
             .map(|(r, c, f)| {
                 let (k, mut cell) = formula_cell(*r, *c, f);
                 if errored.contains(&(*r, *c)) {
-                    cell.value = CellValue::Error(sheetrs_core::reader::ExcelError::Value);
+                    cell.value = CellValue::Error(sheetrs_io::reader::ExcelError::Value);
                 }
                 (k, cell)
             })

@@ -23,7 +23,7 @@
 use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::config::LinterConfig;
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Sheet;
+use sheetrs_io::reader::Sheet;
 
 /// Rule that detects excessive conditional formatting rules
 #[derive(Debug)]
@@ -116,7 +116,7 @@ impl WalkerRule for ExcessiveConditionalFormattingRule {
 mod tests {
     use super::*;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::Sheet;
+    use sheetrs_io::reader::workbook::Sheet;
 
     #[test]
     fn test_no_violations() {

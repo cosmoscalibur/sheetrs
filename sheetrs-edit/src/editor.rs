@@ -3,7 +3,7 @@
 use crate::error::Result;
 use crate::plan::Plan;
 use crate::writer::{ColumnRange, RowRange, ValueScope};
-use sheetrs_core::reader::Source;
+use sheetrs_io::reader::Source;
 use std::path::Path;
 
 /// Changes to one workbook, saved as a new file.
@@ -20,7 +20,7 @@ use std::path::Path;
 /// there is nothing to ask for or to avoid.
 ///
 /// ```no_run
-/// use sheetrs_core::reader::Source;
+/// use sheetrs_io::reader::Source;
 /// use sheetrs_edit::Editor;
 ///
 /// # fn main() -> sheetrs_edit::Result<()> {

@@ -241,7 +241,7 @@ The workspace uses [semantic versioning](https://semver.org/):
 Every tool is a library plus, for the original tools, an executable; the bindings are adapters
 over those libraries. Where code lives follows who uses it (see `ARCHITECTURE.md`, *Layering*):
 
-- `sheetrs-core` (shared kernel): `reader` (the `Workbook` model, `Grid`, `CellSink`, `ExcelError`,
+- `sheetrs-io` (shared kernel): `reader` (the `Workbook` model, `Grid`, `CellSink`, `ExcelError`,
   the XLSX/ODS parsers, and `Source`/`Format`: the reference to a workbook that every tool takes). Add to it only what two tools need and has no meaning outside the
   workbook model; code used by one tool belongs to that tool's crate.
 - `sheetrs-linter`: `rules` (`WalkerRule`, the registry and the catalog), `config`, `violation`,
@@ -267,7 +267,7 @@ updates its README (and the type stubs of `sheetrs-py`), and a new capability is
 bindings.
 
 Path dependencies between publishable crates carry a `version`
-(`sheetrs-core = { path = "../sheetrs-core", version = "0.4.0" }`) so that they can be published;
+(`sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }`) so that they can be published;
 `cargo set-version --workspace <version>` (cargo-edit) updates them with the workspace version.
 
 ### Backward Compatibility

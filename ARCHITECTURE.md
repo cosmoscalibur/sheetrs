@@ -10,7 +10,7 @@ The reference behavior of the compiler, the runtime and the modifications of `sh
 
 ```
 sheetrs/
-├── sheetrs-core/       # Shared kernel: workbook model + XLSX/ODS readers
+├── sheetrs-io/       # Input of the suite: workbook model + XLSX/ODS readers (was sheetrs-core)
 ├── sheetrs-formula/    # Lossless formula AST (parse, print, rewrite references)
 ├── sheetrs-linter/     # Rules, configuration, violations (lib) + `sheetlint`
 ├── sheetrs-stats/      # Workbook metrics (lib) + `sheetstats`
@@ -28,7 +28,7 @@ The suite follows a hexagonal (ports and adapters) layout. A **tool crate** is a
 core: it owns the decisions about a workbook (the linter's rules, the statistics, the edit
 operations, the compilation) and exposes them as a Rust library. Around it:
 
-- **Driven side** (what a tool needs): the workbook model and the readers of `sheetrs-core`. The
+- **Driven side** (what a tool needs): the workbook model and the readers of `sheetrs-io`. The
   model (`Workbook`, `Cell`, `Grid`, `CellSink`, `WorkbookReader`) is the port; the XLSX and ODS
   parsers are its adapters. A tool never sees a file format.
 - **Driving side** (who calls a tool): the executables (`sheetlint`, `sheetstats`, `sheetedit`,
@@ -37,12 +37,12 @@ operations, the compilation) and exposes them as a Rust library. Around it:
   (violations grouped by sheet and cell, flat records) is part of the tool's library
   (`sheetrs_linter::report`), not copied into each adapter.
 
-Dependencies point inward: adapters → tool libraries → `sheetrs-core` / `sheetrs-formula`. Tool
+Dependencies point inward: adapters → tool libraries → `sheetrs-io` / `sheetrs-formula`. Tool
 crates do not depend on each other.
 
-### What belongs in `sheetrs-core`
+### What belongs in `sheetrs-io`
 
-`sheetrs-core` is a **shared kernel**, not "the public library": the public surface of the suite is
+`sheetrs-io` (named `sheetrs-core` before 0.4.0) is the **input side** of the suite and a **shared kernel**, not "the public library": the public surface of the suite is
 every library crate and every binding. A module is in the kernel when at least two tools need it
 and it has no meaning outside the workbook model. The test, applied to the code that was in the
 crate:
@@ -55,13 +55,13 @@ crate:
 | `writer` (XLSX/ODS stream editing, `ValueScope`) | edit only | `sheetrs-edit` |
 
 Moving code out of the kernel is how its boundary stays honest: a feature of one tool (a new rule,
-a new edit operation) never changes `sheetrs-core`, and a second consumer of a tool's code is
+a new edit operation) never changes `sheetrs-io`, and a second consumer of a tool's code is
 served by that tool's library, not by growing the kernel. Reading is shared because four crates
 read workbooks; writing is not, because one does.
 
-## 1. sheetrs-core
+## 1. sheetrs-io
 
-The shared kernel: the format-agnostic workbook model and the streaming readers that fill it.
+The input of the suite and its shared kernel: the format-agnostic workbook model and the streaming readers that fill it.
 
 - **`reader`**: Abstracts over file formats (XLSX, ODS). `Source` (a file or bytes, with its
   `Format`) is the input every tool takes: a reference that reads nothing until a tool does, and
@@ -118,7 +118,7 @@ Two crates, split along the line that matters for reuse and build time:
   depend on the readers; its binary `sheetrs-rt` is the stub a compiled
   executable is made from.
 - **`sheetrs-compiler`** turns a workbook into a `Program`: `loader` (the only code
-  that knows the file format, on top of `sheetrs-core`) → `Model` → lowering of the
+  that knows the file format, on top of `sheetrs-io`) → `Model` → lowering of the
   `sheetrs-formula` AST to the IR → cone of influence, SCC order, constant
   folding. Its binary is `sheetc`.
 
@@ -198,7 +198,7 @@ next to `lint`, not as a separate service.
   the `python/sheetrs` package as the crates are laid out (type stubs): `sheetrs` (core: `open`,
   `Source`, `SheetrsError`), `sheetrs.linter` (`Linter`, `Violation`), `sheetrs.stats`
   (`collect`), `sheetrs.edit` (`Editor`). `Source` is the Python face of
-  `sheetrs_core::reader::Source`: a reference to a workbook that reads nothing, with no behavior.
+  `sheetrs_io::reader::Source`: a reference to a workbook that reads nothing, with no behavior.
   The tool is the subject and takes it, as in Rust. There is no eager mode: a workbook is
   streamed, never loaded. The functions release the GIL while they work. It is built by maturin,
   which enables the `extension-module` feature; the crate has no Rust test harness (it would have

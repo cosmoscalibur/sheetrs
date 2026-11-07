@@ -1,10 +1,10 @@
 //! sheetrs-stats: workbook and per-sheet statistics.
 //!
 //! The library behind the `sheetstats` executable, also used by the language bindings. The
-//! statistics of a workbook are one function of its [`Source`](sheetrs_core::reader::Source):
+//! statistics of a workbook are one function of its [`Source`](sheetrs_io::reader::Source):
 //!
 //! ```no_run
-//! use sheetrs_core::reader::Source;
+//! use sheetrs_io::reader::Source;
 //!
 //! let source = Source::from_file("tests/minimal_test.xlsx").unwrap();
 //! let stats = sheetrs_stats::collect(&source).unwrap();

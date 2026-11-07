@@ -42,7 +42,7 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::{Cell, Sheet};
 use std::sync::LazyLock;
 
 /// Pre-computed search patterns: "VLOOKUP(", "HLOOKUP(", "MATCH(", "LOOKUP(".
@@ -182,7 +182,7 @@ fn has_exact_match_arg(formula_upper: &str, paren_pos: usize, arg_idx: usize) ->
 mod tests {
     use super::*;
     use crate::rules::LinterContext;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
 
     fn make_formula_cell(row: u32, col: u32, formula: &str) -> ((u32, u32), Cell) {

@@ -1923,28 +1923,12 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "sheetrs-core",
  "sheetrs-engine",
  "sheetrs-formula",
+ "sheetrs-io",
  "tempfile",
  "thiserror 2.0.21",
  "toml",
- "zip",
-]
-
-[[package]]
-name = "sheetrs-core"
-version = "0.4.0"
-dependencies = [
- "aho-corasick",
- "chrono",
- "quick-xml 0.42.0",
- "regex",
- "serde",
- "serde_json",
- "sheetrs-formula",
- "tempfile",
- "thiserror 2.0.21",
  "zip",
 ]
 
@@ -1957,8 +1941,8 @@ dependencies = [
  "clap",
  "quick-xml 0.42.0",
  "regex",
- "sheetrs-core",
  "sheetrs-formula",
+ "sheetrs-io",
  "tempfile",
  "thiserror 2.0.21",
  "zip",
@@ -1983,7 +1967,23 @@ dependencies = [
 name = "sheetrs-formula"
 version = "0.4.0"
 dependencies = [
- "sheetrs-core",
+ "sheetrs-io",
+]
+
+[[package]]
+name = "sheetrs-io"
+version = "0.4.0"
+dependencies = [
+ "aho-corasick",
+ "chrono",
+ "quick-xml 0.42.0",
+ "regex",
+ "serde",
+ "serde_json",
+ "sheetrs-formula",
+ "tempfile",
+ "thiserror 2.0.21",
+ "zip",
 ]
 
 [[package]]
@@ -1999,8 +1999,8 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sheetrs-core",
  "sheetrs-formula",
+ "sheetrs-io",
  "tempfile",
  "thiserror 2.0.21",
  "toml",
@@ -2013,8 +2013,8 @@ version = "0.4.0"
 dependencies = [
  "pyo3",
  "serde_json",
- "sheetrs-core",
  "sheetrs-edit",
+ "sheetrs-io",
  "sheetrs-linter",
  "sheetrs-stats",
  "tempfile",
@@ -2028,7 +2028,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
- "sheetrs-core",
+ "sheetrs-io",
  "zip",
 ]
 
@@ -2042,7 +2042,7 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
- "sheetrs-core",
+ "sheetrs-io",
  "sheetrs-linter",
  "sheetrs-stats",
  "wasm-bindgen",

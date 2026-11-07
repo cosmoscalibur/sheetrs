@@ -337,7 +337,7 @@ cargo run --release --example stress        # scale check
 ```
 
 `sheetrs-compiler` lives in the SheetRS workspace and uses its readers
-(`sheetrs-core`), the formula AST (`sheetrs-formula`) and the engine
+(`sheetrs-io`), the formula AST (`sheetrs-formula`) and the engine
 (`sheetrs-engine`) as path dependencies. Cargo features:
 `load` (default) enables the file frontend and the `sheetc` binary. The engine
 is its own crate, `sheetrs-engine`, whose binary `sheetrs-rt` is the runtime stub embedded into

@@ -3,7 +3,7 @@
 //! what `LibreOffice` 26.8 gave for the same deletion, asked through UNO.
 
 use crate::writer::{ValueScope, WorkbookModifications, modify_workbook};
-use sheetrs_core::reader::read_workbook;
+use sheetrs_io::reader::read_workbook;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -171,11 +171,11 @@ fn a_formula_that_changes_has_no_cached_result_and_the_rest_keeps_it() {
         // `=$T.A2` does not change; `=$T.A6` does.
         let cached = |row: u32| f.get_cell(row, 0).unwrap().value.clone();
         assert!(
-            !matches!(cached(0), sheetrs_core::reader::CellValue::Empty),
+            !matches!(cached(0), sheetrs_io::reader::CellValue::Empty),
             "{extension}"
         );
         assert!(
-            matches!(cached(3), sheetrs_core::reader::CellValue::Empty),
+            matches!(cached(3), sheetrs_io::reader::CellValue::Empty),
             "{extension}"
         );
     }

@@ -27,7 +27,7 @@
 
 use super::{LinterContext, WalkerRule};
 use crate::violation::{FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope};
-use sheetrs_core::reader::Workbook;
+use sheetrs_io::reader::Workbook;
 
 /// Rule that identifies spreadsheets using the 1904 date system.
 ///

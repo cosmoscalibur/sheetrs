@@ -10,8 +10,8 @@ use crate::LinterConfig;
 use crate::rules::registry;
 use crate::violation::{CellReference, FormatContext, Severity, Violation, ViolationScope};
 use serde::Serialize;
-use sheetrs_core::reader::Workbook;
-use sheetrs_core::reader::parser_utils::column_letters;
+use sheetrs_io::reader::Workbook;
+use sheetrs_io::reader::parser_utils::column_letters;
 use std::collections::{BTreeMap, HashMap};
 
 /// The violations reported in one sheet: those of the sheet itself and those of each of its
@@ -148,7 +148,7 @@ pub fn violation_records(
 mod tests {
     use super::*;
     use crate::violation::{CellReference, RuleId};
-    use sheetrs_core::reader::Sheet;
+    use sheetrs_io::reader::Sheet;
 
     fn workbook() -> Workbook {
         Workbook {

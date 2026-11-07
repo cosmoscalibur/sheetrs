@@ -35,7 +35,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use regex::Regex;
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::{Cell, Sheet};
 use std::sync::LazyLock;
 
 /// Regex matching truly redundant consecutive arithmetic operators.
@@ -139,7 +139,7 @@ impl WalkerRule for DoubleOperatorRule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
 
     fn make_formula_cell(row: u32, col: u32, formula: &str) -> ((u32, u32), Cell) {

@@ -1,6 +1,6 @@
 //! The document properties that the readers give, named the same in XLSX and ODS.
 
-use sheetrs_core::reader::read_workbook;
+use sheetrs_io::reader::read_workbook;
 
 fn properties(extension: &str) -> Vec<(String, String)> {
     let path = format!(

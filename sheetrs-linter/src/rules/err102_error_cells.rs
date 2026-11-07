@@ -50,7 +50,7 @@ use crate::rules::err103_ref_to_error::RefToErrorData;
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::{Cell, ExcelError, Sheet, Workbook};
+use sheetrs_io::reader::{Cell, ExcelError, Sheet, Workbook};
 use std::collections::HashSet;
 
 /// Rule that identifies cells containing error values.
@@ -237,7 +237,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
 
     fn make_cell(

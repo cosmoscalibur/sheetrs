@@ -10,13 +10,13 @@ use super::{ValueScope, WorkbookModifications, attribute, read_element_body, wri
 use crate::error::{Context, Error, Result};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
-use sheetrs_core::reader::parser_utils::{
+use sheetrs_formula::edit::Edit;
+use sheetrs_io::reader::parser_utils::{
     attr_value, column_letters, parse_cell_range, parse_cell_ref, push_general_ref,
 };
-use sheetrs_core::reader::xlsx_parser::{
+use sheetrs_io::reader::xlsx_parser::{
     is_array_error_placeholder, translate_shared_formula, workbook_part_name,
 };
-use sheetrs_formula::edit::Edit;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, BufWriter, Cursor, Read, Seek, Write};
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};

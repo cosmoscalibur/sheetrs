@@ -47,7 +47,7 @@ use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
 use regex::Regex;
-use sheetrs_core::reader::{Cell, Sheet};
+use sheetrs_io::reader::{Cell, Sheet};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
@@ -211,7 +211,7 @@ impl WalkerRule for WebUrlsRule {
         _ctx: &mut LinterContext,
         _out: &mut Vec<Violation>,
     ) {
-        if let sheetrs_core::reader::workbook::CellValue::Text(text) = &cell.value {
+        if let sheetrs_io::reader::workbook::CellValue::Text(text) = &cell.value {
             let urls = extract_urls(text);
             if !urls.is_empty() {
                 self.sheet_cells
@@ -265,7 +265,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
     use std::sync::Arc;
 

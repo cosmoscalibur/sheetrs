@@ -1,9 +1,9 @@
 //! Workbook and per-sheet statistics computed from the format-agnostic model.
 
 use serde::Serialize;
-use sheetrs_core::Result;
-use sheetrs_core::reader::parser_utils::column_letters;
-use sheetrs_core::reader::{Cell, CellSink, Sheet, Source, Workbook};
+use sheetrs_io::Result;
+use sheetrs_io::reader::parser_utils::column_letters;
+use sheetrs_io::reader::{Cell, CellSink, Sheet, Source, Workbook};
 
 /// Statistics for the whole workbook.
 #[derive(Debug, Serialize)]
@@ -179,8 +179,8 @@ pub fn percentage(part: u64, total: u64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_core::reader::ExcelError;
-    use sheetrs_core::reader::{CellValue, read_workbook_from_reader_into};
+    use sheetrs_io::reader::ExcelError;
+    use sheetrs_io::reader::{CellValue, read_workbook_from_reader_into};
     use std::io::Cursor;
     use std::sync::Arc;
 
@@ -316,12 +316,12 @@ mod tests {
             (
                 "minimal_test.xlsx",
                 TEST_XLSX,
-                sheetrs_core::reader::Format::Xlsx,
+                sheetrs_io::reader::Format::Xlsx,
             ),
             (
                 "minimal_test.ods",
                 TEST_ODS,
-                sheetrs_core::reader::Format::Ods,
+                sheetrs_io::reader::Format::Ods,
             ),
         ] {
             let file = Source::from_file(tests.join(name)).unwrap();
@@ -340,12 +340,12 @@ mod tests {
 
     #[test]
     fn collect_reports_a_workbook_that_cannot_be_read_with_a_typed_error() {
-        let corrupt = Source::from_bytes(&b"not a zip"[..], sheetrs_core::reader::Format::Xlsx);
+        let corrupt = Source::from_bytes(&b"not a zip"[..], sheetrs_io::reader::Format::Xlsx);
         assert!(collect(&corrupt).is_err());
         let missing = Source::from_file("tests/does-not-exist.xlsx").unwrap();
         assert!(matches!(
             collect(&missing),
-            Err(sheetrs_core::Error::Open { .. })
+            Err(sheetrs_io::Error::Open { .. })
         ));
     }
 }

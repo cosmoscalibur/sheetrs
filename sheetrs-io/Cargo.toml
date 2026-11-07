@@ -1,5 +1,5 @@
 [package]
-name = "sheetrs-core"
+name = "sheetrs-io"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Shared kernel of the SheetRS suite: workbook model and XLSX/ODS readers"
+description = "Input of the SheetRS suite: workbook model and XLSX/ODS readers"
 
 [dependencies]
 sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }

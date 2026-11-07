@@ -228,7 +228,7 @@ pub trait WorkbookReader {
 /// # Examples
 ///
 /// ```no_run
-/// use sheetrs_core::reader::read_workbook;
+/// use sheetrs_io::reader::read_workbook;
 /// let params = read_workbook("tests/minimal_test.xlsx").unwrap();
 /// ```
 /// Read a workbook from a file path

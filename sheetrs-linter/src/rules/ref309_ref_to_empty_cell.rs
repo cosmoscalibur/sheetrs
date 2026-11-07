@@ -39,8 +39,8 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_core::reader::workbook::CellValue;
-use sheetrs_core::reader::{Sheet, Workbook};
+use sheetrs_io::reader::workbook::CellValue;
+use sheetrs_io::reader::{Sheet, Workbook};
 use std::collections::{HashMap, HashSet};
 
 /// Rule that identifies formulas referencing empty cells.
@@ -103,7 +103,7 @@ impl WalkerRule for RefToEmptyCellRule {
         // A cell is "non-empty" if it has a formula or a non-empty value. The sheets' own cells
         // answer that; a copy of every position (a set of all the cells of the workbook) cost
         // about 40 bytes for each.
-        let has_content = |cell: &sheetrs_core::reader::Cell| {
+        let has_content = |cell: &sheetrs_io::reader::Cell| {
             cell.is_formula() || !matches!(cell.value, CellValue::Empty)
         };
         let sheets: HashMap<u16, &Sheet> =
@@ -150,7 +150,7 @@ mod tests {
     use super::*;
     use crate::rules::LinterContext;
     use crate::rules::collect_violations;
-    use sheetrs_core::reader::workbook::{Cell, CellValue, Sheet, Workbook};
+    use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet, Workbook};
     use std::collections::HashMap;
 
     fn make_number_cell(row: u32, col: u32, n: f64) -> ((u32, u32), Cell) {

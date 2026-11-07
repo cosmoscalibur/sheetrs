@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sheetrs_core::reader::{Format, Source, Workbook};
+use sheetrs_io::reader::{Format, Source, Workbook};
 use sheetrs_linter::report::{group_by_scope, violation_records};
 use sheetrs_linter::rules::registry;
 use sheetrs_linter::{FormatContext, Linter, LinterConfig, Severity, Violation};
@@ -263,7 +263,7 @@ pub fn get_workbook_stats(file_data: &[u8], extension: &str) -> Result<String, J
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_core::reader::Sheet;
+    use sheetrs_io::reader::Sheet;
     use sheetrs_linter::ViolationScope;
     use sheetrs_linter::violation::CellReference;
 
