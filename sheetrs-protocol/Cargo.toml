@@ -1,0 +1,24 @@
+[package]
+name = "sheetrs-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "The contract of the SheetRS tools: the requests and responses of run, query, find and replace, as typed JSON"
+
+[lib]
+name = "sheetrs_protocol"
+path = "src/lib.rs"
+
+[dependencies]
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
+serde = { workspace = true }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

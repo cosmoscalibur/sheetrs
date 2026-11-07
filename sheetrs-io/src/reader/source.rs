@@ -184,6 +184,29 @@ impl Source {
     }
 }
 
+impl Source {
+    /// Whether the workbook numbers its dates from 1904 (an ODS whose null date is 1904-01-01)
+    /// instead of 1900.
+    ///
+    /// # Errors
+    ///
+    /// As [`read_workbook`](Self::read_workbook).
+    pub fn uses_1904_dates(&self) -> Result<bool> {
+        match self {
+            Self::File { path, format } => {
+                let file = std::fs::File::open(path).map_err(|source| Error::Open {
+                    path: path.clone(),
+                    source,
+                })?;
+                super::read_date1904_from_reader(file, Some(format.extension()))
+            }
+            Self::Bytes { data, format } => {
+                super::read_date1904_from_reader(Cursor::new(data), Some(format.extension()))
+            }
+        }
+    }
+}
+
 impl TryFrom<&Path> for Source {
     type Error = Error;
 

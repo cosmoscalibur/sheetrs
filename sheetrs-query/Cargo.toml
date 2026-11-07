@@ -1,0 +1,36 @@
+[package]
+name = "sheetrs-query"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Reads the cells of XLSX and ODS workbooks by range, sheet or workbook, with the properties asked for, and finds the cells that match a search (the library and the `sheetquery` executable)"
+
+[lib]
+name = "sheetrs_query"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sheetquery"
+path = "src/main.rs"
+
+[dependencies]
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.0", default-features = false }
+sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.0" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.0" }
+regex.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

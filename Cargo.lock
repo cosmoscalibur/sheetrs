@@ -1960,6 +1960,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sheetrs-formula",
+ "sheetrs-protocol",
  "thiserror 2.0.21",
 ]
 
@@ -2008,6 +2009,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sheetrs-protocol"
+version = "0.4.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sheetrs-formula",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "sheetrs-py"
 version = "0.4.0"
 dependencies = [
@@ -2018,6 +2029,22 @@ dependencies = [
  "sheetrs-linter",
  "sheetrs-stats",
  "tempfile",
+]
+
+[[package]]
+name = "sheetrs-query"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "regex",
+ "serde_json",
+ "sheetrs-engine",
+ "sheetrs-formula",
+ "sheetrs-io",
+ "sheetrs-protocol",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

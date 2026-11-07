@@ -84,6 +84,8 @@ impl Properties {
 #[derive(Debug, Clone)]
 pub struct Selection {
     sheets: Vec<(String, Vec<Window>)>,
+    /// Windows that apply to every sheet, whatever its name.
+    everywhere: Vec<Window>,
     properties: Properties,
 }
 
@@ -93,6 +95,7 @@ impl Selection {
     pub fn new(properties: Properties) -> Self {
         Self {
             sheets: Vec::new(),
+            everywhere: Vec::new(),
             properties,
         }
     }
@@ -102,10 +105,24 @@ impl Selection {
     #[must_use]
     pub fn window(mut self, sheet: impl Into<String>, window: Window) -> Self {
         let sheet = sheet.into();
-        match self.sheets.iter_mut().find(|(n, _)| same_name(n, &sheet)) {
-            Some((_, windows)) => windows.push(window),
-            None => self.sheets.push((sheet, vec![window])),
+        if let Some((_, windows)) = self.sheets.iter_mut().find(|(n, _)| same_name(n, &sheet)) {
+            windows.push(window);
+        } else {
+            let mut windows = self.everywhere.clone();
+            windows.push(window);
+            self.sheets.push((sheet, windows));
         }
+        self
+    }
+
+    /// Adds a window that applies to every sheet of the workbook, the ones that are not named
+    /// included. The reading then goes through every sheet to the end.
+    #[must_use]
+    pub fn window_everywhere(mut self, window: Window) -> Self {
+        for (_, windows) in &mut self.sheets {
+            windows.push(window);
+        }
+        self.everywhere.push(window);
         self
     }
 
@@ -118,7 +135,12 @@ impl Selection {
     /// How many sheets are selected.
     #[must_use]
     pub fn sheet_count(&self) -> usize {
-        self.sheets.len()
+        if self.everywhere.is_empty() {
+            self.sheets.len()
+        } else {
+            // Any sheet may be selected: the reading cannot end before the last one.
+            usize::MAX
+        }
     }
 
     /// The part of the selection that is of `sheet`, if the sheet is selected.
@@ -127,6 +149,9 @@ impl Selection {
             .iter()
             .find(|(n, _)| same_name(n, sheet))
             .map(|(_, windows)| SheetSelection::new(windows))
+            .or_else(|| {
+                (!self.everywhere.is_empty()).then(|| SheetSelection::new(&self.everywhere))
+            })
     }
 }
 
@@ -181,6 +206,18 @@ pub struct SheetInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_window_everywhere_reaches_the_sheets_that_are_not_named() {
+        let selection = Selection::new(Properties::VALUE)
+            .window("Data", Window::new(0, 0, 1, 1))
+            .window_everywhere(Window::new(5, 5, 6, 6));
+        assert_eq!(selection.sheet_count(), usize::MAX);
+        let data = selection.of("Data").unwrap();
+        assert!(data.contains(0, 0) && data.contains(5, 5));
+        let other = selection.of("Other").unwrap();
+        assert!(other.contains(6, 6) && !other.contains(0, 0));
+    }
 
     #[test]
     fn windows_of_the_same_sheet_join_and_names_match_without_case() {

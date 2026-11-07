@@ -9,6 +9,44 @@ use crate::value::{ErrorKind, Value};
 use serde_json::{Map, Number, Value as Json};
 use std::sync::Arc;
 
+/// Say what is wrong with a request that does not have the shape of
+/// [`sheetrs_protocol::Request`], naming the field.
+fn explain_request(request: &Json, serde_says: &str) -> Error {
+    let Json::Object(req) = request else {
+        return Error::Request("the request must be a JSON object".into());
+    };
+    for key in req.keys() {
+        if !matches!(key.as_str(), "inputs" | "ranges" | "majorDimension") {
+            return Error::Request(format!(
+                "unknown key `{key}` in the request (expected inputs, ranges, majorDimension; \
+                 input values go under `inputs`)"
+            ));
+        }
+    }
+    if req.contains_key("majorDimension") {
+        let ok = req
+            .get("majorDimension")
+            .and_then(Json::as_str)
+            .and_then(MajorDimension::parse)
+            .is_some();
+        if !ok {
+            return Error::Request("majorDimension must be \"ROWS\" or \"COLUMNS\"".into());
+        }
+    }
+    match req.get("ranges") {
+        Some(Json::Array(a)) if a.iter().all(Json::is_string) => {}
+        Some(Json::Array(_)) => {
+            return Error::Request("`ranges` must be an array of strings".into());
+        }
+        Some(_) => return Error::Request("`ranges` must be a non-empty array of strings".into()),
+        None => {}
+    }
+    if matches!(req.get("inputs"), Some(i) if !i.is_object() && !i.is_null()) {
+        return Error::Request("`inputs` must be a JSON object".into());
+    }
+    Error::Request(format!("invalid request: {serde_says}"))
+}
+
 fn fail<T>(msg: impl Into<String>) -> Result<T> {
     Err(Error::Request(msg.into()))
 }
@@ -24,26 +62,7 @@ pub struct Overrides {
     pub host: crate::options::Host,
 }
 
-/// Orientation of the arrays returned for ranges (Google Sheets' `majorDimension`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum MajorDimension {
-    /// An array of rows.
-    #[default]
-    Rows,
-    /// An array of columns.
-    Columns,
-}
-
-impl MajorDimension {
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.to_ascii_uppercase().as_str() {
-            "ROWS" => Some(Self::Rows),
-            "COLUMNS" => Some(Self::Columns),
-            _ => None,
-        }
-    }
-}
+pub use sheetrs_protocol::MajorDimension;
 
 /// A requested range, resolved and checked.
 struct Target {
@@ -171,36 +190,19 @@ impl Program {
         request: &Json,
         o: &Overrides,
     ) -> Result<Json> {
-        let empty = Map::new();
-        let req = match request {
-            Json::Object(m) => m,
-            Json::Null => &empty,
-            _ => return fail("the request must be a JSON object"),
+        let request = match request {
+            Json::Null => sheetrs_protocol::Request::default(),
+            other => serde_json::from_value(other.clone())
+                .map_err(|e| explain_request(other, &e.to_string()))?,
         };
-        for key in req.keys() {
-            if !matches!(key.as_str(), "inputs" | "ranges" | "majorDimension") {
-                return fail(format!(
-                    "unknown key `{key}` in the request (expected inputs, ranges, majorDimension; \
-                     input values go under `inputs`)"
-                ));
+        let inputs = request.inputs.map_or(Json::Null, Json::Object);
+        let inputs = &inputs;
+        let dim = request.major_dimension.unwrap_or_default();
+        let ranges = match request.ranges {
+            Some(r) if r.is_empty() => {
+                return fail("`ranges` must be a non-empty array of strings");
             }
-        }
-        let inputs = req.get("inputs").unwrap_or(&Json::Null);
-        let dim = match req.get("majorDimension") {
-            None => MajorDimension::Rows,
-            Some(j) => j.as_str().and_then(MajorDimension::parse).ok_or_else(|| {
-                Error::Request("majorDimension must be \"ROWS\" or \"COLUMNS\"".into())
-            })?,
-        };
-        let ranges: Option<Vec<String>> = match req.get("ranges") {
-            None => None,
-            Some(Json::Array(a)) if !a.is_empty() => Some(
-                a.iter()
-                    .map(|v| v.as_str().map(str::to_string))
-                    .collect::<Option<_>>()
-                    .ok_or_else(|| Error::Request("`ranges` must be an array of strings".into()))?,
-            ),
-            Some(_) => return fail("`ranges` must be a non-empty array of strings"),
+            r => r,
         };
         match ranges {
             Some(r) => {

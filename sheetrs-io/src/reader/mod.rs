@@ -399,6 +399,33 @@ pub fn read_workbook_from_reader_into<R: std::io::Read + std::io::Seek>(
     })
 }
 
+/// Whether the workbook in `reader` numbers its dates from 1904 (the null date of an ODS is
+/// 1904-01-01) instead of 1900.
+///
+/// # Errors
+///
+/// When the file cannot be read or is not a workbook of a supported format.
+pub fn read_date1904_from_reader<R: std::io::Read + std::io::Seek>(
+    reader: R,
+    extension: Option<&str>,
+) -> Result<bool> {
+    let mut archive = ZipArchive::new(reader)?;
+    let is_xlsx =
+        extension.is_some_and(|s| s.eq_ignore_ascii_case("xlsx") || s.eq_ignore_ascii_case("xlsm"));
+    let is_ods = extension.is_some_and(|s| s.eq_ignore_ascii_case("ods"));
+    if is_xlsx {
+        XlsxReader::new(&mut archive)?.read_date1904()
+    } else if is_ods || archive.by_name("content.xml").is_ok() {
+        OdsReader::new(&mut archive)?.read_date1904()
+    } else if archive.by_name("[Content_Types].xml").is_ok() {
+        XlsxReader::new(&mut archive)?.read_date1904()
+    } else {
+        Err(Error::unsupported(
+            "Unsupported or unrecognizable file format",
+        ))
+    }
+}
+
 /// Reads what `selection` asks for of the workbook in `reader`, handing the cells to `sink` (see
 /// [`WorkbookReader::read_selection_into`]); `extension` (`xlsx`, `xlsm`, `ods`) tells its format.
 ///
