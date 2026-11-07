@@ -136,11 +136,7 @@ fn a_number_format_is_the_same_code_in_both() {
     let mut different = Vec::new();
     for row in 0..39 {
         let wanted = &x[&(row, 1)].0;
-        let from_xlsx = x[&(row, 0)]
-            .2
-            .as_deref()
-            .map(without_locale)
-            .unwrap_or("General");
+        let from_xlsx = x[&(row, 0)].2.as_deref().map_or("General", without_locale);
         let from_ods = o[&(row, 0)].2.as_deref().unwrap_or("General");
         // `LibreOffice` writes the format `0` of the first row as no style at all in an ODS, so the
         // cell is General there: it reads back as it is written.
