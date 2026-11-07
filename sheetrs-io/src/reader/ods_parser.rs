@@ -292,7 +292,7 @@ pub fn normalize_ods_reference(
                 '$' => {
                     // Handle $Sheet.A1 or $Sheet.A1:.$B$2 (unbracketed sheet reference)
                     if let Some(next) = chars.peek() {
-                        if next.is_alphabetic() {
+                        if next.is_alphabetic() || *next == '\'' {
                             parse_dollar_sheet_ref(
                                 &mut chars,
                                 &mut converted,
@@ -491,6 +491,10 @@ fn parse_bracket_ref(
     } else if let Some(stripped) = bracket_content.strip_prefix('.') {
         // [.A1] or [.A1:.B2] or [.A:.A] or [.1:.1]
         parse_local_ref(stripped, result);
+    } else if split_sheet_cell(&bracket_content).is_some() {
+        // [Sheet.A1], ['My Sheet'.A1:.B2]: a sheet that is not absolute, which is what
+        // `LibreOffice` writes for a reference such as `=Sheet.A1`.
+        parse_sheet_qualified_ref(&bracket_content, result, current_sheet_name);
     } else {
         // Unknown format, keep as-is
         result.push('[');
@@ -506,104 +510,95 @@ fn unquote_sheet(name: &str) -> String {
         .map_or_else(|| name.to_string(), |inner| inner.replace("''", "'"))
 }
 
-/// Parse Sheet.A1:Sheet.B2 or Sheet.A1
-fn parse_sheet_qualified_ref(content: &str, result: &mut String, current_sheet_name: Option<&str>) {
-    if let Some(colon_pos) = content.find(':') {
-        // Range: Sheet.A1:Sheet.B2 or Sheet.A1:.B2
-        let start_part = &content[..colon_pos];
-        let end_part = &content[colon_pos + 1..];
-
-        let mut start_sheet = "";
-        let mut start_cell = start_part;
-        if let Some((s, c)) = start_part.split_once('.') {
-            start_sheet = s;
-            start_cell = c;
-        }
-
-        let mut end_sheet = "";
-        let mut end_cell = end_part;
-
-        // ODS shortcut: Sheet1.A1:.B2
-        if let Some(stripped) = end_part.strip_prefix('.') {
-            end_sheet = start_sheet;
-            end_cell = stripped;
-        } else if let Some((s, c)) = end_part.split_once('.') {
-            end_sheet = s;
-            end_cell = c;
-        }
-
-        if start_sheet.is_empty() {
-            // Malformed or just local range like .A1:.B2 (though those should go to parse_local_ref)
-            result.push_str(content);
-        } else {
-            // Check if we should strip the sheet name
-            // For a range, we only strip if BOTH sheets match the current sheet
-            let should_strip = if let Some(current) = current_sheet_name {
-                start_sheet == current && (end_sheet == current || end_sheet.is_empty())
-            } else {
-                false
-            };
-
-            if should_strip {
-                result.push_str(start_cell);
-                result.push(':');
-                result.push_str(end_cell);
-            } else {
-                let (first, last) = (
-                    start_sheet.trim_start_matches('$'),
-                    end_sheet.trim_start_matches('$'),
-                );
-                if last.is_empty() || last == first {
-                    result.push_str(first);
-                } else {
-                    // A 3D reference, as an XLSX writes it: `Sheet1:Sheet3!A1:B2`.
-                    let (first, last) = (unquote_sheet(first), unquote_sheet(last));
-                    if needs_quotes(&first) || needs_quotes(&last) {
-                        let _ = write!(
-                            result,
-                            "'{}:{}'",
-                            first.replace('\'', "''"),
-                            last.replace('\'', "''")
-                        );
-                    } else {
-                        let _ = write!(result, "{first}:{last}");
-                    }
-                }
-                result.push('!');
-                result.push_str(start_cell);
-                result.push(':');
-                result.push_str(end_cell);
-            }
-        }
-    } else {
-        // Single cell: Sheet.A1
-        let mut sheet = "";
-        let mut cell = content;
-        if let Some((s, c)) = content.split_once('.') {
-            sheet = s;
-            cell = c;
-        }
-
-        if sheet.is_empty() {
-            // Malformed, keep as-is
-            result.push_str(content);
-        } else {
-            // Check if we should strip the sheet name
-            let should_strip = if let Some(current) = current_sheet_name {
-                sheet == current
-            } else {
-                false
-            };
-
-            if should_strip {
-                result.push_str(cell);
-            } else {
-                result.push_str(sheet.trim_start_matches('$'));
-                result.push('!');
-                result.push_str(cell);
-            }
+/// The index of the first `target` outside the single quotes of a sheet name (`''` inside a name
+/// is a quote, and toggles twice).
+fn find_outside_quotes(text: &str, target: char) -> Option<usize> {
+    let mut in_quotes = false;
+    for (i, c) in text.char_indices() {
+        match c {
+            '\'' => in_quotes = !in_quotes,
+            c if c == target && !in_quotes => return Some(i),
+            _ => {}
         }
     }
+    None
+}
+
+/// `Sheet.A1` or `'My Sheet'.A1` as the sheet (as written) and the cell; `None` when there is no
+/// sheet in front of the dot.
+fn split_sheet_cell(part: &str) -> Option<(&str, &str)> {
+    let dot = find_outside_quotes(part, '.')?;
+    (dot > 0).then(|| (&part[..dot], &part[dot + 1..]))
+}
+
+/// The name of a sheet written in an ODS reference (`$` of its absolute mark and quotes
+/// removed).
+fn sheet_name_of(written: &str) -> String {
+    unquote_sheet(written.trim_start_matches('$'))
+}
+
+/// A sheet name as Excel writes it in a reference: quoted when it needs it.
+fn push_sheet_name(result: &mut String, name: &str) {
+    if needs_quotes(name) {
+        let _ = write!(result, "'{}'", name.replace('\'', "''"));
+    } else {
+        result.push_str(name);
+    }
+}
+
+/// Parse a reference with a sheet: `Sheet.A1`, `'My Sheet'.A1:.B2`, `Sheet.A1:Sheet.B2`,
+/// `$Sheet1.A1:$Sheet3.B2` (the `$` before a sheet only says that the sheet is absolute). It is
+/// written as Excel writes it (`Sheet!A1`, `Sheet1:Sheet3!A1:B2`), without the sheet when it is the
+/// one of the formula.
+fn parse_sheet_qualified_ref(content: &str, result: &mut String, current_sheet_name: Option<&str>) {
+    // A range is two parts around a colon that is not in the quotes of a sheet name.
+    let (start_part, end_part) = match find_outside_quotes(content, ':') {
+        Some(i) => (&content[..i], Some(&content[i + 1..])),
+        None => (content, None),
+    };
+    let Some((start_sheet, start_cell)) = split_sheet_cell(start_part) else {
+        // No sheet in front of the cell: malformed here, kept as written.
+        result.push_str(content);
+        return;
+    };
+    let first = sheet_name_of(start_sheet);
+    let local = current_sheet_name == Some(first.as_str());
+    let Some(end_part) = end_part else {
+        // A single cell.
+        if !local {
+            push_sheet_name(result, &first);
+            result.push('!');
+        }
+        result.push_str(start_cell);
+        return;
+    };
+    // The end of a range: `.B2` (the same sheet), `Sheet.B2` or `$Sheet.B2`.
+    let (last, end_cell) = if let Some(cell) = end_part.strip_prefix('.') {
+        (first.clone(), cell)
+    } else if let Some((sheet, cell)) = split_sheet_cell(end_part) {
+        (sheet_name_of(sheet), cell)
+    } else {
+        (first.clone(), end_part)
+    };
+    if last == first {
+        if !local {
+            push_sheet_name(result, &first);
+            result.push('!');
+        }
+    } else if needs_quotes(&first) || needs_quotes(&last) {
+        // A 3D reference, as an XLSX writes it: `Sheet1:Sheet3!A1:B2`.
+        let _ = write!(
+            result,
+            "'{}:{}'!",
+            first.replace('\'', "''"),
+            last.replace('\'', "''")
+        );
+    } else {
+        let _ = write!(result, "{first}:{last}!");
+    }
+    result.push_str(start_cell);
+    result.push(':');
+    result.push_str(end_cell);
 }
 
 /// Parse local reference: .A1 or .A1:.B2 or .A:.A or .1:.1
@@ -633,21 +628,47 @@ fn parse_dollar_sheet_ref(
 ) {
     let mut sheet_name = String::new();
 
-    // Collect sheet name until '.'
-    while let Some(&ch) = chars.peek() {
-        if ch == '.' {
-            chars.next(); // consume '.'
-            break;
-        } else if ch.is_alphanumeric() || ch == '_' {
+    if chars.peek() == Some(&'\'') {
+        // A quoted name, which may hold dots and spaces: `$'Q1.2024'.A1`.
+        sheet_name.push('\'');
+        chars.next();
+        while let Some(ch) = chars.next() {
             sheet_name.push(ch);
+            if ch == '\'' {
+                if chars.peek() == Some(&'\'') {
+                    sheet_name.push('\'');
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+        }
+        if chars.peek() == Some(&'.') {
             chars.next();
         } else {
-            // Not a sheet reference, restore $
             result.push('$');
             result.push_str(&sheet_name);
             return;
         }
+    } else {
+        // Collect sheet name until '.'
+        while let Some(&ch) = chars.peek() {
+            if ch == '.' {
+                chars.next(); // consume '.'
+                break;
+            } else if ch.is_alphanumeric() || ch == '_' {
+                sheet_name.push(ch);
+                chars.next();
+            } else {
+                // Not a sheet reference, restore $
+                result.push('$');
+                result.push_str(&sheet_name);
+                return;
+            }
+        }
     }
+    // The name, without the quotes it was written with: it is quoted again if Excel needs it.
+    let sheet_name = unquote_sheet(&sheet_name);
 
     // Collect first cell reference
     let mut cell_ref = String::new();
@@ -698,14 +719,14 @@ fn parse_dollar_sheet_ref(
     if cell_ref2.is_empty() {
         // Single cell
         if !should_strip {
-            result.push_str(&sheet_name);
+            push_sheet_name(result, &sheet_name);
             result.push('!');
         }
         result.push_str(&cell_ref);
     } else {
         // Range
         if !should_strip {
-            result.push_str(&sheet_name);
+            push_sheet_name(result, &sheet_name);
             result.push('!');
         }
         result.push_str(&cell_ref);
@@ -1264,7 +1285,10 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         }
                     }
                     // DATE STYLES: style:style (for cell styles mapping)
-                    Event::Start(e) if e.name().as_ref() == "style:style" => {
+                    // A style with nothing inside (`<style:style ... style:data-style-name="N49"/>`)
+                    // is how `LibreOffice` writes the cell style of a cell that only has a number
+                    // format.
+                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "style:style" => {
                         let mut is_cell_style = false;
                         let mut style_name = String::new();
                         let mut data_style_name = String::new();
@@ -1299,7 +1323,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         }
 
                         // Check for hidden table styles
-                        if is_table_style && !style_name.is_empty() {
+                        if is_table_style && !empty_tag && !style_name.is_empty() {
                             let mut inner_buf = Vec::new();
                             loop {
                                 match reader.read_event_into(&mut inner_buf)? {
