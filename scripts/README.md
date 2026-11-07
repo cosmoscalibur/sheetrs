@@ -204,6 +204,45 @@ the state after its change, so the previous entry is its baseline. Entries
 from #30 on come from `benchmark.sh` with the `profiling` profile, mean of 2
 runs, measured in one session; older entries are release builds.
 
+### Number formats of an ODS, error codes, query, and the order of constants in the compiler (this branch)
+
+What changed: the ODS styles are read by one module for every family of format (and cell styles
+through their parent), an ODS error keeps its code (`ExcelError::Libre`), the selective reads gained
+a window for every sheet, `sheetquery` and the protocol exist, and the compiler assembles the
+constants of a program by merging two ordered runs instead of sorting a vector of positions with
+their values (the sort was 25 % of the samples of the build of a workbook of 4 M cells).
+
+As in the entry below, neither `tests/production/`, `perf` nor `/usr/bin/time` was available, so the
+entry does **not** come from `benchmark.sh`: synthetic workbooks (one sheet `Data`, five columns),
+release builds, the same harness against Calamine 0.38.0, wall time of three runs in one session,
+peak RAM from the child's `ru_maxrss`. The "before" of the readers is the binary measured at the
+start of the session, with the allocation work of the entry below already in it and the formats,
+errors and selection changes not; the "before" of the compiler is the tree before the merge.
+
+| Streaming read, 4 M cells (ODS 1 M) | Before | After | Calamine |
+|---|---|---|---|
+| XLSX, numbers | 1.51–1.78 s | 1.17–1.23 s | 0.98–1.01 s |
+| XLSX, shared strings | 1.71–1.75 s | 1.27–1.36 s | 1.00–1.01 s |
+| XLSX, formulas | 1.92–1.96 s | 1.54–1.55 s | 1.24–1.25 s |
+| ODS, formulas | 1.00–1.04 s | 0.67–0.70 s | (its streaming read does not read ODS) |
+
+| `sheetc run` of 4 M cells (2.4 M formulas), `outputs = any` | Before | After |
+|---|---|---|
+| Wall time, median of 6 | 6.5 s | 5.7 s (−12 %) |
+| Peak RAM | 1,366 MB | 1,234 MB (−10 %) |
+
+- Stages of that run, before: read the workbook 1.85 s (311 MB), compile 2.9 s (peak 1.37 GB), write
+  0.43 s. In the samples after the change the reader is 27 % (of which the XML parser 16 % and
+  reading the compressed text 7 %), the compiler's lowering of formulas 5 %, the dependency index
+  (`Lazy::adj_of`) 12 %, and the engine building its state 12 %; the sort that is left is the one of
+  the formulas by position at 8 %, ahead of the merge.
+- Peak RAM of a streaming read is 13 MB, as before. `Cell` is still 56 bytes and a `NumFmt` 8
+  (asserted by a test): the formats of an ODS are shared by name, one allocation each.
+- `sheetquery` of ten rows of the 4 M-cell workbook: 0.00 s and 13 MB.
+- What would pay next, from the samples: reading the XLSX text without the XML parser's event layer
+  for the cells (`quick_xml` is 16 % of a build), and the dependency index of the compiler, which is
+  built for every node even when `outputs = any` keeps all of them.
+
 ### Reader allocations, one pass over an ODS, and selective reads (this branch)
 
 The XLSX reader allocated about seven times per cell (a list of the attributes seen, a buffer and

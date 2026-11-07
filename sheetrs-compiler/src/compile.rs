@@ -1003,27 +1003,39 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
 
     trace(&t0, "needed");
     // ----- assemble -----
-    let mut consts: Vec<(CellRef, Value)> = const_cells
+    // The constants of the workbook are in order already; the formulas folded to a value come out
+    // of a hash set. The nodes are numbered in the order of their positions (`ats` is sorted), so
+    // sorting their numbers (four bytes each) puts them in order, and the two runs are merged: no
+    // sort of the fat pairs, and each value is built once.
+    let mut folded_ids: Vec<u32> = need_folded
         .iter()
-        .map(|&at| (at, view.get(at).unwrap_or_default()))
+        .copied()
+        .filter(|id| !blank_ids.contains(id))
         .collect();
-    consts.extend(
-        need_folded
-            .iter()
-            .filter(|id| !blank_ids.contains(id))
-            .map(|&id| {
-                let v = folded[id as usize].clone();
-                (ats[id as usize], v.expect("a folded formula has its value"))
-            }),
-    );
-    consts.sort_unstable_by_key(|(at, _)| *at);
-    let mut cells: Vec<CellDef> = consts
-        .into_iter()
-        .map(|(at, v)| CellDef {
+    folded_ids.sort_unstable();
+    let mut cells: Vec<CellDef> = Vec::with_capacity(const_cells.len() + folded_ids.len());
+    let (mut next_const, mut next_folded) =
+        (const_cells.iter().peekable(), folded_ids.iter().peekable());
+    loop {
+        let take_const = match (next_const.peek(), next_folded.peek()) {
+            (Some(c), Some(&&f)) => **c <= ats[f as usize],
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => break,
+        };
+        let (at, v) = if take_const {
+            let at = *next_const.next().expect("peeked");
+            (at, view.get(at).unwrap_or_default())
+        } else {
+            let id = *next_folded.next().expect("peeked");
+            let v = folded[id as usize].clone();
+            (ats[id as usize], v.expect("a folded formula has its value"))
+        };
+        cells.push(CellDef {
             at,
             kind: CellKind::Const(v),
-        })
-        .collect();
+        });
+    }
     let mut cycles = Vec::new();
     for (ci, comp) in sccs.components().enumerate() {
         if !tainted[comp[0] as usize] {
