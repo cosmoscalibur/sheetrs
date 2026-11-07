@@ -324,7 +324,7 @@ impl PyEditor {
     /// option for it.
     #[allow(clippy::needless_pass_by_value)] // pyo3 hands over an owned argument
     fn save(&self, py: Python<'_>, path: std::borrow::Cow<'_, std::path::Path>) -> PyResult<()> {
-        py.detach(|| self.editor.save(&path).map_err(to_py_err))
+        py.detach(|| self.editor.save(&path).map(|_| ()).map_err(to_py_err))
     }
 
     fn __repr__(&self) -> String {
