@@ -4,6 +4,7 @@ use crate::error::{Context, Error, Result};
 use crate::plan::Plan;
 use crate::replace::Report;
 use crate::writer::{ColumnRange, RowRange, ValueScope};
+use crate::writes::CellWrites;
 use sheetrs_io::reader::Source;
 use sheetrs_protocol::{Replace, Scope};
 use std::path::Path;
@@ -98,6 +99,15 @@ impl Editor {
         replace: Replace,
     ) -> &mut Self {
         self.plan.replace(scopes.into_iter().collect(), replace);
+        self
+    }
+
+    /// Write values into cells: the results a program computed into the formulas of a workbook
+    /// that serves as a template, and the constants of its inputs (see [`CellWrites`]). The cells
+    /// are addressed as the changes before this one leave the workbook, and what comes after
+    /// addresses the workbook this leaves.
+    pub fn write_cells(&mut self, writes: CellWrites) -> &mut Self {
+        self.plan.write_cells(writes);
         self
     }
 

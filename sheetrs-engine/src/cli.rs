@@ -180,7 +180,13 @@ pub fn parse_overrides(args: &mut Args) -> crate::Result<Overrides> {
     Ok(o)
 }
 
-fn read_input(path: Option<&str>) -> crate::Result<serde_json::Value> {
+/// The request of a run: a JSON object from `path`, from the standard input for `-` or when there is
+/// no path, `null` when it is empty.
+///
+/// # Errors
+///
+/// When the input cannot be read or is not JSON.
+pub fn read_input(path: Option<&str>) -> crate::Result<serde_json::Value> {
     let mut text = String::new();
     match path {
         Some("-") | None => {

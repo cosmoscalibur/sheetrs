@@ -44,6 +44,7 @@ use crate::error::{Context, Error, Result};
 use crate::replace::{ReplaceSpec, Report};
 use crate::writer::structure::Bands;
 use crate::writer::{self, ColumnRange, RowRange, ValueScope, WorkbookModifications};
+use crate::writes::CellWrites;
 use sheetrs_io::reader::Source;
 use sheetrs_protocol::{Replace, Scope};
 use std::collections::{BTreeMap, BTreeSet};
@@ -52,7 +53,7 @@ use std::path::Path;
 
 /// One operation on a workbook, on the workbook as the operations before it leave it. The
 /// ranges of one operation are simultaneous: `DeleteRows(["S!3", "S!4"])` deletes two rows.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Operation {
     /// Remove the sheets of these names.
     RemoveSheets(Vec<String>),
@@ -69,6 +70,8 @@ pub(crate) enum Operation {
     /// content of the cells, so it is a pass of its own: what it decides is decided against the
     /// workbook as the operations before it leave it.
     Replace(ReplaceSpec),
+    /// Write values into cells, decided by the caller (see [`CellWrites`]).
+    WriteCells(CellWrites),
 }
 
 impl fmt::Display for Operation {
@@ -88,6 +91,11 @@ impl fmt::Display for Operation {
             }
             Self::DeleteRows(rows) => write!(f, "delete rows {}", list(rows)),
             Self::DeleteColumns(columns) => write!(f, "delete columns {}", list(columns)),
+            Self::WriteCells(writes) => {
+                let mut sheets: Vec<&str> = writes.sheets.keys().map(String::as_str).collect();
+                sheets.sort_unstable();
+                write!(f, "write {} cells in {}", writes.len(), sheets.join(", "))
+            }
             Self::Replace(spec) => {
                 let find = &spec.replace.find;
                 write!(f, "replace {:?} with {:?}", find.text, spec.replace.with)?;
@@ -130,12 +138,13 @@ impl Operation {
             Self::DeleteRows(items) => items.is_empty(),
             Self::DeleteColumns(items) => items.is_empty(),
             Self::Replace(_) => false,
+            Self::WriteCells(writes) => writes.is_empty(),
         }
     }
 }
 
 /// A sequence of operations on one workbook.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Plan {
     operations: Vec<Operation>,
 }
@@ -190,6 +199,10 @@ impl Plan {
         self.push(Operation::DeleteColumns(columns.into_iter().collect()))
     }
 
+    pub(crate) fn write_cells(&mut self, writes: CellWrites) -> &mut Self {
+        self.push(Operation::WriteCells(writes))
+    }
+
     pub(crate) fn replace(&mut self, scopes: Vec<Scope>, replace: Replace) -> &mut Self {
         self.push(Operation::Replace(ReplaceSpec { scopes, replace }))
     }
@@ -199,9 +212,12 @@ impl Plan {
     /// removed), and it does not when the plan only converts formulas to values.
     #[must_use]
     pub(crate) fn marks_recalculation(&self) -> bool {
-        self.operations
-            .iter()
-            .any(|operation| !matches!(operation, Operation::ConvertToValues(_)))
+        self.operations.iter().any(|operation| {
+            !matches!(
+                operation,
+                Operation::ConvertToValues(_) | Operation::WriteCells(_)
+            )
+        })
     }
 
     /// The operations as they were written.
@@ -237,9 +253,10 @@ impl Plan {
                     });
                 }
             }
-            if let Operation::Replace(_) = operation {
-                // It reads what the operations before it leave and decides the cells it changes:
-                // a pass of its own, and what comes after starts another.
+            if let Operation::Replace(_) | Operation::WriteCells(_) = operation {
+                // A replacement reads what the operations before it leave and decides the cells it
+                // changes; a write addresses the cells as they are at that point: a pass of its
+                // own, and what comes after starts another.
                 if !current.is_empty() {
                     passes.push(std::mem::take(&mut current).into_operations());
                 }
@@ -320,11 +337,18 @@ impl Plan {
                 _ => output.to_path_buf(),
             };
             let mut mods = modifications_of(pass);
-            if let [Operation::Replace(spec)] = pass.as_slice() {
-                let (edits, done) = crate::replace::decide(&current, spec)
-                    .with_context(|| format!("Failed in pass {} of {}", i + 1, passes.len()))?;
-                mods.replacements = edits;
-                report.absorb(done);
+            match pass.as_slice() {
+                [Operation::Replace(spec)] => {
+                    let (edits, done) = crate::replace::decide(&current, spec)
+                        .with_context(|| format!("Failed in pass {} of {}", i + 1, passes.len()))?;
+                    mods.replacements = edits;
+                    report.absorb(done);
+                }
+                [Operation::WriteCells(writes)] => {
+                    mods.replacements.clone_from(&writes.sheets);
+                    report.written += writes.len();
+                }
+                _ => {}
             }
             mods.recalculate_on_open = last && self.marks_recalculation();
             writer::modify_workbook(&current, &target, &mods)
@@ -351,6 +375,7 @@ fn sheets_of(operation: &Operation) -> Vec<&str> {
                 Scope::Workbook => None,
             })
             .collect(),
+        Operation::WriteCells(writes) => writes.sheets.keys().map(String::as_str).collect(),
         Operation::RemoveSheets(_) | Operation::RemoveNamedRanges(_) => Vec::new(),
     }
 }
@@ -380,7 +405,7 @@ fn modifications_of(pass: &[Operation]) -> WorkbookModifications {
                     .extend(columns.iter().cloned().map(ValueScope::from));
             }
             // Decided against the input of its pass, when the pass runs.
-            Operation::Replace(_) => {}
+            Operation::Replace(_) | Operation::WriteCells(_) => {}
         }
     }
     mods
@@ -461,7 +486,9 @@ impl Pass {
             }
             Operation::RemoveNamedRanges(names) => self.names.extend(names.iter().cloned()),
             Operation::RemoveSheets(names) => self.sheets.extend(names.iter().cloned()),
-            Operation::Replace(_) => unreachable!("a replacement is a pass of its own"),
+            Operation::Replace(_) | Operation::WriteCells(_) => {
+                unreachable!("a replacement or a write is a pass of its own")
+            }
         }
         if !matches!(operation, Operation::ConvertToValues(_)) {
             self.changes = true;

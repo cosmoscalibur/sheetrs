@@ -8,7 +8,7 @@ use super::structure::{Bands, StructureEdits, shape_depends_on_sizes};
 use super::xlsx_structure::{SheetStructure, map_attributes};
 use super::xlsx_writer::replace_names;
 use super::{
-    CellEdit, SheetEdits, ValueScope, ValueTarget, WorkbookModifications, attribute,
+    CachedResult, CellEdit, SheetEdits, ValueScope, ValueTarget, WorkbookModifications, attribute,
     read_element_body, write_element,
 };
 use crate::error::{Context, Error, Result};
@@ -550,11 +550,12 @@ fn edited_cell(
     for attr in start.attributes() {
         let attr = attr?;
         let key = attr.key.as_ref();
+        // A cached result is written over what the cell is: its formula and its array stay.
+        let keeps = matches!(edit, CellEdit::Cached(_))
+            && matches!(key, FORMULA | MATRIX_COLUMNS | MATRIX_ROWS);
         if !CACHED_VALUE_ATTRIBUTES.contains(&key)
-            && !matches!(
-                key,
-                FORMULA | MATRIX_COLUMNS | MATRIX_ROWS | COLUMNS_REPEATED
-            )
+            && (keeps || !matches!(key, FORMULA | MATRIX_COLUMNS | MATRIX_ROWS))
+            && key != COLUMNS_REPEATED
         {
             cell.push_attribute(attr);
         }
@@ -583,6 +584,33 @@ fn edited_cell(
         CellEdit::Formula(f) => {
             cell.push_attribute((FORMULA, format!("of:={f}").as_str()));
         }
+        CellEdit::Cached(result) => match result {
+            CachedResult::Number(n) => {
+                cell.push_attribute(("office:value-type", "float"));
+                cell.push_attribute(("office:value", n.to_string().as_str()));
+                cell.push_attribute(("calcext:value-type", "float"));
+                kept.extend(text_paragraphs(&n.to_string()));
+            }
+            CachedResult::Text(text) => {
+                cell.push_attribute(("office:value-type", "string"));
+                cell.push_attribute(("office:string-value", text.as_str()));
+                cell.push_attribute(("calcext:value-type", "string"));
+                kept.extend(text_paragraphs(text));
+            }
+            CachedResult::Boolean(b) => {
+                let text = if *b { "true" } else { "false" };
+                cell.push_attribute(("office:value-type", "boolean"));
+                cell.push_attribute(("office:boolean-value", text));
+                cell.push_attribute(("calcext:value-type", "boolean"));
+                kept.extend(text_paragraphs(&text.to_uppercase()));
+            }
+            CachedResult::Error(text) => {
+                cell.push_attribute(("office:value-type", "string"));
+                cell.push_attribute(("office:string-value", ""));
+                cell.push_attribute(("calcext:value-type", "error"));
+                kept.extend(text_paragraphs(text));
+            }
+        },
     }
     Ok((cell, (!kept.is_empty()).then_some(kept)))
 }

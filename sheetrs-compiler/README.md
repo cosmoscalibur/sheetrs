@@ -107,6 +107,20 @@ order:
   inputs and outputs the value shown is the canonical range) and, only when the
   build has `outputs = "named"` or `"any"`, the defined names it can read
   (`meta_type` `name`, the value is the definition).
+* The same declarations can come from a **JSON file**, for a workbook that has no settings sheet
+  (or one that must not change): `settings_file = "model.json"` in `sheetc.toml` (a path relative
+  to the file) or `--settings-file`. It replaces the sheet; naming both is an error, and the
+  checks below are the same:
+
+  ```json
+  {
+    "inputs":  { "rate": "Data!A1", "years": { "range": "Data!A2", "description": "term" } },
+    "outputs": { "result": "Data!B1:B3" },
+    "meta":    [ { "key": "version", "value": "1.2", "description": "model", "meta_type": "info" } ]
+  }
+  ```
+
+  An existing workbook compiles and calculates unmodified, with its inputs changed.
 * There is no other way to declare inputs and outputs: no command-line list.
   A key names one thing: it cannot repeat in the sheet (not as the same type nor
   as another: an input, an output or a field), and it cannot coincide with a
@@ -116,6 +130,25 @@ order:
   `key`) and a sheet with no `output` row is an error unless
   `outputs = "any"`. Without a settings sheet, every formula range is an output
   (keyed by its range text) and nothing is an input.
+
+### Recalculating a workbook as it is, and the workbook as the template of the answer
+
+* **As it is**: `--outputs any` and no input (no settings sheet, no settings file). Nothing is an
+  input, any range can be asked for, and the answer is the workbook's own formulas computed now.
+  `sheetc run` does it in memory (compile and run, no executable).
+* **As the template of the answer**: `sheetc run FILE --outputs any ... --write-workbook OUT`
+  runs the program and writes a **copy of the workbook** whose formulas hold the results of the run
+  and whose input cells hold the inputs given. Formulas, styles and number formats stay, so the
+  answer comes in the formats of the template; the output is the whole answer (no range is
+  returned apart from it) and it is in the format of the template (`--template PATH` names another
+  workbook of the same layout, for example the XLSX of an ODS the program was made from). Errors
+  are written as the format has them (`#CIRC!` is `Err:522` in an ODS, `#VALUE!` in an XLSX). The
+  program must be built with `outputs = any`, because only then does it compute every formula; the
+  cells of an array formula other than its first keep what the template cached.
+* **Embedded template**: `sheetc build FILE --outputs any --embed-template -o model` carries the
+  workbook inside the executable (which is then made from `sheetc` itself, since it writes
+  workbooks); `./model --write-workbook OUT < request.json` writes the answer, and `./model` still
+  answers JSON as any other executable. `--template PATH` replaces the embedded one.
 
 ### What the compiler checks
 

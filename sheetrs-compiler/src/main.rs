@@ -19,6 +19,11 @@ USAGE
       `--emit-ir PATH` also writes the program as JSON.
   sheetc run FILE|PROGRAM.json [options] [runtime options]
       Compile in memory and run immediately (JSON on stdin/--input).
+  sheetc run FILE [options] --write-workbook OUT [--template PATH]
+      Instead of printing JSON, write the answer into a copy of the workbook: its formulas, styles
+      and formats stay, every formula holds the result of this run and the inputs given are
+      written in their cells. The output is the whole answer. The template is FILE unless
+      `--template` names another workbook of the same layout. Needs `--outputs any`.
   sheetc calc \"=FORMULA\" [--locale TAG] [--now N] [--seed N]
       Evaluate one formula.
   sheetc --version
@@ -71,12 +76,16 @@ BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
                        the configuration file
   --runtime PATH       runtime stub to embed into (default: sheetrs-rt next to
                        this binary, else this binary)
+  --embed-template     (build) carry the workbook inside the executable as the template of
+                       the answer; the executable is then made from `sheetc` itself (it
+                       writes workbooks) and accepts `--write-workbook OUT`
   The date system, iteration and search settings come from the document and
   are not options. `calc` has no document and accepts
   --date-system 1899|1900|1904|YYYY-MM-DD and --iterate[=N[,EPS]].
 
 Executables accept: --input, --serve, --pretty, --meta, --range RANGE, --info,
---now, --seed, --system, --osversion, --release, --directory, --filename.";
+--now, --seed, --system, --osversion, --release, --directory, --filename; one built with
+--embed-template (or any, with `--template PATH`) also --write-workbook OUT.";
 
 fn main() {
     let args = Args(std::env::args().skip(1).collect());
@@ -103,7 +112,14 @@ fn main() {
 
 fn real_main(mut args: Args) -> i32 {
     if let Some(e) = bundle::read_embedded() {
-        return cli::run_program(&e.program, e.consts.as_ref(), args);
+        return match embedded_workbook(&e, args) {
+            Ok(code) => code,
+            Err(Fail::Usage(m)) => cli::usage_error(&m),
+            Err(Fail::Run(m)) => {
+                eprintln!("error: {m}");
+                1
+            }
+        };
     }
     if args.0.is_empty() || args.flag("--help") || args.flag("-h") {
         println!("{HELP}");
@@ -157,6 +173,65 @@ impl From<sheetrs_engine::Error> for Fail {
             other => Self::Run(other.to_string()),
         }
     }
+}
+
+/// An executable made from a workbook: the answer as JSON, or written into a template workbook
+/// with `--write-workbook OUT` (the template it carries, or `--template PATH`).
+fn embedded_workbook(e: &bundle::Embedded, mut args: Args) -> Result<i32, Fail> {
+    let Some(out) = args.value("--write-workbook")? else {
+        if args.value("--template")?.is_some() {
+            return Err(Fail::Usage("--template needs --write-workbook OUT".into()));
+        }
+        return Ok(cli::run_program(&e.program, e.consts.as_ref(), args));
+    };
+    let external = args.value("--template")?;
+    let input = args.value("--input")?;
+    let o = parse_overrides(&mut args)?;
+    if let Some(extra) = args.0.first() {
+        return Err(Fail::Usage(format!("unexpected argument `{extra}`")));
+    }
+    let template = match (external, &e.template) {
+        (Some(path), _) => Source::from_file(&path).map_err(|e| Fail::Run(e.to_string()))?,
+        (None, Some(t)) => Source::from_bytes(
+            t.bytes.clone(),
+            t.extension
+                .parse()
+                .map_err(|_| Fail::Run(format!("the template is a `{}`", t.extension)))?,
+        ),
+        (None, None) => {
+            return Err(Fail::Usage(
+                "this executable carries no template: build it with --embed-template, or give --template PATH"
+                    .into(),
+            ));
+        }
+    };
+    write_workbook(
+        &e.program,
+        e.consts
+            .as_ref()
+            .map(|c| c as &dyn sheetrs_engine::engine::ConstSource),
+        &template,
+        input.as_deref(),
+        &o,
+        &out,
+    )
+}
+
+/// Run `program` with the request in `input` and write the answer into a copy of `template`.
+fn write_workbook(
+    program: &Program,
+    base: Option<&dyn sheetrs_engine::engine::ConstSource>,
+    template: &Source,
+    input: Option<&str>,
+    overrides: &sheetrs_engine::Overrides,
+    out: &str,
+) -> Result<i32, Fail> {
+    let request = cli::read_input(input)?;
+    let report =
+        sheetrs_edit::fill_template(template, program, base, &request, overrides, Path::new(out))
+            .map_err(|e| Fail::Run(format!("{e:#}")))?;
+    eprintln!("wrote {out} ({} cells written)", report.written);
+    Ok(0)
 }
 
 fn load_model(path: &str) -> Result<Model, Fail> {
@@ -264,6 +339,7 @@ fn build(mut args: Args) -> Result<i32, Fail> {
     let out = args.value("-o")?;
     let emit = args.value("--emit-ir")?;
     let runtime = args.value("--runtime")?;
+    let embed_template = args.flag("--embed-template");
     let (cli, explicit) = config_from(&mut args)?;
     let [file] = args.0.as_slice() else {
         return Err(Fail::Usage("build needs exactly one input file".into()));
@@ -291,10 +367,37 @@ fn build(mut args: Args) -> Result<i32, Fail> {
     } else {
         let me = std::env::current_exe().map_err(|e| Fail::Run(e.to_string()))?;
         let rt = me.with_file_name(format!("sheetrs-rt{}", std::env::consts::EXE_SUFFIX));
-        if rt.exists() { rt } else { me }
+        // The runtime stub cannot write a workbook: an executable that carries its template is
+        // made from this binary.
+        if rt.exists() && !embed_template {
+            rt
+        } else {
+            me
+        }
     };
     let t2 = std::time::Instant::now();
-    bundle::write_executable(&mut program, &runtime, &out)?;
+    if embed_template {
+        if !matches!(program.queryable, sheetrs_engine::ir::Queryable::Any { .. }) {
+            return Err(Fail::Usage(
+                "--embed-template needs --outputs any: only then does the program compute every formula of the template"
+                    .into(),
+            ));
+        }
+        let extension = Path::new(file)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let bytes = std::fs::read(file).map_err(|e| Fail::Run(format!("{file}: {e}")))?;
+        bundle::write_executable_with_template(
+            &mut program,
+            &runtime,
+            &out,
+            Some((&extension, &bytes)),
+        )?;
+    } else {
+        bundle::write_executable(&mut program, &runtime, &out)?;
+    }
     stage(&t2, "write executable");
     eprintln!("wrote {}", out.display());
     // The process ends here: freeing millions of cells one by one would only delay it.
@@ -318,6 +421,13 @@ fn run(mut args: Args) -> Result<i32, Fail> {
     for q in args.values("--range")? {
         forwarded.extend(["--range".into(), q]);
     }
+    let write_to = args.value("--write-workbook")?;
+    let template_path = args.value("--template")?;
+    let input_path = forwarded
+        .iter()
+        .position(|f| f == "--input")
+        .and_then(|i| forwarded.get(i + 1))
+        .cloned();
     let (cli, explicit) = config_from(&mut args)?;
     let [file] = args.0.as_slice() else {
         return Err(Fail::Usage("run needs exactly one input file".into()));
@@ -336,6 +446,32 @@ fn run(mut args: Args) -> Result<i32, Fail> {
         print_report(&report, &p);
         p
     };
+    if let Some(out) = write_to {
+        let is_json = Path::new(file)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("json"));
+        let template = match (template_path, is_json) {
+            (Some(path), _) => path,
+            (None, false) => file.clone(),
+            (None, true) => {
+                return Err(Fail::Usage(
+                    "a program given as JSON has no template: name one with --template PATH".into(),
+                ));
+            }
+        };
+        let source = Source::from_file(&template).map_err(|e| Fail::Run(e.to_string()))?;
+        return write_workbook(
+            &program,
+            None,
+            &source,
+            input_path.as_deref(),
+            &sheetrs_engine::Overrides::default(),
+            &out,
+        );
+    }
+    if template_path.is_some() {
+        return Err(Fail::Usage("--template needs --write-workbook OUT".into()));
+    }
     Ok(cli::run_program(&program, None, Args(forwarded)))
 }
 

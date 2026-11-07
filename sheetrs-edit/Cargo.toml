@@ -24,6 +24,8 @@ sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }
 sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
 sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.0" }
 sheetrs-query = { path = "../sheetrs-query", version = "0.4.0" }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.0" }
+serde_json.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true

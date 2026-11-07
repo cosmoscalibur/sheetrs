@@ -43,7 +43,10 @@ Dependencies point inward: adapters → tool libraries → `sheetrs-io` / `sheet
 `sheetrs-protocol`. Tool crates do not depend on each other, with one deliberate exception:
 `sheetrs-edit` depends on `sheetrs-query`, because a replacement is a search followed by a
 write, and the two must agree on which cells a search finds (its matcher and the text of a cell
-that a search sees live in `sheetrs-query`; the writing stays in `sheetrs-edit`).
+that a search sees live in `sheetrs-query`; the writing stays in `sheetrs-edit`). The same
+crate depends on `sheetrs-engine` to write the answer of a compiled program into a template
+workbook (`fill_template`), and the executable `sheetc` (not the library of `sheetrs-compiler`)
+depends on `sheetrs-edit` to offer it.
 
 ### What belongs in `sheetrs-protocol`
 

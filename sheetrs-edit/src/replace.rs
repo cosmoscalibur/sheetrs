@@ -54,11 +54,14 @@ pub struct Report {
     pub replaced: usize,
     /// The cells that were found and left as they were.
     pub skipped: Vec<Skipped>,
+    /// The cells written with [`CellWrites`](crate::CellWrites).
+    pub written: usize,
 }
 
 impl Report {
     pub(crate) fn absorb(&mut self, other: Self) {
         self.replaced += other.replaced;
+        self.written += other.written;
         self.skipped.extend(other.skipped);
     }
 }

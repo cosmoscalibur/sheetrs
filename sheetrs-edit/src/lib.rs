@@ -12,7 +12,9 @@ mod editor;
 mod error;
 mod plan;
 mod replace;
+mod template;
 mod writer;
+mod writes;
 
 #[cfg(test)]
 mod tests;
@@ -20,4 +22,6 @@ mod tests;
 pub use editor::Editor;
 pub use error::{Error, Result, ScopeError};
 pub use replace::{Report, Skipped};
-pub use writer::{ColumnRange, RowRange, ValueScope};
+pub use template::fill_template;
+pub use writer::{CachedResult, ColumnRange, RowRange, ValueScope};
+pub use writes::{CellWrites, Constant};

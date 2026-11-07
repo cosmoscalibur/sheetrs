@@ -38,6 +38,19 @@ pub(crate) enum CellEdit {
     Number(f64),
     Boolean(bool),
     Formula(String),
+    /// The cell keeps what it is (its formula, its array, its style) and the result it shows
+    /// becomes this one.
+    Cached(CachedResult),
+}
+
+/// The result a cell shows, as a program computed it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CachedResult {
+    Number(f64),
+    Text(String),
+    Boolean(bool),
+    /// An error value written as the application shows it (`#DIV/0!`, `Err:522`).
+    Error(String),
 }
 
 /// The cells of one sheet to rewrite, by `(row, column)`, 0-based.

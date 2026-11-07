@@ -7,8 +7,8 @@ use super::xlsx_structure::{
     rewrite_vml, text_of,
 };
 use super::{
-    CellEdit, SheetEdits, ValueScope, WorkbookModifications, attribute, read_element_body,
-    write_element,
+    CachedResult, CellEdit, SheetEdits, ValueScope, WorkbookModifications, attribute,
+    read_element_body, write_element,
 };
 use crate::error::{Context, Error, Result};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
@@ -1063,6 +1063,10 @@ fn transform_sheet<R: BufRead, W: Write>(
                             && (c0..=c1).contains(&col)
                             && (row, col) != (r0, c0)
                     });
+                if let Some(CellEdit::Cached(result)) = edits.and_then(|m| m.get(&(row, col))) {
+                    write_cached_cell(&mut writer, &start, &body, result)?;
+                    continue;
+                }
                 if let Some(edit) = edits.and_then(|m| m.get(&(row, col)))
                     && !inside_array
                     && !formula
@@ -1479,6 +1483,7 @@ fn write_edited_cell<W: Write>(
         CellEdit::Text(_) => cell.push_attribute(("t", "inlineStr")),
         CellEdit::Boolean(_) => cell.push_attribute(("t", "b")),
         CellEdit::Number(_) | CellEdit::Formula(_) => {}
+        CellEdit::Cached(_) => unreachable!("a cached result is written by write_cached_cell"),
     }
     writer.write_event(Event::Start(cell))?;
     match edit {
@@ -1490,9 +1495,70 @@ fn write_edited_cell<W: Write>(
         CellEdit::Number(n) => element(writer, "v", &n.to_string(), false)?,
         CellEdit::Boolean(b) => element(writer, "v", if *b { "1" } else { "0" }, false)?,
         CellEdit::Formula(f) => element(writer, "f", f, false)?,
-        CellEdit::Clear => {}
+        CellEdit::Clear | CellEdit::Cached(_) => {}
     }
     writer.write_event(Event::End(BytesEnd::new("c")))?;
+    Ok(())
+}
+
+/// Write a cell that keeps what it is (its formula, its array, its style) with the result `result`
+/// as its cached value.
+fn write_cached_cell<W: Write>(
+    writer: &mut Writer<W>,
+    start: &BytesStart,
+    body: &[Event],
+    result: &CachedResult,
+) -> Result<()> {
+    let has_formula = body
+        .iter()
+        .any(|e| matches!(e, Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "f"));
+    let mut cell = BytesStart::new("c");
+    for attr in start.attributes() {
+        let attr = attr?;
+        if attr.key.as_ref() != "t" {
+            cell.push_attribute(attr);
+        }
+    }
+    // `str` marks the text result of a formula; a cell without one holds an inline string.
+    let (kind, value) = match result {
+        CachedResult::Number(n) => (None, n.to_string()),
+        CachedResult::Text(t) if has_formula => (Some("str"), t.clone()),
+        CachedResult::Text(t) => (Some("inlineStr"), t.clone()),
+        CachedResult::Boolean(b) => (Some("b"), if *b { "1" } else { "0" }.to_string()),
+        CachedResult::Error(e) => (Some("e"), e.clone()),
+    };
+    if let Some(kind) = kind {
+        cell.push_attribute(("t", kind));
+    }
+    let end = cell.to_end().into_owned();
+    writer.write_event(Event::Start(cell))?;
+    // What was there stays, but for the old result.
+    let mut skipping = None;
+    for event in body {
+        match event {
+            Event::Start(e) if matches!(e.name().as_ref(), "v" | "is") => {
+                skipping = Some(e.name().as_ref().to_string());
+            }
+            Event::End(e) if skipping.as_deref() == Some(e.name().as_ref()) => skipping = None,
+            Event::Empty(e) if matches!(e.name().as_ref(), "v" | "is") => {}
+            _ if skipping.is_some() => {}
+            event => writer.write_event(event.borrow())?,
+        }
+    }
+    if kind == Some("inlineStr") {
+        writer.write_event(Event::Start(BytesStart::new("is")))?;
+        let mut t = BytesStart::new("t");
+        t.push_attribute(("xml:space", "preserve"));
+        writer.write_event(Event::Start(t))?;
+        writer.write_event(Event::Text(BytesText::new(&value)))?;
+        writer.write_event(Event::End(BytesEnd::new("t")))?;
+        writer.write_event(Event::End(BytesEnd::new("is")))?;
+    } else {
+        writer.write_event(Event::Start(BytesStart::new("v")))?;
+        writer.write_event(Event::Text(BytesText::new(&value)))?;
+        writer.write_event(Event::End(BytesEnd::new("v")))?;
+    }
+    writer.write_event(Event::End(end))?;
     Ok(())
 }
 
