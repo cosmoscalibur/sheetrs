@@ -80,3 +80,45 @@ fn an_editor_without_changes_does_not_save_and_says_why_with_a_type() {
         Err(Error::EmptyPlan)
     ));
 }
+
+#[test]
+fn overwrite_replaces_the_file_and_a_failed_run_leaves_it_as_it_was() {
+    for extension in ["xlsx", "ods"] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("book.{extension}"));
+        std::fs::copy(book(extension), &path).unwrap();
+        let source = Source::from_file(&path).unwrap();
+
+        // A run that fails: the sheet does not exist.
+        let before = std::fs::read(&path).unwrap();
+        let mut broken = Editor::new(&source);
+        broken.delete_rows(["Nope!3".parse().unwrap()]);
+        assert!(broken.overwrite().is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before, "{extension}");
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(leftovers.len(), 1, "{extension}: {leftovers:?}");
+
+        let mut editor = Editor::new(&source);
+        editor.remove_sheets(["V"]);
+        editor.overwrite().unwrap();
+        assert!(
+            !sheet_names(&path).contains(&"V".to_string()),
+            "{extension}"
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn overwrite_needs_a_file() {
+    let bytes = Source::from_bytes(
+        std::fs::read(book("xlsx")).unwrap(),
+        "xlsx".parse().unwrap(),
+    );
+    let mut editor = Editor::new(&bytes);
+    editor.remove_sheets(["V"]);
+    assert!(matches!(editor.overwrite(), Err(Error::NoFile)));
+}

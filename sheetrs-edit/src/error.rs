@@ -47,6 +47,9 @@ pub enum Error {
     /// The output would overwrite the file it is made from.
     #[error("Output file is the input file: {}", .0.display())]
     OutputIsInput(PathBuf),
+    /// There is no file to overwrite: the workbook was given as bytes.
+    #[error("The workbook was given as bytes: there is no file to overwrite, save to a path")]
+    NoFile,
     #[error("Unsupported file format")]
     UnsupportedFormat,
 

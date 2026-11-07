@@ -1,6 +1,6 @@
 //! The editor: the changes to make to one workbook, written as a sequence and saved as a new file.
 
-use crate::error::Result;
+use crate::error::{Context, Error, Result};
 use crate::plan::Plan;
 use crate::writer::{ColumnRange, RowRange, ValueScope};
 use sheetrs_io::reader::Source;
@@ -119,5 +119,40 @@ impl Editor {
     /// cannot be read or written, or when the writer cannot make a change faithfully.
     pub fn save(&self, output: impl AsRef<Path>) -> Result<()> {
         self.plan.execute(&self.source, output.as_ref())
+    }
+
+    /// Runs the changes and replaces the file being edited with the result.
+    ///
+    /// The result is written to a temporary file in the same folder and renamed over the original
+    /// when it is complete, so a failed run leaves the original as it was and no half-written file
+    /// behind; the permissions of the original are kept. The workbook must have been given as a
+    /// file ([`Source::from_file`]).
+    ///
+    /// # Errors
+    ///
+    /// When the workbook was given as bytes, and for the reasons [`save`](Self::save) lists.
+    pub fn overwrite(&self) -> Result<()> {
+        let path = self.source.path().ok_or(Error::NoFile)?;
+        let folder = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let extension = self.source.format().extension();
+        let temporary = tempfile::Builder::new()
+            .prefix(".sheetrs-")
+            .suffix(&format!(".{extension}"))
+            .tempfile_in(folder)
+            .context("Cannot create a temporary file next to the workbook")?;
+        self.plan.execute(&self.source, temporary.path())?;
+        let permissions = std::fs::metadata(path)
+            .context("Cannot read the permissions of the workbook")?
+            .permissions();
+        std::fs::set_permissions(temporary.path(), permissions)
+            .context("Cannot keep the permissions of the workbook")?;
+        temporary
+            .persist(path)
+            .map_err(|e| e.error)
+            .context("Cannot replace the workbook")?;
+        Ok(())
     }
 }

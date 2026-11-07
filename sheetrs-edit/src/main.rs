@@ -41,9 +41,14 @@ struct Cli {
     #[arg(long)]
     list_ranges: bool,
 
-    /// Output file (Required for destructive operations)
-    #[arg(short, long)]
+    /// Output file (required unless `--in-place`)
+    #[arg(short, long, conflicts_with = "in_place")]
     output: Option<PathBuf>,
+
+    /// Replace the input file with the result (written to a temporary file and renamed, so a
+    /// failure leaves the input as it was)
+    #[arg(long)]
+    in_place: bool,
 
     /// Show what would be done without making changes
     #[arg(long)]
@@ -89,11 +94,13 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Enforce output file for destructive operations
-    if cli.output.is_none() {
-        anyhow::bail!("Output file is required for destructive operations. Use --output <FILE>.");
+    // The output is explicit: a path, or the input file itself.
+    if cli.output.is_none() && !cli.in_place {
+        anyhow::bail!(
+            "Output file is required for destructive operations. Use --output <FILE>, or --in-place to replace the input."
+        );
     }
-    let output_path = cli.output.unwrap();
+    let output_path = cli.output.clone().unwrap_or_else(|| cli.file.clone());
 
     // The flags of a command are all written against the input file, in no order. Applied in this
     // order (conversions, rows, columns, names, sheets) they are one pass, however many flags
@@ -112,9 +119,15 @@ fn main() -> Result<()> {
         println!("\nOutput would be: {}", output_path.display());
     } else {
         println!("Modifying '{}'...", cli.file.display());
-        editor
-            .save(&output_path)
-            .with_context(|| "Failed to modify workbook")?;
+        if cli.in_place {
+            editor
+                .overwrite()
+                .with_context(|| "Failed to modify workbook")?;
+        } else {
+            editor
+                .save(&output_path)
+                .with_context(|| "Failed to modify workbook")?;
+        }
 
         println!("✓ Successfully modified workbook");
         println!("Output: {}", output_path.display());
