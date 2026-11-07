@@ -33,14 +33,29 @@ maturin develop -m sheetrs-py/Cargo.toml
 pytest sheetrs-py
 ```
 
-### ODS/XLSX Parity
+### Parity and fidelity
 
-Feature and behavior parity between ODS and XLSX formats is a requirement. Any
-difference detected should be considered a potential bug.
+Two requirements, and a rule about how to test them:
 
-Changes should be tested with `tests/minimal_test.ods` and
-`tests/minimal_test.xlsx` to verify parity. See the
-[Test Assets](tests/README.md) documentation for details.
+- **Parity of capabilities.** What SheetRS does for an XLSX it does for an ODS, and the other way
+  round: a feature that only one format has is a bug.
+- **Fidelity of behavior.** SheetRS gives the result **LibreOffice** gives (the reference version is
+  in [ARCHITECTURE.md](ARCHITECTURE.md#reference-behavior)), whatever the algorithm or the
+  data structure behind it. A difference exists only if the maintainer approved it, and then it is
+  recorded in [docs/approved-differences.md](docs/approved-differences.md) and described where the
+  behavior is documented. A difference nobody approved is a bug, even if it is convenient, hard to
+  fix or unlikely to matter; one that cannot be fixed yet is reported to the maintainer for a
+  decision, not shipped as if it were settled.
+- **The two formats are not a reference for each other.** That an XLSX and an ODS of the same
+  workbook read alike does not show that either is right: LibreOffice itself treats the two files
+  differently (a sheet that is relative in an ODS, an error it recomputes when it opens an XLSX,
+  the column styles of an ODS), and the result to reproduce is its own on each file. Test a file
+  against what LibreOffice reports for that file: the fixtures are made by LibreOffice and
+  `sheetrs-io/tests/assets/oracle/make_oracle.py` records what it says of each cell
+  (see `sheetrs-query/tests/libreoffice_oracle.rs`). A capability is tested on both formats, each
+  with its own expectation.
+
+Test assets and their description: [Test Assets](tests/README.md).
 
 ### Test Patterns
 
@@ -126,6 +141,6 @@ Before each release, fragments are merged into the `[Unreleased]` section of
 
 1. Fork the repository and create a feature branch.
 2. Make your changes following the coding patterns.
-3. Ensure all tests pass with parity check.
+3. Ensure all tests pass, and that what changed was checked against LibreOffice on both formats.
 4. Add a changelog fragment.
 5. Submit a PR using the PR template.

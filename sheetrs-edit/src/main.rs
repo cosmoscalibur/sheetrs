@@ -90,10 +90,6 @@ struct Cli {
     #[arg(long = "in", value_enum, requires = "replace", default_value = "value")]
     search_in: Where,
 
-    /// A search by value also reaches the result of the formulas, which become constants
-    #[arg(long, requires = "replace")]
-    include_formulas: bool,
-
     /// Where `--replace` applies: a sheet (`Data`) or a range (`Data!A1:C9`); repeatable, the whole
     /// workbook when omitted
     #[arg(long, value_name = "SCOPE", requires = "replace")]
@@ -190,7 +186,7 @@ fn main() -> Result<()> {
                         Where::Value => SearchIn::Value,
                         Where::Formula => SearchIn::Formula,
                     },
-                    include_formulas: cli.include_formulas,
+                    include_formulas: true,
                 },
                 with: with.clone(),
             },

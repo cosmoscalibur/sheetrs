@@ -1,6 +1,6 @@
-//! The queries over the workbooks `LibreOffice` made in both formats
-//! (`sheetrs-io/tests/assets`): what one format can be asked, the other can, and the answers say
-//! the same wherever the two files do.
+//! The queries over the workbooks `LibreOffice` made in both formats (`sheetrs-io/tests/assets`):
+//! every query can be asked of an XLSX and of an ODS, and each answer is what is expected of that
+//! file. What `LibreOffice` itself says of each cell is checked in `libreoffice_oracle.rs`.
 
 use serde_json::json;
 use sheetrs_io::reader::Source;
@@ -54,20 +54,6 @@ fn only_the_properties_asked_for_are_in_the_answer() {
             "{file}"
         );
     }
-}
-
-#[test]
-fn the_display_of_each_family_of_format_is_the_same_in_both() {
-    let q = query(json!({"scope": {"range": "T!A1:A8"}, "properties": ["display"]}));
-    let [x, o] = both("cells").map(|f| ask(&f, &q));
-    assert_eq!(x.cells.len(), 8);
-    for (a, b) in x.cells.iter().zip(&o.cells) {
-        assert_eq!(a.display, b.display, "{}", a.cell);
-    }
-    let shown: Vec<_> = x.cells.iter().map(|c| c.display.clone().unwrap()).collect();
-    assert_eq!(shown[0], "2023-03-15");
-    assert_eq!(shown[3], "25:30:00");
-    assert_eq!(shown[7], "1,234.50 USD");
 }
 
 #[test]
@@ -212,18 +198,6 @@ fn a_search_by_pattern_and_the_options_of_find_and_replace() {
 }
 
 #[test]
-fn what_one_format_answers_the_other_answers() {
-    let q =
-        query(json!({"scope": "workbook", "properties": ["value", "formula", "number_format"]}));
-    let [x, o] = both("formulas").map(|f| ask(&f, &q));
-    assert_eq!(x.cells.len(), o.cells.len());
-    for (a, b) in x.cells.iter().zip(&o.cells) {
-        assert_eq!((&a.sheet, &a.cell), (&b.sheet, &b.cell));
-        assert_eq!(a.formula, b.formula, "{}!{}", a.sheet, a.cell);
-    }
-}
-
-#[test]
 fn an_unsupported_pattern_is_an_error_and_an_unknown_locale_too() {
     let source = Source::from_file(asset("cells.xlsx")).unwrap();
     let bad = Query {
@@ -243,11 +217,17 @@ fn an_unsupported_pattern_is_an_error_and_an_unknown_locale_too() {
 }
 
 #[test]
-fn general_is_no_format_in_either_file() {
-    // An XLSX writes `General`, an ODS writes nothing: the answer is the same.
+fn a_cell_with_no_format_has_general_in_either_file() {
+    // An XLSX writes `General`, an ODS writes nothing: LibreOffice reports `General` for both.
     let q = query(json!({"scope": {"range": "T!A2:A3"}, "properties": ["number_format"]}));
     for file in both("formulas") {
         let r = ask(&file, &q);
-        assert!(r.cells.iter().all(|c| c.number_format.is_none()), "{file}");
+        assert!(!r.cells.is_empty());
+        assert!(
+            r.cells
+                .iter()
+                .all(|c| c.number_format.as_deref() == Some("General")),
+            "{file}"
+        );
     }
 }

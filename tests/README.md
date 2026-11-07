@@ -11,8 +11,8 @@ This directory contains test files used across all sheetrs project components (s
 
 ### minimal_test.ods
 - **Created from**: Exported from minimal_test.xlsx using LibreOffice Calc
-- **Purpose**: ODS equivalent of the XLSX file for format parity testing
-- **Goal**: Should produce identical linting results as the XLSX version
+- **Purpose**: The same workbook saved as an ODS, so that a feature is tested on both formats
+- **Goal**: Each format is judged by what LibreOffice does with that file; the two are not compared to each other
 
 ## Current Limitations
 

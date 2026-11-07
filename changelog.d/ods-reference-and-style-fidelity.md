@@ -15,8 +15,9 @@
   percentage, scientific, fraction, time, duration, currency, boolean, text, and the sections with
   colours and conditions of `style:map`), written as the format code the XLSX of the same cell
   holds (`0.00%`, `[hh]:mm:ss`, `#,##0.00 [$EUR]`, `0.00;[RED]-0.00`), and a cell style without a data
-  style takes the one of its parent. 38 formats of `LibreOffice` read the same in both formats; the
-  one that differs is the built-in `0`, which `LibreOffice` writes to an ODS as no style (General).
+  style takes the one of its parent. Checked against what `LibreOffice` reports for each file
+  (`sheetrs-io/tests/assets/oracle`). The built-in `0` is written by `LibreOffice` to an ODS as no style,
+  and the cell is General there.
   The reading of the styles lives in one module instead of three copies.
 
 ### Changed

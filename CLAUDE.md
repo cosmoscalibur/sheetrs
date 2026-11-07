@@ -12,7 +12,7 @@ Read these before planning or implementing any change:
 
 - `docs/coding-patterns.md` — SoC, WalkerRule pattern, formula normalization,
   rule config parameters, shared helpers, CLI/library conventions.
-- `CONTRIBUTING.md` — testing (ODS/XLSX parity, TDD), documentation maintenance,
+- `CONTRIBUTING.md` — testing (capability parity, fidelity to LibreOffice, TDD), documentation maintenance,
   changelog fragments, PR process.
 
 Load on demand:

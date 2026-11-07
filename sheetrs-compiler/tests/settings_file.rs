@@ -104,10 +104,11 @@ fn a_sheet_and_a_file_together_are_refused() {
     assert!(e.contains("name one"), "{e}");
 }
 
-/// Outputs `any` and no inputs is how a workbook is recalculated as it is: nothing is an input,
-/// any range can be read, and what comes back is the workbook's own formulas computed now.
+/// `outputs = any` with no input is a program like any other: nothing is an input, any range can be
+/// asked for, and the answer is what the formulas give. (To recalculate a workbook and get the
+/// workbook back, see `template.rs`.)
 #[test]
-fn outputs_any_without_inputs_recalculates_the_workbook_as_it_is() {
+fn outputs_any_without_inputs_answers_any_range() {
     let config = Config {
         outputs: Some("any".into()),
         ..Config::default()

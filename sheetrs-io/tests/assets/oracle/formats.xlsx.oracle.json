@@ -1,0 +1,786 @@
+{
+ "version": "24.2.7.2",
+ "file": "formats.xlsx",
+ "cells": [
+  {
+   "sheet": "T",
+   "row": 0,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45678",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "0"
+  },
+  {
+   "sheet": "T",
+   "row": 0,
+   "col": 1,
+   "type": "TEXT",
+   "string": "0",
+   "value": 0.0,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 1,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-1234.50",
+   "value": -1234.5,
+   "error": 0,
+   "format": "0.00"
+  },
+  {
+   "sheet": "T",
+   "row": 1,
+   "col": 1,
+   "type": "TEXT",
+   "string": "0.00",
+   "value": 0.0,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 2,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45,678",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "#,##0"
+  },
+  {
+   "sheet": "T",
+   "row": 2,
+   "col": 1,
+   "type": "TEXT",
+   "string": "#,##0",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 3,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-1,234.50",
+   "value": -1234.5,
+   "error": 0,
+   "format": "#,##0.00"
+  },
+  {
+   "sheet": "T",
+   "row": 3,
+   "col": 1,
+   "type": "TEXT",
+   "string": "#,##0.00",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 4,
+   "col": 0,
+   "type": "VALUE",
+   "string": "4567846%",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "0%"
+  },
+  {
+   "sheet": "T",
+   "row": 4,
+   "col": 1,
+   "type": "TEXT",
+   "string": "0%",
+   "value": 0.0,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 5,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-123450.00%",
+   "value": -1234.5,
+   "error": 0,
+   "format": "0.00%"
+  },
+  {
+   "sheet": "T",
+   "row": 5,
+   "col": 1,
+   "type": "TEXT",
+   "string": "0.00%",
+   "value": 0.0,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 6,
+   "col": 0,
+   "type": "VALUE",
+   "string": "4,567,845.7%",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "#,##0.0%"
+  },
+  {
+   "sheet": "T",
+   "row": 6,
+   "col": 1,
+   "type": "TEXT",
+   "string": "#,##0.0%",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 7,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-1.23E+03",
+   "value": -1234.5,
+   "error": 0,
+   "format": "0.00E+00"
+  },
+  {
+   "sheet": "T",
+   "row": 7,
+   "col": 1,
+   "type": "TEXT",
+   "string": "0.00E+00",
+   "value": 0.0,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 8,
+   "col": 0,
+   "type": "VALUE",
+   "string": "4.6E+4",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "0.0E+0"
+  },
+  {
+   "sheet": "T",
+   "row": 8,
+   "col": 1,
+   "type": "TEXT",
+   "string": "0.0E+0",
+   "value": 0.0,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 9,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-1234 1/2",
+   "value": -1234.5,
+   "error": 0,
+   "format": "# ?/?"
+  },
+  {
+   "sheet": "T",
+   "row": 9,
+   "col": 1,
+   "type": "TEXT",
+   "string": "# ?/?",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 10,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45678 37/81",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "# ??/??"
+  },
+  {
+   "sheet": "T",
+   "row": 10,
+   "col": 1,
+   "type": "TEXT",
+   "string": "# ??/??",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 11,
+   "col": 0,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": -1234.5,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "T",
+   "row": 11,
+   "col": 1,
+   "type": "TEXT",
+   "string": "hh:mm:ss",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 12,
+   "col": 0,
+   "type": "VALUE",
+   "string": "10:57 AM",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "T",
+   "row": 12,
+   "col": 1,
+   "type": "TEXT",
+   "string": "h:mm AM/PM",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 13,
+   "col": 0,
+   "type": "VALUE",
+   "string": "12:00",
+   "value": -1234.5,
+   "error": 0,
+   "format": "HH:MM"
+  },
+  {
+   "sheet": "T",
+   "row": 13,
+   "col": 1,
+   "type": "TEXT",
+   "string": "hh:mm",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 14,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1096282:57:39",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "T",
+   "row": 14,
+   "col": 1,
+   "type": "TEXT",
+   "string": "[hh]:mm:ss",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 15,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-1777680:00",
+   "value": -1234.5,
+   "error": 0,
+   "format": "[MM]:SS"
+  },
+  {
+   "sheet": "T",
+   "row": 15,
+   "col": 1,
+   "type": "TEXT",
+   "string": "[mm]:ss",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 16,
+   "col": 0,
+   "type": "VALUE",
+   "string": "57:38.9",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "MM:SS.0"
+  },
+  {
+   "sheet": "T",
+   "row": 16,
+   "col": 1,
+   "type": "TEXT",
+   "string": "mm:ss.0",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 17,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1896-08-12",
+   "value": -1234.5,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "T",
+   "row": 17,
+   "col": 1,
+   "type": "TEXT",
+   "string": "yyyy-mm-dd",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 18,
+   "col": 0,
+   "type": "VALUE",
+   "string": "21/01/2025",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "T",
+   "row": 18,
+   "col": 1,
+   "type": "TEXT",
+   "string": "dd/mm/yyyy",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 19,
+   "col": 0,
+   "type": "VALUE",
+   "string": "12-Aug-96",
+   "value": -1234.5,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "T",
+   "row": 19,
+   "col": 1,
+   "type": "TEXT",
+   "string": "d-mmm-yy",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 20,
+   "col": 0,
+   "type": "VALUE",
+   "string": "Tuesday",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "DDDD"
+  },
+  {
+   "sheet": "T",
+   "row": 20,
+   "col": 1,
+   "type": "TEXT",
+   "string": "dddd",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 21,
+   "col": 0,
+   "type": "VALUE",
+   "string": "Wed 12 Aug",
+   "value": -1234.5,
+   "error": 0,
+   "format": "DDD D MMM"
+  },
+  {
+   "sheet": "T",
+   "row": 21,
+   "col": 1,
+   "type": "TEXT",
+   "string": "ddd d mmm",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 22,
+   "col": 0,
+   "type": "VALUE",
+   "string": "January 21, 2025",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "MMMM D\", \"YYYY"
+  },
+  {
+   "sheet": "T",
+   "row": 22,
+   "col": 1,
+   "type": "TEXT",
+   "string": "mmmm d, yyyy",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 23,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-$1,234.50",
+   "value": -1234.5,
+   "error": 0,
+   "format": "\\$#,##0.00"
+  },
+  {
+   "sheet": "T",
+   "row": 23,
+   "col": 1,
+   "type": "TEXT",
+   "string": "\"$\"#,##0.00",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 24,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45,678.46 EUR",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "#,##0.00 [$EUR]"
+  },
+  {
+   "sheet": "T",
+   "row": 24,
+   "col": 1,
+   "type": "TEXT",
+   "string": "#,##0.00 [$EUR]",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 25,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-USD 1,234.50",
+   "value": -1234.5,
+   "error": 0,
+   "format": "[$USD] #,##0.00"
+  },
+  {
+   "sheet": "T",
+   "row": 25,
+   "col": 1,
+   "type": "TEXT",
+   "string": "[$USD] #,##0.00",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 26,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45678.46",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "0.00;[RED]-0.00"
+  },
+  {
+   "sheet": "T",
+   "row": 26,
+   "col": 1,
+   "type": "TEXT",
+   "string": "0.00;[Red]-0.00",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 27,
+   "col": 0,
+   "type": "VALUE",
+   "string": "(1,235)",
+   "value": -1234.5,
+   "error": 0,
+   "format": "#,##0;\\(#,##0\\)"
+  },
+  {
+   "sheet": "T",
+   "row": 27,
+   "col": 1,
+   "type": "TEXT",
+   "string": "#,##0;(#,##0)",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 28,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45678.5",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "0.0;-0.0;\"zero\""
+  },
+  {
+   "sheet": "T",
+   "row": 28,
+   "col": 1,
+   "type": "TEXT",
+   "string": "0.0;-0.0;\"zero\"",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 29,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-1234.5",
+   "value": -1234.5,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 29,
+   "col": 1,
+   "type": "TEXT",
+   "string": "@",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 30,
+   "col": 0,
+   "type": "VALUE",
+   "string": "text 45678",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "\"text \"0"
+  },
+  {
+   "sheet": "T",
+   "row": 30,
+   "col": 1,
+   "type": "TEXT",
+   "string": "\"text \"0",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 31,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-1234.500",
+   "value": -1234.5,
+   "error": 0,
+   "format": "0.000"
+  },
+  {
+   "sheet": "T",
+   "row": 31,
+   "col": 1,
+   "type": "TEXT",
+   "string": "0.000",
+   "value": 0.0,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 32,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45678",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "000"
+  },
+  {
+   "sheet": "T",
+   "row": 32,
+   "col": 1,
+   "type": "TEXT",
+   "string": "000",
+   "value": 0.0,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 33,
+   "col": 0,
+   "type": "VALUE",
+   "string": "(1,235)",
+   "value": -1234.5,
+   "error": 0,
+   "format": "#,##0_);\\(#,##0\\)"
+  },
+  {
+   "sheet": "T",
+   "row": 33,
+   "col": 1,
+   "type": "TEXT",
+   "string": "#,##0_);(#,##0)",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 34,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2025-01-21 10:57:38",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "T",
+   "row": 34,
+   "col": 1,
+   "type": "TEXT",
+   "string": "yyyy-mm-dd hh:mm:ss",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 35,
+   "col": 0,
+   "type": "VALUE",
+   "string": "12:00",
+   "value": -1234.5,
+   "error": 0,
+   "format": "H:MM"
+  },
+  {
+   "sheet": "T",
+   "row": 35,
+   "col": 1,
+   "type": "TEXT",
+   "string": "h:mm",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 36,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1/21/2025",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "T",
+   "row": 36,
+   "col": 1,
+   "type": "TEXT",
+   "string": "m/d/yyyy",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 37,
+   "col": 0,
+   "type": "VALUE",
+   "string": "Aug-96",
+   "value": -1234.5,
+   "error": 0,
+   "format": "MMM-YY"
+  },
+  {
+   "sheet": "T",
+   "row": 37,
+   "col": 1,
+   "type": "TEXT",
+   "string": "mmm-yy",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 38,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45678.4567",
+   "value": 45678.4567,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 38,
+   "col": 1,
+   "type": "TEXT",
+   "string": "General",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  }
+ ]
+}

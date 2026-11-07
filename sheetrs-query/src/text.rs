@@ -111,8 +111,18 @@ fn kind(format: Option<&str>) -> Kind {
     }
 }
 
+/// Whether the format is `General`, with or without the language mark a file may put before it
+/// (`[$-409]General`).
 fn is_general(format: Option<&str>) -> bool {
-    format.is_none_or(|f| f.eq_ignore_ascii_case("general"))
+    format.is_none_or(|f| {
+        let mut rest = f;
+        while let Some(after) = rest.strip_prefix("[$-")
+            && let Some((_, tail)) = after.split_once(']')
+        {
+            rest = tail;
+        }
+        rest.eq_ignore_ascii_case("general")
+    })
 }
 
 impl TextContext {

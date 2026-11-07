@@ -131,24 +131,35 @@ order:
   `outputs = "any"`. Without a settings sheet, every formula range is an output
   (keyed by its range text) and nothing is an input.
 
-### Recalculating a workbook as it is, and the workbook as the template of the answer
+### The workbook as the answer: `--embed-template`
 
-* **As it is**: `--outputs any` and no input (no settings sheet, no settings file). Nothing is an
-  input, any range can be asked for, and the answer is the workbook's own formulas computed now.
-  `sheetc run` does it in memory (compile and run, no executable).
-* **As the template of the answer**: `sheetc run FILE --outputs any ... --write-workbook OUT`
-  runs the program and writes a **copy of the workbook** whose formulas hold the results of the run
-  and whose input cells hold the inputs given. Formulas, styles and number formats stay, so the
-  answer comes in the formats of the template; the output is the whole answer (no range is
-  returned apart from it) and it is in the format of the template (`--template PATH` names another
-  workbook of the same layout, for example the XLSX of an ODS the program was made from). Errors
-  are written as the format has them (`#CIRC!` is `Err:522` in an ODS, `#VALUE!` in an XLSX). The
-  program must be built with `outputs = any`, because only then does it compute every formula; the
-  cells of an array formula other than its first keep what the template cached.
-* **Embedded template**: `sheetc build FILE --outputs any --embed-template -o model` carries the
-  workbook inside the executable (which is then made from `sheetc` itself, since it writes
-  workbooks); `./model --write-workbook OUT < request.json` writes the answer, and `./model` still
-  answers JSON as any other executable. `--template PATH` replaces the embedded one.
+By default a program answers JSON: values in, values out, and an `outputs` level that decides what
+can be asked (above). The other kind of answer is the **workbook itself**, which suits whoever needs
+the file and not the numbers: a date comes out as a date, a percentage as a percentage, in the
+formats the cells already have, and `sheetquery` reads the same values from it if they are needed.
+
+```bash
+sheetc build model.xlsx --embed-template -o model          # inputs declared in the settings
+./model --output answer.xlsx < request.json                # {"inputs": {...}}
+sheetc run model.xlsx --embed-template --output answer.xlsx < request.json   # in memory
+```
+
+* The workbook travels inside the executable (it is made from `sheetc` itself, which knows how to
+  write workbooks) and there is no other template: the cells are written by position, so a workbook
+  of another layout could not be checked. An executable built without `--embed-template` does not
+  write workbooks and does not carry that capability.
+* The executable gives **no JSON**: `--output OUT` is required and writes a copy of the workbook,
+  in its own format, with the result of every formula and the inputs given (`--input`, or the
+  standard input) in their cells. The metadata (`--meta`, `--info`) is answered as in any
+  executable. Errors are written as the format has them (`#CIRC!` is `Err:522` in an ODS,
+  `#VALUE!` in an XLSX).
+* The **outputs** the workbook declares are discarded (the whole workbook is written, so nothing
+  is pruned); the **inputs** it declares are what the executable accepts; the metadata stays.
+* **Recalculating** a workbook is this mode with no inputs, and it must be asked for:
+  `--recalculate` (a workbook with no input and no `--recalculate` is an error, so that a missing
+  declaration is not taken for the wish to recalculate; with inputs, `--recalculate` is an error).
+* The cells of an array formula other than its first keep what the file cached.
+* `outputs = any` with no inputs, without `--embed-template`, is a JSON program like any other.
 
 ### What the compiler checks
 

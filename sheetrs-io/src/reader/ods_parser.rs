@@ -232,6 +232,10 @@ fn null_date_shift(null_date: &str) -> Option<i32> {
 /// Parse an `office:time-value` duration (`PT13H30M00S`, fractional seconds
 /// allowed) as a fraction of a day.
 fn parse_ods_time(s: &str) -> Option<f64> {
+    // A negative time (`-PT29628H00M00S`) is a negative fraction of a day.
+    if let Some(positive) = s.strip_prefix('-') {
+        return parse_ods_time(positive).map(|n| -n);
+    }
     let rest = s.strip_prefix("PT")?;
     let (mut total, mut num) = (0.0f64, String::new());
     for c in rest.chars() {
@@ -980,6 +984,10 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
         let mut current_row = 0u32;
         let mut row_repeated = 1u32;
         let mut current_col = 0u32;
+        // The style a cell without one takes: the one of its row, else the one of its column
+        // (`table:default-cell-style-name`). The columns of the table being read, as ranges.
+        let mut column_styles: Vec<(u32, u32, String)> = Vec::new();
+        let mut row_style = String::new();
         let mut current_cf_range: Option<String> = None;
         let mut skip_current_sheet = false; // Flag to skip external sheets
         let mut database_range_targets: Vec<String> = Vec::new();
@@ -1111,6 +1119,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             tables_started = true;
                             date_styles = number_styles.resolve();
                         }
+                        column_styles.clear();
                         // Collect sheet style for hidden detection
                         let mut sheet_name = String::new();
                         let mut style_name = String::new();
@@ -1225,6 +1234,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                     {
                         let mut hidden = false;
                         let mut repeated = 1u32;
+                        let mut default_style = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 "table:visibility"
@@ -1235,8 +1245,18 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 "table:number-columns-repeated" => {
                                     repeated = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
                                 }
+                                "table:default-cell-style-name" => {
+                                    default_style = attr_value(&attr)?.into_owned();
+                                }
                                 _ => {}
                             }
+                        }
+                        if !default_style.is_empty() && repeated > 0 {
+                            column_styles.push((
+                                current_col,
+                                current_col.saturating_add(repeated - 1),
+                                default_style,
+                            ));
                         }
                         if hidden && repeated > 0 {
                             sheet
@@ -1266,6 +1286,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                     {
                         let mut hidden = false;
                         let mut repeated = 1u32;
+                        let mut default_style = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 "table:visibility"
@@ -1276,8 +1297,18 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 "table:number-columns-repeated" => {
                                     repeated = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
                                 }
+                                "table:default-cell-style-name" => {
+                                    default_style = attr_value(&attr)?.into_owned();
+                                }
                                 _ => {}
                             }
+                        }
+                        if !default_style.is_empty() && repeated > 0 {
+                            column_styles.push((
+                                current_col,
+                                current_col.saturating_add(repeated - 1),
+                                default_style,
+                            ));
                         }
                         if hidden && repeated > 0 {
                             sheet
@@ -1289,6 +1320,12 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                     Event::Start(e) if e.name().as_ref() == "table:table-row" => {
                         row_repeated = 1;
                         current_col = 0;
+                        row_style.clear();
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == "table:default-cell-style-name" {
+                                row_style = attr_value(&attr)?.into_owned();
+                            }
+                        }
                         if let Some(ref mut sheet) = current_sheet {
                             let mut hidden = false;
                             for attr in e.attributes().flatten() {
@@ -1602,10 +1639,24 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 let formula_for_cell = formula;
 
                                 // Look up format string from style
-                                let num_fmt = if style_name.is_empty() || !props.number_format {
+                                // A cell with content and no style takes the default of its row or
+                                // of its column.
+                                let format_style = if style_name.is_empty() {
+                                    if row_style.is_empty() {
+                                        column_styles
+                                            .iter()
+                                            .find(|(a, b, _)| (*a..=*b).contains(&current_col))
+                                            .map_or("", |(_, _, n)| n.as_str())
+                                    } else {
+                                        row_style.as_str()
+                                    }
+                                } else {
+                                    style_name.as_str()
+                                };
+                                let num_fmt = if format_style.is_empty() || !props.number_format {
                                     None
                                 } else {
-                                    date_styles.get(&style_name).cloned()
+                                    date_styles.get(format_style).cloned()
                                 };
 
                                 // A float stays a float in a cell formatted as Text, as in XLSX.
@@ -1738,10 +1789,24 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 let formula_for_cell = formula;
 
                                 // Look up format string from style
-                                let num_fmt = if style_name.is_empty() || !props.number_format {
+                                // A cell with content and no style takes the default of its row or
+                                // of its column.
+                                let format_style = if style_name.is_empty() {
+                                    if row_style.is_empty() {
+                                        column_styles
+                                            .iter()
+                                            .find(|(a, b, _)| (*a..=*b).contains(&current_col))
+                                            .map_or("", |(_, _, n)| n.as_str())
+                                    } else {
+                                        row_style.as_str()
+                                    }
+                                } else {
+                                    style_name.as_str()
+                                };
+                                let num_fmt = if format_style.is_empty() || !props.number_format {
                                     None
                                 } else {
-                                    date_styles.get(&style_name).cloned()
+                                    date_styles.get(format_style).cloned()
                                 };
 
                                 for r in 0..row_repeated {

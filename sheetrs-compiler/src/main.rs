@@ -19,11 +19,9 @@ USAGE
       `--emit-ir PATH` also writes the program as JSON.
   sheetc run FILE|PROGRAM.json [options] [runtime options]
       Compile in memory and run immediately (JSON on stdin/--input).
-  sheetc run FILE [options] --write-workbook OUT [--template PATH]
-      Instead of printing JSON, write the answer into a copy of the workbook: its formulas, styles
-      and formats stay, every formula holds the result of this run and the inputs given are
-      written in their cells. The output is the whole answer. The template is FILE unless
-      `--template` names another workbook of the same layout. Needs `--outputs any`.
+  sheetc run FILE --embed-template (--recalculate | inputs declared) --output OUT [options]
+      The workbook as its own template (see `--embed-template`): no JSON, the answer is a copy of
+      FILE with every formula holding the result of this run and the inputs given in their cells.
   sheetc calc \"=FORMULA\" [--locale TAG] [--now N] [--seed N]
       Evaluate one formula.
   sheetc --version
@@ -45,9 +43,6 @@ SETTINGS SHEET
   free metadata, and a row without type is the category `extra`. The executable
   lists them with `--meta`, after the properties of the document. Without the sheet
   every formula range is an output and nothing is an input.
-  To recalculate a workbook as it is (no settings, no change of inputs), build or
-  run it with `--outputs any` and ask for the ranges: nothing is an input and any
-  range can be read, so the answer is the workbook's own formulas computed now.
 
 BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
   --config PATH        configuration file (default: sheetc.toml next to FILE)
@@ -76,16 +71,23 @@ BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
                        the configuration file
   --runtime PATH       runtime stub to embed into (default: sheetrs-rt next to
                        this binary, else this binary)
-  --embed-template     (build) carry the workbook inside the executable as the template of
-                       the answer; the executable is then made from `sheetc` itself (it
-                       writes workbooks) and accepts `--write-workbook OUT`
+  --embed-template     the workbook is the template of the answer. The executable (made from
+                       `sheetc` itself, which writes workbooks) carries it and gives no JSON:
+                       `--output OUT` writes a copy of the workbook with the result of every
+                       formula and the inputs given (`--input`) in their cells; only the
+                       metadata (`--meta`, `--info`) is answered as before. The outputs the
+                       workbook declares are discarded (all of it is written); its inputs, if
+                       it has any, are what the executable accepts.
+  --recalculate        with --embed-template, a workbook that declares no input: the executable
+                       recalculates it as it is (required, so that a missing declaration of
+                       inputs is not taken for the wish to recalculate)
   The date system, iteration and search settings come from the document and
   are not options. `calc` has no document and accepts
   --date-system 1899|1900|1904|YYYY-MM-DD and --iterate[=N[,EPS]].
 
 Executables accept: --input, --serve, --pretty, --meta, --range RANGE, --info,
---now, --seed, --system, --osversion, --release, --directory, --filename; one built with
---embed-template (or any, with `--template PATH`) also --write-workbook OUT.";
+--now, --seed, --system, --osversion, --release, --directory, --filename. One built with
+--embed-template accepts --output OUT, --input, --meta, --info and the clock and host options.";
 
 fn main() {
     let args = Args(std::env::args().skip(1).collect());
@@ -175,46 +177,75 @@ impl From<sheetrs_engine::Error> for Fail {
     }
 }
 
-/// An executable made from a workbook: the answer as JSON, or written into a template workbook
-/// with `--write-workbook OUT` (the template it carries, or `--template PATH`).
+/// An executable made from a workbook: the answer as JSON, or, when it carries its workbook as the
+/// template, the workbook with the answer written into it (`--output OUT`).
 fn embedded_workbook(e: &bundle::Embedded, mut args: Args) -> Result<i32, Fail> {
-    let Some(out) = args.value("--write-workbook")? else {
-        if args.value("--template")?.is_some() {
-            return Err(Fail::Usage("--template needs --write-workbook OUT".into()));
-        }
-        return Ok(cli::run_program(&e.program, e.consts.as_ref(), args));
-    };
-    let external = args.value("--template")?;
-    let input = args.value("--input")?;
-    let o = parse_overrides(&mut args)?;
-    if let Some(extra) = args.0.first() {
-        return Err(Fail::Usage(format!("unexpected argument `{extra}`")));
-    }
-    let template = match (external, &e.template) {
-        (Some(path), _) => Source::from_file(&path).map_err(|e| Fail::Run(e.to_string()))?,
-        (None, Some(t)) => Source::from_bytes(
-            t.bytes.clone(),
-            t.extension
-                .parse()
-                .map_err(|_| Fail::Run(format!("the template is a `{}`", t.extension)))?,
-        ),
-        (None, None) => {
+    let Some(template) = &e.template else {
+        if args.value("--output")?.is_some() {
             return Err(Fail::Usage(
-                "this executable carries no template: build it with --embed-template, or give --template PATH"
+                "this executable carries no workbook: build it with --embed-template to write one"
                     .into(),
             ));
         }
+        return Ok(cli::run_program(&e.program, e.consts.as_ref(), args));
     };
+    // The metadata is answered as in any executable; the answer itself is the workbook.
+    if args.0.iter().any(|a| a == "--meta" || a == "--info") {
+        return Ok(cli::run_program(&e.program, e.consts.as_ref(), args));
+    }
+    let out = args.value("--output")?.ok_or_else(|| {
+        Fail::Usage(
+            "this executable writes a workbook, not JSON: give --output OUT (and the inputs with --input)"
+                .into(),
+        )
+    })?;
+    let input = args.value("--input")?;
+    let o = parse_overrides(&mut args)?;
+    if let Some(extra) = args.0.first() {
+        return Err(Fail::Usage(format!(
+            "unexpected argument `{extra}`: an executable that carries its workbook answers with it"
+        )));
+    }
+    let source = Source::from_bytes(
+        template.bytes.clone(),
+        template
+            .extension
+            .parse()
+            .map_err(|_| Fail::Run(format!("the template is a `{}`", template.extension)))?,
+    );
     write_workbook(
         &e.program,
         e.consts
             .as_ref()
             .map(|c| c as &dyn sheetrs_engine::engine::ConstSource),
-        &template,
+        &source,
         input.as_deref(),
         &o,
         &out,
     )
+}
+
+/// What the program of an executable that carries its workbook is: everything is computed and
+/// written (the outputs of the declarations are discarded) and the inputs are the ones declared; a
+/// workbook with none is recalculated as it is, which `--recalculate` says.
+fn embed_spec(spec: &mut Spec, recalculate: bool) -> Result<(), Fail> {
+    if !spec.outputs.is_empty() {
+        eprintln!(
+            "note: the outputs the workbook declares are discarded: the executable writes all of it"
+        );
+        spec.outputs.clear();
+    }
+    spec.query = sheetrs_compiler::compile::QueryLevel::Any;
+    match (spec.inputs.is_empty(), recalculate) {
+        (true, false) => Err(Fail::Usage(
+            "the workbook declares no input: add them to the settings (sheet or file), or build with --recalculate to recalculate it as it is"
+                .into(),
+        )),
+        (false, true) => Err(Fail::Usage(
+            "--recalculate is for a workbook with no input, and this one declares some".into(),
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// Run `program` with the request in `input` and write the answer into a copy of `template`.
@@ -340,14 +371,23 @@ fn build(mut args: Args) -> Result<i32, Fail> {
     let emit = args.value("--emit-ir")?;
     let runtime = args.value("--runtime")?;
     let embed_template = args.flag("--embed-template");
-    let (cli, explicit) = config_from(&mut args)?;
+    let recalculate = args.flag("--recalculate");
+    let (mut cli, explicit) = config_from(&mut args)?;
+    if embed_template {
+        cli.outputs = Some("any".into());
+    } else if recalculate {
+        return Err(Fail::Usage("--recalculate needs --embed-template".into()));
+    }
     let [file] = args.0.as_slice() else {
         return Err(Fail::Usage("build needs exactly one input file".into()));
     };
     let t0 = std::time::Instant::now();
     let model = load_model(file)?;
     stage(&t0, "read workbook");
-    let spec = spec_for(cli, explicit, file, &model)?;
+    let mut spec = spec_for(cli, explicit, file, &model)?;
+    if embed_template {
+        embed_spec(&mut spec, recalculate)?;
+    }
     let t1 = std::time::Instant::now();
     let (mut program, report) = compile(&model, &spec)?;
     program.build.built_at = sheetrs_compiler::compile::build_time()?;
@@ -377,12 +417,6 @@ fn build(mut args: Args) -> Result<i32, Fail> {
     };
     let t2 = std::time::Instant::now();
     if embed_template {
-        if !matches!(program.queryable, sheetrs_engine::ir::Queryable::Any { .. }) {
-            return Err(Fail::Usage(
-                "--embed-template needs --outputs any: only then does the program compute every formula of the template"
-                    .into(),
-            ));
-        }
         let extension = Path::new(file)
             .extension()
             .and_then(|e| e.to_str())
@@ -421,17 +455,34 @@ fn run(mut args: Args) -> Result<i32, Fail> {
     for q in args.values("--range")? {
         forwarded.extend(["--range".into(), q]);
     }
-    let write_to = args.value("--write-workbook")?;
-    let template_path = args.value("--template")?;
+    let embed_template = args.flag("--embed-template");
+    let recalculate = args.flag("--recalculate");
+    let write_to = args.value("--output")?;
     let input_path = forwarded
         .iter()
         .position(|f| f == "--input")
         .and_then(|i| forwarded.get(i + 1))
         .cloned();
-    let (cli, explicit) = config_from(&mut args)?;
+    let (mut cli, explicit) = config_from(&mut args)?;
+    if embed_template {
+        cli.outputs = Some("any".into());
+    } else if recalculate || write_to.is_some() {
+        return Err(Fail::Usage(
+            "--output and --recalculate need --embed-template: only a workbook that is its own template is written"
+                .into(),
+        ));
+    }
     let [file] = args.0.as_slice() else {
         return Err(Fail::Usage("run needs exactly one input file".into()));
     };
+    let is_json = Path::new(file)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("json"));
+    if embed_template && is_json {
+        return Err(Fail::Usage(
+            "a program given as JSON has no workbook to be its template".into(),
+        ));
+    }
     let program: Program = if std::path::Path::new(file)
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("json"))
@@ -440,26 +491,23 @@ fn run(mut args: Args) -> Result<i32, Fail> {
             .map_err(|e| Fail::Run(format!("{file}: {e}")))?
     } else {
         let model = load_model(file)?;
-        let spec = spec_for(cli, explicit, file, &model)?;
+        let mut spec = spec_for(cli, explicit, file, &model)?;
+        if embed_template {
+            embed_spec(&mut spec, recalculate)?;
+        }
         let (mut p, report) = compile(&model, &spec)?;
         p.build.built_at = sheetrs_compiler::compile::build_time()?;
         print_report(&report, &p);
         p
     };
+    let asks_metadata = forwarded.iter().any(|f| f == "--meta" || f == "--info");
+    if embed_template && write_to.is_none() && !asks_metadata {
+        return Err(Fail::Usage(
+            "a workbook that is its own template is written: give --output OUT".into(),
+        ));
+    }
     if let Some(out) = write_to {
-        let is_json = Path::new(file)
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("json"));
-        let template = match (template_path, is_json) {
-            (Some(path), _) => path,
-            (None, false) => file.clone(),
-            (None, true) => {
-                return Err(Fail::Usage(
-                    "a program given as JSON has no template: name one with --template PATH".into(),
-                ));
-            }
-        };
-        let source = Source::from_file(&template).map_err(|e| Fail::Run(e.to_string()))?;
+        let source = Source::from_file(file).map_err(|e| Fail::Run(e.to_string()))?;
         return write_workbook(
             &program,
             None,
@@ -468,9 +516,6 @@ fn run(mut args: Args) -> Result<i32, Fail> {
             &sheetrs_engine::Overrides::default(),
             &out,
         );
-    }
-    if template_path.is_some() {
-        return Err(Fail::Usage("--template needs --write-workbook OUT".into()));
     }
     Ok(cli::run_program(&program, None, Args(forwarded)))
 }

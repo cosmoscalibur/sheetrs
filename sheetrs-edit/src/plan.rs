@@ -107,9 +107,6 @@ impl fmt::Display for Operation {
                     how.push("entire cells".into());
                 }
                 how.push(format!("in {:?}", find.search_in).to_lowercase());
-                if find.include_formulas {
-                    how.push("including formulas".into());
-                }
                 write!(f, " ({})", how.join(", "))?;
                 if spec.scopes.is_empty() {
                     f.write_str(" in the workbook")

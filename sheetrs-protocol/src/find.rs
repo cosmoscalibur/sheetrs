@@ -46,7 +46,8 @@ pub struct Find {
     #[serde(default)]
     pub search_in: SearchIn,
     /// When searching values: also look at the result of the cells that hold a formula.
-    /// Off by default, so a search by value reaches what was typed, not what was computed.
+    /// Off by default in a query, so a search by value reaches what was typed, not what was
+    /// computed. A replacement ignores it: `LibreOffice` always reaches formula cells there.
     #[serde(default)]
     pub include_formulas: bool,
 }

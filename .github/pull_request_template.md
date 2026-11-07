@@ -15,8 +15,8 @@ Closes #<!-- issue number -->
 - [ ] `cargo test` passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
 - [ ] `cargo fmt --check` passes
-- [ ] Tested with `tests/minimal_test.xlsx` and `tests/minimal_test.ods`
-  (parity check)
+- [ ] Checked against LibreOffice (its own result on each file, not the other format), in XLSX and ODS
+- [ ] No difference from LibreOffice without the maintainer's approval (see `docs/approved-differences.md`)
 
 ## Changelog
 

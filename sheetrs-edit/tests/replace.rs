@@ -89,10 +89,6 @@ fn cases() -> Vec<Json> {
     serde_json::from_str(&std::fs::read_to_string(asset("cases.json")).unwrap()).unwrap()
 }
 
-/// What `LibreOffice` does and the editor does not, on purpose: a search by value reaches a formula
-/// cell in `LibreOffice` whatever it is told, and in the editor only with `include_formulas`.
-const LIBREOFFICE_REACHES_FORMULAS: &[&str] = &["value_excludes_formulas"];
-
 fn run(extension: &str) {
     let dir = tempfile::tempdir().unwrap();
     for case in cases() {
@@ -111,13 +107,6 @@ fn run(extension: &str) {
             report.skipped
         );
         let got = cells(&read_workbook(&out).unwrap());
-        if LIBREOFFICE_REACHES_FORMULAS.contains(&name) {
-            let input =
-                cells(&read_workbook(asset(&format!("input.{extension}")).as_path()).unwrap());
-            assert_eq!(got.len(), input.len(), "{extension} {name}");
-            assert_eq!(report.replaced, 0, "{extension} {name}");
-            continue;
-        }
         let want = cells(&read_workbook(asset(&format!("expected_{name}.{extension}"))).unwrap());
         let mut different = Vec::new();
         for key in got

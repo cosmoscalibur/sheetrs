@@ -34,7 +34,7 @@ sheetedit <FILE>.ods --remove-sheets "Temp" -o cleaned.ods
 ```bash
 sheetedit <FILE> --replace TEXT --with TEXT [--scope SHEET | --scope 'Sheet!A1:C9']... \
     [--regex | --wildcards] [--match-case] [--entire-cells] [--in value|formula] \
-    [--include-formulas] (--output <OUT_FILE> | --in-place)
+    (--output <OUT_FILE> | --in-place)
 ```
 
 It does what the Find & Replace of LibreOffice does (observed in **24.2.7**, the reference version
@@ -56,15 +56,16 @@ result with the workbook LibreOffice leaves after the same `replaceAll`, in XLSX
   literals included) and writes the result in the notation of the file (Excel's in an XLSX,
   OpenFormula's in an ODS). A shared formula group whose first cell is replaced gets a formula of
   its own in each cell.
-- A search by value does not reach formula cells unless `--include-formulas`; then the cell
-  becomes a constant, as in LibreOffice (which reaches them always).
+- A search by value reaches formula cells, which become constants, as in LibreOffice.
 - The output is marked to be recalculated when opened.
 
-Where it differs from LibreOffice on purpose, the cell is left as it was and the command says so:
-a replacement that leaves a formula that is not one (`=((*2`, which LibreOffice keeps as an error
-cell with the text lowercased) or that names a sheet the workbook does not have, and the cells of an
-array formula. A cell that gets a percentage, a date or a boolean keeps its style (LibreOffice also
-gives it the format of what was typed). Searching comments is not supported.
+**Not reproduced yet.** These are differences from LibreOffice that nobody approved, so they are
+bugs waiting for a fix or a decision (see the pending decisions of the project): in each case the
+cell is left as it was and the command says so. A replacement that leaves a formula that is not
+one (`=((*2`, which LibreOffice keeps as an error cell with the text lowercased) or that names a
+sheet the workbook does not have; the cells of an array formula; searching comments. And a cell
+that gets a percentage, a date or a boolean keeps its style, where LibreOffice also gives it the
+format of what was typed.
 
 The reference behavior of every operation is **LibreOffice 26.8 on Linux**: what a formula
 becomes after an operation is what LibreOffice gives when the same operation is made in it

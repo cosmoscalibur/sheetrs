@@ -71,7 +71,8 @@ pub fn run(source: &Source, query: &Query) -> Result<QueryResponse> {
     let wants = |p: Property| query.properties.contains(&p);
     let searching = query.find.is_some();
     let properties = Properties {
-        value: wants(Property::Value) || wants(Property::Display) || searching,
+        // Whether a cell is empty is told by its value: it is read even when it is not asked for.
+        value: true,
         formula: wants(Property::Formula) || searching,
         number_format: wants(Property::NumberFormat) || wants(Property::Display) || searching,
     };
@@ -205,12 +206,17 @@ fn record(
         } else {
             None
         },
-        // `General` is the absence of a format: an XLSX says it, an ODS leaves it out.
+        // What `LibreOffice` reports as the format of the cell: `General` when the file says none (an
+        // ODS leaves it out, an XLSX writes it) and `BOOLEAN` for a boolean.
         number_format: if wants(Property::NumberFormat) {
-            cell.num_fmt
-                .as_deref()
-                .filter(|f| !f.eq_ignore_ascii_case("general"))
-                .map(str::to_string)
+            Some(match (&cell.value, cell.num_fmt.as_deref()) {
+                (CellValue::Boolean(_), None) => "BOOLEAN".to_string(),
+                (CellValue::Boolean(_), Some(f)) if f.eq_ignore_ascii_case("general") => {
+                    "BOOLEAN".to_string()
+                }
+                (_, Some(f)) => f.to_string(),
+                (_, None) => "General".to_string(),
+            })
         } else {
             None
         },

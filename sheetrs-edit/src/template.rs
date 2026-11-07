@@ -6,11 +6,12 @@
 //! the cells they belong to. What comes out is the template with the numbers of this run, in the
 //! formats of its cells, and it is the whole answer: no range is returned apart from it.
 //!
-//! The template is the workbook the program was made from, or another one with the same sheets (the
-//! cells are addressed by position, so the program must have been made from a workbook of the same
-//! layout). The program must have been built with `outputs = any`: only then does it compute every
-//! formula of the workbook; one that prunes would leave the results it did not compute as the
-//! template had them, and an answer that mixes the two is not one.
+//! The template is the workbook the program was made from: the compiler embeds it in the executable
+//! (`sheetc build --embed-template`) and offers no other. The cells are addressed by position, so a
+//! program written into a workbook of another layout would put results where they do not belong, and
+//! nothing could check that. The program must have been built with `outputs = any`: only then does it
+//! compute every formula of the workbook; one that prunes would leave the results it did not compute
+//! as the template had them, and an answer that mixes the two is not one.
 //!
 //! The cells of an array formula other than its first keep the results the template cached.
 

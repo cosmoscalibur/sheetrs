@@ -12,11 +12,13 @@
 //!   an empty cell; a cell with the text format keeps text.
 //! - A formula is searched and replaced as `LibreOffice` shows it (`=SUM($'My Sheet'.A1,B1)`, string
 //!   literals included), and the result is read back and written in the notation of the file:
-//!   Excel's in an XLSX, `OpenFormula`'s in an ODS. A search by value reaches a formula cell only
-//!   with `include_formulas`, and then the cell becomes a constant, as in `LibreOffice`.
+//!   Excel's in an XLSX, `OpenFormula`'s in an ODS. A search by value reaches a formula cell, which
+//!   becomes a constant, as in `LibreOffice` (`Find::include_formulas` is for queries: a replacement
+//!   always reaches the formula cells, as `LibreOffice` does).
 //!
-//! Where it differs from `LibreOffice` on purpose, each such cell is left as it was or written in
-//! the simplest way, and said in the [`Report`]:
+//! Where it does not reproduce `LibreOffice` yet (nobody approved these differences: each is a pending
+//! decision), each such cell is left as it was or written in the simplest way, and said in the
+//! [`Report`]:
 //!
 //! - A replacement that leaves a formula that is not one (`=((*2`) or that names a sheet the
 //!   workbook does not have is not applied: `LibreOffice` keeps an error cell with the text
@@ -198,10 +200,7 @@ impl CellSink for Decide<'_> {
         }
         let find = &self.spec.replace.find;
         let name = self.names[usize::from(sheet)].clone();
-        let Some(text) = self
-            .text
-            .searched(&cell, &name, find.search_in, find.include_formulas)
-        else {
+        let Some(text) = self.text.searched(&cell, &name, find.search_in, true) else {
             return;
         };
         let Some(new) = self.matcher.replace_all(&text, &self.spec.replace.with) else {
