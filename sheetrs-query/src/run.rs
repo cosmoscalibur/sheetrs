@@ -108,9 +108,14 @@ pub fn run(source: &Source, query: &Query) -> Result<QueryResponse> {
         .map(|f| Matcher::new(f).map(|m| (f, m)))
         .transpose()?;
 
-    // The search needs the name of the sheet of each cell (the formula says `$Sheet.A1` unless the
-    // sheet is its own): the names are read first when a search looks at formulas.
-    let names: Vec<String> = if matcher.is_some() {
+    // A search in formulas needs the name of the sheet of each cell (the formula says `$Sheet.A1`
+    // unless the sheet is its own): the names are read first, and only then (an ODS is read through
+    // to list them).
+    let names: Vec<String> = if query
+        .find
+        .as_ref()
+        .is_some_and(|f| f.search_in == sheetrs_protocol::SearchIn::Formula)
+    {
         sheet_names(source)?
     } else {
         Vec::new()
