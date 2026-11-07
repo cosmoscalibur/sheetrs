@@ -3,6 +3,8 @@
 //!
 //! ```toml
 //! settings = "settings"   # sheet that declares inputs, outputs and metadata
+//! settings_file = "model.json"   # the same declarations as JSON, for a workbook with no such
+//!                                # sheet (or one that must not change); path relative to this file
 //! outputs = "declared"    # declared | named | any
 //! fold = true
 //! enable_features = ["LONGTEXT"]   # compatibility features, all off unless listed
@@ -36,6 +38,12 @@ pub const FILE_NAME: &str = "sheetc.toml";
 pub struct Config {
     /// Name of the settings sheet (default `settings`, optional when absent).
     pub settings: Option<String>,
+    /// A JSON file with the declarations of the settings sheet (see [`settings::read_json`]), for
+    /// a workbook that has none: it compiles and calculates as it is, inputs included. A path in
+    /// a configuration file is relative to the file; it replaces the settings sheet, and naming
+    /// both is an error.
+    #[serde(alias = "settings-file")]
+    pub settings_file: Option<PathBuf>,
     /// `declared`, `named` or `any`.
     pub outputs: Option<String>,
     /// Evaluate input-independent formulas at build time (default true).
@@ -88,6 +96,7 @@ impl Config {
     pub fn over(self, base: Self) -> Self {
         Self {
             settings: self.settings.or(base.settings),
+            settings_file: self.settings_file.or(base.settings_file),
             outputs: self.outputs.or(base.outputs),
             fold: self.fold.or(base.fold),
             strict: self.strict.or(base.strict),
@@ -114,7 +123,28 @@ impl Config {
     pub fn spec(&self, model: &Model) -> Result<Spec> {
         let mut spec = self.base_spec(model)?;
         let name = self.settings.as_deref().unwrap_or(settings::DEFAULT_SHEET);
-        if let Some(s) = settings::read(model, name, self.settings.is_some())? {
+        let from_file = match &self.settings_file {
+            Some(path) => {
+                if self.settings.is_some() {
+                    return Err(Error::Config(
+                        "`settings` (a sheet) and `settings_file` (a JSON file) both declare the inputs and outputs: name one"
+                            .into(),
+                    ));
+                }
+                let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
+                Some(settings::read_json(
+                    model,
+                    &text,
+                    &path.display().to_string(),
+                )?)
+            }
+            None => None,
+        };
+        let found = match from_file {
+            Some(s) => Some(s),
+            None => settings::read(model, name, self.settings.is_some())?,
+        };
+        if let Some(s) = found {
             if s.outputs.is_empty() && spec.query == QueryLevel::Declared {
                 return Err(Error::Config(format!(
                     "settings sheet `{name}` declares no output; add `output` rows or build with outputs = \"any\""
@@ -131,7 +161,7 @@ impl Config {
                 .map(|(n, t)| BindingSpec::named(n, t))
                 .collect();
             spec.meta = s.meta;
-            spec.skip_sheet = Some(s.sheet);
+            spec.skip_sheet = s.sheet;
         }
         Ok(spec)
     }
@@ -198,7 +228,15 @@ pub fn parse(text: &str, origin: &str) -> Result<Config> {
 /// When the file cannot be read or is not a valid configuration.
 pub fn load(path: &Path) -> Result<Config> {
     let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
-    parse(&text, &path.display().to_string())
+    let mut config = parse(&text, &path.display().to_string())?;
+    // A path in the file is relative to the file, not to where the build starts.
+    if let Some(file) = &config.settings_file
+        && file.is_relative()
+        && let Some(dir) = path.parent()
+    {
+        config.settings_file = Some(dir.join(file));
+    }
+    Ok(config)
 }
 
 /// The configuration next to the workbook, when there is one. Only that

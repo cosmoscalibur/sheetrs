@@ -24,7 +24,9 @@ pub const DEFAULT_SHEET: &str = "settings";
 
 #[derive(Debug, Clone, Default)]
 pub struct SheetSettings {
-    pub sheet: u16,
+    /// The settings sheet, when the declarations come from one: it is not part of the
+    /// computation. A settings file has no sheet.
+    pub sheet: Option<u16>,
     /// `(name, reference)` in sheet order.
     pub inputs: Vec<(String, String)>,
     pub outputs: Vec<(String, String)>,
@@ -111,22 +113,73 @@ pub fn read(model: &Model, name: &str, required: bool) -> Result<Option<SheetSet
     };
     let (vc, dc) = (col("value"), col("description"));
 
-    let mut out = SheetSettings {
-        sheet,
-        ..SheetSettings::default()
-    };
-    // A key names one thing: no other row, sheet, defined name or table (the
-    // readers list tables among the defined names) may share it.
-    let mut seen: HashMap<String, (u32, String)> = HashMap::new();
+    let mut entries = Vec::new();
     for (&row, cells) in rows.iter().skip(1) {
         let get = |c: u32| cells.get(&c).map_or_else(String::new, |v| text(v));
         let (key, meta_type) = (get(kc), get(tc).to_lowercase());
         if key.is_empty() && meta_type.is_empty() {
             continue;
         }
-        let line = row + 1;
+        let value = vc.and_then(|c| cells.get(&c));
+        entries.push(Entry {
+            label: format!("row {}", row + 1),
+            key,
+            meta_type,
+            shown: value.map_or(serde_json::Value::Null, |v| value_to_json(v)),
+            reference: value.map(|v| text(v)).unwrap_or_default(),
+            description: dc.map_or_else(String::new, get),
+        });
+    }
+    assemble(
+        model,
+        Some(sheet),
+        &format!("settings sheet `{name}`"),
+        entries,
+    )
+    .map(Some)
+}
+
+/// One declaration, from a row of the settings sheet or an entry of the settings file.
+struct Entry {
+    /// Where it is, for the messages (`row 4`, or an input called `rate`).
+    label: String,
+    key: String,
+    /// Empty for a row without type.
+    meta_type: String,
+    /// What `--meta` lists as its value when it is not a range.
+    shown: serde_json::Value,
+    /// The range of an input or output.
+    reference: String,
+    description: String,
+}
+
+/// The declarations as the program takes them, with the checks every origin shares: a reference
+/// that resolves and lies outside the settings sheet, and a key that names one thing.
+fn assemble(
+    model: &Model,
+    settings_sheet: Option<u16>,
+    origin: &str,
+    entries: Vec<Entry>,
+) -> Result<SheetSettings> {
+    let at = |m: &str| format!("{origin}: {m}");
+    let mut out = SheetSettings {
+        sheet: settings_sheet,
+        ..SheetSettings::default()
+    };
+    // A key names one thing: no other row, sheet, defined name or table (the
+    // readers list tables among the defined names) may share it.
+    let mut seen: HashMap<String, (String, String)> = HashMap::new();
+    for e in entries {
+        let Entry {
+            label,
+            key,
+            meta_type,
+            mut shown,
+            reference,
+            description,
+        } = e;
         if key.is_empty() {
-            return Err(Error::Settings(at(&format!("row {line} needs a `key`"))));
+            return Err(Error::Settings(at(&format!("{label} needs a `key`"))));
         }
         // A row without a type is free metadata of the category `extra`.
         let meta_type = if meta_type.is_empty() {
@@ -134,15 +187,12 @@ pub fn read(model: &Model, name: &str, required: bool) -> Result<Option<SheetSet
         } else {
             meta_type
         };
-        let value = vc.and_then(|c| cells.get(&c));
-        let mut shown = value.map_or(serde_json::Value::Null, |v| value_to_json(v));
         if matches!(meta_type.as_str(), "input" | "output") {
-            let reference = value.map(|v| text(v)).unwrap_or_default();
             let rect = resolve_reference(model, &reference)
-                .map_err(|e| Error::Settings(at(&format!("row {line}: {e}"))))?;
-            if rect.sheet == sheet {
+                .map_err(|e| Error::Settings(at(&format!("{label}: {e}"))))?;
+            if Some(rect.sheet) == settings_sheet {
                 return Err(Error::Settings(at(&format!(
-                    "row {line}: `{reference}` lies in the settings sheet"
+                    "{label}: `{reference}` lies in the settings sheet"
                 ))));
             }
             shown = serde_json::Value::String(addr::qualified(&model.sheets, &rect));
@@ -153,9 +203,11 @@ pub fn read(model: &Model, name: &str, required: bool) -> Result<Option<SheetSet
             };
             list.push((key.clone(), reference));
         }
-        if let Some((first, kind)) = seen.insert(key.to_lowercase(), (line, meta_type.clone())) {
+        if let Some((first, kind)) =
+            seen.insert(key.to_lowercase(), (label.clone(), meta_type.clone()))
+        {
             return Err(Error::Settings(at(&format!(
-                "row {line}: `{key}` is already defined in row {first} (as {kind}); a key names one input, output or field"
+                "{label}: `{key}` is already defined in {first} (as {kind}); a key names one input, output or field"
             ))));
         }
         if let Some(what) = model
@@ -172,17 +224,115 @@ pub fn read(model: &Model, name: &str, required: bool) -> Result<Option<SheetSet
             })
         {
             return Err(Error::Settings(at(&format!(
-                "row {line}: `{key}` is also {what} of the workbook; keys cannot coincide with them"
+                "{label}: `{key}` is also {what} of the workbook; keys cannot coincide with them"
             ))));
         }
         out.meta.push(Meta {
             key,
             value: shown,
-            description: dc.map_or_else(String::new, get),
+            description,
             meta_type,
         });
     }
-    Ok(Some(out))
+    Ok(out)
+}
+
+/// The settings of a workbook that has no settings sheet, or whose sheet is not to be changed:
+/// the same declarations as JSON.
+///
+/// ```json
+/// {
+///   "inputs":  { "rate": "Data!A1", "years": { "range": "Data!A2", "description": "term" } },
+///   "outputs": { "result": "Data!B1:B3" },
+///   "meta":    [ { "key": "version", "value": "1.2", "description": "model", "meta_type": "info" } ]
+/// }
+/// ```
+///
+/// Each key of `inputs` and `outputs` names the range after it (written as in the `value` column
+/// of the settings sheet: starting with the sheet, or a sheet name, or a defined name), and `meta`
+/// lists free metadata (`meta_type` defaults to `extra`). The checks are the sheet's. `origin`
+/// names the file in the messages.
+///
+/// # Errors
+///
+/// When the text is not that JSON, a range does not resolve, or a key is repeated or is a sheet or
+/// a defined name of the workbook.
+pub fn read_json(model: &Model, text: &str, origin: &str) -> Result<SheetSettings> {
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Binding {
+        Range(String),
+        Detailed {
+            range: String,
+            #[serde(default)]
+            description: String,
+        },
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Row {
+        key: String,
+        #[serde(default)]
+        value: serde_json::Value,
+        #[serde(default)]
+        description: String,
+        #[serde(default)]
+        meta_type: String,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct File {
+        #[serde(default)]
+        inputs: serde_json::Map<String, serde_json::Value>,
+        #[serde(default)]
+        outputs: serde_json::Map<String, serde_json::Value>,
+        #[serde(default)]
+        meta: Vec<Row>,
+    }
+    let at = |m: String| Error::Settings(format!("settings file `{origin}`: {m}"));
+    let file: File = serde_json::from_str(text).map_err(|e| at(e.to_string()))?;
+    let mut entries = Vec::new();
+    for (kind, map) in [("input", file.inputs), ("output", file.outputs)] {
+        for (key, v) in map {
+            let (reference, description) = match serde_json::from_value::<Binding>(v) {
+                Ok(Binding::Range(r)) => (r, String::new()),
+                Ok(Binding::Detailed { range, description }) => (range, description),
+                Err(_) => {
+                    return Err(at(format!(
+                        "{kind} `{key}` must be a range or {{\"range\": ..., \"description\": ...}}"
+                    )));
+                }
+            };
+            entries.push(Entry {
+                label: format!("{kind} `{key}`"),
+                key,
+                meta_type: kind.to_string(),
+                shown: serde_json::Value::Null,
+                reference,
+                description,
+            });
+        }
+    }
+    for row in file.meta {
+        entries.push(Entry {
+            label: format!("meta `{}`", row.key),
+            key: row.key,
+            meta_type: row.meta_type.to_lowercase(),
+            shown: row.value,
+            reference: String::new(),
+            description: row.description,
+        });
+    }
+    if let Some(e) = entries
+        .iter()
+        .find(|e| matches!(e.meta_type.as_str(), "input" | "output") && e.label.starts_with("meta"))
+    {
+        return Err(at(format!(
+            "{}: inputs and outputs are declared under `inputs` and `outputs`",
+            e.label
+        )));
+    }
+    assemble(model, None, &format!("settings file `{origin}`"), entries)
 }
 
 #[cfg(test)]

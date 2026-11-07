@@ -40,10 +40,16 @@ SETTINGS SHEET
   free metadata, and a row without type is the category `extra`. The executable
   lists them with `--meta`, after the properties of the document. Without the sheet
   every formula range is an output and nothing is an input.
+  To recalculate a workbook as it is (no settings, no change of inputs), build or
+  run it with `--outputs any` and ask for the ranges: nothing is an input and any
+  range can be read, so the answer is the workbook's own formulas computed now.
 
 BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
   --config PATH        configuration file (default: sheetc.toml next to FILE)
   --settings SHEET     settings sheet (default: `settings`, optional)
+  --settings-file PATH JSON with the same declarations (inputs, outputs, meta), for
+                       a workbook without a settings sheet: it compiles and
+                       calculates as it is, inputs included. Replaces the sheet
   --outputs LEVEL      declared (default): only the declared outputs, the most
                        pruning; named: also the workbook's defined names can
                        be queried; any: any range can be queried
@@ -165,6 +171,7 @@ fn config_from(args: &mut Args) -> Result<(Config, Option<String>), Fail> {
     let explicit = args.value("--config")?;
     let mut cli = Config {
         settings: args.value("--settings")?,
+        settings_file: args.value("--settings-file")?.map(PathBuf::from),
         outputs: args.value("--outputs")?,
         fold: args.flag("--no-fold").then_some(false),
         strict: if args.flag("--no-strict") {
