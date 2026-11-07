@@ -18,6 +18,12 @@ getting-started instructions, see the root [README.md](../README.md).
 - [Fidelity](../sheetrs-compiler/docs/FIDELITY.md) — every difference between Excel and
   LibreOffice the engine models, with the evidence behind it.
 
+## Reading and finding cells
+
+- [sheetrs-query README](../sheetrs-query/README.md) — `sheetquery`: ranges, sheets, properties,
+  display, find.
+- [sheetrs-protocol README](../sheetrs-protocol/README.md) — the typed JSON contract.
+
 ## Analysis & Profiling
 
 - [Comparative Report](../sheetrs-linter/comparative_report.md) — rule comparison

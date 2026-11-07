@@ -10,6 +10,8 @@ Python package (see [Distribution](#distribution)):
 
 - **sheetlint**: Advanced spreadsheet linter with hierarchical rule enforcement.
 - **sheetstats**: Detailed statistics and dependency analysis for workbooks.
+- **sheetquery**: Read the cells of a workbook by range, sheet or workbook, with the properties
+  asked for (value, formula, number format, display), and find the cells that match a search.
 - **sheetedit**: General-purpose spreadsheet operations (convert, modify,
   repair).
 - **sheetc** (`sheetrs-compiler`): Compiler from a spreadsheet to a standalone
@@ -28,8 +30,8 @@ Python package (see [Distribution](#distribution)):
 
 | Surface | Package | What it gives |
 | ------- | ------- | ------------- |
-| Executables | GitHub release assets (`sheetrs-vX.Y.Z-<target>`) | `sheetlint`, `sheetstats`, `sheetedit`, `sheetc`, `sheetrs-rt` |
-| Rust libraries | `sheetrs-linter` (rules, configuration, violations), `sheetrs-stats`, `sheetrs-edit`, `sheetrs-io` (workbook model and readers, shared by all), `sheetrs-formula`, `sheetrs-engine`, `sheetrs-compiler` | The same code the executables run |
+| Executables | GitHub release assets (`sheetrs-vX.Y.Z-<target>`) | `sheetlint`, `sheetstats`, `sheetquery`, `sheetedit`, `sheetc`, `sheetrs-rt` |
+| Rust libraries | `sheetrs-linter` (rules, configuration, violations), `sheetrs-stats`, `sheetrs-query` (reads and finds cells), `sheetrs-edit`, `sheetrs-protocol` (the typed JSON contract), `sheetrs-io` (workbook model and readers, shared by all), `sheetrs-formula`, `sheetrs-engine`, `sheetrs-compiler` | The same code the executables run |
 | WebAssembly | `sheetrs-wasm` (npm tarball in the release) | Lint and statistics in the browser, structured and text output |
 | Python | `sheetrs` (wheels and sdist in the release; [sheetrs-py](sheetrs-py/README.md)) | `open` → `Source`, taken by `linter.Linter`, `stats.collect` and `edit.Editor` |
 
@@ -118,6 +120,8 @@ sheetrs/
 ├── sheetrs-compiler/ # Workbook → program compiler (`sheetc`)
 ├── sheetrs-linter/ # Rules, config, violations + `sheetlint`
 ├── sheetrs-stats/  # Workbook metrics + `sheetstats`
+├── sheetrs-query/  # Reading and finding cells + `sheetquery`
+├── sheetrs-protocol/ # The typed JSON contract of the tools
 ├── sheetrs-edit/   # Workbook modification + `sheetedit`
 ├── sheetrs-wasm/   # WASM bindings for browser use
 ├── sheetrs-py/     # Python bindings (PyO3, maturin)

@@ -12,8 +12,10 @@ The reference behavior of the compiler, the runtime and the modifications of `sh
 sheetrs/
 ├── sheetrs-io/       # Input of the suite: workbook model + XLSX/ODS readers (was sheetrs-core)
 ├── sheetrs-formula/    # Lossless formula AST (parse, print, rewrite references)
+├── sheetrs-protocol/   # The contract: typed requests/responses of run, query, find, replace
 ├── sheetrs-linter/     # Rules, configuration, violations (lib) + `sheetlint`
 ├── sheetrs-stats/      # Workbook metrics (lib) + `sheetstats`
+├── sheetrs-query/      # Reading and finding cells by range, sheet or workbook (lib) + `sheetquery`
 ├── sheetrs-edit/       # Workbook modification (lib) + `sheetedit`
 ├── sheetrs-engine/     # IR, function library, run-time evaluation, `sheetrs-rt`
 ├── sheetrs-compiler/   # Loader, dependency analysis, folding, `sheetc`
@@ -37,8 +39,27 @@ operations, the compilation) and exposes them as a Rust library. Around it:
   (violations grouped by sheet and cell, flat records) is part of the tool's library
   (`sheetrs_linter::report`), not copied into each adapter.
 
-Dependencies point inward: adapters → tool libraries → `sheetrs-io` / `sheetrs-formula`. Tool
-crates do not depend on each other.
+Dependencies point inward: adapters → tool libraries → `sheetrs-io` / `sheetrs-formula` /
+`sheetrs-protocol`. Tool crates do not depend on each other, with one deliberate exception:
+`sheetrs-edit` depends on `sheetrs-query`, because a replacement is a search followed by a
+write, and the two must agree on which cells a search finds (its matcher and the text of a cell
+that a search sees live in `sheetrs-query`; the writing stays in `sheetrs-edit`).
+
+### What belongs in `sheetrs-protocol`
+
+`sheetrs-protocol` is the **contract** of the suite as typed JSON, with no behaviour: it depends
+on `sheetrs-formula` (the grammar of references), `serde` and `serde_json`, so a client (a web
+page, a Python program, another service) can speak the protocol without any tool.
+
+| Module | What it says |
+| ------ | ------------ |
+| `run` | The request a compiled program answers (`inputs`, `ranges`, `majorDimension`) and its response (`valueRanges` or `outputs`). `sheetrs-engine` parses its requests with it |
+| `query` | `Query` (scopes: workbook, a sheet, a range; properties: `value`, `formula`, `number_format`, `display`; an optional `Find`; a locale), `CellRecord`, `QueryResponse` |
+| `find` | `Find` (text, mode literal/regex/wildcards, match case, entire cells, search in value or formula, `include_formulas`) and `Replace` (a `Find` and the text that takes its place) |
+| `reference` | A range as a caller writes it (`'My Sheet'!B2:C9`) |
+
+The array of a cell is not a property: a query does not say whether a formula is an array
+formula, and a selective read does not know it.
 
 ### What belongs in `sheetrs-io`
 
@@ -125,6 +146,24 @@ Two crates, split along the line that matters for reuse and build time:
 The date system, iteration, search settings and reference syntax come from the document;
 see [sheetrs-compiler/docs/DESIGN.md](sheetrs-compiler/docs/DESIGN.md) and
 [sheetrs-compiler/docs/FIDELITY.md](sheetrs-compiler/docs/FIDELITY.md).
+
+## 1d. Reading cells: selections and the query tool
+
+The readers can read **what is asked and nothing else** (`reader::Selection`): a window of rows
+and columns per sheet (or one for every sheet), and the properties wanted (`value`, `formula`,
+`number_format`). A sheet that is not selected is not parsed, the reading of a sheet stops after the
+last row a window reaches (an ODS ends with the last table selected), cells outside the windows
+are skipped, and a property not asked for is not built. `sheetrs-query` is the tool on top of
+it, with the same answer for an XLSX and an ODS wherever the two files say the same thing.
+
+Two texts of a cell are different things and `sheetrs-query::text` keeps them apart: what a person
+**sees** (`display`: the value written with its number format, in a locale) and what a **search**
+sees (the text of the input line of the cell: `1234.5` for a cell that shows `1,234.50`, `25.6%`,
+the date `03/15/2023`, and for a formula the notation of LibreOffice, `=SUM(A1,B1)`). Number
+formats are read for every family of data style of an ODS (`reader::ods_styles`) and written as the
+format code an XLSX holds for the same cell. A LibreOffice error that Excel does not have
+(`Err:502`, `Err:522`) keeps its code in an ODS (`ExcelError::Libre`) and is `#VALUE!` in an XLSX,
+as LibreOffice itself writes it.
 
 ## 2. Tools
 
