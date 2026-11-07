@@ -232,17 +232,15 @@ fn convert(v: &CellValue) -> Value {
     }
 }
 
-/// Excel error literal or `LibreOffice` `Err:NNN` code.
+/// An error of the workbook as the engine has it: the Excel errors, and the circular reference of
+/// `LibreOffice` (`Err:522`). The other codes only `LibreOffice` has (`Err:502`, `Err:523`, …) are
+/// `#VALUE!`, which is what it writes to an XLSX and what the engine gives for the same cells.
 fn error_kind(s: &str) -> ErrorKind {
     if let Some(k) = ErrorKind::parse(s) {
         return k;
     }
     match s.strip_prefix("Err:").and_then(|c| c.parse::<u16>().ok()) {
-        Some(522 | 523) => ErrorKind::Circ,
-        Some(524) => ErrorKind::Ref,
-        Some(525 | 508 | 509 | 510 | 511) => ErrorKind::Name,
-        Some(502 | 503) => ErrorKind::Num,
-        Some(532) => ErrorKind::DivZero,
+        Some(522) => ErrorKind::Circ,
         _ => ErrorKind::Value,
     }
 }

@@ -113,15 +113,19 @@ fn a_date_is_the_same_number_with_the_same_format_in_both() {
     }
 }
 
+/// `=SQRT(-1)` is `Err:502` and a circular reference `Err:522` in `LibreOffice`. It writes `#VALUE!`
+/// for both in an XLSX, which has no such errors; an ODS says which error it is, and so does the
+/// cell: the same formula reads as `LibreOffice` shows it in each file.
 #[test]
-fn an_error_that_only_libreoffice_has_is_the_value_error_an_xlsx_writes_for_it() {
-    // `=SQRT(-1)` is `Err:502` and a circular reference `Err:522` in `LibreOffice`, which writes
-    // `#VALUE!` for both in an XLSX: the same cell reads the same in both.
+fn an_error_that_only_libreoffice_has_keeps_its_code_in_an_ods() {
     let (xlsx, ods) = (read("cells.xlsx"), read("cells.ods"));
     let (x, o) = (cells(&xlsx, "T"), cells(&ods, "T"));
-    for row in [13, 15] {
+    for (row, code) in [(13, 502), (15, 522)] {
         assert_eq!(format!("{:?}", x[&(row, 0)].0), "Error(Value)");
-        assert_eq!(format!("{:?}", o[&(row, 0)].0), "Error(Value)");
+        assert_eq!(
+            format!("{:?}", o[&(row, 0)].0),
+            format!("Error(Libre({code}))")
+        );
     }
 }
 

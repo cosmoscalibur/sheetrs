@@ -29,6 +29,11 @@ pub enum ExcelError {
     Spill,
     /// `#CALC!` — Calculation engine error (dynamic arrays).
     Calc,
+    /// An error of `LibreOffice` that Excel does not have, as an ODS keeps it: `Err:502` (invalid
+    /// argument), `Err:522` (circular reference), `Err:523` (the iteration does not converge), …
+    /// `LibreOffice` writes all of them to an XLSX as `#VALUE!`; an ODS says which it is, and so
+    /// does the cell here. The ones that have an Excel name (`Err:524` is `#REF!`) read as that.
+    Libre(u16),
 }
 
 impl ExcelError {
@@ -40,7 +45,7 @@ impl ExcelError {
     /// Parse a cell error string (e.g. from `CellValue::Error` text content).
     ///
     /// Returns `None` for unrecognized patterns. Handles both exact matches
-    /// (e.g. `"#REF!"`) and ODS error codes (e.g. `"Err:508"`).
+    /// (e.g. `"#REF!"`) and the codes of `LibreOffice` (`"Err:522"`).
     #[must_use]
     pub fn from_cell_str(s: &str) -> Option<Self> {
         s.parse().ok()
@@ -59,6 +64,7 @@ impl fmt::Display for ExcelError {
             Self::NA => "#N/A",
             Self::Spill => "#SPILL!",
             Self::Calc => "#CALC!",
+            Self::Libre(code) => return write!(f, "Err:{code}"),
         };
         write!(f, "{s}")
     }
@@ -90,7 +96,16 @@ impl FromStr for ExcelError {
             "#N/A" => Ok(Self::NA),
             "#SPILL!" => Ok(Self::Spill),
             "#CALC!" => Ok(Self::Calc),
-            _ => Err(ParseExcelErrorError(s.to_string())),
+            _ => match s.strip_prefix("Err:").and_then(|c| c.parse::<u16>().ok()) {
+                // The codes `LibreOffice` shows under an Excel name.
+                Some(503) => Ok(Self::Num),
+                Some(519) => Ok(Self::Value),
+                Some(524) => Ok(Self::Ref),
+                Some(525) => Ok(Self::Name),
+                Some(532) => Ok(Self::DivZero),
+                Some(code) => Ok(Self::Libre(code)),
+                None => Err(ParseExcelErrorError(s.to_string())),
+            },
         }
     }
 }

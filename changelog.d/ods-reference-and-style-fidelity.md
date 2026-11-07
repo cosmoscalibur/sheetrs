@@ -19,7 +19,12 @@
   one that differs is the built-in `0`, which `LibreOffice` writes to an ODS as no style (General).
   The reading of the styles lives in one module instead of three copies.
 
-### Known differences
+### Changed
 
-- `ods`: a `LibreOffice` error that Excel does not have (`Err:502`, `Err:522`) reads as `#VALUE!`,
-  as `LibreOffice` itself writes it to an XLSX.
+- `ods`: an error that only `LibreOffice` has (`Err:502` invalid argument, `Err:522` circular
+  reference, `Err:523` no convergence, …) keeps its code in the cell (`ExcelError::Libre(code)`,
+  written `Err:522`) instead of reading as `#VALUE!`, which is what `LibreOffice` shows in an ODS
+  (it writes `#VALUE!` for them to an XLSX, so there the cell is `#VALUE!`). The codes that have an
+  Excel name (`Err:524` is `#REF!`, `Err:525` `#NAME?`, `Err:532` `#DIV/0!`, `Err:503` `#NUM!`,
+  `Err:519` `#VALUE!`) read as that. `sheetc` builds a circular reference of an ODS as `#CIRC!`
+  again, as its loader intended.
