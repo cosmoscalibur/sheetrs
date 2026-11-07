@@ -139,15 +139,14 @@ fn fraction(e: &BytesStart<'_>) -> Result<String> {
     let numerator = count(e, "loext:max-numerator-digits")?
         .or(count(e, "number:min-numerator-digits")?)
         .unwrap_or(1);
-    let denominator = match attr(e, "number:denominator-value")? {
-        Some(fixed) => fixed,
-        None => {
-            let digits = attr(e, "number:max-denominator-value")?
-                .map(|v| v.len())
-                .or(count(e, "number:min-denominator-digits")?)
-                .unwrap_or(1);
-            "?".repeat(digits)
-        }
+    let denominator = if let Some(fixed) = attr(e, "number:denominator-value")? {
+        fixed
+    } else {
+        let digits = attr(e, "number:max-denominator-value")?
+            .map(|v| v.len())
+            .or(count(e, "number:min-denominator-digits")?)
+            .unwrap_or(1);
+        "?".repeat(digits)
     };
     Ok(format!("{integer} {}/{denominator}", "?".repeat(numerator)))
 }
@@ -299,7 +298,9 @@ impl NumberStyles {
                 if let (Some(l), Some((_, style))) = (self.literal.take(), self.open.as_mut()) {
                     if l.symbol {
                         if !l.text.is_empty() {
-                            style.body.push_str(&format!("[${}]", l.text));
+                            style.body.push_str("[$");
+                            style.body.push_str(&l.text);
+                            style.body.push(']');
                         }
                     } else if let Some(c) = l.blank {
                         style.body.push('_');
