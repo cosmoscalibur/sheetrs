@@ -371,16 +371,28 @@ fn read_element_body<R: BufRead>(
     name: &str,
 ) -> Result<Vec<Event<'static>>> {
     let mut body = Vec::new();
-    let mut buf = Vec::new();
+    read_element_body_into(reader, name, &mut Vec::new(), &mut body)?;
+    Ok(body)
+}
+
+/// As [`read_element_body`], into `body` (emptied first) and reading through `buf`: a loop over
+/// many small elements (the cells of a worksheet) keeps both and allocates them once.
+fn read_element_body_into<R: BufRead>(
+    reader: &mut Reader<R>,
+    name: &str,
+    buf: &mut Vec<u8>,
+    body: &mut Vec<Event<'static>>,
+) -> Result<()> {
+    body.clear();
     let mut depth = 0u32;
     loop {
-        let event = reader.read_event_into(&mut buf)?.into_owned();
         buf.clear();
+        let event = reader.read_event_into(buf)?.into_owned();
         match &event {
             Event::Start(e) if e.name().as_ref() == name => depth += 1,
             Event::End(e) if e.name().as_ref() == name => {
                 if depth == 0 {
-                    return Ok(body);
+                    return Ok(());
                 }
                 depth -= 1;
             }
@@ -405,12 +417,11 @@ fn write_element<W: Write>(
     match content {
         None => writer.write_event(Event::Empty(start))?,
         Some(content) => {
-            let end = start.to_end().into_owned();
-            writer.write_event(Event::Start(start))?;
+            writer.write_event(Event::Start(start.borrow()))?;
             for event in content {
                 writer.write_event(event.borrow())?;
             }
-            writer.write_event(Event::End(end))?;
+            writer.write_event(Event::End(start.to_end()))?;
         }
     }
     Ok(())
