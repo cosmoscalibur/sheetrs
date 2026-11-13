@@ -11,15 +11,14 @@
 //! One violation per sheet (the unit is the sheet) when the used range has more than 2
 //! rows beyond the last row with data, or more than 2 columns beyond the last column with data.
 //! The last row and the last column are taken independently (the maximum over all data cells), so
-//! the "last data cell" in the message is that corner, not necessarily an existing cell. A cell
-//! counts as data when its value is not empty; text that is only whitespace does not count.
+//! the "last data cell" in the message is that corner, not necessarily an existing cell. The last data cell is the corner of
+//! `Sheet::used_area` (a cell with a value or a formula, the same in both formats), so no walk of the
+//! cells is needed: the two corners are compared.
 //!
 //! # Does not report
 //!
 //! - A sheet with no data cells, or without used-range metadata: nothing to compare (an empty
 //!   sheet is REF303).
-//! - A formula cell whose saved value is empty is not data here, even though the message says
-//!   "data/formula cell"; a sheet holding only such formulas is skipped.
 //! - Blank gaps inside the data: REF305 (which also sees blank rows or columns at the end of the
 //!   used range).
 //! - Overshoots of 2 rows or columns or fewer: a small margin is normal.
@@ -36,40 +35,25 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_io::reader::{Cell, Sheet};
-use std::collections::HashMap;
+use sheetrs_io::reader::Sheet;
 
 /// Threshold for rows/columns beyond data.
 const THRESHOLD_ROWS: u32 = 2;
 /// Threshold for columns beyond data.
 const THRESHOLD_COLS: u32 = 2;
 
-/// Per-sheet tracked max data cell: `sheet_index` → (`max_row`, `max_col`).
-type SheetMaxMap = HashMap<u16, (u32, u32)>;
-
 /// Rule that detects excessively large used ranges.
 ///
 /// Uses a constant threshold of 2 rows/columns to detect when the used range
 /// extends significantly beyond actual data.
-#[derive(Debug)]
-pub struct LargeUsedRangeRule {
-    /// Per-sheet max data cell coordinates.
-    sheet_max: SheetMaxMap,
-}
+#[derive(Debug, Default)]
+pub struct LargeUsedRangeRule;
 
 impl LargeUsedRangeRule {
     /// Create a new instance.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            sheet_max: HashMap::new(),
-        }
-    }
-}
-
-impl Default for LargeUsedRangeRule {
-    fn default() -> Self {
-        Self::new()
+        Self
     }
 }
 
@@ -99,15 +83,6 @@ impl ViolationData for LargeUsedRangeData {
     }
 }
 
-/// Check whether a cell value should count as real data.
-fn is_data_cell(cell: &Cell) -> bool {
-    match &cell.value {
-        sheetrs_io::reader::workbook::CellValue::Empty => false,
-        sheetrs_io::reader::workbook::CellValue::Text(s) => !s.trim().is_empty(),
-        _ => true,
-    }
-}
-
 impl WalkerRule for LargeUsedRangeRule {
     fn id(&self) -> RuleId {
         RuleId::Ref304
@@ -121,29 +96,12 @@ impl WalkerRule for LargeUsedRangeRule {
         RuleCategory::Reference
     }
 
-    fn on_cell(
-        &mut self,
-        sheet: &Sheet,
-        at: (u32, u32),
-        cell: &Cell,
-        _ctx: &mut LinterContext,
-        _out: &mut Vec<Violation>,
-    ) {
-        if is_data_cell(cell) {
-            self.sheet_max
-                .entry(sheet.sheet_index)
-                .and_modify(|(max_row, max_col)| {
-                    *max_row = (*max_row).max(at.0);
-                    *max_col = (*max_col).max(at.1);
-                })
-                .or_insert((at.0, at.1));
-        }
-    }
-
     fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
-        let Some(&last_data) = self.sheet_max.get(&sheet.sheet_index) else {
+        // Two corners, no walk of the cells: the last content cell and the last cell the file keeps.
+        let Some(content) = sheet.used_area else {
             return; // No data cells → skip
         };
+        let last_data = (content.last_row, content.last_col);
 
         let Some((used_rows, used_cols)) = sheet.kept_extent() else {
             return;
@@ -199,15 +157,13 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
+            used_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 0)),
             kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(49, 29)),
             ..Default::default()
         };
 
         let mut rule = LargeUsedRangeRule::new();
         let mut ctx = LinterContext::default();
-        for (at, cell) in sheet.cells.iter() {
-            rule.on_cell(&sheet, at, cell, &mut ctx, &mut Vec::new());
-        }
         let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert_eq!(violations.len(), 1);
@@ -231,15 +187,13 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
+            used_area: Some(sheetrs_io::reader::UsedArea::from_a1(0, 0)),
             kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 1)), // Only 1 row/col beyond data
             ..Default::default()
         };
 
         let mut rule = LargeUsedRangeRule::new();
         let mut ctx = LinterContext::default();
-        for (at, cell) in sheet.cells.iter() {
-            rule.on_cell(&sheet, at, cell, &mut ctx, &mut Vec::new());
-        }
         let violations = collect_violations(|out| rule.on_sheet_end(&sheet, &mut ctx, out));
 
         assert!(violations.is_empty());
