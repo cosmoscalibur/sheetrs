@@ -10,7 +10,6 @@
 //! See `sheetrs-compiler/docs/DESIGN.md` and `FIDELITY.md`.
 
 pub mod addr;
-mod archive;
 pub mod bundle;
 pub mod calculate;
 mod casemap;

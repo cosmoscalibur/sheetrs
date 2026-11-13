@@ -342,12 +342,12 @@ localized because files always store the canonical ones.
 
 `sheetc build` copies a runtime stub — `sheetrs-rt` (engine only; its size is in
 [docs/performance.md](../../docs/performance.md#sizes)) or the full binary — and appends the program in
-an [`rkyv`](https://docs.rs/rkyv) archive, the blocks of constants and a 24-byte trailer (`SHEETRS1`,
-size of the program, size of the blocks). The program is an archive, not JSON: it is decoded at every start.
-The archive is validated (`bytecheck`) before it is read, and it is copied into aligned memory first, since
-the payload holds it at any offset. A function is archived by its qualified name (`core::SUM`), as in JSON, so
-that the registry can grow. `bincode` was used before: it is unmaintained and its last release is a
-tombstone.
+`postcard` (serde, variable-length integers, a documented and stable wire format), the blocks of
+constants and a 24-byte trailer (`SHEETRS1`, size of the program, size of the blocks). The program is
+`postcard`, not JSON: it is decoded at every start. `bincode` was used before: it is unmaintained and its
+last release is a tombstone. `rkyv` (an archive read in place) and `bitcode` were measured against it on
+`data.xlsx` and `formulas.xlsx`: `rkyv` doubles the executable (fixed-width layout) and its start-up memory;
+`bitcode` is 10-25 % smaller than `postcard` with the same start-up, but it is pre-1.0 (0.6).
 
 A program with `consts::MIN_STORED` constants or more (a workbook whose formulas read many constants)
 does not carry them in the program: `consts::split` moves them, sorted by sheet, row and column,

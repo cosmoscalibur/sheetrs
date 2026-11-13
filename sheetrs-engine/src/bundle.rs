@@ -2,7 +2,7 @@
 //! payload plus a trailer (`magic`, lengths). No toolchain is needed to
 //! "compile" and the artifact is a single file.
 //!
-//! Layout of the payload: the program in `rkyv` with its index of constants, the blocks of
+//! Layout of the payload: the program in `postcard` with its index of constants, the blocks of
 //! constants (see [`crate::consts`]), then the trailer: magic, size of the program, size of the
 //! blocks. An executable that carries the workbook it was made from, to be used as the template of
 //! the answer, adds the workbook after the blocks (its extension in eight bytes, then its bytes) and
@@ -11,6 +11,7 @@
 use crate::Error;
 use crate::consts::{self, ConstIndex, StoredConsts};
 use crate::ir::Program;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -23,17 +24,13 @@ const TRAILER_TEMPLATE: usize = 32;
 /// Bytes the extension of the template takes before its content.
 const EXTENSION_BYTES: usize = 8;
 
-/// What [`Packed`] holds, by reference: `Inline` archives each as the value itself, so both have
-/// the same archived layout and the payload is written without moving the program into a `Packed`.
-#[derive(rkyv::Archive, rkyv::Serialize)]
+#[derive(Serialize)]
 struct PackedRef<'a> {
-    #[rkyv(with = rkyv::with::Inline)]
     program: &'a Program,
-    #[rkyv(with = rkyv::with::Inline)]
     consts: &'a ConstIndex,
 }
 
-#[derive(rkyv::Archive, rkyv::Deserialize)]
+#[derive(Deserialize)]
 struct Packed {
     program: Program,
     consts: ConstIndex,
@@ -89,11 +86,11 @@ pub fn write_executable_with_template(
 /// When the program cannot be encoded, or the extension does not fit its eight bytes.
 pub fn payload(program: &mut Program, template: Option<(&str, &[u8])>) -> crate::Result<Vec<u8>> {
     let (index, blocks) = consts::split(program, consts::MIN_STORED)?;
-    let skeleton = crate::archive::encode(&PackedRef {
+    let skeleton = postcard::to_allocvec(&PackedRef {
         program,
         consts: &index,
     })?;
-    let mut bytes = skeleton.to_vec();
+    let mut bytes = skeleton.clone();
     bytes.extend_from_slice(&blocks);
     if let Some((extension, workbook)) = template {
         if extension.len() > EXTENSION_BYTES || !extension.is_ascii() {
@@ -203,8 +200,9 @@ pub fn read_embedded() -> Option<Embedded> {
     }
     let start = size - total;
     f.seek(SeekFrom::Start(start)).ok()?;
-    let buf = crate::archive::read_aligned(&mut f, usize::try_from(skeleton).ok()?).ok()?;
-    let packed: Packed = crate::archive::decode(&buf).ok()?;
+    let mut buf = vec![0u8; usize::try_from(skeleton).ok()?];
+    f.read_exact(&mut buf).ok()?;
+    let packed: Packed = postcard::from_bytes(&buf).ok()?;
     let template = if template_len >= EXTENSION_BYTES as u64 {
         f.seek(SeekFrom::Start(start + skeleton + blocks)).ok()?;
         let mut blob = vec![0u8; usize::try_from(template_len).ok()?];
@@ -256,7 +254,7 @@ pub fn read_payload(bytes: &'static [u8]) -> Option<Embedded> {
         .checked_add(trailer)?;
     let start = usize::try_from(u64::try_from(n).ok()?.checked_sub(total)?).ok()?;
     let skeleton_end = start.checked_add(usize::try_from(skeleton).ok()?)?;
-    let packed: Packed = crate::archive::decode(bytes.get(start..skeleton_end)?).ok()?;
+    let packed: Packed = postcard::from_bytes(bytes.get(start..skeleton_end)?).ok()?;
     let blocks_end = skeleton_end.checked_add(usize::try_from(blocks).ok()?)?;
     let template = if template_len >= EXTENSION_BYTES as u64 {
         let blob =

@@ -9,17 +9,7 @@ use serde::{Deserialize, Serialize};
 /// [`sheetrs_formula::DateSystem`]).
 pub use sheetrs_formula::DateSystem;
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Iteration {
     pub max_iterations: u32,
     pub max_change: f64,
@@ -36,18 +26,7 @@ impl Default for Iteration {
 }
 
 /// Order of the numeric components of a text date (`3/1/2024`).
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DateOrder {
     Mdy,
     Dmy,
@@ -57,18 +36,7 @@ pub enum DateOrder {
 /// How text criteria and patterns are interpreted by `COUNTIF`, `MATCH`,
 /// `VLOOKUP`, `SEARCH`, … (a document setting; an XLSX import
 /// is `Wildcards`, whole cell, case-insensitive).
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SearchMode {
     /// `*`, `?` and `~` escapes.
     Wildcards,
@@ -78,18 +46,7 @@ pub enum SearchMode {
     Literal,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Search {
     pub mode: SearchMode,
     /// Criteria must match the whole cell, not a part of it.
@@ -144,16 +101,7 @@ pub struct LocaleRow {
     pub named: &'static str,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Locale {
     pub tag: String,
     /// The language id of `[$-409]` in a format code (0: none).
@@ -273,17 +221,7 @@ impl Default for Locale {
 /// program runs on and the executable's own directory, as a program computes them; a build (or a
 /// run) can fix each of them, as it can the clock, so that the results do not change from one
 /// machine to another.
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Host {
     /// `INFO("system")`: `LINUX`, `WNT` or `MACOSX`.
     pub system: Option<String>,
@@ -311,18 +249,8 @@ impl Host {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EngineOptions {
-    #[rkyv(with = crate::archive::DateSystemDef)]
     pub date_system: DateSystem,
     /// `None`: circular references evaluate to `#CIRC!`.
     pub iteration: Option<Iteration>,

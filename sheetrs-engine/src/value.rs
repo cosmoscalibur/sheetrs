@@ -8,19 +8,7 @@ use std::sync::Arc;
 
 /// Spreadsheet error values. `Circ` is an engine extension for unresolved
 /// circular references (no counterpart in the file formats).
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ErrorKind {
     Null,
     DivZero,
@@ -116,39 +104,14 @@ pub struct Ghost {
 
 /// Rectangular block of scalar values (row-major). Cells are never `Array`
 /// or `Ref`.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
-#[rkyv(
-    serialize_bounds(
-        __S: rkyv::ser::Writer + rkyv::ser::Allocator + rkyv::ser::Sharing,
-        <__S as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source,
-    ),
-    deserialize_bounds(
-        __D: rkyv::de::Pooling,
-        <__D as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source,
-    ),
-    bytecheck(bounds(
-        __C: rkyv::validation::ArchiveContext + rkyv::validation::SharedContext,
-        <__C as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source,
-    ))
-)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Array {
     pub rows: u32,
     pub cols: u32,
-    #[rkyv(omit_bounds)]
     pub data: Vec<Value>,
     /// More rows, all equal, after `rows` (none for most arrays). Only a run has them: a program
     /// never holds one, so it is not written.
     #[serde(skip)]
-    #[rkyv(with = rkyv::with::Skip)]
     pub ghost: Option<Box<Ghost>>,
     /// The array is what `IF` or `CHOOSE` chose element by element, and the last branch that set a
     /// format in `LibreOffice` was a boolean (`TRUE()`, `NOT(…)`, a comparison…): the cell that
@@ -156,7 +119,6 @@ pub struct Array {
     /// formula looks at it (`ISLOGICAL`, `INDEX`, `TYPE`… see the elements as numbers), so it is
     /// not part of a program.
     #[serde(skip)]
-    #[rkyv(with = rkyv::with::Skip)]
     pub logical: bool,
     /// The array is what `IF` or `CHOOSE` chose element by element (the matrix `LibreOffice` jumps
     /// through). Where a function takes one value, such an array is taken element by element only in
@@ -164,13 +126,11 @@ pub struct Array {
     /// element (`SUM(ABS(IF({1;0},2,3)))` is 2, `SUM(ABS({-1;-2}))` is 3). Only the result of a
     /// formula looks at it, so it is not part of a program.
     #[serde(skip)]
-    #[rkyv(with = rkyv::with::Skip)]
     pub jump: bool,
     /// The element that a missing `else` gave shows as `FALSE` in the cell that holds the array: the
     /// array is what `IF`, `CHOOSE`, `IFERROR` or `IFNA` gave itself (any other array shows an empty
     /// text there, and `TRANSPOSE` a 0). Only the result of a formula looks at it.
     #[serde(skip)]
-    #[rkyv(with = rkyv::with::Skip)]
     pub jump_false: bool,
 }
 
@@ -259,31 +219,7 @@ impl Array {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Default,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
-#[rkyv(
-    serialize_bounds(
-        __S: rkyv::ser::Writer + rkyv::ser::Allocator + rkyv::ser::Sharing,
-        <__S as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source,
-    ),
-    deserialize_bounds(
-        __D: rkyv::de::Pooling,
-        <__D as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source,
-    ),
-    bytecheck(bounds(
-        __C: rkyv::validation::ArchiveContext + rkyv::validation::SharedContext,
-        <__C as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source,
-    ))
-)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub enum Value {
     #[default]
     Empty,
@@ -291,7 +227,7 @@ pub enum Value {
     Bool(bool),
     Text(Arc<str>),
     Error(ErrorKind),
-    Array(#[rkyv(omit_bounds)] Arc<Array>),
+    Array(Arc<Array>),
     /// A reference. Only produced while evaluating; never stored in a cell.
     Ref(Rect),
 }

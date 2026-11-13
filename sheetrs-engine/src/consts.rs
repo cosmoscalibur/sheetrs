@@ -14,7 +14,7 @@ use crate::value::Value;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::fs::File;
-use std::io::{Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 
 /// Constants a block holds, at least (whole rows go together).
 pub const BLOCK_CELLS: usize = 4096;
@@ -23,17 +23,7 @@ pub const BLOCK_CELLS: usize = 4096;
 pub const MIN_STORED: usize = 50_000;
 
 /// Where the blocks of a program are and what they span.
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ConstIndex {
     sheets: Vec<SheetConsts>,
     cells: u64,
@@ -47,17 +37,7 @@ impl ConstIndex {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 struct SheetConsts {
     /// Rows and columns spanned by the constants.
     extent: (u32, u32),
@@ -65,16 +45,7 @@ struct SheetConsts {
     blocks: Vec<BlockRef>,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct BlockRef {
     row0: u32,
     /// Position of the encoded block among the blocks, and its size.
@@ -147,11 +118,11 @@ pub fn split(program: &mut Program, min: usize) -> crate::Result<(ConstIndex, Ve
             .sheets
             .get_mut(sheet as usize)
             .ok_or(crate::Error::ConstantOnUnknownSheet)?;
-        let block: Block = consts[i..j]
+        let block: Vec<(u32, u32, &Value)> = consts[i..j]
             .iter()
-            .map(|(at, v)| (at.row, at.col, v.clone()))
+            .map(|(at, v)| (at.row, at.col, v))
             .collect();
-        let encoded = crate::archive::encode(&block)?;
+        let encoded = postcard::to_allocvec(&block)?;
         sh.blocks.push(BlockRef {
             row0: consts[i].0.row,
             offset: bytes.len() as u64,
@@ -223,12 +194,12 @@ impl StoredConsts {
         let from = usize::try_from(self.start + b.offset).unwrap_or(usize::MAX);
         match &self.backing {
             Backing::File(file) => {
+                let mut buf = vec![0u8; b.len as usize];
                 let mut f = file.borrow_mut();
-                let buf = f
-                    .seek(SeekFrom::Start(self.start + b.offset))
-                    .and_then(|_| crate::archive::read_aligned(&mut *f, b.len as usize))
+                f.seek(SeekFrom::Start(self.start + b.offset))
+                    .and_then(|_| f.read_exact(&mut buf))
                     .unwrap_or_else(|e| damaged(&e));
-                crate::archive::decode(&buf)
+                postcard::from_bytes(&buf)
                     .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))
             }
             Backing::Memory(memory) => {
@@ -236,7 +207,7 @@ impl StoredConsts {
                     .checked_add(b.len as usize)
                     .and_then(|to| memory.get(from..to))
                     .unwrap_or_else(|| damaged(&"a block is out of the memory"));
-                crate::archive::decode(bytes)
+                postcard::from_bytes(bytes)
                     .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))
             }
         }

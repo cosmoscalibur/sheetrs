@@ -7,21 +7,7 @@ pub use sheetrs_formula::addr::{
 };
 
 /// A cell of a sheet. `sheet` indexes `Program::sheets`.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct CellRef {
     pub sheet: u16,
     pub row: u32,
@@ -36,19 +22,7 @@ impl CellRef {
 }
 
 /// Inclusive, normalized rectangle (`r0 <= r1`, `c0 <= c1`).
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Rect {
     pub sheet: u16,
     pub r0: u32,
