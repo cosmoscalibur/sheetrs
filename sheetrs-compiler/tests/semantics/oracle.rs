@@ -67,9 +67,8 @@ fn same_error(theirs: &str, got: &Json) -> Result<(), String> {
 enum Given<'a> {
     /// In the spec, as a build configuration states it (`--locale`).
     Spec(&'a str),
-    /// The locale of the workbook: given to the `Book` (`Some`), or the one its format gives (`None`;
-    /// an ODS says it, and an XLSX takes the system's, which a test does not control).
-    Book(Option<&'a str>),
+    /// The locale of the workbook, given to the `Book` (the system's is not a test's to rely on).
+    Book(&'a str),
 }
 
 /// `locale`: the regional settings `LibreOffice` ran with when it computed `file`.
@@ -84,7 +83,7 @@ fn check_rows(file: &str, given: Given<'_>, min_rows: usize, known: &[&str]) {
         .join("tests/assets")
         .join(file);
     let mut book = sheetrs_io::Book::from_file(&path).unwrap();
-    if let Given::Book(Some(tag)) = given {
+    if let Given::Book(tag) = given {
         book = book.with_locale(tag.parse().unwrap());
     }
     let model = loader::load(&book).unwrap();
@@ -340,9 +339,9 @@ fn german_of_germany_matches_libreoffice_but_for_the_keywords_of_a_format_code()
     check_locale_but("de-DE", GERMAN_FORMAT_CODES);
 }
 
-/// The locale as a property of the workbook, in every locale with a fixture: an XLSX has the one
-/// given to its `Book`, and an ODS the one it says (the language and country of its default cell
-/// style, what a `LibreOffice` with that regional setting writes), whatever the system is.
+/// The locale as a property of the workbook, in every locale with a fixture: the one given to its
+/// `Book`, in an XLSX and in an ODS alike (what `LibreOffice` computed in the fixture is the result
+/// of its regional setting, which the file does not carry).
 #[test]
 fn the_locale_of_the_book_gives_what_libreoffice_gives_in_that_locale() {
     for tag in ["es-ES", "es-CO", "es-MX", "en-GB", "de-DE"] {
@@ -353,13 +352,13 @@ fn the_locale_of_the_book_gives_what_libreoffice_gives_in_that_locale() {
         };
         check_rows(
             &format!("semantics_{tag}.xlsx"),
-            Given::Book(Some(tag)),
+            Given::Book(tag),
             150,
             known,
         );
         check_rows(
             &format!("semantics_{tag}.ods"),
-            Given::Book(None),
+            Given::Book(tag),
             150,
             known,
         );

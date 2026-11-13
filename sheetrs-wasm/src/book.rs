@@ -41,8 +41,7 @@ impl Book {
     /// `locale` is the locale of the workbook (a tag such as `"es-CO"`): the regional settings that
     /// give a text to a number (`TEXT`, the conversion of a number to text, `display`) and read a
     /// number from a text, in `calculate`, in the recalculation that follows an edit and in the
-    /// queries. Without it the workbook has the locale of its format: an ODS says it, and an XLSX has
-    /// `en-US` (WebAssembly has no system to take it from). The `locale` of a single call wins over it.
+    /// queries. Without it the workbook has the locale of the system, and WebAssembly has none: `en-US`. The `locale` of a single call wins over it.
     ///
     /// # Errors
     ///

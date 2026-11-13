@@ -39,8 +39,8 @@ pub fn load(source: &Book) -> Result<Model> {
     let mut m = assemble(wb, ods, sink.cells);
     m.array_members = sink.array_members;
     m.from_xlsx = !ods;
-    // The locale of the run: the one given to the workbook, else what the format gives (an ODS
-    // says it, an XLSX takes the system's).
+    // The locale of the run: the one given to the workbook, else the system's (an ODS does
+    // not carry the regional setting that matters: see `locale::resolve`).
     m.settings.book_locale = source.locale().map(ToString::to_string);
     m.settings.system_locale = sheetrs_io::locale::system().map(|tag| tag.to_string());
     m.file_name = source

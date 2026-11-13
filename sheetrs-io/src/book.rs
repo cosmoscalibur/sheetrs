@@ -26,8 +26,8 @@ use crate::error::{Error, Result};
 use crate::locale::{self, LocaleTag};
 use crate::reader::{
     CellSink, Format, NameConflict, Selection, SheetInfo, Workbook, read_analysis_from_reader_into,
-    read_date_system_from_reader, read_defined_names_from_reader, read_document_locale_from_reader,
-    read_selection_from_reader_into, read_workbook_from_reader, read_workbook_from_reader_into,
+    read_date_system_from_reader, read_defined_names_from_reader, read_selection_from_reader_into,
+    read_workbook_from_reader, read_workbook_from_reader_into,
 };
 use sheetrs_formula::DateSystem;
 use std::collections::HashMap;
@@ -113,7 +113,7 @@ impl Book {
     /// The same workbook with this locale: the regional settings that give a text to a number and read
     /// a number from a text (`TEXT`, the conversion of a number to text, the `display` of a query, the
     /// dates a search reads), in every tool that takes the book. Without it the book has the locale its
-    /// format gives (see [`default_locale`](Self::default_locale) and the [`locale`]
+    /// system gives (see [`default_locale`](Self::default_locale) and the [`locale`]
     /// module). A `locale` option of a single call still wins over it.
     ///
     /// The tag is not checked against the locales a tool has until a tool needs it.
@@ -148,25 +148,13 @@ impl Book {
         self.locale.as_ref()
     }
 
-    /// The locale the format gives the workbook when none was given: an ODS says it (the language and
-    /// the country of its default cell style), and an XLSX does not, so it is the locale of the system
-    /// (see [`locale::system`]). `None` is `en-US`: a file that states none, a system that has none,
-    /// and WebAssembly.
-    ///
-    /// Reads the start of an ODS only (its styles).
-    ///
-    /// # Errors
-    ///
-    /// As [`workbook`](Self::workbook).
-    pub fn default_locale(&self) -> Result<Option<LocaleTag>> {
-        let in_file = match &self.origin {
-            Origin::File(path) => read_document_locale_from_reader(open(path)?)?,
-            Origin::Bytes(data) => read_document_locale_from_reader(Cursor::new(data))?,
-        };
-        // A file that says a language the suite cannot read as a tag says nothing.
-        Ok(in_file
-            .and_then(|tag| tag.parse().ok())
-            .or_else(locale::system))
+    /// The locale the workbook has when none was given: the one of the system (see
+    /// [`locale::system`]), for an XLSX and an ODS alike, as in `LibreOffice`, whose results change
+    /// with the regional setting of the machine and not with the language an ODS stores. `None` is
+    /// `en-US`: a system that has none, and WebAssembly. It reads no file.
+    #[must_use]
+    pub fn default_locale(&self) -> Option<LocaleTag> {
+        locale::system()
     }
 
     /// The format of the workbook, as its content says it.
@@ -485,46 +473,24 @@ mod tests {
         }
     }
 
-    /// An ODS whose default cell style says `language` and `country` (`""` for none).
-    fn ods_in(language: &str, country: &str) -> Vec<u8> {
-        let attributes = match (language, country) {
-            ("", _) => String::new(),
-            (l, "") => format!(r#"fo:language="{l}""#),
-            (l, c) => format!(r#"fo:language="{l}" fo:country="{c}""#),
-        };
-        let styles = format!(
-            r#"<office:document-styles><office:styles><style:default-style style:family="table-cell"><style:text-properties {attributes}/></style:default-style></office:styles></office:document-styles>"#
-        );
-        zip(&[
+    #[test]
+    fn the_default_locale_is_the_one_of_the_system_in_both_formats() {
+        // An ODS that states a language in its default cell style has the system's all the same:
+        // `LibreOffice` does not read it.
+        let ods = zip(&[
             ("mimetype", "application/vnd.oasis.opendocument.spreadsheet"),
             ("content.xml", "<office:document-content/>"),
-            ("styles.xml", &styles),
-        ])
-    }
-
-    #[test]
-    fn an_ods_says_its_locale_and_an_xlsx_has_the_one_of_the_system() {
-        let tag = |book: &Book| {
-            book.default_locale()
-                .unwrap()
-                .map(|tag| tag.to_string())
-                .unwrap_or_default()
-        };
-        // What the file declares wins over the system, whatever the system is.
-        assert_eq!(tag(&Book::from_bytes(ods_in("es", "CO")).unwrap()), "es-CO");
-        assert_eq!(tag(&Book::from_bytes(ods_in("de", "DE")).unwrap()), "de-DE");
-        assert_eq!(tag(&Book::from_bytes(ods_in("es", "")).unwrap()), "es");
-        // A document with no language (`zxx`) or with an unreadable one says nothing: the system's.
-        let system = locale::system()
-            .map(|tag| tag.to_string())
-            .unwrap_or_default();
-        assert_eq!(
-            tag(&Book::from_bytes(ods_in("zxx", "none")).unwrap()),
-            system
-        );
-        assert_eq!(tag(&Book::from_bytes(ods_in("", "")).unwrap()), system);
-        // An XLSX declares none.
-        assert_eq!(tag(&Book::from_bytes(XLSX).unwrap()), system);
+            (
+                "styles.xml",
+                r#"<office:document-styles><office:styles><style:default-style style:family="table-cell"><style:text-properties fo:language="es" fo:country="CO"/></style:default-style></office:styles></office:document-styles>"#,
+            ),
+        ]);
+        for bytes in [ods, XLSX.to_vec()] {
+            assert_eq!(
+                Book::from_bytes(bytes).unwrap().default_locale(),
+                locale::system()
+            );
+        }
     }
 
     #[test]

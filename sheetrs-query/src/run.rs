@@ -186,20 +186,20 @@ impl BookQuery for Book {
     }
 }
 
-/// The locale of a query: the one it states, else the one given to the book, else the default of
-/// its format (the language of an ODS, the locale of the system for an XLSX). A default that the
-/// engine has no locale for is `en-US`, as it is for `LibreOffice`.
-fn locale_of(source: &Book, query: &Query) -> Result<Option<String>> {
+/// The locale of a query: the one it states, else the one given to the book, else the one of the
+/// system (for an XLSX and an ODS alike). A system locale that the engine has no locale for is
+/// `en-US`, as it is for `LibreOffice`.
+fn locale_of(source: &Book, query: &Query) -> Option<String> {
     if let Some(tag) = &query.locale {
-        return Ok(Some(tag.clone()));
+        return Some(tag.clone());
     }
     if let Some(tag) = source.locale() {
-        return Ok(Some(tag.to_string()));
+        return Some(tag.to_string());
     }
-    Ok(source
-        .default_locale()?
+    source
+        .default_locale()
         .map(|tag| tag.to_string())
-        .filter(|tag| sheetrs_engine::options::Locale::by_tag(tag).is_some()))
+        .filter(|tag| sheetrs_engine::options::Locale::by_tag(tag).is_some())
 }
 
 /// Answers `query` over the workbook in `source`.
@@ -259,7 +259,7 @@ pub(crate) fn run(source: &Book, query: &Query) -> Result<QueryResponse> {
 
     let needs_text = wants(Property::Display) || searching || as_dates;
     let text = if needs_text {
-        TextContext::new(locale_of(source, query)?.as_deref(), source.date_system()?)?
+        TextContext::new(locale_of(source, query).as_deref(), source.date_system()?)?
             .for_format(source.format())
             .for_book(source)
     } else {

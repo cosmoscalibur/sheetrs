@@ -257,8 +257,9 @@ fn check(file: &str) -> Vec<String> {
 
 /// What a `LibreOffice` with the `es-CO` regional setting shows for `locale_es-CO.{xlsx,ods}` (made
 /// by `make_locale.py`, recorded by `make_oracle.py`): the text of every cell, in the locale of the
-/// workbook. An XLSX states no locale, so the one given to its `Book` is the one; an ODS says it (in
-/// its default cell style), so it needs none. The format codes the oracle reports are written in
+/// workbook: the one given to its `Book` (neither format carries the regional setting of the
+/// machine that saved it, and an ODS's default cell style does not change what `LibreOffice` shows).
+/// The format codes the oracle reports are written in
 /// Spanish there (`DD/MM/AAAA`), so only what the cells show is compared.
 fn display_in_the_locale_of(file: &str, locale: Option<&str>) -> Vec<String> {
     let query: Query = serde_json::from_value(json!({
@@ -306,7 +307,7 @@ fn display_in_the_locale_of(file: &str, locale: Option<&str>) -> Vec<String> {
 #[test]
 fn the_display_of_a_book_follows_its_locale() {
     let mut bad = display_in_the_locale_of("locale_es-CO.xlsx", Some("es-CO"));
-    bad.extend(display_in_the_locale_of("locale_es-CO.ods", None));
+    bad.extend(display_in_the_locale_of("locale_es-CO.ods", Some("es-CO")));
     assert!(
         bad.is_empty(),
         "{} differences:\n{}",
@@ -316,7 +317,7 @@ fn the_display_of_a_book_follows_its_locale() {
 }
 
 #[test]
-fn a_locale_given_to_the_book_wins_over_the_one_of_the_file_in_a_query() {
+fn the_locale_given_to_the_book_changes_the_display_of_a_query() {
     let spanish = |file: &str, locale: Option<&str>| {
         let mut book = Book::from_file(fixture(file)).unwrap();
         if let Some(tag) = locale {
@@ -332,7 +333,7 @@ fn a_locale_given_to_the_book_wins_over_the_one_of_the_file_in_a_query() {
             .clone()
             .unwrap()
     };
-    assert_eq!(spanish("locale_es-CO.ods", None), "1.234,50");
+    assert_eq!(spanish("locale_es-CO.ods", Some("es-CO")), "1.234,50");
     assert_eq!(spanish("locale_es-CO.ods", Some("en-US")), "1,234.50");
     // The locale of a single query wins over the one of the book.
     let query: Query = serde_json::from_value(json!({

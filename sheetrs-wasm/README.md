@@ -36,9 +36,9 @@ workbook.
 the workbook but its bytes and the operations to make to it. `locale` (a tag such as `"es-CO"`; an error when
 it is not one) is the locale of the workbook: the regional settings that give a text to a number and read a
 number from a text, in `calculate`, in the recalculation that follows an edit and in `query`, `range` and
-`find` (`display`); `book.locale` says it. Without it the workbook has the locale of its format: an ODS
-says it (the language and country of its default cell style), and an XLSX has `en-US`, because WebAssembly has
-no system to take it from. The `locale` of a single call (`evaluateFormula`, the `locale` of a query, the
+`find` (`display`); `book.locale` says it. Without it the workbook has `en-US`, because WebAssembly has
+no system to take the locale from (the language an ODS stores in its default cell style is not read, as in
+LibreOffice). The `locale` of a single call (`evaluateFormula`, the `locale` of a query, the
 options of `inspect` and `compile`) wins over it. What it says about the workbook is the
 statistics, which are a tool like the others: `stats()` reads it.
 

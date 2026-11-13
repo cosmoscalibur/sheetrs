@@ -130,7 +130,7 @@ resolved into engine options by the loader:
 | Case sensitivity | — (Excel: insensitive) | `table:case-sensitive` (default true) | `search.case_sensitive`, **comparison operators only**: with it on, `"a"="A"` is false and `"abc"<"ABD"` is true (letters first, case as tie-break, lowercase first). `COUNTIF`, `MATCH`, `VLOOKUP`, `SEARCH` stay case-insensitive: LibreOffice returns 3 for `COUNTIF(r,"APPLE")` over `apple` cells with the setting on. |
 | Two-digit-year window | — | `table:null-year` | `Locale::two_digit_year_start` (default 1930): text dates and LibreOffice `DATE(yy,…)`. |
 | Precision as shown | `fullPrecision="0"` | `table:precision-as-shown` | Not applied; the loader adds a diagnostic. |
-| Document language | — | default cell style `fo:language`/`fo:country` | Read; informational only (see below). |
+| Document language | — | default cell style `fo:language`/`fo:country` | Read; informational only (see *Locales*). |
 
 Regular expressions are run by LibreOffice with ICU's engine, whose results differ from other
 engines' in details (what an empty match is, where `$` and `\b` match, what `.` and `\s` stand
@@ -164,24 +164,30 @@ matching and case-insensitive comparisons, and so does the engine.
 | The run | Only the clock (`NOW()`) and the random seed. |
 | Nobody (informational) | The document's language (`fo:language`/`fo:country` of the default cell style). |
 
-The language is not an input to evaluation. Evidence: a probe document
-recalculated by LibreOffice with its default style switched to `es-ES` still gave
-`TEXT(DATE(2024,3,1),"mmmm dddd")` = `March Friday`, `TRUE&""` = `1`,
-`1.5&""` = `1.5`, `DATEVALUE("3/1/2024")` = March 1st and `VALUE("1,5")` = error:
-LibreOffice evaluates with the system regional settings, as Excel does, and a
-file does not store them. The compiler therefore reports the language as a
-diagnostic when it differs from the locale in use. Which locale is in use is a property of the workbook:
-the one given to the `Book` (`--locale`, `locale=`), else the default of its format. For an ODS that
-is the language and country of its default cell style (a LibreOffice writes there its regional
-setting, so the file records the locale of the machine that calculated it); an XLSX states none, so it is
-the locale of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none, and in
-WebAssembly). **Probed against LibreOffice 26.8:** the system locale is read from `LC_ALL`, then `LC_CTYPE`,
-then `LANG` (`LC_MESSAGES`, `LC_NUMERIC`, `LC_TIME`, `LC_MONETARY` and `LANGUAGE` change only its
-interface; `C` and `POSIX` give `en-US`; an unknown `xx_YY` gives `en-US`). An ODS whose default cell
-style says `es-CO`, opened under an `en-US` regional setting, converts numbers to text as `en-US` (`55.43%`);
-only `TEXT` follows the language of the number format of its own cell (a data style with
-`number:language`/`number:country`). Taking the language of the file as the default locale of an ODS is a
-decision of the maintainer that differs from that (proposal in `docs/approved-differences.md`).
+The language is not an input to evaluation, and the locale of a calculation is the one of the
+**system**, for an XLSX and an ODS alike.
+
+**The model, probed against LibreOffice 26.8** (the same cells in an XLSX and in an ODS, each recalculated
+under an `en-US` and under an `es-CO` regional setting, with the language of the default cell style,
+of the data style and of the `[$-C0A]` tag of the format switched):
+
+| Component | Where it comes from | What uses it |
+| --------- | ------------------- | ------------ |
+| **System** (the regional setting of the machine) | `LC_ALL`, then `LC_CTYPE`, then `LANG` on Linux (`LC_MESSAGES`, `LC_NUMERIC`, `LC_TIME`, `LC_MONETARY` and `LANGUAGE` change only the interface; `C`, `POSIX` and an unknown `xx_YY` give `en-US`) | the conversion of a number to text (`1234.5&""`, `0.5543*100&"%"`), `VALUE` and every text read as a number or a date, the text of booleans, `TEXT` and the display of a cell whose format names no language, the order of text. A file does not store it |
+| **Format of the cell** | `[$-C0A]` in the number format of an XLSX; `number:language`/`number:country` of the data style of an ODS | `TEXT` in a formula cell with that format (`TEXT(1234.5,"#,##0.00")` is `1.234,50` there and `1,234.50` in the cell next to it, under an `en-US` system) and the display of that cell (`[$-C0A]#,##0.00` shows `1.234,50`; `[$-407]mmmm` shows `März`). Not the conversion in a `&`, not `VALUE` |
+| The language of the default cell style (`fo:language`, `fo:country`) and `dc:language` | the ODS | **nothing**: a document with an `es-CO` default style, under an `en-US` regional setting, gave `55.43%`, `Err:502` for `VALUE("1.234,5")` and `1,234.50` for `TEXT`. A LibreOffice writes its regional setting there when it saves, which is why the file looks like it carries it |
+
+What SheetRS implements: the **system** component (`Book` locale, the configuration, then the system's; see
+below) for a calculation and a display, in both formats, and the **format of the cell** for the display of an
+XLSX cell whose format has a language tag (`format_number_shown`). Not yet: `TEXT` in a formula cell
+that takes the language of the format of that cell (the engine has no formats of cells when it calculates),
+and the language of the data style of an ODS, which the reader does not keep in `number_format`; both are
+reported, not approved. The compiler reports the language of the default cell style as a diagnostic
+when it differs from the locale in use.
+
+Which locale is in use is a property of the workbook, the first of: the `locale` of a call or of the
+build configuration, the one given to the `Book` (`--locale`, `locale=`), the configuration file, and the
+system's, read when it is needed.
 
 ### Locale support
 

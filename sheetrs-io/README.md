@@ -16,9 +16,9 @@ println!("{} {:?}", book.format().extension(), book.date_system()?);
 The locale is a property of the `Book`: `Book::with_locale` gives it (a `locale::LocaleTag`, which parses
 from `"es-CO"`), and every tool that takes the book follows it (`TEXT` and the conversion of a number to
 text when a workbook is calculated, the `display` of a query). Without it the book has the locale its
-format gives (`Book::default_locale`): an ODS says it, an XLSX takes the one of the system
-(`locale::system`: `LC_ALL`, `LC_CTYPE` or `LANG`, as `LibreOffice` reads them on Linux), and `en-US` is
-what there is when none is stated and in WebAssembly. With the feature `config`, `locale::from_config`
+system gives (`Book::default_locale`, `locale::system`: `LC_ALL`, `LC_CTYPE` or `LANG`, as `LibreOffice`
+reads them on Linux), for an XLSX and an ODS alike; `en-US` is what there is when the system has none and in
+WebAssembly. With the feature `config`, `locale::from_config`
 reads the `locale` of `[global]` in a `sheetrs.toml`.
 
 The API is experimental: names and shapes may change.

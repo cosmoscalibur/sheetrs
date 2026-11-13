@@ -170,9 +170,9 @@ not one): the separators and names that give a text to a number and read a numbe
 `calculate` and the recalculation that follows an edit (`TEXT("#.##0,00")`, a number joined to a text with
 `&`: `55,43%` and not `55.43%`), `range` and `find` (`display`, the dates a search reads) and the
 `inspect`; the `Book` that `save` returns keeps it, and `book.locale` says it (`None` when it was not
-given). Without it the workbook has the locale of its format: an ODS says it (the language and country of
-its default cell style), an XLSX takes the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`, as LibreOffice
-reads them on Linux; `en-US` when there is none). The `locale` of a single call (`evaluate(formula,
+given). Without it the workbook, an XLSX or an ODS, has the locale of the system (`LC_ALL`, `LC_CTYPE` or
+`LANG`, as LibreOffice reads them on Linux, when it is needed; `en-US` when there is none); the language an
+ODS stores in its default cell style is not read, as in LibreOffice. The `locale` of a single call (`evaluate(formula,
 locale=...)`) wins over it. The engine has `en-US`, `en-GB`, `es-ES`, `es-CO`, `es-MX` and `de-DE`; the
 others are an error when the engine needs them (see the `sheetrs-compiler` README).
 

@@ -350,8 +350,8 @@ impl PyBook {
     /// `locale` is the locale of the workbook (a tag such as `"es-CO"`): the regional settings that give
     /// a text to a number (`TEXT`, the conversion of a number to text, `display`) and read a number from
     /// a text, in `calculate`, in the recalculation that follows an edit and in the queries. Without
-    /// it the workbook has the locale of its format: an ODS says it, an XLSX takes the one of the
-    /// system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none). The `locale` of a single
+    /// it the workbook, an XLSX or an ODS, has the locale of the system (`LC_ALL`, `LC_CTYPE` or
+    /// `LANG`, read when it is needed; `en-US` when there is none). The `locale` of a single
     /// call (`evaluate`) wins over it.
     ///
     /// Raises `FileNotFoundError` for a path that is not a file, `FormatError` for a workbook

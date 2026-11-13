@@ -88,24 +88,12 @@ fn check(file: &str, book: &Book, options: &Options, spanish: bool) {
 }
 
 #[test]
-fn an_xlsx_calculates_with_the_locale_given_to_the_book() {
-    let file = "semantics_es-CO.xlsx";
-    check(file, &book(file, Some("es-CO")), &Options::default(), true);
-    check(file, &book(file, Some("en-US")), &Options::default(), false);
-}
-
-#[test]
-fn an_ods_calculates_with_the_locale_of_the_file() {
-    // The ODS was saved by a `LibreOffice` with the `es-CO` regional setting, which writes it as the
-    // language of the default cell style.
-    let file = "semantics_es-CO.ods";
-    check(file, &book(file, None), &Options::default(), true);
-}
-
-#[test]
-fn the_locale_given_to_the_book_wins_over_the_one_of_the_file() {
-    let file = "semantics_es-CO.ods";
-    check(file, &book(file, Some("en-US")), &Options::default(), false);
+fn an_xlsx_and_an_ods_calculate_with_the_locale_given_to_the_book() {
+    for file in ["semantics_es-CO.xlsx", "semantics_es-CO.ods"] {
+        check(file, &book(file, Some("es-CO")), &Options::default(), true);
+        // Explicit en-US, whatever the system has: see `sheetc_takes_the_locale_of_the_system`.
+        check(file, &book(file, Some("en-US")), &Options::default(), false);
+    }
 }
 
 #[test]
@@ -149,8 +137,9 @@ fn a_locale_the_engine_does_not_have_is_an_error_that_names_it() {
 }
 
 /// `sheetc calculate` of `Numbers!C11` of `locale_es-CO` (`=TEXT(1234.5,"#,##0.00")`), made by a
-/// `LibreOffice` with the `es-CO` regional setting, in an environment with no locale.
-fn sheetc(file: &str, flags: &[&str]) -> String {
+/// `LibreOffice` with the `es-CO` regional setting, in a child process whose environment has the
+/// variables of `env` and no other locale.
+fn sheetc(file: &str, flags: &[&str], env: &[(&str, &str)]) -> String {
     use std::io::Write;
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../sheetrs-io/tests/assets")
@@ -163,6 +152,7 @@ fn sheetc(file: &str, flags: &[&str]) -> String {
         .arg(path)
         .args(["--request", "-"])
         .args(flags)
+        .envs(env.iter().copied())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -189,15 +179,53 @@ fn sheetc(file: &str, flags: &[&str]) -> String {
 
 #[test]
 fn sheetc_calculates_with_the_locale_of_the_workbook_and_the_flag_wins() {
-    // An ODS says it; an XLSX has the system's, and this environment has none.
-    assert_eq!(sheetc("locale_es-CO.ods", &[]), "1.234,50");
-    assert_eq!(sheetc("locale_es-CO.xlsx", &[]), "1,234.50");
-    assert_eq!(
-        sheetc("locale_es-CO.xlsx", &["--locale", "es-CO"]),
-        "1.234,50"
-    );
-    assert_eq!(
-        sheetc("locale_es-CO.ods", &["--locale", "en-US"]),
-        "1,234.50"
-    );
+    for file in ["locale_es-CO.xlsx", "locale_es-CO.ods"] {
+        // Nothing given and no locale in the environment: en-US. The language an ODS stores in its
+        // default cell style (es-CO here) is not read, as `LibreOffice` does not.
+        assert_eq!(sheetc(file, &[], &[]), "1,234.50", "{file}");
+        assert_eq!(
+            sheetc(file, &["--locale", "es-CO"], &[]),
+            "1.234,50",
+            "{file}"
+        );
+    }
+}
+
+#[test]
+fn sheetc_takes_the_locale_of_the_system_when_nothing_else_is_given() {
+    for file in ["locale_es-CO.xlsx", "locale_es-CO.ods"] {
+        // `LC_ALL`, then `LC_CTYPE`, then `LANG`, as `LibreOffice` reads them.
+        assert_eq!(
+            sheetc(file, &[], &[("LANG", "es_CO.UTF-8")]),
+            "1.234,50",
+            "{file}"
+        );
+        assert_eq!(
+            sheetc(file, &[], &[("LC_CTYPE", "es_CO.UTF-8")]),
+            "1.234,50",
+            "{file}"
+        );
+        assert_eq!(
+            sheetc(
+                file,
+                &[],
+                &[("LC_ALL", "es_CO.UTF-8"), ("LANG", "de_DE.UTF-8")]
+            ),
+            "1.234,50",
+            "{file}"
+        );
+        assert_eq!(
+            sheetc(file, &[], &[("LC_ALL", "C"), ("LANG", "es_CO.UTF-8")]),
+            "1,234.50",
+            "{file}"
+        );
+        // What is stated wins over the system, which does not change the result.
+        for env in [("LANG", "es_CO.UTF-8"), ("LC_ALL", "de_DE.UTF-8")] {
+            assert_eq!(
+                sheetc(file, &["--locale", "en-US"], &[env]),
+                "1,234.50",
+                "{file}"
+            );
+        }
+    }
 }

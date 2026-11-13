@@ -144,7 +144,7 @@ The input of the suite and its shared kernel: the format-agnostic workbook model
 
 - **`Book`** (`book.rs`, the one interface of the suite): a workbook that is a reference: where it
   comes from (a file, or the bytes of one), its `Format` (read from the content, never from the
-  extension or an argument), its locale (`with_locale`, `locale`, `default_locale`: the tools that give
+  extension or an argument), its locale (`with_locale`, `locale`, `default_locale`, the system's: the tools that give
   a text to a number follow it, see *The locale of a `Book`* in `docs/coding-patterns.md`) and, with the
   feature `write`, the operations pending on it. It reads nothing
   until a tool does, so it is cheap to make and to clone, and it is not a model of the workbook (that is

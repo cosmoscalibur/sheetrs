@@ -937,14 +937,38 @@ pub fn format_number(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> Option
     format_with(x, fmt, loc, sys, dec, grp, false)
 }
 
+/// The locale a format code names with a language tag (`[$-C0A]`): `LibreOffice` writes a
+/// cell with such a format with the separators and the names of that language, not of the system's.
+fn code_language(fmt: &str) -> Option<Locale> {
+    let mut rest = fmt;
+    while let Some(at) = rest.find("[$") {
+        let tail = &rest[at + 2..];
+        let end = tail.find(']')?;
+        let inner = &tail[..end];
+        // `[$EUR-407]` names a currency, and its language is not the one of the cell (`LibreOffice`
+        // shows `EUR 10.00` for it under `en-US`).
+        if let Some(lang) = inner.strip_prefix('-')
+            && let Some(row) = u16::from_str_radix(lang, 16)
+                .ok()
+                .and_then(Locale::row_by_lcid)
+        {
+            return Some(Locale::from_row(row));
+        }
+        rest = &tail[end..];
+    }
+    None
+}
+
 /// The text a cell shows (`display`) for a format code that a file stores: the code is written in
 /// English notation (`#,##0.00`, `0.0%`) whatever the locale, as an XLSX and an ODS keep it, and the
-/// number is written with the separators and the names of `loc`; where `TEXT` reads its code in the
-/// notation of the locale ([`format_number`]). A date outside the range that `LibreOffice` writes is
-/// `#FMT`, as it shows it, where `TEXT` does not imitate it.
+/// number is written with the separators and the names of `loc`, or of the language the code names
+/// (`[$-C0A]`: the language of the format of the cell wins over the system's, in `LibreOffice`); where
+/// `TEXT` reads its code in the notation of the locale ([`format_number`]). A date outside the range
+/// that `LibreOffice` writes is `#FMT`, as it shows it, where `TEXT` does not imitate it.
 #[must_use]
 pub fn format_number_shown(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> Option<String> {
-    format_with(x, fmt, loc, sys, '.', ',', true)
+    let named = code_language(fmt);
+    format_with(x, fmt, named.as_ref().unwrap_or(loc), sys, '.', ',', true)
 }
 
 /// [`format_number`] for a code the engine writes itself, always in English
@@ -1072,6 +1096,23 @@ mod tests {
 
     fn shown(x: f64, fmt: &str) -> String {
         format_number_shown(x, fmt, &Locale::en_us(), DateSystem::Null1899).unwrap()
+    }
+
+    /// `LibreOffice` 26.8 under an `en-US` regional setting, for an XLSX cell with the format
+    /// `[$-C0A]#,##0.00` (Spanish): `1.234,50`; with the plain code, `1,234.50`. The language of the
+    /// format of the cell is the second component of the locale, next to the system's.
+    #[test]
+    fn the_language_of_a_cell_format_wins_over_the_locale_of_the_system() {
+        assert_eq!(shown(1234.5, "[$-C0A]#,##0.00"), "1.234,50");
+        assert_eq!(shown(1234.5, "[$-C0A]0.00"), "1234,50");
+        assert_eq!(shown(1234.5, "#,##0.00"), "1,234.50");
+        assert_eq!(shown(45367.0, "[$-C0A]mmmm"), "marzo");
+        assert_eq!(shown(45367.0, "[$-407]mmmm"), "März");
+        let es = Locale::es_es();
+        assert_eq!(
+            format_number_shown(1234.5, "[$-409]#,##0.00", &es, DateSystem::Null1899).unwrap(),
+            "1,234.50"
+        );
     }
 
     /// What `LibreOffice` 26.8 writes (`scripts` of the oracle: `dates.xlsx`/`dates.ods` and the probes of

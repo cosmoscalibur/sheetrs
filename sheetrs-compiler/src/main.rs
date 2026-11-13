@@ -66,9 +66,9 @@ BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
                        a workbook without a settings sheet: it compiles and
                        calculates as it is, inputs included. Replaces the sheet
   --locale TAG         regional settings, any BCP-47 tag; fixed at build time.
-                       Default: the locale of the workbook (an ODS says it; an
-                       XLSX takes the system's; `en` for `evaluate`). More in
-                       the [locale] table of the file.
+                       Default: the locale of the system (`LC_ALL`, `LC_CTYPE`,
+                       `LANG`; `en` for `evaluate`). More in the [locale]
+                       table of the file.
   --enable-features L  compatibility features on, comma separated (all are
                        off by default). LONGTEXT joins
                        the pieces of `_xlfn._LONGTEXT(a,b,...)` (a text literal

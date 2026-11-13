@@ -41,18 +41,51 @@ def test_the_locale_is_given_with_the_bytes_and_streams_too(tmp_path):
         assert values(sheetrs.Book(source, locale="es_CO")) == [es for _, es, _ in CASES]
 
 
-def test_an_ods_calculates_with_the_locale_of_the_file():
-    # Saved by a LibreOffice with the es-CO regional setting, which writes it in the default cell style.
-    book = sheetrs.Book(ORACLES / "semantics_es-CO.ods")
-    assert book.locale is None
-    labels = [row[0] for row in book.range("Calc!B1:B1500")["Calc!B1:B1500"].values]
+def test_an_ods_calculates_with_the_locale_given_to_the_book():
+    labels = [row[0] for row in sheetrs.Book(ORACLES / "semantics_es-CO.ods").range("Calc!B1:B1500")["Calc!B1:B1500"].values]
     for formula, es, en in CASES:
-        row = labels.index(formula) + 1
-        asked = f"Calc!A{row}"
-        assert sheetrs.Book(ORACLES / "semantics_es-CO.ods").calculate(ranges=asked).value_ranges().to_dict() == {asked: [[es]]}
-        # What is given to the book wins over what the file says.
-        other = sheetrs.Book(ORACLES / "semantics_es-CO.ods", locale="en-US")
-        assert other.calculate(ranges=asked).value_ranges().to_dict() == {asked: [[en]]}
+        asked = f"Calc!A{labels.index(formula) + 1}"
+        for locale, want in (("es-CO", es), ("en-US", en)):
+            book = sheetrs.Book(ORACLES / "semantics_es-CO.ods", locale=locale)
+            assert book.calculate(ranges=asked).value_ranges().to_dict() == {asked: [[want]]}
+
+
+def run_python(code, env):
+    """A child process whose environment has the locale variables of `env` and no others."""
+    import os
+    import subprocess
+    import sys
+
+    clean = {k: v for k, v in os.environ.items() if k not in ("LC_ALL", "LC_CTYPE", "LANG")}
+    # Python itself sets `LC_CTYPE=C.UTF-8` in its environment when the locale it is given is not
+    # installed on the machine (PEP 538), which would hide `LANG`: the tests ask it not to.
+    clean["PYTHONCOERCECLOCALE"] = "0"
+    out = subprocess.run([sys.executable, "-c", code], env={**clean, **env}, capture_output=True, text=True, check=True)
+    return out.stdout.strip()
+
+
+SYSTEM = """
+import sys, sheetrs
+path, locale = sys.argv[1], sys.argv[2] or None
+book = sheetrs.Book(path, locale=locale).calculate(ranges="S!A1")
+print(book.value_ranges().to_dict()["S!A1"][0][0])
+"""
+
+
+def test_the_system_locale_is_the_default_and_the_given_one_wins(tmp_path):
+    path = workbook(tmp_path)
+    code = SYSTEM.replace("sys.argv[1], sys.argv[2]", repr(str(path)) + ", ''")
+    given = SYSTEM.replace("sys.argv[1], sys.argv[2]", repr(str(path)) + ", 'en-US'")
+    es = CASES[0][1]
+    en = CASES[0][2]
+    # Nothing given: the variables of the system, as LibreOffice reads them, for an XLSX...
+    assert run_python(code, {"LANG": "es_CO.UTF-8"}) == es
+    assert run_python(code, {"LC_ALL": "es_CO.UTF-8", "LANG": "de_DE.UTF-8"}) == es
+    assert run_python(code, {}) == en
+    assert run_python(code, {"LC_ALL": "C", "LANG": "es_CO.UTF-8"}) == en
+    # ...and what is given is not changed by them.
+    assert run_python(given, {"LANG": "es_CO.UTF-8"}) == en
+    assert run_python(given, {"LC_ALL": "es_CO.UTF-8"}) == en
 
 
 def test_the_locale_is_normalized_and_none_when_not_given(tmp_path):

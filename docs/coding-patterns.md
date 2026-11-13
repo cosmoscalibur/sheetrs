@@ -321,11 +321,14 @@ a query and the dates a search reads. The first of these that is set decides, an
    `sheetc.toml`, which is item 1.) An invalid value fails when the
    configuration is read (the shape of the tag) or when it is first used (a locale the engine's table
    lacks), before any work;
-4. the default of the format (`Book::default_locale`): an ODS says it (the language and country of the
-   default cell style), an XLSX takes the locale of the system (`LC_ALL`, `LC_CTYPE`, then `LANG`, the
-   ones `LibreOffice` reads on Linux; `C` and `POSIX` ask for none), and `en-US` when there is none and
-   in WebAssembly. A default that the engine's table lacks is skipped (it is not an error, as it is not
-   one for `LibreOffice`, which falls back to `en-US`), and a locale that was asked for is an error.
+4. the locale of the system (`Book::default_locale`, `locale::system`), for an XLSX and an ODS alike:
+   `LC_ALL`, `LC_CTYPE`, then `LANG`, the ones `LibreOffice` reads on Linux (`C` and `POSIX` ask for none),
+   read when it is needed, and `en-US` when there is none and in WebAssembly. The language an ODS stores in
+   its default cell style is not read: `LibreOffice` does not calculate with it. A system locale that the
+   engine's table lacks is `en-US` (it is not an error, as it is not one for `LibreOffice`), and a locale
+   that was asked for is an error. **Tests** never depend on the system: `.cargo/config.toml` pins
+   `LC_ALL` for `cargo test`, `conftest.py` does for pytest, and a test of the system's locale sets
+   the variables in a child process.
 
 `sheetrs_compiler::locale::resolve` is the one place that applies the order for the engine. The
 adapters (`sheetrs-py`, `sheetrs-wasm`, the command lines) only convert the argument.

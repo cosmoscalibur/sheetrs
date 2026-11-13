@@ -385,11 +385,11 @@ cannot change it (`--locale` on an executable is an error). The locale is a prop
 (`sheetrs_io::Book::with_locale`, `Book(..., locale=...)` in Python, `new Book(bytes, locale)` in
 WebAssembly, `--locale` here), and a build takes the first of these that is set: the `--locale` flag or the
 `tag` of `[locale]` (or the `locale` option of a call in the bindings), the locale given to the workbook,
-the default of its format: the language and country of an ODS (its default cell style, which is what
-a LibreOffice writes from its regional setting) and, for an XLSX, which states none, the locale of
-the system (`LC_ALL`, `LC_CTYPE`, then `LANG`, as LibreOffice reads them on Linux; `en-US` when there is
-none). A default that the table lacks is skipped with a diagnostic; a locale asked for that it lacks is
-an error. `sheetc evaluate` has no workbook: `en` unless `--locale` says another. Six locales are
+the locale of the system, for an XLSX and an ODS alike (`LC_ALL`, `LC_CTYPE`, then `LANG`, as LibreOffice
+reads them on Linux, at the time of the build; `en-US` when there is none), so a program built from the
+same workbook with the same configuration is the same on every machine only when the configuration
+states the locale. A system locale that the table lacks is `en-US` with a diagnostic, as for LibreOffice; a
+locale asked for that it lacks is an error. `sheetc evaluate` has no workbook: `en` unless `--locale` says another. Six locales are
 supported: `en-US`, `en-GB`, `es-ES`, `es-CO`, `es-MX` and `de-DE` (`en`, `es` and `de` mean the first of
 each), the ones the engine reproduces row by row against LibreOffice (`de-DE` but for the keywords of a
 format code, see FIDELITY.md); their data is generated from LibreOffice
@@ -399,11 +399,8 @@ the table lacks from what it states (the user's responsibility). A locale that i
 nor stated stops the build. Dates written as text, `TEXT`, `DOLLAR`,
 number text and text ordering follow the locale (see
 [docs/FIDELITY.md](docs/FIDELITY.md#locale-support) for what is checked against LibreOffice and
-what differs). An ODS says its language, and that is its locale by default; note that a LibreOffice that
-opens an ODS ignores the language of the default cell style for the conversion of a number to text and
-reads it from its own regional setting (only the language of the number format of a cell decides
-`TEXT`): a proposal to record that difference is in
-[docs/approved-differences.md](../docs/approved-differences.md).
+what differs). The language an ODS stores in its default cell style is informational: LibreOffice calculates with
+the regional setting of the machine (see *Locale* in FIDELITY.md for the two components of its locale).
 
 The `[locale]` keys are the application-wide regional settings that Excel and
 LibreOffice let a user change outside any document (separators, two-digit-year

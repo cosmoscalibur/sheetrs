@@ -132,8 +132,8 @@ pub struct Args {
     pub scope: Vec<String>,
 
     /// Locale of the recalculation that an edit leaves to do (`TEXT`, the conversion of a number to
-    /// text): a tag such as `es-CO`. Default: the `locale` of `--config`, else the one of the workbook
-    /// (an ODS says it; an XLSX takes the system's, `en-US` when it has none)
+    /// text): a tag such as `es-CO`. Default: the `locale` of `--config`, else the one of the system
+    /// (`LC_ALL`, `LC_CTYPE`, then `LANG`; `en-US` when it has none), for an XLSX and an ODS alike
     #[arg(long, value_name = "TAG")]
     pub locale: Option<String>,
 

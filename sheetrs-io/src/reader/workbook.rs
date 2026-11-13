@@ -140,7 +140,7 @@ pub struct DocumentSettings {
     /// `settings.xml`); `Some(false)` is the manual mode.
     pub auto_calculate: Option<bool>,
     /// Document language and country as a BCP 47 tag, e.g. `en-US` (ODS: the
-    /// default cell style in `styles.xml`).
+    /// default cell style in `styles.xml`). Informational: it is not the locale of a calculation.
     pub locale: Option<String>,
 }
 

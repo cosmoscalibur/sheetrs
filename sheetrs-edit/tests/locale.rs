@@ -76,8 +76,7 @@ fn text_at(path: &Path, row: u32) -> String {
 
 #[test]
 fn a_calculate_step_uses_the_locale_of_the_book() {
-    // The XLSX takes the one given to the book, and the ODS says it in the file; a book given
-    // another one has that one in both.
+    // The locale given to the book, in an XLSX and in an ODS alike.
     for extension in EXTENSIONS {
         for (given, spanish) in [(Some("es-CO"), true), (Some("en-US"), false)] {
             for (formula, es, en) in CASES {
@@ -98,22 +97,6 @@ fn a_calculate_step_uses_the_locale_of_the_book() {
             }
         }
     }
-    // An ODS with no locale given has the one of the file: es-CO.
-    let (formula, es, _) = CASES[0];
-    let asked = format!("Calc!A{}", row_of("ods", formula) + 1);
-    let mut ods = book("ods", None);
-    ods.calculate(Calculation {
-        ranges: Some(vec![asked]),
-        answer: true,
-        ..Calculation::default()
-    });
-    let answer = ods
-        .write_to(std::io::sink())
-        .unwrap()
-        .value_ranges
-        .unwrap()
-        .to_json();
-    assert_eq!(answer["valueRanges"][0]["values"][0][0], es);
 }
 
 #[test]

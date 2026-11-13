@@ -33,7 +33,7 @@ sheetrs query -i book.xlsx --list-names                                    # the
 | `--include-formulas` | A search by value also looks at the results of formulas (off by default: it reaches what was typed, not what was computed) |
 | `--formatted` | Search the text each cell **shows** (`1,234.50`, `15 Mar 2023`, `$10.00`) instead of its input line (`SearchFormatted` of LibreOffice) |
 | `--filtered` | Also search the rows an autofilter has hidden (`SearchFiltered` of LibreOffice); off by default, as there |
-| `--locale TAG` | Locale of `display` and of the dates a search sees (a tag such as `es-CO`). Default: the `locale` of `--config`, else the one of the workbook: an ODS says it (the language and country of its default cell style), an XLSX takes the system's (`LC_ALL`, `LC_CTYPE` or `LANG`), `en-US` when there is none |
+| `--locale TAG` | Locale of `display` and of the dates a search sees (a tag such as `es-CO`). Default: the `locale` of `--config`, else the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none), for an XLSX and an ODS alike. A cell whose format names a language (`[$-C0A]#,##0.00`) is shown in that language |
 | `-c, --config FILE` | A TOML file whose `locale` in `[global]` is the default of `--locale` (default: `sheetrs.toml` of the current directory, when there is one). A `locale` that is not a tag is an error |
 | `--dates` | Give the numbers that are dates or times as dates (see below); without it, the serial the file stores |
 | `--query JSON\|@file` | The whole query as JSON; replaces the options above |

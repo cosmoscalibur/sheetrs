@@ -39,48 +39,90 @@ fn shown(out: &Output) -> String {
 }
 
 #[test]
-fn the_locale_flag_gives_the_locale_of_an_xlsx_and_an_ods_says_its_own() {
+fn the_locale_flag_gives_the_locale_of_an_xlsx_and_of_an_ods() {
     let folder = tempfile::tempdir().unwrap();
-    // An XLSX states none and the environment has none: `en-US`.
-    assert_eq!(
-        shown(&query("locale_es-CO.xlsx", &[], folder.path())),
-        "1,234.50"
-    );
-    assert_eq!(
-        shown(&query(
-            "locale_es-CO.xlsx",
-            &["--locale", "es-CO"],
-            folder.path()
-        )),
-        "1.234,50"
-    );
-    // An ODS says it: the file wins over the missing system, the flag over the file.
-    assert_eq!(
-        shown(&query("locale_es-CO.ods", &[], folder.path())),
-        "1.234,50"
-    );
-    assert_eq!(
-        shown(&query(
-            "locale_es-CO.ods",
-            &["--locale", "en-US"],
-            folder.path()
-        )),
-        "1,234.50"
-    );
+    for file in ["locale_es-CO.xlsx", "locale_es-CO.ods"] {
+        // Nothing given and no locale in the environment: `en-US`. The language an ODS stores in its
+        // default cell style (es-CO here) is not read, as `LibreOffice` does not.
+        assert_eq!(
+            shown(&query(file, &[], folder.path())),
+            "1,234.50",
+            "{file}"
+        );
+        assert_eq!(
+            shown(&query(file, &["--locale", "es-CO"], folder.path())),
+            "1.234,50",
+            "{file}"
+        );
+    }
 }
 
-#[test]
-fn the_locale_of_the_system_is_the_default_of_an_xlsx() {
+/// `sheetrs query` of `Numbers!C1` with `env` in the environment (and no other locale variable).
+fn query_in(file: &str, args: &[&str], env: &[(&str, &str)]) -> String {
     let folder = tempfile::tempdir().unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_sheetrs"));
     command
         .current_dir(folder.path())
         .env_remove("LC_ALL")
-        .env("LANG", "es_CO.UTF-8")
+        .env_remove("LC_CTYPE")
+        .env_remove("LANG")
+        .envs(env.iter().copied())
         .args(["query", "-i"])
-        .arg(asset("locale_es-CO.xlsx"))
-        .args(["--range", "Numbers!C1", "-p", "display"]);
-    assert_eq!(shown(&command.output().unwrap()), "1.234,50");
+        .arg(asset(file))
+        .args(["--range", "Numbers!C1", "-p", "display"])
+        .args(args);
+    shown(&command.output().unwrap())
+}
+
+#[test]
+fn the_locale_of_the_system_is_the_default_of_an_xlsx_and_of_an_ods() {
+    for file in ["locale_es-CO.xlsx", "locale_es-CO.ods"] {
+        for env in [
+            [("LANG", "es_CO.UTF-8")],
+            [("LC_CTYPE", "es_CO.UTF-8")],
+            [("LC_ALL", "es_CO.UTF-8")],
+        ] {
+            assert_eq!(query_in(file, &[], &env), "1.234,50", "{file} {env:?}");
+        }
+        // `LC_ALL` first, and `C` asks for none.
+        assert_eq!(
+            query_in(file, &[], &[("LC_ALL", "C"), ("LANG", "es_CO.UTF-8")]),
+            "1,234.50"
+        );
+    }
+}
+
+#[test]
+fn a_locale_that_is_stated_is_not_changed_by_the_system() {
+    for file in ["locale_es-CO.xlsx", "locale_es-CO.ods"] {
+        for env in [[("LANG", "es_CO.UTF-8")], [("LC_ALL", "de_DE.UTF-8")]] {
+            assert_eq!(
+                query_in(file, &["--locale", "en-US"], &env),
+                "1,234.50",
+                "{file} {env:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_configuration_wins_over_the_system() {
+    let folder = tempfile::tempdir().unwrap();
+    std::fs::write(
+        folder.path().join("sheetrs.toml"),
+        "[global]\nlocale = \"es-CO\"\n",
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_sheetrs"))
+        .current_dir(folder.path())
+        .env_remove("LC_ALL")
+        .env("LANG", "de_DE.UTF-8")
+        .args(["query", "-i"])
+        .arg(asset("locale_es-CO.ods"))
+        .args(["--range", "Numbers!C1", "-p", "display"])
+        .output()
+        .unwrap();
+    assert_eq!(shown(&out), "1.234,50");
 }
 
 #[test]
@@ -182,8 +224,8 @@ fn the_edit_takes_the_locale_flag_and_the_configuration() {
         let given = edit(file, &["--locale", "en-US"], folder.path());
         assert_eq!(given, "1,234.50", "{file} --locale en-US");
     }
-    // The ODS says es-CO and needs no flag; an XLSX with no flag has the (missing) system's.
-    assert_eq!(edit("locale_es-CO.ods", &[], folder.path()), "1.234,50");
+    // With no flag the system's, which this environment lacks: en-US, in both formats.
+    assert_eq!(edit("locale_es-CO.ods", &[], folder.path()), "1,234.50");
     assert_eq!(edit("locale_es-CO.xlsx", &[], folder.path()), "1,234.50");
     // The configuration is the default below the flag.
     let config = folder.path().join("sheetrs.toml");

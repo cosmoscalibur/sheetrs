@@ -107,8 +107,8 @@ pub struct Args {
     pub filtered: bool,
 
     /// Locale of `display` and of the dates a search sees (a tag such as `es-CO`). Default: the
-    /// `locale` of `--config`, else the one of the workbook (an ODS says it; an XLSX takes the
-    /// system's, `en-US` when it has none)
+    /// `locale` of `--config`, else the one of the system (`LC_ALL`, `LC_CTYPE`, then `LANG`;
+    /// `en-US` when it has none), for an XLSX and an ODS alike
     #[arg(long, value_name = "TAG")]
     pub locale: Option<String>,
 

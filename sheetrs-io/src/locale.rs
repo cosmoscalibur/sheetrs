@@ -9,10 +9,10 @@
 //! 2. the configuration file (`locale` in the `[global]` table of `sheetrs.toml`, see
 //!    [`from_config`]; the tag of the `[locale]` table of `sheetc.toml`): the command lines read it and
 //!    give it to the book as the one above, so a flag wins over it;
-//! 3. the default of the format ([`Book::default_locale`](crate::Book::default_locale)): an ODS says
-//!    it (the language and country of the default cell style), an XLSX does not, so it is the
-//!    locale of the system ([`system`]); `en-US` when the system has none, and in WebAssembly, which has
-//!    no system.
+//! 3. the default, for an XLSX and an ODS alike ([`Book::default_locale`](crate::Book::default_locale)):
+//!    the locale of the system ([`system`]), read when it is needed, as `LibreOffice` does; `en-US`
+//!    when the system has none, and in WebAssembly, which has no system. The language an ODS stores
+//!    in its default cell style does not change what `LibreOffice` calculates, so it is not read.
 //!
 //! This module only knows what a tag is. What a tag means (the separators, the names) is the table of
 //! the engine, which each tool consults when it needs the locale.

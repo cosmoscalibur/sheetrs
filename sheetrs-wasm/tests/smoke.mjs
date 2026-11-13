@@ -410,16 +410,18 @@ check("calculate (the clock is Date.now(): NOW() is not the epoch)", () => {
   assert.equal(fixed, 45000.5);
 });
 // -- the locale of a Book: `new Book(bytes, locale)` --------------------------------------------------
-// `semantics_es-CO` was made by a LibreOffice running with the es-CO regional setting; the ODS says it
-// in its default cell style, the XLSX does not (and WebAssembly has no system to take it from).
+// `semantics_es-CO` was made by a LibreOffice running with the es-CO regional setting. Neither format
+// carries it (the language an ODS stores in its default cell style is not read, as LibreOffice does not),
+// and WebAssembly has no system to take it from: without a locale a Book is en-US.
 const esCO = join(root, "sheetrs-compiler/tests/assets/semantics_es-CO");
 const formulaLocale = 'TEXT(350*49799,"[$$-en-US]#.###.##0")';
 for (const [extension, locale, expected] of [
   ["xlsx", "es-CO", "$17.429.650"],
   ["xlsx", "en-US", "$17429650.000.000"],
   ["xlsx", undefined, "$17429650.000.000"],
-  ["ods", undefined, "$17.429.650"],
+  ["ods", "es-CO", "$17.429.650"],
   ["ods", "en-US", "$17429650.000.000"],
+  ["ods", undefined, "$17429650.000.000"],
 ]) {
   check(`locale of the Book: ${extension}, ${locale ?? "the default of the format"}`, () => {
     const data = read(`${esCO}.${extension}`);
