@@ -38,12 +38,22 @@ impl Book {
     /// A workbook from its bytes (a `Uint8Array`). The format (XLSX, XLSM or ODS) is the one of the
     /// content. It is read once to count what it holds; see the properties.
     ///
+    /// `locale` is the locale of the workbook (a tag such as `"es-CO"`): the regional settings that
+    /// give a text to a number (`TEXT`, the conversion of a number to text, `display`) and read a
+    /// number from a text, in `calculate`, in the recalculation that follows an edit and in the
+    /// queries. Without it the workbook has the locale of its format: an ODS says it, and an XLSX has
+    /// `en-US` (WebAssembly has no system to take it from). The `locale` of a single call wins over it.
+    ///
     /// # Errors
     ///
-    /// A message when the bytes are not an XLSX, XLSM or ODS workbook.
+    /// A message when the bytes are not an XLSX, XLSM or ODS workbook, or `locale` is not a locale tag.
     #[wasm_bindgen(constructor)]
-    pub fn new(data: &[u8]) -> Result<Book, JsValue> {
-        let inner = Inner::from_bytes(data).map_err(|e| failure("Reader error", e))?;
+    pub fn new(data: &[u8], locale: Option<String>) -> Result<Book, JsValue> {
+        let mut inner = Inner::from_bytes(data).map_err(|e| failure("Reader error", e))?;
+        if let Some(tag) = locale {
+            let tag = tag.parse().map_err(|e| failure("Locale error", e))?;
+            inner = inner.with_locale(tag);
+        }
         Ok(Book {
             inner,
             on_diagnostic: None,
@@ -57,6 +67,13 @@ impl Book {
     #[wasm_bindgen(getter)]
     pub fn format(&self) -> String {
         self.inner.format().extension().to_string()
+    }
+
+    /// The locale given to the workbook (`new Book(bytes, locale)`), normalized as `"es-CO"`;
+    /// `undefined` when it was not given one and has the one of its format.
+    #[wasm_bindgen(getter)]
+    pub fn locale(&self) -> Option<String> {
+        self.inner.locale().map(ToString::to_string)
     }
 
     /// The statistics of the workbook, as `sheetrs stats` reports them. It reads the workbook, in a

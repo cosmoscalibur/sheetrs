@@ -409,6 +409,31 @@ check("calculate (the clock is Date.now(): NOW() is not the epoch)", () => {
   const fixed = wasm.evaluateFormula("=NOW()", undefined, { now: 45000.5 });
   assert.equal(fixed, 45000.5);
 });
+// -- the locale of a Book: `new Book(bytes, locale)` --------------------------------------------------
+// `semantics_es-CO` was made by a LibreOffice running with the es-CO regional setting; the ODS says it
+// in its default cell style, the XLSX does not (and WebAssembly has no system to take it from).
+const esCO = join(root, "sheetrs-compiler/tests/assets/semantics_es-CO");
+const formulaLocale = 'TEXT(350*49799,"[$$-en-US]#.###.##0")';
+for (const [extension, locale, expected] of [
+  ["xlsx", "es-CO", "$17.429.650"],
+  ["xlsx", "en-US", "$17429650.000.000"],
+  ["xlsx", undefined, "$17429650.000.000"],
+  ["ods", undefined, "$17.429.650"],
+  ["ods", "en-US", "$17429650.000.000"],
+]) {
+  check(`locale of the Book: ${extension}, ${locale ?? "the default of the format"}`, () => {
+    const data = read(`${esCO}.${extension}`);
+    const labels = new wasm.Book(data).range("Calc!B1:B1500")[0].values.flat();
+    const asked = `Calc!A${labels.indexOf(formulaLocale) + 1}`;
+    const calculating = new wasm.Book(data, locale);
+    assert.equal(calculating.locale, locale);
+    calculating.calculate({ ranges: [asked] });
+    assert.deepEqual(calculating.valueRanges().toJSON().valueRanges[0].values, [[expected]]);
+  });
+}
+check("locale of the Book: a text that is not a locale tag is refused", () => {
+  assert.throws(() => new wasm.Book(read(`${esCO}.xlsx`), "not a locale"), /not a locale tag/);
+});
 check("evaluate", () => {
   for (const formula of ["=SUM(1,2,3)", '=TEXT(0.25,"0%")', "=1/0"]) {
     const cli = text(run("sheetc", ["evaluate", formula])).trim();

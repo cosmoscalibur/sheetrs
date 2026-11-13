@@ -32,8 +32,14 @@ workbook.
 
 ## `Book`
 
-`new Book(bytes)` detects the format from the content and reads nothing else, and a `Book` keeps nothing of
-the workbook but its bytes and the operations to make to it. What it says about the workbook is the
+`new Book(bytes, locale?)` detects the format from the content and reads nothing else, and a `Book` keeps nothing of
+the workbook but its bytes and the operations to make to it. `locale` (a tag such as `"es-CO"`; an error when
+it is not one) is the locale of the workbook: the regional settings that give a text to a number and read a
+number from a text, in `calculate`, in the recalculation that follows an edit and in `query`, `range` and
+`find` (`display`); `book.locale` says it. Without it the workbook has the locale of its format: an ODS
+says it (the language and country of its default cell style), and an XLSX has `en-US`, because WebAssembly has
+no system to take it from. The `locale` of a single call (`evaluateFormula`, the `locale` of a query, the
+options of `inspect` and `compile`) wins over it. What it says about the workbook is the
 statistics, which are a tool like the others: `stats()` reads it.
 
 | | Member | Gives |
@@ -51,7 +57,7 @@ statistics, which are a tool like the others: `stats()` reads it.
 | | `valueRanges()` | `ValueRanges` of the calculation (`toJSON()` is the answer of the protocol, `{valueRanges: [{range, name, values}]}`, `toObject()` is `{name: rows}`); runs the operations in memory and writes nothing |
 | | `report` | `Report` of the last `save` or `valueRanges`: `replaced`, `written`, `skipped` (`{sheet, cell, reason}`), `diagnostics`, `valueRanges`; `undefined` before |
 | **compile** | `compile(options?)` | `{module, cells, reachable, formulas, folded, kept, cycles, diagnostics}`: `module` is a `Uint8Array`, the WebAssembly module of the workbook (`sheetc build --target wasm`) |
-| **settings** | `dates`, `onDiagnostic` | `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
+| **settings** | `locale` (read only), `dates`, `onDiagnostic` | `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
 
 Free functions: `lintRules()` (array of `{id, name, category, is_default}`), `evaluateFormula(formula,
 locale, options)` (the value of one formula, `sheetc evaluate`) and `initPanicHook()`.

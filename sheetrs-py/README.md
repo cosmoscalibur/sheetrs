@@ -10,6 +10,7 @@ import io
 import sheetrs
 
 book = sheetrs.Book("book.xlsx")          # a path, bytes or a binary stream (io.BytesIO)
+book = sheetrs.Book("book.xlsx", locale="es-CO")   # the regional settings of the workbook (below)
 
 # Opening reads nothing. The statistics are a tool, like the others: `stats()` reads the workbook.
 stats = book.stats()
@@ -58,7 +59,7 @@ objects, and what a query does not ask for is neither read nor kept.
 | **Operations** | `delete_sheets`, `delete_names`, `formula_to_value`, `delete_rows`, `delete_columns`, `hide_rows`, `show_rows`, `hide_columns`, `show_columns`, `hide_sheets`, `show_sheets`, `replace`, `calculate(inputs=None, ranges=None, major="rows")` | Accumulate on the same `Book`, which each one returns, so the calls chain. Each takes the **array of its targets** (one `str`, or any iterable of `str`; an empty one does nothing; anything else in it is a `TypeError`). |
 | **The cut** | `save(dest=None, *, json=None)`, `to_bytes()`, `value_ranges()`, `explain()` | `save` plans all the operations in the fewest passes over the file and runs them, and writes the workbook: `save(dest)` a new one to a path or a binary stream, `save()` over the original (the file, or the stream the `Book` was made from); `json=` a path or stream for the value ranges of `calculate`. `to_bytes()` runs them in memory and returns the workbook as `bytes`. `value_ranges()` runs them in memory and gives the value ranges. `explain` says what it will do. |
 | **Queries** | `range`, `find`, `lint`, `inspect`, `stats` | Read what they need; `stats()` reads the workbook in a single streaming pass and gives a `Stats` (the eleven `total_*`, `sheets[name]` with `name`, `used_range` (the rectangle of the used cells, `"D10:GV5439"`, not anchored at `A1`; `None` for a sheet with no cells), `state` and the counts, `has_macros`, `defined_names`). They raise `PendingOperationsError` with operations pending. |
-| **Free functions** | `evaluate(formula)`, `lint_rules()` | The value of one formula; the rules of the linter. |
+| **Free functions** | `evaluate(formula, locale=...)`, `lint_rules()` | The value of one formula (`en` unless `locale` says another); the rules of the linter. |
 
 Names are those of the LibreOffice Calc interface (*Delete Sheet*, *Manage Names ▸ Delete*,
 *Formula to Value*, *Calculate*, *Find & Replace*).
@@ -161,6 +162,19 @@ returns, or run the query before adding the operations if it does not depend on 
 - **`inspect()`** is `sheetc inspect`: an `Inspection` with the sheets, the date system, the cells and
   formulas, the circular groups, the functions the workbook uses (`FunctionUse` with `name`, `calls` and
   `implemented`) and the ones the engine lacks. It compiles the workbook in memory and calculates nothing.
+
+### The locale of a workbook
+
+`Book(source, locale="es-CO")` gives the workbook its regional settings (a tag; `ValueError` when it is
+not one): the separators and names that give a text to a number and read a number from a text. They reach
+`calculate` and the recalculation that follows an edit (`TEXT("#.##0,00")`, a number joined to a text with
+`&`: `55,43%` and not `55.43%`), `range` and `find` (`display`, the dates a search reads) and the
+`inspect`; the `Book` that `save` returns keeps it, and `book.locale` says it (`None` when it was not
+given). Without it the workbook has the locale of its format: an ODS says it (the language and country of
+its default cell style), an XLSX takes the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`, as LibreOffice
+reads them on Linux; `en-US` when there is none). The `locale` of a single call (`evaluate(formula,
+locale=...)`) wins over it. The engine has `en-US`, `en-GB`, `es-ES`, `es-CO`, `es-MX` and `de-DE`; the
+others are an error when the engine needs them (see the `sheetrs-compiler` README).
 
 ### Diagnostics
 

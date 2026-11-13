@@ -347,17 +347,40 @@ impl PyBook {
     /// modified except by `save()` without a destination, which also rewrites a stream the `Book` was
     /// made from.
     ///
-    /// Raises `FileNotFoundError` for a path that is not a file and `FormatError` for a workbook
-    /// that is not an XLSX, XLSM or ODS one.
+    /// `locale` is the locale of the workbook (a tag such as `"es-CO"`): the regional settings that give
+    /// a text to a number (`TEXT`, the conversion of a number to text, `display`) and read a number from
+    /// a text, in `calculate`, in the recalculation that follows an edit and in the queries. Without
+    /// it the workbook has the locale of its format: an ODS says it, an XLSX takes the one of the
+    /// system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none). The `locale` of a single
+    /// call (`evaluate`) wins over it.
+    ///
+    /// Raises `FileNotFoundError` for a path that is not a file, `FormatError` for a workbook
+    /// that is not an XLSX, XLSM or ODS one and `ValueError` for a `locale` that is not a locale tag.
     #[new]
-    fn new(source: &Bound<'_, PyAny>) -> PyResult<Self> {
+    #[pyo3(signature = (source, *, locale=None))]
+    fn new(source: &Bound<'_, PyAny>, locale: Option<&str>) -> PyResult<Self> {
+        let locale = locale
+            .map(|tag| {
+                tag.parse::<sheetrs_io::locale::LocaleTag>()
+                    .map_err(|error| PyValueError::new_err(error.to_string()))
+            })
+            .transpose()?;
+        let with_locale = |book: Book| match &locale {
+            Some(tag) => book.with_locale(tag.clone()),
+            None => book,
+        };
         let mut book = if let Ok(bytes) = source.cast::<PyBytes>() {
-            Self::from_source(Book::from_bytes(bytes.as_bytes().to_vec()).map_err(format_error)?)
+            Self::from_source(with_locale(
+                Book::from_bytes(bytes.as_bytes().to_vec()).map_err(format_error)?,
+            ))
         } else if let Ok(bytes) = source.cast::<PyByteArray>() {
-            Self::from_source(Book::from_bytes(bytes.to_vec()).map_err(format_error)?)
+            Self::from_source(with_locale(
+                Book::from_bytes(bytes.to_vec()).map_err(format_error)?,
+            ))
         } else if source.hasattr("read")? {
             let data = read_stream(source)?;
-            let mut book = Self::from_source(Book::from_bytes(data).map_err(format_error)?);
+            let mut book =
+                Self::from_source(with_locale(Book::from_bytes(data).map_err(format_error)?));
             book.stream = Some(source.clone().unbind());
             book
         } else {
@@ -373,10 +396,17 @@ impl PyBook {
                 sheetrs_io::Error::Open { .. } => to_py_err(error),
                 other => format_error(other),
             })?;
-            Self::from_source(opened)
+            Self::from_source(with_locale(opened))
         };
         book.report = None;
         Ok(book)
+    }
+
+    /// The locale given to the workbook (`Book(..., locale=...)`), normalized as `"es-CO"`; `None` when
+    /// it was not given one and has the one of its format.
+    #[getter]
+    fn locale(&self) -> Option<String> {
+        self.source.locale().map(ToString::to_string)
     }
 
     /// `"xlsx"`, `"xlsm"` or `"ods"`.
@@ -754,13 +784,19 @@ impl PyBook {
                 .bytes
                 .ok_or_else(|| raise("Error", "the workbook was not written"))?;
             write_to_target(py, stream, &bytes)?;
-            let mut saved = Self::from_source(Book::from_bytes(bytes).map_err(to_py_err)?);
+            let mut saved = Self::from_source(
+                Book::from_bytes(bytes)
+                    .map_err(to_py_err)?
+                    .with_locale_of(&source),
+            );
             saved.stream = Some(stream.clone().unbind());
             saved.report = Some(report);
             Bound::new(py, saved)?.into_any()
         } else if let Some(path) = path_dest {
-            let source = Book::from_file(path).map_err(to_py_err)?;
-            let mut saved = Self::from_source(source);
+            let saved_source = Book::from_file(path)
+                .map_err(to_py_err)?
+                .with_locale_of(&source);
+            let mut saved = Self::from_source(saved_source);
             saved.report = Some(report);
             Bound::new(py, saved)?.into_any()
         } else {
@@ -769,7 +805,9 @@ impl PyBook {
                     .bytes
                     .ok_or_else(|| raise("Error", "the workbook was not written"))?;
                 rewrite_stream(py, stream, &bytes)?;
-                slf.source = Book::from_bytes(bytes).map_err(to_py_err)?;
+                slf.source = Book::from_bytes(bytes)
+                    .map_err(to_py_err)?
+                    .with_locale_of(&source);
             }
             slf.steps.clear();
             slf.report = Some(report);
