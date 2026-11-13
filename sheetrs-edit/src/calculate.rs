@@ -6,8 +6,7 @@
 
 use serde_json::{Map, Value as Json};
 use sheetrs_compiler::memory::{BookCompile, Options};
-use sheetrs_engine::addr::CellRef;
-use sheetrs_engine::ir::{CellRun, Mode};
+use sheetrs_engine::ir::Mode;
 use sheetrs_io::Book;
 use sheetrs_io::write::Calculation;
 use sheetrs_protocol::ValueRanges;
@@ -122,117 +121,10 @@ pub(crate) fn calculate(
     Ok(Calculated { workbook, answer })
 }
 
-/// The most cells the recalculation declares as the outputs of a pruned program.
-const DECLARED_LIMIT: usize = 20_000;
-
-/// The cells as the declaration of a program that has no inputs and has them as its outputs, in
-/// runs of one row (`'Sheet'!B3:D3`).
-fn declared_outputs(cells: &[(String, u32, u32)]) -> Option<String> {
-    let mut sorted: Vec<&(String, u32, u32)> = cells.iter().collect();
-    sorted.sort_unstable();
-    sorted.dedup();
-    let mut ranges: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < sorted.len() {
-        let (sheet, row, first) = sorted[i];
-        let mut last = *first;
-        let mut j = i + 1;
-        while j < sorted.len()
-            && &sorted[j].0 == sheet
-            && sorted[j].1 == *row
-            && sorted[j].2 == last + 1
-        {
-            last += 1;
-            j += 1;
-        }
-        let quoted = format!("'{}'", sheet.replace('\'', "''"));
-        let start = sheetrs_formula::addr::a1(*row, *first);
-        ranges.push(if last == *first {
-            format!("{quoted}!{start}")
-        } else {
-            format!("{quoted}!{start}:{}", sheetrs_formula::addr::a1(*row, last))
-        });
-        i = j;
-    }
-    let outputs: Vec<Json> = ranges.into_iter().map(Json::String).collect();
-    let mut declared = Map::new();
-    declared.insert("inputs".into(), Json::Array(Vec::new()));
-    declared.insert("outputs".into(), Json::Array(outputs));
-    serde_json::to_string(&Json::Object(declared)).ok()
-}
-
 /// Every formula of the workbook calculated again, as it is: the bytes of the workbook with fresh
-/// cached results, in its own format. With `cells` (`(sheet, row, column)`, 0-based, in the
-/// workbook), only those formulas are written with their new result and the others keep the one
-/// the file stores. The error is why that cannot be done.
-pub(crate) fn recalculate(
-    source: &Book,
-    cells: Option<&[(String, u32, u32)]>,
-) -> Result<Vec<u8>, String> {
-    let Some(cells) = cells else {
-        return calculate(source, &Calculation::default())
-            .map(|calculated| calculated.workbook)
-            .map_err(|error| error.to_string());
-    };
-    // The cells to calculate are the outputs of the program, declared: the compiler keeps only
-    // what they need, so the engine does not evaluate the formulas that nothing stale reads. A long
-    // list of cells is not worth declaring (the declaration is as heavy as the pass it saves): the
-    // whole workbook is calculated and only those cells are written.
-    if cells.len() <= DECLARED_LIMIT
-        && let Some(declared) = declared_outputs(cells)
-    {
-        let options = Options {
-            declarations: Some(declared),
-            ..Options::default()
-        };
-        if let Ok((program, _)) = source.compile(&options, Mode::Embedded) {
-            let mut workbook = Vec::new();
-            sheetrs_answer::fill_template_to(
-                source,
-                &program,
-                None,
-                &Json::Null,
-                &options.overrides(),
-                &mut workbook,
-            )
-            .map_err(|e| e.to_string())?;
-            return Ok(workbook);
-        }
-    }
-    let options = Options::default();
-    let (mut program, _) = source
-        .compile(&options, Mode::Recalculate)
-        .map_err(|e| e.to_string())?;
-    let mut at: Vec<CellRef> = cells
-        .iter()
-        .filter_map(|(sheet, row, column)| {
-            let index = program.sheets.iter().position(|name| name == sheet)?;
-            Some(CellRef::new(u16::try_from(index).ok()?, *row, *column))
-        })
-        .collect();
-    at.sort_unstable();
-    at.dedup();
-    // The formulas the compiler lists are the ones the engine writes: a cell asked for that is not
-    // one of them (a formula the compiler could not take) keeps what the file holds.
-    let listed = |cell: &CellRef| {
-        let runs = &program.formula_cells;
-        let i =
-            runs.partition_point(|r| (r.sheet, r.row, r.last) < (cell.sheet, cell.row, cell.col));
-        runs.get(i).is_some_and(|r| {
-            r.sheet == cell.sheet && r.row == cell.row && (r.first..=r.last).contains(&cell.col)
-        })
-    };
-    at.retain(listed);
-    program.formula_cells = CellRun::runs(at);
-    let mut workbook = Vec::new();
-    sheetrs_answer::fill_template_to(
-        source,
-        &program,
-        None,
-        &Json::Null,
-        &options.overrides(),
-        &mut workbook,
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(workbook)
+/// cached results, in its own format. The error is why that cannot be done.
+pub(crate) fn recalculate(source: &Book) -> Result<Vec<u8>, String> {
+    calculate(source, &Calculation::default())
+        .map(|calculated| calculated.workbook)
+        .map_err(|error| error.to_string())
 }

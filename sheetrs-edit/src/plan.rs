@@ -39,19 +39,18 @@
 //! recalculate when it is opened; an ODS with no cached result in its formulas).
 //!
 //! **The mark to recalculate is a consequence of the engine failing, never a decision taken
-//! before.** What the operations leave stale is found from the formulas (see [`crate::stale_set`]):
-//! when the plan only deletes and converts, no pass is made when no formula is stale, the formulas
-//! whose value is `#REF!` by a deleted reference are given the error in a pass that runs no engine,
-//! and the engine calculates the rest, the stale formulas only written. In any other plan (text
-//! replaced, names deleted) the run ends with a pass that calculates every formula again with the
-//! engine; the workbook is written with the fresh results and no mark. Only when the engine
-//! cannot calculate the workbook (a function it does not have, a reference it does not read) is the
-//! workbook marked to be recalculated when it is opened (`fullCalcOnLoad` in an XLSX, the cached
-//! results dropped in an ODS) and the [`Report`] says why ([`RECALC_NOT_SUPPORTED`](crate::RECALC_NOT_SUPPORTED)): the
-//! spreadsheet program that opens it does the recalculation then. Nothing assigns or clears the mark
-//! beforehand, and there is no way to ask for it or to avoid it. A run that only converts formulas to
-//! the values they have changes no other result and has nothing to calculate. A workbook that came
-//! marked and was calculated by the engine loses the mark, since its results are fresh.
+//! before.** A plan that leaves results stale (rows, columns, sheets or names deleted, text replaced)
+//! ends with a pass that calculates every formula again with the engine: the workbook is written
+//! with the fresh results and no mark. The result a file cached is not kept as a goal (see
+//! `docs/approved-differences.md`): what a cell holds is the value its formula gives now. Only when
+//! the engine cannot calculate the workbook (a function it does not have, a reference it does not
+//! read) is the workbook marked to be recalculated when it is opened (`fullCalcOnLoad` in an XLSX,
+//! the cached results dropped in an ODS) and the [`Report`] says why
+//! ([`RECALC_NOT_SUPPORTED`](crate::RECALC_NOT_SUPPORTED)): the spreadsheet program that opens it
+//! does the recalculation then. Nothing assigns or clears the mark beforehand, and there is no way to
+//! ask for it or to avoid it. A run that only converts formulas to the values they have changes no
+//! other result and has nothing to calculate. A workbook that came marked and was calculated by the
+//! engine loses the mark, since its results are fresh.
 //!
 //! The plan is a description, not a model of the workbook: it holds the operations (a few bands
 //! and names), and each pass streams the file once, rewriting each cell as it goes by. The memory
@@ -61,14 +60,13 @@ use crate::calculate::CalculateError;
 use crate::diagnostics::not_calculated;
 use crate::error::{Context, Error, Result};
 use crate::replace::Report;
-use crate::stale_set::{self, Changes, Verdict};
 use sheetrs_io::Book;
 use sheetrs_io::reader::Format;
 use sheetrs_io::write::{
-    self as writer, Bands, CachedResult, Calculation, CellEdit, ColumnRange, Operation, RowRange,
-    SheetEdits, ValueScope, ValueTarget, WorkbookModifications,
+    self as writer, Bands, Calculation, ColumnRange, Operation, RowRange, ValueScope, ValueTarget,
+    WorkbookModifications,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// What a run is asked besides its operations (nothing, but in the tests: the engine of the
@@ -85,15 +83,9 @@ pub(crate) struct Engine {
 pub(crate) type StandIn = fn(&Book) -> std::result::Result<Vec<u8>, String>;
 
 impl Engine {
-    /// Every formula of `workbook` calculated again, by the engine, or the formulas at `cells`
-    /// only (`(sheet, row, column)`, 0-based) when they are given.
+    /// Every formula of `workbook` calculated again, by the engine.
     #[cfg_attr(not(test), allow(clippy::unused_self))] // the tests give the engine a stand-in
-    fn recalculate(
-        &self,
-        workbook: &Book,
-        operation: &str,
-        cells: Option<&[(String, u32, u32)]>,
-    ) -> Result<Vec<u8>> {
+    fn recalculate(&self, workbook: &Book, operation: &str) -> Result<Vec<u8>> {
         #[cfg(test)]
         if let Some(recalculate) = self.recalculate {
             return recalculate(workbook).map_err(|reason| Error::Recalculation {
@@ -101,7 +93,7 @@ impl Engine {
                 reason,
             });
         }
-        crate::calculate::recalculate(workbook, cells).map_err(|reason| Error::Recalculation {
+        crate::calculate::recalculate(workbook).map_err(|reason| Error::Recalculation {
             operation: operation.to_string(),
             reason,
         })
@@ -311,46 +303,24 @@ pub fn explain(operations: &[Operation]) -> String {
     out
 }
 
-/// As [`explain`], for the operations `book` holds, with what the analysis of its formulas decides
-/// (see [`crate::stale_set`]): the workbook is read, so the plan says which formulas are given
-/// `#REF!` and how many the engine calculates. A workbook that cannot be read is explained as
-/// [`explain`] does.
+/// As [`explain`], for the operations `book` holds: the workbook is looked at to tell whether its
+/// results are stale when the run starts, which puts a calculation before a conversion. A workbook
+/// that cannot be read is explained as [`explain`] does.
 pub(crate) fn explain_book(book: &Book) -> String {
     use std::fmt::Write as _;
     let operations = book.operations();
-    let Ok(planned) = passes_for(book, operations) else {
+    let Ok(passes) = passes_for(book, operations) else {
         return explain(operations);
     };
     let mut out = String::new();
-    for (i, pass) in planned.passes.iter().enumerate() {
-        let _ = writeln!(out, "pass {} of {}:", i + 1, planned.passes.len());
+    for (i, pass) in passes.iter().enumerate() {
+        let _ = writeln!(out, "pass {} of {}:", i + 1, passes.len());
         for operation in pass {
-            let count: usize = planned.assigned.values().map(BTreeMap::len).sum();
-            match (&planned.recalculate_cells, operation) {
-                (None, Operation::Recalculate) if planned.assigns() => {
-                    let _ = writeln!(
-                        out,
-                        "  give #REF! to the {count} formulas that read a deleted cell"
-                    );
-                }
-                (Some(_), Operation::Recalculate) => {
-                    let _ = writeln!(
-                        out,
-                        "  calculate with the engine the {} formulas whose result cannot be told, and give #REF! to the {} that read a deleted cell (the engine reads only what they need)",
-                        planned.engine_cells, planned.decided_cells
-                    );
-                }
-                _ => {
-                    let _ = writeln!(out, "  {operation}");
-                }
-            }
+            let _ = writeln!(out, "  {operation}");
         }
     }
-    // The engine is asked for when a calculation is, or when the last pass is its recalculation and
-    // not the writing of the error `#REF!` into the formulas that read a deleted cell.
     if has_calculate(operations)
-        || (!planned.assigns()
-            && planned.passes.last().map(Vec::as_slice) == Some(&[Operation::Recalculate]))
+        || passes.last().map(Vec::as_slice) == Some(&[Operation::Recalculate])
     {
         out.push_str(
             "if the engine cannot calculate the workbook: warn, and mark it to be recalculated when opened\n",
@@ -381,8 +351,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
     {
         return Err(writer::Error::OutputIsInput(output.to_path_buf()).into());
     }
-    let planned = passes_for(book, operations)?;
-    let passes = &planned.passes;
+    let passes = passes_for(book, operations)?;
     let extension = book.format().extension();
     let folder = (passes.len() > 1 || book.path().is_none())
         .then(tempfile::tempdir)
@@ -411,15 +380,6 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
             _ => output.to_path_buf(),
         };
         let said = || format!("Failed in pass {} of {}", i + 1, passes.len());
-        if last && planned.assigns() {
-            let mods = WorkbookModifications {
-                replacements: planned.assigned.clone(),
-                ..WorkbookModifications::default()
-            };
-            writer::modify_workbook(&current, &target, &mods).with_context(said)?;
-            current = target;
-            continue;
-        }
         let calculated = match pass.as_slice() {
             [Operation::Recalculate] => Some(if last && failed {
                 None
@@ -428,7 +388,6 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                     &Book::from_file(&current)?,
                     last,
                     &first_conversion(operations),
-                    planned.recalculate_cells.as_deref(),
                     engine,
                     &mut report,
                 )
@@ -490,8 +449,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
     if operations.is_empty() {
         return Err(Error::EmptyPlan);
     }
-    let planned = passes_for(book, operations)?;
-    let passes = &planned.passes;
+    let passes = passes_for(book, operations)?;
     let format = book.format();
     let mut current = if let Some(path) = book.path() {
         Book::from_bytes(std::fs::read(path).context("Cannot read the workbook to edit")?)?
@@ -511,19 +469,6 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
     for (i, pass) in passes.iter().enumerate() {
         let last = i + 1 == passes.len();
         let said = || format!("Failed in pass {} of {}", i + 1, passes.len());
-        if last && planned.assigns() {
-            let mods = WorkbookModifications {
-                replacements: planned.assigned.clone(),
-                ..WorkbookModifications::default()
-            };
-            let data = std::sync::Arc::clone(
-                current
-                    .bytes()
-                    .expect("the workbook of a pass is in memory"),
-            );
-            result = writer::modify_workbook_bytes(format, &data, &mods).with_context(said)?;
-            continue;
-        }
         let calculated = match pass.as_slice() {
             [Operation::Recalculate] => Some(if last && failed {
                 None
@@ -532,7 +477,6 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
                     &current,
                     last,
                     &first_conversion(operations),
-                    planned.recalculate_cells.as_deref(),
                     engine,
                     &mut report,
                 )
@@ -595,11 +539,10 @@ fn recalculate_pass(
     workbook: &Book,
     last: bool,
     operation: &str,
-    cells: Option<&[(String, u32, u32)]>,
     engine: &Engine,
     report: &mut Report,
 ) -> Result<Option<Vec<u8>>> {
-    match engine.recalculate(workbook, operation, cells) {
+    match engine.recalculate(workbook, operation) {
         Ok(bytes) => Ok(Some(fresh(bytes, workbook.format())?)),
         Err(Error::Recalculation { reason, .. }) if last => {
             // The recalculation that ends a run is the planner's own; a conversion that asks for it names itself.
@@ -644,112 +587,12 @@ fn calculate_pass(
     }
 }
 
-/// What a run does: the passes over the file and what the analysis of the formulas decided about
-/// the results the deletions leave stale (see [`crate::stale_set`]).
-#[derive(Debug, Clone, Default)]
-pub(crate) struct Planned {
-    pub passes: Vec<Vec<Operation>>,
-    /// The formulas given `#REF!` by the last pass, by sheet, in the rows and columns of the
-    /// output of the deleting pass: their value follows from their own reference, so the engine has
-    /// nothing to say about them and the pass only writes the error. Empty when the last pass is
-    /// the engine's.
-    pub assigned: HashMap<String, SheetEdits>,
-    /// When the last pass calculates again, the formulas it calculates (`(sheet, row, column)`, in
-    /// the output); `None` is every formula of the workbook.
-    pub recalculate_cells: Option<Vec<(String, u32, u32)>>,
-    /// Of `recalculate_cells`, how many the analysis could not decide (the engine's own work) and
-    /// how many it knows are `#REF!` (written in the same pass, from a program that holds only
-    /// what the stale formulas read).
-    pub engine_cells: usize,
-    pub decided_cells: usize,
-}
-
-impl Planned {
-    /// Whether the last pass is the one that writes the error `#REF!` into the formulas that read a
-    /// deleted cell, with no engine.
-    fn assigns(&self) -> bool {
-        !self.assigned.is_empty() && self.recalculate_cells.is_none()
-    }
-}
-
-/// Whether the operations are conversions of formulas to values and deletions of rows, columns or
-/// sheets, with at least one deletion: what the analysis of the stale formulas can tell apart.
-fn only_deletions(operations: &[Operation]) -> bool {
-    operations.iter().all(|operation| {
-        matches!(
-            operation,
-            Operation::FormulaToValue(_)
-                | Operation::DeleteRows(_)
-                | Operation::DeleteColumns(_)
-                | Operation::DeleteSheets(_)
-        )
-    }) && operations.iter().any(|operation| {
-        matches!(
-            operation,
-            Operation::DeleteRows(_) | Operation::DeleteColumns(_) | Operation::DeleteSheets(_)
-        )
-    })
-}
-
-/// What the plan deletes and converts, for the analysis.
-fn changes_of(operations: &[Operation]) -> Changes {
-    let mut changes = Changes::default();
-    for operation in canonical(operations) {
-        match operation {
-            Operation::FormulaToValue(scopes) => changes.converted.extend(scopes),
-            Operation::DeleteRows(rows) => changes.rows.extend(rows),
-            Operation::DeleteColumns(columns) => changes.columns.extend(columns),
-            Operation::DeleteSheets(sheets) => changes.sheets.extend(sheets),
-            _ => {}
-        }
-    }
-    changes
-}
-
 /// The passes for a run on `book`: when the operations convert formulas to values, whether the
 /// workbook already holds stale results is looked at, and the results are calculated again before
-/// the conversion if so. When the operations only delete and convert, the formulas the deletions
-/// leave stale are found (see [`crate::stale_set`]): when none is, the run ends without a
-/// recalculation; the ones that follow from a deleted reference are given the error in the pass
-/// that deletes; and the engine calculates only the others.
-fn passes_for(book: &Book, operations: &[Operation]) -> Result<Planned> {
-    let eligible = only_deletions(operations);
-    let stale_start =
-        (reads_results(operations) || eligible) && crate::stale::input_is_stale(book)?;
-    let mut planned = Planned {
-        passes: passes_from(operations, stale_start),
-        ..Planned::default()
-    };
-    if !eligible
-        || stale_start
-        || planned.passes.last().map(Vec::as_slice) != Some(&[Operation::Recalculate])
-    {
-        return Ok(planned);
-    }
-    let Verdict::Known(known) = stale_set::analyze(book, &changes_of(operations)) else {
-        return Ok(planned);
-    };
-    if known.engine.is_empty() {
-        if known.assigned.is_empty() {
-            planned.passes.pop();
-        } else {
-            for (sheet, row, column) in known.assigned {
-                planned.assigned.entry(sheet).or_default().insert(
-                    (row, column),
-                    CellEdit::Cached(CachedResult::Error("#REF!".to_string())),
-                );
-            }
-        }
-    } else {
-        // The engine calculates the formulas that read what changed, the ones that are given the
-        // error among them: it gives it too, and the file is rewritten once.
-        planned.engine_cells = known.engine.len();
-        planned.decided_cells = known.assigned.len();
-        let mut cells = known.engine;
-        cells.extend(known.assigned);
-        planned.recalculate_cells = Some(cells);
-    }
-    Ok(planned)
+/// the conversion if so.
+fn passes_for(book: &Book, operations: &[Operation]) -> Result<Vec<Vec<Operation>>> {
+    let stale_start = reads_results(operations) && crate::stale::input_is_stale(book)?;
+    Ok(passes_from(operations, stale_start))
 }
 
 /// The first conversion of formulas to values, as text, for what is said about it.

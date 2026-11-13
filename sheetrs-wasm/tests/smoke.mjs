@@ -107,36 +107,31 @@ for (const file of [lintBook, lintBookOds]) {
 check("the format is the one of the bytes", () => {
   assert.throws(() => new wasm.Book(new Uint8Array([1, 2, 3])), /Reader error|not an XLSX/);
   for (const file of [lintBook, lintBookOds]) {
-    assert.ok(open(file).totalSheets > 0);
+    assert.ok(open(file).stats().toJSON().total_sheets > 0);
   }
   assert.equal(open(lintBook).format, "xlsx");
   assert.equal(open(lintBookOds).format, "ods");
 });
 check("stats", () => {
   const cli = JSON.parse(text(run("stats", ["-i", lintBook, "--format", "json"])));
-  const stats = open(lintBook).stats.toJSON();
+  const stats = open(lintBook).stats().toJSON();
   assert.equal(stats.total_file_size, 0);
   cli.total_file_size = 0;
   assert.deepEqual(stats, cli);
 });
 
-// The read at open: the shortcut properties.
-check("a Book knows what it holds when it is made", () => {
+// What a Book says about the workbook is what `stats()` says: a Book itself reads nothing.
+check("stats gives the totals, the sheets, the macros and the names", () => {
   const cli = JSON.parse(text(run("stats", ["-i", lintBook, "--format", "json"])));
-  const opened = open(lintBook);
-  assert.equal(opened.totalSheets, cli.total_sheets);
-  assert.equal(opened.totalUsedCells, cli.total_used_cells);
-  assert.equal(opened.totalFormulas, cli.total_formulas);
-  assert.equal(opened.totalNamedRanges, cli.total_named_ranges);
-  assert.deepEqual(opened.sheetNames, cli.sheets.map((sheet) => sheet.name));
-  const [first] = cli.sheets;
-  assert.equal(opened.sheets[first.name].name, first.name);
-  assert.equal(opened.sheets[first.name].usedCells, first.used_cells);
-  assert.equal(opened.sheets[first.name].state, "visible");
-  assert.equal(typeof opened.hasMacros, "boolean");
-  assert.equal(typeof opened.definedNames, "object");
-  assert.match(opened.dateSystem, /^(1899-12-30|1900-01-01|1904-01-01)$/);
-  assert.equal(open(join(root, "sheetrs-io/tests/assets/dates_1904.xlsx")).dateSystem, "1904-01-01");
+  const stats = open(lintBook).stats();
+  const json = stats.toJSON();
+  assert.equal(json.total_sheets, cli.total_sheets);
+  assert.equal(json.total_used_cells, cli.total_used_cells);
+  assert.equal(json.total_formulas, cli.total_formulas);
+  assert.equal(json.total_named_ranges, cli.total_named_ranges);
+  assert.deepEqual(json.sheets.map((sheet) => sheet.name), cli.sheets.map((sheet) => sheet.name));
+  assert.equal(typeof stats.hasMacros, "boolean");
+  assert.equal(typeof stats.definedNames, "object");
 });
 
 // -- query -----------------------------------------------------------------------------------
@@ -209,7 +204,7 @@ check("query (an ODS with another null date is an error that names it)", () => {
     () => run("query", ["-i", file, "--workbook"]),
     (error) => String(error.stderr).includes("1950-06-15"),
   );
-  assert.throws(() => open(file).dateSystem, (error) => String(error).includes("1950-06-15"));
+  assert.throws(() => open(file).stats(), (error) => String(error).includes("1950-06-15"));
 });
 
 // -- edit ------------------------------------------------------------------------------------

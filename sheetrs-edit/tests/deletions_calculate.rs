@@ -1,7 +1,7 @@
-//! What a deletion leaves stale is found from the formulas, not from the type of the operation: a
-//! formula whose result cannot have changed is left alone, one that reads a deleted cell is given
-//! `#REF!` with no engine, and the engine calculates the rest. The workbooks are made here, with the
-//! results they cache, so what is asserted is what the plan does with them.
+//! After a deletion the engine calculates every formula again, so what a cell holds is what its formula
+//! gives now (`#REF!` for a deleted reference, the new sum of a range that shrank), whatever the
+//! workbook cached. The workbooks are made here, with the results they cache, and what is asserted is
+//! the value each cell has in the output.
 
 use sheetrs_edit::BookEdit;
 use sheetrs_io::Book;
@@ -198,7 +198,7 @@ fn editor(path: &Path) -> Book {
 }
 
 #[test]
-fn deleting_a_sheet_that_nothing_reads_recalculates_nothing_and_keeps_every_result() {
+fn deleting_a_sheet_that_nothing_reads_calculates_every_formula_and_gives_the_same_results() {
     for extension in EXTENSIONS {
         let dir = tempfile::tempdir().unwrap();
         let input = workbook(dir.path(), extension, &reading_a_cell(extension));
@@ -206,8 +206,8 @@ fn deleting_a_sheet_that_nothing_reads_recalculates_nothing_and_keeps_every_resu
         let mut book = editor(&input);
         book.delete_sheets(["U"]);
         let plan = book.explain();
-        assert!(!plan.contains("recalculate"), "{extension}: {plan}");
-        assert!(plan.contains("pass 1 of 1"), "{extension}: {plan}");
+        assert!(plan.contains("pass 2 of 2"), "{extension}: {plan}");
+        assert!(plan.contains("recalculate"), "{extension}: {plan}");
         book.write(&output).unwrap();
         for (row, cached) in [(0, 20.0), (1, 40.0), (2, 31.0), (3, 10.0)] {
             assert!(
@@ -219,7 +219,7 @@ fn deleting_a_sheet_that_nothing_reads_recalculates_nothing_and_keeps_every_resu
 }
 
 #[test]
-fn converting_every_formula_and_deleting_rows_is_one_pass() {
+fn converting_every_formula_and_deleting_rows_keeps_the_values_the_workbook_had() {
     for extension in EXTENSIONS {
         let dir = tempfile::tempdir().unwrap();
         let input = workbook(dir.path(), extension, &reading_a_cell(extension));
@@ -227,9 +227,6 @@ fn converting_every_formula_and_deleting_rows_is_one_pass() {
         let mut book = editor(&input);
         book.delete_rows(["D!2".parse().unwrap()])
             .formula_to_value(["F".parse().unwrap()]);
-        let plan = book.explain();
-        assert!(plan.contains("pass 1 of 1"), "{extension}: {plan}");
-        assert!(!plan.contains("recalculate"), "{extension}: {plan}");
         book.write(&output).unwrap();
         // The values the workbook had, as the user saw them when asking.
         assert!((number(&output, "F", 0) - 20.0).abs() < 1e-9, "{extension}");
@@ -238,22 +235,13 @@ fn converting_every_formula_and_deleting_rows_is_one_pass() {
 }
 
 #[test]
-fn a_formula_that_reads_a_deleted_cell_is_given_the_reference_error_without_the_engine() {
+fn a_formula_that_reads_a_deleted_cell_is_given_the_reference_error() {
     for extension in EXTENSIONS {
         let dir = tempfile::tempdir().unwrap();
         let input = workbook(dir.path(), extension, &reading_a_cell(extension));
         let output = dir.path().join(format!("out.{extension}"));
         let mut book = editor(&input);
         book.delete_rows(["D!2".parse().unwrap()]);
-        let plan = book.explain();
-        assert!(
-            plan.contains("give #REF! to the 2 formulas that read a deleted cell"),
-            "{extension}: {plan}"
-        );
-        assert!(
-            !plan.contains("recalculate") && !plan.contains("mark it"),
-            "{extension}: {plan}"
-        );
         book.write(&output).unwrap();
         // The cell that is read and the formula that reads that formula.
         assert!(is_ref_error(&output, "F", 0), "{extension}");
@@ -280,18 +268,13 @@ fn reading_a_range(e: &str) -> Vec<(&'static str, Vec<Cell>)> {
 }
 
 #[test]
-fn a_range_that_shrinks_and_a_formula_that_traps_the_error_are_left_to_the_engine() {
+fn a_range_that_shrinks_and_a_formula_that_traps_the_error_give_the_new_results() {
     for extension in EXTENSIONS {
         let dir = tempfile::tempdir().unwrap();
         let input = workbook(dir.path(), extension, &reading_a_range(extension));
         let output = dir.path().join(format!("out.{extension}"));
         let mut book = editor(&input);
         book.delete_rows(["D!2".parse().unwrap()]);
-        let plan = book.explain();
-        assert!(
-            plan.contains("calculate with the engine the 2 formulas whose result cannot be told, and give #REF! to the 1 that read a deleted cell"),
-            "{extension}: {plan}"
-        );
         book.write(&output).unwrap();
         assert!(is_ref_error(&output, "F", 0), "{extension}");
         // The range is now the cells 10 and 30, and the formula that traps the error gives 0: the
@@ -302,7 +285,7 @@ fn a_range_that_shrinks_and_a_formula_that_traps_the_error_are_left_to_the_engin
 }
 
 /// A formula that mixes a deleted reference with a cell the plan leaves alone, one that reads it,
-/// and one that reads positions (which the analysis cannot tell).
+/// and one that reads positions.
 fn mixing_with_a_cell_that_is_left_alone(e: &str) -> Vec<(&'static str, Vec<Cell>)> {
     vec![
         ("D", vec![N(10.0), N(20.0), N(30.0)]),
@@ -318,8 +301,7 @@ fn mixing_with_a_cell_that_is_left_alone(e: &str) -> Vec<(&'static str, Vec<Cell
 }
 
 #[test]
-fn a_formula_that_mixes_a_deleted_reference_with_a_number_that_is_left_alone_is_given_the_error_and_the_engine_keeps_only_what_it_cannot_tell()
- {
+fn a_formula_that_mixes_a_deleted_reference_with_a_number_that_is_left_alone_is_given_the_error() {
     for extension in EXTENSIONS {
         let dir = tempfile::tempdir().unwrap();
         let input = workbook(
@@ -330,11 +312,6 @@ fn a_formula_that_mixes_a_deleted_reference_with_a_number_that_is_left_alone_is_
         let output = dir.path().join(format!("out.{extension}"));
         let mut book = editor(&input);
         book.delete_rows(["D!2".parse().unwrap()]);
-        let plan = book.explain();
-        assert!(
-            plan.contains("calculate with the engine the 1 formulas whose result cannot be told, and give #REF! to the 2 that read a deleted cell"),
-            "{extension}: {plan}"
-        );
         book.write(&output).unwrap();
         assert!(is_ref_error(&output, "F", 0), "{extension}");
         assert!(is_ref_error(&output, "F", 1), "{extension}");

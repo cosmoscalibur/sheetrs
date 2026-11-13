@@ -277,18 +277,19 @@ const TOOL_RUNNERS = {
     },
 
     stats() {
-        const book = new Book(currentFileData);
+        const stats = new Book(currentFileData).stats();
+        const json = stats.toJSON();
         if ($('stats-json').checked) {
-            showText(pretty(book.stats.toJSON()));
+            showText(pretty(json));
         } else {
-            const names = Object.keys(book.definedNames);
+            const names = Object.keys(stats.definedNames);
             showText(
                 `📊 Workbook Statistics\n${'━'.repeat(40)}\n\n` +
-                `📄 Total Sheets: ${book.totalSheets}\n\nSheet Names:\n` +
-                book.sheetNames.map((name, i) => `  ${i + 1}. ${name}\n`).join('') +
+                `📄 Total Sheets: ${json.total_sheets}\n\nSheet Names:\n` +
+                json.sheets.map((sheet, i) => `  ${i + 1}. ${sheet.name}\n`).join('') +
                 `\n🏷️  Named Ranges: ${names.length}\n` +
                 (names.length ? `\nNamed Range List:\n${names.map((name, i) => `  ${i + 1}. ${name}\n`).join('')}` : '') +
-                `\n🔧 Contains Macros: ${book.hasMacros ? 'Yes' : 'No'}\n`,
+                `\n🔧 Contains Macros: ${stats.hasMacros ? 'Yes' : 'No'}\n`,
             );
         }
     },

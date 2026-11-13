@@ -244,7 +244,7 @@ def test_a_date_system_that_is_none_of_the_three_is_an_error_that_names_the_date
     a `Book` reads nothing when it is made, so it is the first read that raises."""
     book = sheetrs.Book(io_asset("other_null_date.ods"))
     with pytest.raises(sheetrs.UnsupportedDateSystemError) as raised:
-        book.date_system
+        book.stats()
     message = str(raised.value)
     assert "1950-06-15" in message
     for supported in ("1899-12-30", "1900-01-01", "1904-01-01"):

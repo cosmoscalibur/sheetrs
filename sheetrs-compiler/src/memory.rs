@@ -231,40 +231,11 @@ impl BookCompile for Book {
 ///
 /// When the workbook cannot be read or compiled.
 fn build(source: &Book, options: &Options, mode: Mode) -> Result<(Program, Report)> {
-    let (program, report, ()) = build_keeping(source, options, mode, |_| ())?;
-    Ok((program, report))
-}
-
-/// [`build`], and what `keep` takes from the model before it is compiled: the caller that needs a
-/// fact the program does not hold (the cached value of a cell) gets it without reading the file again.
-fn build_keeping<T>(
-    source: &Book,
-    options: &Options,
-    mode: Mode,
-    keep: impl FnOnce(&Model) -> T,
-) -> Result<(Program, Report, T)> {
     let model = loader::load(source)?;
-    let kept = keep(&model);
     let spec = options.spec(&model, mode)?;
     let (mut program, report) = compile(&model, &spec)?;
     program.build.built_at = crate::compile::build_time()?;
-    Ok((program, report, kept))
-}
-
-/// [`BookCompile::compile`] that also hands `keep` the model the program is built from, before the
-/// compilation: what the program does not hold (the value a formula cached) is read from it, without
-/// reading the workbook a second time.
-///
-/// # Errors
-///
-/// When the workbook cannot be read or compiled.
-pub fn compile_keeping<T>(
-    source: &Book,
-    options: &Options,
-    mode: Mode,
-    keep: impl FnOnce(&Model) -> T,
-) -> Result<(Program, Report, T)> {
-    build_keeping(source, options, mode, keep)
+    Ok((program, report))
 }
 
 /// The two base modules of the WebAssembly target: the runtime with the engine (`values`), and the

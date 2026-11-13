@@ -110,12 +110,12 @@ def test_the_rules_and_what_a_configuration_enables(tmp_path):
 
 
 def test_stats_total_the_sheets_and_cells_and_the_size_of_a_file_but_not_of_bytes(lint_book):
-    stats = sheetrs.Book(lint_book).stats
+    stats = sheetrs.Book(lint_book).stats()
     sheets = list(stats.sheets)
     assert stats.total_sheets == len(sheets) >= 1
     assert stats.total_used_cells == sum(s.used_cells for s in sheets)
     assert stats.total_file_size == lint_book.stat().st_size
-    from_bytes = sheetrs.Book(lint_book.read_bytes()).stats
+    from_bytes = sheetrs.Book(lint_book.read_bytes()).stats()
     assert from_bytes.total_file_size == 0
     assert from_bytes.total_sheets == stats.total_sheets
 

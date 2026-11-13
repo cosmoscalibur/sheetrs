@@ -2,10 +2,10 @@
 //!
 //! The extension module is `sheetrs._sheetrs`; the `sheetrs` package re-exports it with the
 //! exceptions of `sheetrs/_errors.py`. The API is one object, `Book` (`book::PyBook`): a workbook (a
-//! path, bytes or a binary stream) that reads nothing when it is made (the first property that
-//! describes it reads it once, to count what it holds), whose
+//! path, bytes or a binary stream) that reads nothing when it is made and keeps nothing of the workbook,
+//! whose
 //! operations accumulate until `save`, the cut that plans and runs them, and whose queries (`range`,
-//! `find`, `lint`, `inspect`) read what they need; `calculate` is one of the operations, and `value_ranges()`
+//! `find`, `lint`, `inspect`, `stats`) read what they need; `calculate` is one of the operations, and `value_ranges()`
 //! or `save(json=…)` give its value ranges. The results are typed values (`results`: `Stats`, `Sheet`,
 //! `ValueRanges`, `Report`, `Diagnostic`, `Inspection`; `lint`: `LintReport`) that write themselves with
 //! `to_dict()` and `to_json()`. The logic is in the Rust crates (`sheetrs-io`, `sheetrs-query`,

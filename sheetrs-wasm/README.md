@@ -14,7 +14,7 @@ await init();            // loads the .wasm next to the module
 initPanicHook();
 
 const book = new Book(new Uint8Array(await file.arrayBuffer()));
-book.sheetNames;                                   // read once, when the Book is made
+book.stats().toJSON();                             // the statistics: the workbook is read here
 book.lint().toSarif(file.name);                    // SARIF 2.1.0 text
 book.range("Data!A1:C9", { properties: ["value", "formula"] });
 book.deleteRows("Data!3:10");                      // the operations accumulate...
@@ -32,18 +32,15 @@ workbook.
 
 ## `Book`
 
-`new Book(bytes)` detects the format from the content and reads nothing else. The first property that
-describes the workbook (below) **reads it once**, in a single streaming pass that counts what it holds (a
-cost proportional to the size of the workbook, paid then), and keeps only those numbers; a workbook that
-cannot be read throws there. Everything else is read when it is asked for.
+`new Book(bytes)` detects the format from the content and reads nothing else, and a `Book` keeps nothing of
+the workbook but its bytes and the operations to make to it. What it says about the workbook is the
+statistics, which are a tool like the others: `stats()` reads it.
 
 | | Member | Gives |
 | - | ------ | ----- |
-| **first read** | `format`, `dateSystem`, `hasMacros`, `sheetNames`, `definedNames` | `"xlsx"`, `"xlsm"` or `"ods"`; the date of serial 0 (`"1899-12-30"`, `"1900-01-01"` or `"1904-01-01"`; another is an error that names it); macros found, never run; the sheet names in order; `{name: refersTo}` |
-| | `sheets` | `book.sheets["Data"]`: `name`, `usedRange` (`"A1:C9"` or `null`), `state` (`visible`, `hidden`, `very_hidden`), `usedCells`, `formulas`, `errors`, `emptyCells`, `comments`, `charts`, `tables`, `xmlSize` |
-| | `stats` | `Stats`: `toJSON()` is `sheetrs stats --format json` (`total_file_size` is 0: bytes carry no size) |
-| | `totalSheets`, `totalNamedRanges`, `totalFileSize`, `totalUsedCells`, `totalFormulas`, `totalErrors`, `totalEmptyCells`, `totalComments`, `totalCharts`, `totalTables`, `totalXmlSize` | the eleven totals of the statistics |
-| **reads** | `lint(configToml?)` | `LintReport`: `count`, `records` (`{rule_id, rule_name, severity, message, scope, sheet, cell, row, col}`), `toText(file?)`, `toJSON()` (the document of `sheetrs lint --format json` as an object), `toJsonText(file?)` (the same, as text), `toSarif(file?)` (SARIF 2.1.0 text); `file` is the name the documents give the workbook |
+| | `format` | `"xlsx"`, `"xlsm"` or `"ods"`, from the content |
+| **reads** | `stats()` | `Stats`: `toJSON()` is `sheetrs stats --format json` (the totals and `sheets` with their `name`, `used_range`, `used_cells`, `formulas`...; `total_file_size` is 0: bytes carry no size), `hasMacros` (found, never run) and `definedNames` (`{name: refersTo}`). It reads the workbook in a single streaming pass each time it is called; a workbook that cannot be read throws |
+| | `lint(configToml?)` | `LintReport`: `count`, `records` (`{rule_id, rule_name, severity, message, scope, sheet, cell, row, col}`), `toText(file?)`, `toJSON()` (the document of `sheetrs lint --format json` as an object), `toJsonText(file?)` (the same, as text), `toSarif(file?)` (SARIF 2.1.0 text); `file` is the name the documents give the workbook |
 | | `query(query?)` | `{cells: [...]}`, as `sheetrs query` prints it |
 | | `range(ranges, options?)` | one block per range: `{range, values, formulas, numberFormats, displays, comments}` (the grids asked for, as lists of rows or of columns) |
 | | `find(text, options?)` | the cells that match: `[{sheet, cell, row, col, value, ...}]` |

@@ -47,7 +47,7 @@ const cli = (tool, args, input) => () => {
 const book_ = (file) => new wasm.Book(read(file));
 const cases = [
   ["lint, SARIF (lint_book.xlsx)", () => book_(lintBook).lint().toSarif(lintBook), cli("lint", ["-i", lintBook, "--format", "sarif"])],
-  ["statistics (lint_book.xlsx)", () => book_(lintBook).stats.toJSON(), cli("stats", ["-i", lintBook, "--format", "json"])],
+  ["statistics (lint_book.xlsx)", () => book_(lintBook).stats().toJSON(), cli("stats", ["-i", lintBook, "--format", "json"])],
   ["query, 9 rows (book.xlsx)", () => book_(book).query({ scope: { range: "Data!A1:C9" } }), cli("query", ["-i", book, "--range", "Data!A1:C9"])],
   ["edit, 3 operations (book.xlsx)", () => {
     const edited = book_(book);

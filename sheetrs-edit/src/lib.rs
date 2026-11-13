@@ -32,7 +32,6 @@ mod error;
 mod plan;
 mod replace;
 mod stale;
-mod stale_set;
 
 #[cfg(test)]
 mod tests;
