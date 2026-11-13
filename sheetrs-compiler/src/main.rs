@@ -74,7 +74,6 @@ BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
                        the pieces of `_xlfn._LONGTEXT(a,b,...)` (a text literal
                        over 255 characters written by LibreOffice 26.2);
                        constant text pieces only
-  --no-fold            keep every reachable formula (no build-time evaluation)
   --no-strict          compile a workbook with macros (reported as a warning);
                        by default (strict) it is an error. --strict undoes a
                        `strict = false` of the file
@@ -432,7 +431,6 @@ fn config_from(args: &mut Args) -> Result<(Config, Option<String>), Fail> {
     let mut cli = Config {
         settings: args.value("--settings")?,
         settings_file: args.value("--settings-file")?.map(PathBuf::from),
-        fold: args.flag("--no-fold").then_some(false),
         strict: if args.flag("--no-strict") {
             Some(false)
         } else {

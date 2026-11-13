@@ -27,7 +27,7 @@ use sheetrs_engine::calculate::{Overrides, ValueRanges};
 use sheetrs_engine::ir::{Mode, Program};
 use sheetrs_io::Book;
 
-/// What a build is configured with: the keys of a `sheetc.toml` (`fold`, `strict`, `now`, `seed`,
+/// What a build is configured with: the keys of a `sheetc.toml` (`strict`, `now`, `seed`,
 /// `host`, `enable_features`, `locale`, `settings`) and, for a workbook with no settings sheet, the
 /// declarations of its inputs and outputs.
 #[derive(Debug, Clone, Default)]

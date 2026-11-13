@@ -224,16 +224,14 @@ fn serve_mode_answers_line_by_line() {
     assert!((b / a - 2.0).abs() < 1e-9);
 }
 
-/// The locale is fixed when the program is built, with or without `--no-fold`.
+/// The locale is fixed when the program is built.
 #[test]
 fn locale_flag_is_refused_at_run_time() {
     let dir = tempfile::tempdir().unwrap();
-    for extra in [&[][..], &["--no-fold"][..]] {
-        let fixed = build_loan("loan.xlsx", dir.path(), extra);
-        let (code, _, err) = run(&fixed, &["--locale", "es"], "{}");
-        assert_eq!(code, 2, "{err}");
-        assert!(err.contains("fixed when the program is built"), "{err}");
-    }
+    let fixed = build_loan("loan.xlsx", dir.path(), &[]);
+    let (code, _, err) = run(&fixed, &["--locale", "es"], "{}");
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("fixed when the program is built"), "{err}");
 }
 
 /// The date system, the iteration and the search settings belong to the document: there is no flag for

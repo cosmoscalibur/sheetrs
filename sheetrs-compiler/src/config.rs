@@ -5,7 +5,6 @@
 //! settings = "settings"   # sheet that declares inputs, outputs and metadata
 //! settings_file = "model.json"   # the same declarations as JSON, for a workbook with no such
 //!                                # sheet (or one that must not change); path relative to this file
-//! fold = true
 //! enable_features = ["LONGTEXT"]   # compatibility features, all off unless listed
 //! strict = true           # refuse workbooks with macros (false: warn)
 //!
@@ -43,8 +42,6 @@ pub struct Config {
     /// both is an error.
     #[serde(alias = "settings-file")]
     pub settings_file: Option<PathBuf>,
-    /// Evaluate input-independent formulas at build time (default true).
-    pub fold: Option<bool>,
     /// Refuse what the compiler cannot reproduce (macros); default true. When
     /// false they are reported and the build goes on.
     pub strict: Option<bool>,
@@ -94,7 +91,6 @@ impl Config {
         Self {
             settings: self.settings.or(base.settings),
             settings_file: self.settings_file.or(base.settings_file),
-            fold: self.fold.or(base.fold),
             strict: self.strict.or(base.strict),
             now: self.now.or(base.now),
             seed: self.seed.or(base.seed),
@@ -182,14 +178,14 @@ impl Config {
     }
 
     /// Everything of the spec that does not come from the settings sheet: the
-    /// level, folding, clock, seed, locale and the macro policy.
+    /// clock, seed, locale and the macro policy (folding is always on: [`Spec::fold`] is a
+    /// Rust-library option for tests and low-level use, with no key of the file).
     ///
     /// # Errors
     ///
     /// When a target of the configuration cannot be resolved against `model`.
     pub fn base_spec(&self, model: &Model) -> Result<Spec> {
         let mut spec = Spec {
-            fold: self.fold.unwrap_or(true),
             now: self.now,
             rand_seed: self.seed,
             host: self.host.clone().unwrap_or_default(),
@@ -268,7 +264,7 @@ mod tests {
         let c = parse("settings = \"cfg\"\nouts = 1\n", "t");
         assert!(c.is_err(), "unknown keys are rejected");
         let c = parse(
-            "settings = \"cfg\"\nfold = false\n[locale]\ntag = \"es-CO\"\ndecimal = \",\"\n",
+            "settings = \"cfg\"\n[locale]\ntag = \"es-CO\"\ndecimal = \",\"\n",
             "t",
         )
         .unwrap();
@@ -276,6 +272,10 @@ mod tests {
         assert!(
             parse("outputs = \"any\"\n", "t").is_err(),
             "no level of outputs any more"
+        );
+        assert!(
+            parse("fold = false\n", "t").is_err(),
+            "folding is not configurable: `fold` is an unknown key"
         );
         let l = c.locale.unwrap();
         assert_eq!((l.tag.as_deref(), l.decimal), (Some("es-CO"), Some(',')));

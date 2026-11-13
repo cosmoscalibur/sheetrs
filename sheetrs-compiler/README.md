@@ -354,7 +354,6 @@ where it is started). Unknown keys are errors.
 ```toml
 settings = "settings"   # --settings
 # settings_file = "model.json"   # --settings-file: the same declarations as JSON
-fold     = true         # --no-fold
 strict   = true         # --strict / --no-strict: refuse (or only warn about) macros
 now      = 45292.5      # --now SERIAL: fix NOW()/TODAY() (default: the clock, at each run)
 seed     = 42           # --seed N: fix RAND (default: seeded from the clock)

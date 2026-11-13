@@ -110,8 +110,7 @@ text of the cell); `replace` refuses them.
 
 ### `calculate` and `valueRanges`
 
-The clock of `NOW()`, `TODAY()` and `RAND()` is `Date.now()`. The options of a `sheetc.toml` (`fold`,
-`strict`, `now`, `seed`, `host`, `locale`, ...) and `declarations` (the JSON of a `settings_file`: the
+The clock of `NOW()`, `TODAY()` and `RAND()` is `Date.now()`. The options of a `sheetc.toml` (`strict`, `now`, `seed`, `host`, `locale`, ...) and `declarations` (the JSON of a `settings_file`: the
 inputs and outputs of a workbook with no settings sheet) apply to `inspect(options)`, `compile(options)`
 and `evaluateFormula`; the calculation of a plan takes the request only.
 

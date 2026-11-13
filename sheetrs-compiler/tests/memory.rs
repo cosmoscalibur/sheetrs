@@ -171,16 +171,18 @@ fn verify_in_memory_matches_every_cached_formula_of_the_loan() {
 #[test]
 fn the_options_are_the_keys_of_a_configuration_file() {
     let options = Options::from_json(&json!({
-        "fold": false,
+        "now": 45000.5,
         "locale": {"tag": "es-CO"},
         "declarations": {"outputs": [{"name": "payment", "range": "Loan!B6"}]},
     }))
     .unwrap();
-    assert_eq!(options.config.fold, Some(false));
+    assert_eq!(options.config.now, Some(45000.5));
     assert!(options.declarations.is_some());
     // A file cannot be read here, and an unknown key is a mistake.
     assert!(Options::from_json(&json!({"settings_file": "model.json"})).is_err());
     assert!(Options::from_json(&json!({"bogus": 1})).is_err());
+    // Folding is a Rust option of the compiler, not a key of the configuration.
+    assert!(Options::from_json(&json!({"fold": false})).is_err());
     assert!(Options::from_json(&Json::Null).is_ok());
 }
 

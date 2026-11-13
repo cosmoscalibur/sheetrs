@@ -169,7 +169,7 @@ live; whatever depends on no input folds at build time. So the more inputs, the 
 | declared | what is downstream of the declared inputs | smallest program, most folding |
 | deduced (none declared) | what is downstream of any constant the outputs read | nothing that reads a constant folds; the program is as big as what the outputs read |
 
-`--no-fold` is the upper bound of the last row: 50 000 independent formulas run in 27 µs when
+Switching folding off (the `fold` option of the compiler's `Spec`, which exists for tests and examples) is the upper bound of the last row: 50 000 independent formulas run in 27 µs when
 folded and 69 ms when nothing may fold (`cargo run --release --example stress`, measured at `c5f7189`), the program grows
 from 1 cell to 100 001, and at 40 MB the program, which is serialized JSON loaded at start, is the
 size of the workbook. Outputs do not pay this: a wider output set only keeps more of the cone.
@@ -180,7 +180,9 @@ The date system, iteration and search settings are the document's and are never
 overridable. The behavior is LibreOffice's. What a file cannot say comes from the build configuration
 (`sheetc.toml`, overridden by flags): the locale (fixed at build time, so
 folding may use it; any BCP-47 tag, see FIDELITY.md), the clock, the seed,
-`--no-fold` and the settings sheet's name. A run can only fix
+the settings sheet's name. Folding is not configurable: it is always on in `sheetc`, in
+`sheetc.toml` and in the bindings, and `Spec::fold` is a Rust-library option for the tests that compare a
+folded and an unfolded program and for low-level use. A run can only fix
 `NOW()` and the seed. Because the locale cannot change after the build, the
 compiler no longer needs to track which formulas depend on it: that analysis
 existed only for the former `--runtime-locale` and was removed. Who decides what
