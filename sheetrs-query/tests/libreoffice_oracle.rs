@@ -255,6 +255,101 @@ fn check(file: &str) -> Vec<String> {
     bad
 }
 
+/// What a `LibreOffice` with the `es-CO` regional setting shows for `locale_es-CO.{xlsx,ods}` (made
+/// by `make_locale.py`, recorded by `make_oracle.py`): the text of every cell, in the locale of the
+/// workbook. An XLSX states no locale, so the one given to its `Book` is the one; an ODS says it (in
+/// its default cell style), so it needs none. The format codes the oracle reports are written in
+/// Spanish there (`DD/MM/AAAA`), so only what the cells show is compared.
+fn display_in_the_locale_of(file: &str, locale: Option<&str>) -> Vec<String> {
+    let query: Query = serde_json::from_value(json!({
+        "scope": "workbook",
+        "properties": ["display"]
+    }))
+    .unwrap();
+    let mut book = Book::from_file(fixture(file)).unwrap();
+    if let Some(tag) = locale {
+        book = book.with_locale(tag.parse().unwrap());
+    }
+    let shown: BTreeMap<(String, u32, u32), String> = book
+        .query(&query)
+        .unwrap()
+        .cells
+        .into_iter()
+        .map(|c| {
+            (
+                (c.sheet.to_string(), c.row - 1, c.col - 1),
+                c.display.unwrap_or_default(),
+            )
+        })
+        .collect();
+    let mut bad = Vec::new();
+    for cell in oracle(file).cells {
+        let key = (
+            cell["sheet"].as_str().unwrap().to_string(),
+            cell["row"].as_u64().unwrap() as u32,
+            cell["col"].as_u64().unwrap() as u32,
+        );
+        let libre = cell["string"].as_str().unwrap();
+        let ours = shown.get(&key).map_or("", String::as_str);
+        if libre != ours {
+            bad.push(format!(
+                "{file} {}!{}{}: LibreOffice shows {libre:?}, SheetRS {ours:?}",
+                key.0,
+                sheetrs_formula::addr::col_name(key.2),
+                key.1 + 1
+            ));
+        }
+    }
+    bad
+}
+
+#[test]
+fn the_display_of_a_book_follows_its_locale() {
+    let mut bad = display_in_the_locale_of("locale_es-CO.xlsx", Some("es-CO"));
+    bad.extend(display_in_the_locale_of("locale_es-CO.ods", None));
+    assert!(
+        bad.is_empty(),
+        "{} differences:\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
+}
+
+#[test]
+fn a_locale_given_to_the_book_wins_over_the_one_of_the_file_in_a_query() {
+    let spanish = |file: &str, locale: Option<&str>| {
+        let mut book = Book::from_file(fixture(file)).unwrap();
+        if let Some(tag) = locale {
+            book = book.with_locale(tag.parse().unwrap());
+        }
+        let query: Query = serde_json::from_value(json!({
+            "scope": {"range": "Numbers!C1"},
+            "properties": ["display"]
+        }))
+        .unwrap();
+        book.query(&query).unwrap().cells[0]
+            .display
+            .clone()
+            .unwrap()
+    };
+    assert_eq!(spanish("locale_es-CO.ods", None), "1.234,50");
+    assert_eq!(spanish("locale_es-CO.ods", Some("en-US")), "1,234.50");
+    // The locale of a single query wins over the one of the book.
+    let query: Query = serde_json::from_value(json!({
+        "scope": {"range": "Numbers!C1"},
+        "properties": ["display"],
+        "locale": "en-US"
+    }))
+    .unwrap();
+    let book = Book::from_file(fixture("locale_es-CO.ods"))
+        .unwrap()
+        .with_locale("es-CO".parse().unwrap());
+    assert_eq!(
+        book.query(&query).unwrap().cells[0].display.as_deref(),
+        Some("1,234.50")
+    );
+}
+
 #[test]
 fn what_each_file_shows_is_what_libreoffice_shows() {
     let mut bad = Vec::new();

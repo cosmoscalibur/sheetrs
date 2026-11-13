@@ -131,6 +131,17 @@ pub struct Args {
     #[arg(long, value_name = "SCOPE", requires = "replace")]
     pub scope: Vec<String>,
 
+    /// Locale of the recalculation that an edit leaves to do (`TEXT`, the conversion of a number to
+    /// text): a tag such as `es-CO`. Default: the `locale` of `--config`, else the one of the workbook
+    /// (an ODS says it; an XLSX takes the system's, `en-US` when it has none)
+    #[arg(long, value_name = "TAG")]
+    pub locale: Option<String>,
+
+    /// Configuration file (TOML) whose `locale` in `[global]` is the default of `--locale` (default:
+    /// `sheetrs.toml` in the current directory, when there is one)
+    #[arg(short = 'c', long, value_name = "FILE")]
+    pub config: Option<PathBuf>,
+
     /// Output file (required unless `--in-place`)
     #[arg(short, long, conflicts_with = "in_place")]
     pub output: Option<PathBuf>,
@@ -191,6 +202,11 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
     // The flags of a command are all written against the input file, in no order: the planner
     // decides what runs first (see `sheetrs_edit::BookEdit`), as it does for every other caller.
     let mut book = Book::from_file(&cli.file)?;
+    if let Some(tag) =
+        sheetrs_io::locale::for_command(cli.locale.as_deref(), cli.config.as_deref())?
+    {
+        book = book.with_locale(tag);
+    }
     if !cli.replace.is_empty() {
         let mode = if cli.regex {
             Mode::Regex

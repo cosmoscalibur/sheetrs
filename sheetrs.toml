@@ -11,6 +11,11 @@ enabled_rules = []
 # List of disabled rules
 disabled_rules = []
 
+# Locale of the workbook for `sheetrs query` and `sheetrs edit` (the lint rules do not use it): a
+# tag such as "es-CO". Not set by default: the workbook has the locale of its format (an ODS says
+# it, an XLSX takes the system's, `en-US` when it has none). The `--locale` flag wins over this key.
+# locale = "es-CO"
+
 # Global parameter defaults.
 # Parameters marked (per sheet) can be overridden in a [sheets."<name>"] table.
 

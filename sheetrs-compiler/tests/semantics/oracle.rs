@@ -62,18 +62,32 @@ fn same_error(theirs: &str, got: &Json) -> Result<(), String> {
     }
 }
 
+/// How the locale of the run reaches the engine.
+#[derive(Clone, Copy)]
+enum Given<'a> {
+    /// In the spec, as a build configuration states it (`--locale`).
+    Spec(&'a str),
+    /// The locale of the workbook: given to the `Book` (`Some`), or the one its format gives (`None`;
+    /// an ODS says it, and an XLSX takes the system's, which a test does not control).
+    Book(Option<&'a str>),
+}
+
 /// `locale`: the regional settings `LibreOffice` ran with when it computed `file`.
 fn check(file: &str, locale: &str) {
-    check_rows(file, locale, 150, &[]);
+    check_rows(file, Given::Spec(locale), 150, &[]);
 }
 
 /// `known`: labels of rows where the engine is known to differ from `LibreOffice` in this file. They
 /// must still differ: a row that agrees is an error until it is taken off the list.
-fn check_rows(file: &str, locale: &str, min_rows: usize, known: &[&str]) {
+fn check_rows(file: &str, given: Given<'_>, min_rows: usize, known: &[&str]) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(file);
-    let model = loader::load(&sheetrs_io::Book::from_file(&path).unwrap()).unwrap();
+    let mut book = sheetrs_io::Book::from_file(&path).unwrap();
+    if let Given::Book(Some(tag)) = given {
+        book = book.with_locale(tag.parse().unwrap());
+    }
+    let model = loader::load(&book).unwrap();
     let calc = model.sheet_id("Calc").unwrap();
     let mut rows: Vec<u32> = model
         .cells
@@ -107,20 +121,31 @@ fn check_rows(file: &str, locale: &str, min_rows: usize, known: &[&str]) {
             _ => None,
         }
     });
-    let spec = Spec {
+    let mut spec = Spec {
         outputs: vec![BindingSpec::parse(&format!("Calc!A1:A{}", last + 1))],
         fold: false,
         now,
-        locale: Some(
+        ..Spec::default()
+    };
+    spec.locale = Some(match given {
+        Given::Spec(locale) => {
             sheetrs_compiler::locale::from_tag(
                 locale,
                 &sheetrs_compiler::locale::LocaleOverride::default(),
             )
             .unwrap()
-            .0,
-        ),
-        ..Spec::default()
-    };
+            .0
+        }
+        // The locale of the workbook, resolved as every run resolves it.
+        Given::Book(_) => {
+            sheetrs_compiler::locale::resolve(
+                &sheetrs_compiler::locale::LocaleOverride::default(),
+                &model.settings,
+            )
+            .unwrap()
+            .0
+        }
+    });
     let (program, report) = compile(&model, &spec).unwrap();
     let _ = report;
     let out = program
@@ -228,7 +253,12 @@ fn check_rows(file: &str, locale: &str, min_rows: usize, known: &[&str]) {
 /// engine reads it, FIDELITY.md).
 #[test]
 fn the_semantics_xlsx_calculates_every_formula_as_libreoffice_does() {
-    check_rows("semantics.xlsx", "en", 150, &["SUM(Data!A1:Wide!A1048576)"]);
+    check_rows(
+        "semantics.xlsx",
+        Given::Spec("en"),
+        150,
+        &["SUM(Data!A1:Wide!A1048576)"],
+    );
 }
 
 #[test]
@@ -239,8 +269,23 @@ fn the_semantics_ods_calculates_every_formula_as_libreoffice_does() {
 /// Locales with a fixture of their own, computed by a `LibreOffice` running with that regional
 /// setting (`scripts/gen_semantics_fixture.py`, `LOCALE_FIXTURES`).
 fn check_locale(tag: &str) {
-    check_rows(&format!("semantics_{tag}.xlsx"), tag, 150, &[]);
-    check_rows(&format!("semantics_{tag}.ods"), tag, 150, &[]);
+    check_locale_but(tag, &[]);
+}
+
+/// [`check_locale`] with the rows `known` to differ in both formats.
+fn check_locale_but(tag: &str, known: &[&str]) {
+    check_rows(
+        &format!("semantics_{tag}.xlsx"),
+        Given::Spec(tag),
+        150,
+        known,
+    );
+    check_rows(
+        &format!("semantics_{tag}.ods"),
+        Given::Spec(tag),
+        150,
+        known,
+    );
 }
 
 #[test]
@@ -263,6 +308,64 @@ fn british_english_matches_libreoffice() {
     check_locale("en-GB");
 }
 
+/// Separators, names, dates and the conversion of numbers to text are those of `LibreOffice`. What
+/// differs is the format code itself: a German `LibreOffice` reads the keywords of a code in German
+/// (`TT.MM.JJJJ`, `[ROT]`), so `dd.mm.yyyy` keeps its `d` and `yyyy`, and `[Red]` is an error;
+/// `[$-409]` and `[$-C0A]` do not make it read `dddd d` either. The engine reads the keywords in
+/// English (a proposal in `docs/approved-differences.md`).
+const GERMAN_FORMAT_CODES: &[&str] = &[
+    "TEXT(1234.5678,\"#,##0.00;[Red]-#,##0.00\")",
+    "TEXT(-1234.5678,\"#,##0.00;[Red]-#,##0.00\")",
+    "TEXT(0.5,\"#,##0.00;[Red]-#,##0.00\")",
+    "TEXT(45367.75,\"dd.mm.yyyy\")",
+    "TEXT(45658.5,\"dd.mm.yyyy\")",
+    "TEXT(45292.25,\"dd.mm.yyyy\")",
+    "TEXT(45000.9,\"dd.mm.yyyy\")",
+    "TEXT(45367.75,\"[$-409]dddd d mmmm\")",
+    "TEXT(45658.5,\"[$-409]dddd d mmmm\")",
+    "TEXT(45292.25,\"[$-409]dddd d mmmm\")",
+    "TEXT(45000.9,\"[$-409]dddd d mmmm\")",
+    "TEXT(45367.75,\"[$-C0A]dddd d mmmm\")",
+    "TEXT(45658.5,\"[$-C0A]dddd d mmmm\")",
+    "TEXT(45292.25,\"[$-C0A]dddd d mmmm\")",
+    "TEXT(45000.9,\"[$-C0A]dddd d mmmm\")",
+    "TEXT(45367.75,\"[$-809]ddd mmm\")",
+    "TEXT(45658.5,\"[$-809]ddd mmm\")",
+    "TEXT(45292.25,\"[$-809]ddd mmm\")",
+    "TEXT(45000.9,\"[$-809]ddd mmm\")",
+];
+
+#[test]
+fn german_of_germany_matches_libreoffice_but_for_the_keywords_of_a_format_code() {
+    check_locale_but("de-DE", GERMAN_FORMAT_CODES);
+}
+
+/// The locale as a property of the workbook, in every locale with a fixture: an XLSX has the one
+/// given to its `Book`, and an ODS the one it says (the language and country of its default cell
+/// style, what a `LibreOffice` with that regional setting writes), whatever the system is.
+#[test]
+fn the_locale_of_the_book_gives_what_libreoffice_gives_in_that_locale() {
+    for tag in ["es-ES", "es-CO", "es-MX", "en-GB", "de-DE"] {
+        let known: &[&str] = if tag == "de-DE" {
+            GERMAN_FORMAT_CODES
+        } else {
+            &[]
+        };
+        check_rows(
+            &format!("semantics_{tag}.xlsx"),
+            Given::Book(Some(tag)),
+            150,
+            known,
+        );
+        check_rows(
+            &format!("semantics_{tag}.ods"),
+            Given::Book(None),
+            150,
+            known,
+        );
+    }
+}
+
 /// A spreadsheet created in `LibreOffice` (ODF default settings, `LibreOffice`'s own function
 /// names such as the native `CEILING`), not imported from XLSX.
 ///
@@ -272,7 +375,12 @@ fn british_english_matches_libreoffice() {
 ///   headless `LibreOffice` (a file written by `LibreOffice` holds the form the engine reads).
 #[test]
 fn native_ods_matches_libreoffice() {
-    check_rows("native.ods", "en", 150, &["SUM(Data!A1:Wide!A1048576)"]);
+    check_rows(
+        "native.ods",
+        Given::Spec("en"),
+        150,
+        &["SUM(Data!A1:Wide!A1048576)"],
+    );
 }
 
 /// Documents created in `LibreOffice` with the null dates that are not its default (the date of
@@ -281,7 +389,7 @@ fn native_ods_matches_libreoffice() {
 #[test]
 fn null_dates_match_libreoffice() {
     for file in ["null_date_1900.ods", "null_date_1904.ods"] {
-        check_rows(file, "en", 20, &[]);
+        check_rows(file, Given::Spec("en"), 20, &[]);
     }
 }
 

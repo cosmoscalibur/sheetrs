@@ -144,12 +144,17 @@ The input of the suite and its shared kernel: the format-agnostic workbook model
 
 - **`Book`** (`book.rs`, the one interface of the suite): a workbook that is a reference: where it
   comes from (a file, or the bytes of one), its `Format` (read from the content, never from the
-  extension or an argument) and, with the feature `write`, the operations pending on it. It reads nothing
+  extension or an argument), its locale (`with_locale`, `locale`, `default_locale`: the tools that give
+  a text to a number follow it, see *The locale of a `Book`* in `docs/coding-patterns.md`) and, with the
+  feature `write`, the operations pending on it. It reads nothing
   until a tool does, so it is cheap to make and to clone, and it is not a model of the workbook (that is
   `Workbook`, `Book::workbook()`). Every tool is a trait to import that adds what it does to a `Book`
   (`BookQuery`, `BookEdit`, `BookCompile`, `BookLint`, `BookStats`); `Book::push`, `operations` and
   `clear_operations` are the seam they use. The data of the operations (`write::Operation`,
   `ReplaceSpec`, `Calculation`) lives next to the writers.
+- **`locale`**: `LocaleTag` (a language and a region, `FromStr`), the locale of the system as
+  `LibreOffice` reads it on Linux (`system`, `from_environment`) and, with the feature `config`, the
+  `locale` of a `sheetrs.toml` (`from_config`). What a tag means (separators, names) is the engine's table.
 - **`reader`**: Abstracts over file formats (XLSX, ODS) and holds `Format`; the free functions that read
   from a path or a reader are internal: a `Book` is the way in.
   - Uses `zip` and matching XML parsers (`quick-xml` or custom) for efficient data reading.

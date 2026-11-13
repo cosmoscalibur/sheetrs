@@ -33,7 +33,8 @@ sheetrs query -i book.xlsx --list-names                                    # the
 | `--include-formulas` | A search by value also looks at the results of formulas (off by default: it reaches what was typed, not what was computed) |
 | `--formatted` | Search the text each cell **shows** (`1,234.50`, `15 Mar 2023`, `$10.00`) instead of its input line (`SearchFormatted` of LibreOffice) |
 | `--filtered` | Also search the rows an autofilter has hidden (`SearchFiltered` of LibreOffice); off by default, as there |
-| `--locale TAG` | Locale of `display` and of the dates a search sees (default `en-US`) |
+| `--locale TAG` | Locale of `display` and of the dates a search sees (a tag such as `es-CO`). Default: the `locale` of `--config`, else the one of the workbook: an ODS says it (the language and country of its default cell style), an XLSX takes the system's (`LC_ALL`, `LC_CTYPE` or `LANG`), `en-US` when there is none |
+| `-c, --config FILE` | A TOML file whose `locale` in `[global]` is the default of `--locale` (default: `sheetrs.toml` of the current directory, when there is one). A `locale` that is not a tag is an error |
 | `--dates` | Give the numbers that are dates or times as dates (see below); without it, the serial the file stores |
 | `--query JSON\|@file` | The whole query as JSON; replaces the options above |
 | `--list-sheets`, `--list-names` | The names of the sheets (a JSON list, in order) or the defined names with what they refer to (a JSON object); nothing else is read |
@@ -86,8 +87,11 @@ The rules are the ones LibreOffice shows (the tests compare them with it, in the
 
 ## What a person sees and what a search sees
 
-`display` is the value written with its number format in a locale. A **search** looks at another
-text, the one LibreOffice puts in the input line of the cell (observed in 26.8, `en-US`):
+`display` is the value written with its number format in a locale: the locale of the workbook (see
+`--locale`; in Rust, `Book::with_locale`). A **search** looks at another
+text, the one LibreOffice puts in the input line of the cell (observed in 26.8, `en-US`; the
+formats of the input line, of a typed replacement and of the built-in number formats 14 to 22 are
+those of `en-US` in every locale, issue #84):
 
 - a number as it was typed: `1234.5` for a cell that shows `1,234.50`, `25.6%` for a percentage;
 - a date as the input line writes it: `03/15/2023`, or the ISO date when the format of the cell is

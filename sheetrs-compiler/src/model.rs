@@ -42,8 +42,13 @@ pub struct ModelSettings {
     pub string_ref_excel: Option<bool>,
     /// The document is in manual calculation mode (it calculates only on request).
     pub manual_calc: bool,
-    /// Document language tag (`es-CO`).
+    /// Document language tag (`es-CO`): an ODS says it, an XLSX does not.
     pub locale: Option<String>,
+    /// The locale given to the workbook (`Book::with_locale`): it is the locale of the run unless the
+    /// configuration states another.
+    pub book_locale: Option<String>,
+    /// The locale of the system the program runs on, which an XLSX (that declares none) takes.
+    pub system_locale: Option<String>,
 }
 
 #[derive(Debug, Clone)]

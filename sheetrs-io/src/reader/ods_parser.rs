@@ -1158,6 +1158,11 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
 }
 
 impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
+    /// The language and country of the default cell style, as a tag (`es-CO`).
+    pub(crate) fn read_locale(&mut self) -> Option<String> {
+        extract_locale_ods(self.archive)
+    }
+
     /// Reads the sheets, handing their cells to `sink`. With a selection, only what it asks for:
     /// a table that is not selected is skipped, a table is left after the last row a window
     /// reaches, and the reading ends with the last table selected.

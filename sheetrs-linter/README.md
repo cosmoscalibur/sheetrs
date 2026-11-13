@@ -78,7 +78,9 @@ sheetrs lint -i workbook.xlsx --format sarif > sheetlint.sarif
 
 See the [`sheetrs.toml`](../sheetrs.toml) example at the workspace root.
 Rule parameters are listed in the Params column of the
-[Rule Reference](#rule-reference).
+[Rule Reference](#rule-reference). The key `locale` of `[global]` (a tag such as `"es-CO"`) is not a rule
+parameter: it is the locale of the workbook for `sheetrs query` and `sheetrs edit`, which read the same
+file; the linter only refuses a value that is not a locale tag.
 
 ## Rule Reference
 

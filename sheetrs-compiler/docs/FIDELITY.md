@@ -170,16 +170,29 @@ recalculated by LibreOffice with its default style switched to `es-ES` still gav
 `1.5&""` = `1.5`, `DATEVALUE("3/1/2024")` = March 1st and `VALUE("1,5")` = error:
 LibreOffice evaluates with the system regional settings, as Excel does, and a
 file does not store them. The compiler therefore reports the language as a
-diagnostic when it differs from the locale in use, and nothing more.
+diagnostic when it differs from the locale in use. Which locale is in use is a property of the workbook:
+the one given to the `Book` (`--locale`, `locale=`), else the default of its format. For an ODS that
+is the language and country of its default cell style (a LibreOffice writes there its regional
+setting, so the file records the locale of the machine that calculated it); an XLSX states none, so it is
+the locale of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none, and in
+WebAssembly). **Probed against LibreOffice 26.8:** the system locale is read from `LC_ALL`, then `LC_CTYPE`,
+then `LANG` (`LC_MESSAGES`, `LC_NUMERIC`, `LC_TIME`, `LC_MONETARY` and `LANGUAGE` change only its
+interface; `C` and `POSIX` give `en-US`; an unknown `xx_YY` gives `en-US`). An ODS whose default cell
+style says `es-CO`, opened under an `en-US` regional setting, converts numbers to text as `en-US` (`55.43%`);
+only `TEXT` follows the language of the number format of its own cell (a data style with
+`number:language`/`number:country`). Taking the language of the file as the default locale of an ODS is a
+decision of the maintainer that differs from that (proposal in `docs/approved-differences.md`).
 
 ### Locale support
 
-Five locales are supported: `en-US`, `en-GB`, `es-ES`, `es-CO` and `es-MX` (a bare `en` or `es` is
-the first of each). The criterion is fidelity: a locale is in the table only when the engine
+Six locales are supported: `en-US`, `en-GB`, `es-ES`, `es-CO`, `es-MX` and `de-DE` (a bare `en`, `es` or
+`de` is the first of each). The criterion is fidelity: a locale is in the table only when the engine
 reproduces, row by row, what a LibreOffice running with that regional setting computes
 (`tests/assets/semantics.*` for `en-US`, `semantics_<tag>.*` for the others, XLSX and ODS), so
 the table is not a list of what LibreOffice offers. Any other locale is not supported: a build with
-`--locale de-DE` fails.
+`--locale fr-FR` fails. `de-DE` is there for its separators, names and dates: every row of its fixture
+matches but the 19 that use the keywords of a format code (below), which the test lists as known
+differences.
 
 The `[locale]` table of `sheetc.toml` (and `--locale`) is the user's own regional setting, the
 equivalent of what LibreOffice lets a user define globally and per document: it changes any field
@@ -193,7 +206,11 @@ setting gives the separators, the names of months and days (full and abbreviated
 accepts for a date typed as text, the order of the short date, the currency format, the texts of
 AM, PM, TRUE and FALSE, and the probes of how its scanner reads a date with a month name. **Adding a
 locale** means adding its tag to the script *and* its fixture to `scripts/gen_semantics_fixture.py`,
-and only keeping it once every row passes. A first attempt with ten more locales (`de`, `fr`, `ja`,
+and only keeping it once every row passes. `de-DE` was added in the end for the separators (`1.234,5`), the names and the text dates, with the
+rows whose code uses a German keyword listed as known differences of its fixture (a German
+`dd.mm.yyyy` gives `dd.03.yyyy`, `[Red]` is an error and `[$-409]dddd d` keeps `dddd d`): the keywords of
+a code are `TT`, `MM`, `JJJJ`, `[ROT]` there, and the engine reads them in English (a proposal in
+`docs/approved-differences.md`). A first attempt with ten more locales (`de`, `fr`, `ja`,
 `pt`, `ru`, `sv`, `nl`…) was dropped because the engine could not reproduce them: the letters of a
 `TEXT` date code are read in the locale's language and, in some codes, English letters are text
 (German `dd.mm.yyyy` gives `dd.03.yyyy`); the order of `a-b-c` dates depends on the first number
@@ -228,7 +245,7 @@ text, and a language tag in the code (`[$-409]`, `[$-C0A]`, `[$-809]`, `[$-80A]`
 language. `[$-40A]`, the traditional sort of Spanish, LibreOffice does not know and TEXT keeps the
 locale it runs with, as the engine does; a tag that is not a hexadecimal id and has no currency
 symbol (`[$-en-US]dddd`, `[$-ZZZ]0`) is `#VALUE!` (LibreOffice's `Err:502`). A `.` in a code that has
-no decimal separator of the locale is read as one (`0.0%`). A tag of another language (`[$-407]`)
+no decimal separator of the locale is read as one (`0.0%`). A tag of another language (`[$-40C]`)
 stops the build when the code is a literal (see *What stops a build*).
 
 Dates reach the year 32767 (`DATE(32767,12,31)` is 11,274,306), as in LibreOffice, and a year of
@@ -461,7 +478,7 @@ the build with an error that names it, instead of a value that would differ:
 | A function of LibreOffice's catalogue that the engine does not implement (the inventory is `CATALOGUE` in `functions/namespaces.rs`, generated by `scripts/function_namespaces.py`; the list is in `COVERAGE.md`) | Error, naming the function, the number of calls and the first cell. This includes `FILTER`, `SORT`, `XMATCH`, the statistical, financial and engineering functions in the list. |
 | A name that is not in LibreOffice's catalogue (`NOPE(1)`, `_xlfn._longtext(…)`) | Not an error: LibreOffice gives `#NAME?` for it too, and the build lists it. |
 | Syntax the parser does not read: external workbook references, structured references (`Table1[Col]`), `#` spills, intersections | Error, naming the first cells and the reason. |
-| `TEXT` with a code that carries the language tag of a language the engine has no names for (`[$-407]`), when the build knows the code (a literal, a constant cell, a join of those, or a formula it evaluates) | Error. If the code depends on an input, the build warns and, in a run that gives such a code, the cell is `#NOT_IMPLEMENTED!`. |
+| `TEXT` with a code that carries the language tag of a language the engine has no names for (`[$-40C]`), when the build knows the code (a literal, a constant cell, a join of those, or a formula it evaluates) | Error. If the code depends on an input, the build warns and, in a run that gives such a code, the cell is `#NOT_IMPLEMENTED!`. |
 | `XLOOKUP` with search mode 2 or -2 (binary search) over a range, when the build knows the mode | Error. If the mode depends on an input, warning, and `#NOT_IMPLEMENTED!` in a run with such a mode. Over an array they are reproduced. |
 | A date serial outside 0001-01-01 … 32768-01-01 handled while the build evaluates | Error, naming the cell. With an input that gives such a serial at run time: `#NOT_IMPLEMENTED!` (no warning: every date function would have one). |
 | A regular expression (document search mode, or `XLOOKUP` match mode 3) outside the subset of ICU's syntax that is reproduced, when the build knows the pattern | Error, naming the cell, the function and what is outside. A pattern that depends on an input: warning, and `#NOT_IMPLEMENTED!` in a run whose pattern is outside the subset or whose text has letters of several-character case folding. |
@@ -545,7 +562,7 @@ constants, or evaluated from constants), so no program is built that differs fro
 it depends on an input the build cannot tell: it compiles with a warning that names the cell, and a
 run that meets the case gives the error value `#NOT_IMPLEMENTED!` in that cell (and what depends
 on it) instead of a value that would differ. The cases: a `TEXT` code with the language tag of a
-language outside the table (`[$-407]`), `XLOOKUP` search modes 2 and -2 over a range (LibreOffice
+language outside the table (`[$-40C]`), `XLOOKUP` search modes 2 and -2 over a range (LibreOffice
 runs them through an iterator of its own, and the probes of it did not finish), regular
 expressions outside the reproduced subset or over text with letters of several-character case
 folding, date serials outside 0001-01-01 … 32768-01-01, and the t, F and beta distributions with

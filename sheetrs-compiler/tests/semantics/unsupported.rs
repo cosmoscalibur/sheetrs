@@ -47,8 +47,8 @@ fn syntax_the_parser_does_not_read_stops_the_build() {
 
 #[test]
 fn a_text_code_with_a_language_the_engine_has_no_names_for_stops_the_build() {
-    let e = build_with("TEXT(45367,\"[$-407]dddd\")").unwrap_err();
-    assert!(e.contains("[$-407]dddd"), "{e}");
+    let e = build_with("TEXT(45367,\"[$-40C]dddd\")").unwrap_err();
+    assert!(e.contains("[$-40C]dddd"), "{e}");
     for ok in [
         "TEXT(45367,\"[$-409]dddd\")",
         "TEXT(45367,\"[$-40A]dddd\")",
@@ -241,7 +241,7 @@ fn a_text_code_that_is_not_known_at_build_time_stops_the_build() {
     let mut m = sheetrs_compiler::Model::new();
     let s = m.add_sheet("Sheet1");
     m.set(s, "B1", Value::text("dd/mm/yyyy"));
-    m.set(s, "B2", Value::text("[$-407]dddd"));
+    m.set(s, "B2", Value::text("[$-40C]dddd"));
     m.set_formula(s, "A1", "TEXT(45367,B1)");
     // The code is a constant: it is checked.
     assert!(compile(&m, &spec(&[], &["A1"])).is_ok());
@@ -268,7 +268,7 @@ fn a_text_code_that_is_not_known_at_build_time_stops_the_build() {
             .clone()
     };
     assert_eq!(run("yyyy"), json!("2024"));
-    assert_eq!(run("[$-407]dddd"), err("#NOT_IMPLEMENTED!"));
+    assert_eq!(run("[$-40C]dddd"), err("#NOT_IMPLEMENTED!"));
 }
 
 #[test]

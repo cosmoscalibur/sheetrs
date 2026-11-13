@@ -10,6 +10,16 @@ Run it with a LibreOffice listening on a socket, in the folder that holds the fi
 The tests of `sheetrs-query` and `sheetrs-io` compare SheetRS with these files: the oracle is the
 behaviour of LibreOffice on that very file. The reference
 version is recorded in `version` (26.8.2).
+
+The fixtures `locale_<tag>` (made by `make_locale.py`) are recorded by a LibreOffice running with that
+regional setting: start it with a profile whose `ooSetupSystemLocale` is the tag, on another port,
+and name the port and the fixture:
+
+    LO_PORT=2003 /opt/libreoffice26.8/program/python make_oracle.py locale_es-CO
+
+(`scripts/libreoffice-server.sh` with `LO_PORT` and `LO_PROFILE` starts it; the profile needs
+`<item oor:path="/org.openoffice.Setup/L10N"><prop oor:name="ooSetupSystemLocale" oor:op="fuse"><value>es-CO</value></prop></item>`
+in its `registrymodifications.xcu`.)
 """
 import json, os, sys, time
 import uno
@@ -34,13 +44,15 @@ FIXTURES = [
     ("dates_1904", "sheetrs-io/tests/assets"),
     # An XLSX cannot say the 1900-01-01 null date (StarCalc 1.0): this one is an ODS only.
     ("dates_1900", "sheetrs-io/tests/assets", ("ods",)),
+    # What a LibreOffice with the es-CO regional setting shows (see the docstring).
+    ("locale_es-CO", "sheetrs-io/tests/assets"),
 ]
 
 local = uno.getComponentContext()
 resolver = local.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", local)
 for _ in range(30):
     try:
-        ctx = resolver.resolve("uno:socket,host=localhost,port=2002;urp;StarOffice.ComponentContext")
+        ctx = resolver.resolve(f"uno:socket,host=localhost,port={os.environ.get('LO_PORT', '2002')};urp;StarOffice.ComponentContext")
         break
     except Exception:
         time.sleep(1)

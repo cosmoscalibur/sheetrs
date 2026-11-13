@@ -1728,6 +1728,12 @@ ES_FORMULAS = _text_rows() + [
     "TEXT(1234.5678,\"#.##0\")", "_xlfn.NUMBERVALUE(\"1.234,5\",\",\",\".\")", "3>2&\"\"",
     "DOLLAR(1234.567,2)", "DOLLAR(-1234.567,2)", "DOLLAR(1234.567,0)", "DOLLAR(0.5,1)", "DOLLAR(-0.004,2)",
     "TEXT(0.5,\"0%\")", "TEXT(1234567.891,\"#,##0.00\")", "ROUND(1234.5678,2)&\"\"",
+    # What a workbook calculated with a Spanish locale shows (issues #84, #106): the format of a
+    # currency in English written with the separators of the user, a number joined to a text, and
+    # a format whose zero part reads `,` as the decimal separator.
+    "TEXT(350*49799,\"[$$-en-US]#.###.##0\")", "\"Componente inflacionario \"&(0.5543*100)&\"%\"",
+    "TEXT(192*49799,\"[$$-en-US]#.###.##0\")&\" (\"&TEXT(192*49799/12,\"[$$-en-US]#.##0\")&\")\"",
+    "TEXT(0,\"[$$-en-US]#,##0;([$$-en-US]#,##0)\")", "\"x \"&(1/4)&\" \"&(-1234.5)",
 ] + [f'DATEVALUE("{d}")' for d in _NAMED_DATES_ES]
 
 
@@ -1735,7 +1741,7 @@ ES_FORMULAS = _text_rows() + [
 # is evaluated by a LibreOffice running with that regional setting, over rows built from its entry
 # of the engine's table. A locale is added to the table (scripts/gen_locale_table.py) only with its
 # fixture here and once the engine reproduces every row.
-LOCALE_FIXTURES = ["es-ES", "es-CO", "es-MX", "en-GB"]
+LOCALE_FIXTURES = ["es-ES", "es-CO", "es-MX", "en-GB", "de-DE"]
 TABLE = os.path.join(os.path.dirname(__file__), "..", "..", "sheetrs-engine", "src", "locale_data.rs")
 
 
@@ -1789,8 +1795,8 @@ def locale_formulas(tag):
               "#,##0;(#,##0)", "#.##0,00", "0,00", "# ?/?", "00000", "#,##0.00;[Red]-#,##0.00"):
         for v in ("1234.5678", "-1234.5678", "0.5"):
             rows.append(f'TEXT({v},"{q(f)}")')
-    # Language tags: only the languages of the table are read (`[$-407]`, German, is not: LibreOffice
-    # writes German names and the engine keeps the locale's).
+    # Language tags: only the languages of the table are read (`[$-40C]`, French, is not: LibreOffice
+    # writes French names and the engine keeps the locale's).
     for f in ("dddd d mmmm yyyy", "ddd mmm", "mmmm", "dddd", "h:mm AM/PM", "dd/mm/yyyy", "d-mmm-yy", "mmmmm", "dd.mm.yyyy",
               "[$-409]dddd d mmmm", "[$-C0A]dddd d mmmm", "[$-40A]dddd", "[$-809]ddd mmm", "[$-409]h:mm AM/PM"):
         for v in ("45367.75", "45658.5", "45292.25", "45000.9"):

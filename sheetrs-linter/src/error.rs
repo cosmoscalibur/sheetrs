@@ -35,6 +35,11 @@ pub enum Error {
     /// `enable_features` is not an array of names.
     #[error("Configuration error: '{key}' must be an array of feature names ({known})")]
     FeatureList { key: &'static str, known: String },
+    /// `locale` is not a locale tag. The linter does not use it: it is the locale of the workbook for
+    /// the tools that read the same file (`sheetrs query`, `sheetrs edit`), and a misspelled one is
+    /// not ignored.
+    #[error("Configuration error: 'locale' must be a locale tag such as \"es-CO\", got {value}")]
+    Locale { value: String },
     /// A compatibility feature that does not exist.
     #[error("Configuration error: unknown feature '{name}' in '{key}' (known: {known})")]
     UnknownFeature {

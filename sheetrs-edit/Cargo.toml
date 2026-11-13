@@ -18,7 +18,7 @@ path = "src/lib.rs"
 
 [features]
 # The `sheetrs edit` subcommand (clap arguments and `run`), for the `sheetrs` executable.
-cli = ["dep:clap", "dep:anyhow"]
+cli = ["dep:clap", "dep:anyhow", "sheetrs-io/config"]
 
 [dependencies]
 sheetrs-io = { path = "../sheetrs-io", version = "0.4.1", features = ["write"] }

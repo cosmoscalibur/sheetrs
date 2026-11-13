@@ -39,6 +39,10 @@ pub fn load(source: &Book) -> Result<Model> {
     let mut m = assemble(wb, ods, sink.cells);
     m.array_members = sink.array_members;
     m.from_xlsx = !ods;
+    // The locale of the run: the one given to the workbook, else what the format gives (an ODS
+    // says it, an XLSX takes the system's).
+    m.settings.book_locale = source.locale().map(ToString::to_string);
+    m.settings.system_locale = sheetrs_io::locale::system().map(|tag| tag.to_string());
     m.file_name = source
         .path()
         .and_then(Path::file_name)
@@ -226,6 +230,8 @@ fn settings(s: &DocumentSettings, ods: bool, unsupported: &mut Vec<String>) -> M
         // a document created in LibreOffice stores nothing: Calc A1.
         string_ref_excel: Some(!ods || matches!(s.string_ref_syntax, Some(2 | 4))),
         locale: s.locale.clone(),
+        book_locale: None,
+        system_locale: None,
         manual_calc: s.auto_calculate == Some(false),
     }
 }

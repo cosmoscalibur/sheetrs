@@ -57,6 +57,14 @@ soffice --headless --invisible --norestore --accept="socket,host=localhost,port=
 /opt/libreoffice26.8/program/python sheetrs-io/tests/assets/oracle/make_oracle.py
 ```
 
+`locale_es-CO.{xlsx,ods}` (made by `make_locale.py`) are saved by a LibreOffice with the `es-CO`
+regional setting, and their oracle is recorded by one (`LO_PORT=2003 .../python make_oracle.py
+locale_es-CO` against a server started with that setting: see the docstring of `make_oracle.py`):
+the shown text of numbers, dates, booleans and the text a formula makes of a number, in a locale other
+than `en-US`. `sheetrs-compiler/tests/assets/semantics_<tag>.*` (`es-ES`, `es-CO`, `es-MX`, `en-GB`,
+`de-DE`; made by `gen_semantics_fixture.py`) are the oracle of the engine under each locale, among them the
+rows of issues #84 and #106 (`TEXT(350*49799,"[$$-en-US]#.###.##0")`, a number joined to a text).
+
 A test states, for each file, what is expected of it, and takes the expectation from the oracle
 when LibreOffice can give it (`sheetrs-query/tests/libreoffice_oracle.rs` compares every cell; the
 readers, the statistics and the editor compare what they count or keep). A difference found and not approved is listed in

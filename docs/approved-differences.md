@@ -19,3 +19,13 @@ decision, never a documented feature.
 | The result a file caches in a formula cell is not kept as a goal: after a deletion, a removal or a replacement the engine calculates every formula and the cell holds the value the formula gives now, which can differ from the one LibreOffice cached if the engine and LibreOffice differ on that formula | `CONTRIBUTING.md` (Parity and fidelity), `sheetrs-edit/README.md` | The real value of the cell prevails over the cache, which a generated workbook or an incompatible version may not have made reliable |
 
 Adding a line requires the maintainer's approval, in the pull request or the issue it came from.
+
+## Proposed, not approved
+
+These differences from LibreOffice exist in the code and wait for the maintainer's decision; nothing
+here is approved until it moves to the table above.
+
+| Difference | Where | Why it is proposed |
+| ---------- | ----- | ------------------ |
+| The locale of an ODS is, by default, the language and country of its default cell style (`fo:language`, `fo:country`; what a LibreOffice writes from its regional setting). LibreOffice 26.8 does not read it: with an `es-CO` default style and an `en-US` regional setting, `="n "&(0.5543*100)&"%"` is `n 55.43%` and `VALUE("1.234,5")` is `Err:502`; only `TEXT` follows the language of the data style of its own cell (`number:language`, `number:country`). A file saved by a LibreOffice with a Spanish regional setting holds that language and the values it calculated, so the file says what the machine that calculated it had | `sheetrs-compiler/docs/FIDELITY.md` (Locales), `docs/coding-patterns.md` (The locale of a `Book`) | The decision of the maintainer for issues #84 and #106 (ODS reads it from the file); the probe contradicts LibreOffice, so it is recorded here and not as approved |
+| `de-DE`: the keywords of a format code are read in English (`dd.mm.yyyy`, `[Red]`, `[$-409]dddd d`), where a German LibreOffice reads `TT.MM.JJJJ` and `[ROT]` and keeps `d`, `y`, `[Red]` as text or an error (`dd.mm.yyyy` is `dd.03.yyyy`, a code with `[Red]` is `Err:502`). 19 rows of `semantics_de-DE.*` | `sheetrs-compiler/docs/FIDELITY.md` (Locale support), `sheetrs-compiler/tests/semantics/oracle.rs` (`GERMAN_FORMAT_CODES`) | Needs the table of keywords of each locale (`FormatElementsKeywords`), which the engine does not have; the separators, names and dates of `de-DE` match |

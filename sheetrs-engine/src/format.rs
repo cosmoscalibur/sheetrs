@@ -40,7 +40,7 @@ enum Tok {
     Frac(usize),
     /// `/` in a date format: the locale's date separator.
     DateSep,
-    /// A `[$-407]` tag of a language the engine has no names for: `LibreOffice` writes that
+    /// A `[$-40C]` tag of a language the engine has no names for: `LibreOffice` writes that
     /// language's names, so the code cannot be reproduced and TEXT is an error.
     Foreign,
     /// A `[$-409]` tag: the names of months and days, and AM/PM, are those of this locale's language.
@@ -184,7 +184,7 @@ fn sym_only_symbol(sym: &str) -> bool {
     !sym.is_empty()
 }
 
-/// Whether a date or time code carries a language tag the engine has no names for (`[$-407]`).
+/// Whether a date or time code carries a language tag the engine has no names for (`[$-40C]`).
 #[must_use]
 pub fn has_foreign_language_tag(fmt: &str) -> bool {
     tokenize_dt(fmt).is_some_and(|t| t.contains(&Tok::Foreign))
@@ -937,12 +937,14 @@ pub fn format_number(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> Option
     format_with(x, fmt, loc, sys, dec, grp, false)
 }
 
-/// [`format_number`] for the text a cell shows (`display`): a date outside the range that
-/// `LibreOffice` writes is `#FMT`, as it shows it, where `TEXT` does not imitate it.
+/// The text a cell shows (`display`) for a format code that a file stores: the code is written in
+/// English notation (`#,##0.00`, `0.0%`) whatever the locale, as an XLSX and an ODS keep it, and the
+/// number is written with the separators and the names of `loc`; where `TEXT` reads its code in the
+/// notation of the locale ([`format_number`]). A date outside the range that `LibreOffice` writes is
+/// `#FMT`, as it shows it, where `TEXT` does not imitate it.
 #[must_use]
 pub fn format_number_shown(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> Option<String> {
-    let (dec, grp) = code_separators(fmt, loc);
-    format_with(x, fmt, loc, sys, dec, grp, true)
+    format_with(x, fmt, loc, sys, '.', ',', true)
 }
 
 /// [`format_number`] for a code the engine writes itself, always in English

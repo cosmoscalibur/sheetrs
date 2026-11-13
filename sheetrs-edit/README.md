@@ -198,7 +198,7 @@ second step, which finds its results stale and calculates them again. There is n
 
 Operations on different sheets do not depend on each other, because a reference moves only with the
 rows and columns of the sheet it names. That holds because references across sheets are not
-supported (below). `--dry-run` prints the passes.
+supported (below). `--dry-run` prints the passes. `--locale TAG` (and `--config FILE`, whose `locale` in `[global]` is its default; `sheetrs.toml` of the current directory when there is one) is the locale of the calculation that an edit leaves to do (`TEXT`, the conversion of a number to text): by default the one of the workbook (an ODS says it, an XLSX takes the system's, `en-US` when there is none). The typed replacement of `--replace` still reads its text in `en-US` (issue #84).
 
 **As a library** (`sheetrs_edit::BookEdit`, a trait for `sheetrs_io::Book`), the changes are collected
 in the `Book` (`Book::from_file(..)?`, `Book::from_bytes(..)?`; its operations are `book.operations()`)

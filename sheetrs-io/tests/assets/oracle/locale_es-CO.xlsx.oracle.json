@@ -1,0 +1,1236 @@
+{
+ "version": "26.8.2.2",
+ "file": "locale_es-CO.xlsx",
+ "sheets": [
+  "Numbers"
+ ],
+ "cells": [
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1234,5",
+   "value": 1234.5,
+   "error": 0,
+   "format": "Estandar"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1234,50",
+   "value": 1234.5,
+   "error": 0,
+   "format": "0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 2,
+   "type": "VALUE",
+   "string": "1.234,50",
+   "value": 1234.5,
+   "error": 0,
+   "format": "#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1.235",
+   "value": 1234.5,
+   "error": 0,
+   "format": "#.##0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 4,
+   "type": "VALUE",
+   "string": "123450,0%",
+   "value": 1234.5,
+   "error": 0,
+   "format": "0,0%"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 5,
+   "type": "VALUE",
+   "string": "1,23E+03",
+   "value": 1234.5,
+   "error": 0,
+   "format": "0,00E+00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 6,
+   "type": "VALUE",
+   "string": "$1.234,50",
+   "value": 1234.5,
+   "error": 0,
+   "format": "\\$#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1.235",
+   "value": 1234.5,
+   "error": 0,
+   "format": "#.##0;\\(#.##0\\)"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1234,5",
+   "value": 1234.5,
+   "error": 0,
+   "format": "0,0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 9,
+   "type": "VALUE",
+   "string": "18/05/1903",
+   "value": 1234.5,
+   "error": 0,
+   "format": "DD/MM/AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 10,
+   "type": "VALUE",
+   "string": "lunes 18 mayo 1903",
+   "value": 1234.5,
+   "error": 0,
+   "format": "DDDD D MMMM AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 11,
+   "type": "VALUE",
+   "string": "18-may-1903",
+   "value": 1234.5,
+   "error": 0,
+   "format": "D-MMM-AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 12,
+   "type": "VALUE",
+   "string": "mayo",
+   "value": 1234.5,
+   "error": 0,
+   "format": "MMMM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 13,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": 1234.5,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 14,
+   "type": "VALUE",
+   "string": "1903-05-18 12:00",
+   "value": 1234.5,
+   "error": 0,
+   "format": "AAAA-MM-DD HH:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 0,
+   "col": 15,
+   "type": "VALUE",
+   "string": "29628:00",
+   "value": 1234.5,
+   "error": 0,
+   "format": "[HH]:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 0,
+   "type": "VALUE",
+   "string": "-1234,5",
+   "value": -1234.5,
+   "error": 0,
+   "format": "Estandar"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 1,
+   "type": "VALUE",
+   "string": "-1234,50",
+   "value": -1234.5,
+   "error": 0,
+   "format": "0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 2,
+   "type": "VALUE",
+   "string": "-1.234,50",
+   "value": -1234.5,
+   "error": 0,
+   "format": "#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 3,
+   "type": "VALUE",
+   "string": "-1.235",
+   "value": -1234.5,
+   "error": 0,
+   "format": "#.##0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 4,
+   "type": "VALUE",
+   "string": "-123450,0%",
+   "value": -1234.5,
+   "error": 0,
+   "format": "0,0%"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 5,
+   "type": "VALUE",
+   "string": "-1,23E+03",
+   "value": -1234.5,
+   "error": 0,
+   "format": "0,00E+00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 6,
+   "type": "VALUE",
+   "string": "-$1.234,50",
+   "value": -1234.5,
+   "error": 0,
+   "format": "\\$#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 7,
+   "type": "VALUE",
+   "string": "(1.235)",
+   "value": -1234.5,
+   "error": 0,
+   "format": "#.##0;\\(#.##0\\)"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 8,
+   "type": "VALUE",
+   "string": "-1234,5",
+   "value": -1234.5,
+   "error": 0,
+   "format": "0,0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12/08/1896",
+   "value": -1234.5,
+   "error": 0,
+   "format": "DD/MM/AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 10,
+   "type": "VALUE",
+   "string": "miércoles 12 agosto 1896",
+   "value": -1234.5,
+   "error": 0,
+   "format": "DDDD D MMMM AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 11,
+   "type": "VALUE",
+   "string": "12-ago-1896",
+   "value": -1234.5,
+   "error": 0,
+   "format": "D-MMM-AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 12,
+   "type": "VALUE",
+   "string": "agosto",
+   "value": -1234.5,
+   "error": 0,
+   "format": "MMMM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 13,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": -1234.5,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 14,
+   "type": "VALUE",
+   "string": "1896-08-12 12:00",
+   "value": -1234.5,
+   "error": 0,
+   "format": "AAAA-MM-DD HH:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 1,
+   "col": 15,
+   "type": "VALUE",
+   "string": "-29628:00",
+   "value": -1234.5,
+   "error": 0,
+   "format": "[HH]:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 0,
+   "type": "VALUE",
+   "string": "0,5",
+   "value": 0.5,
+   "error": 0,
+   "format": "Estandar"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 1,
+   "type": "VALUE",
+   "string": "0,50",
+   "value": 0.5,
+   "error": 0,
+   "format": "0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 2,
+   "type": "VALUE",
+   "string": "0,50",
+   "value": 0.5,
+   "error": 0,
+   "format": "#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1",
+   "value": 0.5,
+   "error": 0,
+   "format": "#.##0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 4,
+   "type": "VALUE",
+   "string": "50,0%",
+   "value": 0.5,
+   "error": 0,
+   "format": "0,0%"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 5,
+   "type": "VALUE",
+   "string": "5,00E-01",
+   "value": 0.5,
+   "error": 0,
+   "format": "0,00E+00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 6,
+   "type": "VALUE",
+   "string": "$0,50",
+   "value": 0.5,
+   "error": 0,
+   "format": "\\$#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1",
+   "value": 0.5,
+   "error": 0,
+   "format": "#.##0;\\(#.##0\\)"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 8,
+   "type": "VALUE",
+   "string": "0,5",
+   "value": 0.5,
+   "error": 0,
+   "format": "0,0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 9,
+   "type": "VALUE",
+   "string": "30/12/1899",
+   "value": 0.5,
+   "error": 0,
+   "format": "DD/MM/AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 10,
+   "type": "VALUE",
+   "string": "sábado 30 diciembre 1899",
+   "value": 0.5,
+   "error": 0,
+   "format": "DDDD D MMMM AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 11,
+   "type": "VALUE",
+   "string": "30-dic-1899",
+   "value": 0.5,
+   "error": 0,
+   "format": "D-MMM-AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 12,
+   "type": "VALUE",
+   "string": "diciembre",
+   "value": 0.5,
+   "error": 0,
+   "format": "MMMM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 13,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": 0.5,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 14,
+   "type": "VALUE",
+   "string": "1899-12-30 12:00",
+   "value": 0.5,
+   "error": 0,
+   "format": "AAAA-MM-DD HH:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 2,
+   "col": 15,
+   "type": "VALUE",
+   "string": "12:00",
+   "value": 0.5,
+   "error": 0,
+   "format": "[HH]:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1234567,891",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "Estandar"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1234567,89",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 2,
+   "type": "VALUE",
+   "string": "1.234.567,89",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1.234.568",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "#.##0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 4,
+   "type": "VALUE",
+   "string": "123456789,1%",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "0,0%"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 5,
+   "type": "VALUE",
+   "string": "1,23E+06",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "0,00E+00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 6,
+   "type": "VALUE",
+   "string": "$1.234.567,89",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "\\$#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1.234.568",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "#.##0;\\(#.##0\\)"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1234567,9",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "0,0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 9,
+   "type": "VALUE",
+   "string": "15/02/5280",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "DD/MM/AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 10,
+   "type": "VALUE",
+   "string": "jueves 15 febrero 5280",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "DDDD D MMMM AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 11,
+   "type": "VALUE",
+   "string": "15-feb-5280",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "D-MMM-AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 12,
+   "type": "VALUE",
+   "string": "febrero",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "MMMM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 13,
+   "type": "VALUE",
+   "string": "21:23:02",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 14,
+   "type": "VALUE",
+   "string": "5280-02-15 21:23",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "AAAA-MM-DD HH:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 3,
+   "col": 15,
+   "type": "VALUE",
+   "string": "#FMT",
+   "value": 1234567.891,
+   "error": 0,
+   "format": "[HH]:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 0,
+   "type": "VALUE",
+   "string": "0,000123",
+   "value": 0.000123,
+   "error": 0,
+   "format": "Estandar"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 1,
+   "type": "VALUE",
+   "string": "0,00",
+   "value": 0.000123,
+   "error": 0,
+   "format": "0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 2,
+   "type": "VALUE",
+   "string": "0,00",
+   "value": 0.000123,
+   "error": 0,
+   "format": "#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 3,
+   "type": "VALUE",
+   "string": "0",
+   "value": 0.000123,
+   "error": 0,
+   "format": "#.##0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 4,
+   "type": "VALUE",
+   "string": "0,0%",
+   "value": 0.000123,
+   "error": 0,
+   "format": "0,0%"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 5,
+   "type": "VALUE",
+   "string": "1,23E-04",
+   "value": 0.000123,
+   "error": 0,
+   "format": "0,00E+00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 6,
+   "type": "VALUE",
+   "string": "$0,00",
+   "value": 0.000123,
+   "error": 0,
+   "format": "\\$#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 7,
+   "type": "VALUE",
+   "string": "0",
+   "value": 0.000123,
+   "error": 0,
+   "format": "#.##0;\\(#.##0\\)"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 8,
+   "type": "VALUE",
+   "string": "0,0",
+   "value": 0.000123,
+   "error": 0,
+   "format": "0,0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 9,
+   "type": "VALUE",
+   "string": "30/12/1899",
+   "value": 0.000123,
+   "error": 0,
+   "format": "DD/MM/AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 10,
+   "type": "VALUE",
+   "string": "sábado 30 diciembre 1899",
+   "value": 0.000123,
+   "error": 0,
+   "format": "DDDD D MMMM AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 11,
+   "type": "VALUE",
+   "string": "30-dic-1899",
+   "value": 0.000123,
+   "error": 0,
+   "format": "D-MMM-AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 12,
+   "type": "VALUE",
+   "string": "diciembre",
+   "value": 0.000123,
+   "error": 0,
+   "format": "MMMM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 13,
+   "type": "VALUE",
+   "string": "00:00:10",
+   "value": 0.000123,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 14,
+   "type": "VALUE",
+   "string": "1899-12-30 00:00",
+   "value": 0.000123,
+   "error": 0,
+   "format": "AAAA-MM-DD HH:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 4,
+   "col": 15,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 0.000123,
+   "error": 0,
+   "format": "[HH]:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45367,75",
+   "value": 45367.75,
+   "error": 0,
+   "format": "Estandar"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 1,
+   "type": "VALUE",
+   "string": "45367,75",
+   "value": 45367.75,
+   "error": 0,
+   "format": "0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 2,
+   "type": "VALUE",
+   "string": "45.367,75",
+   "value": 45367.75,
+   "error": 0,
+   "format": "#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 3,
+   "type": "VALUE",
+   "string": "45.368",
+   "value": 45367.75,
+   "error": 0,
+   "format": "#.##0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 4,
+   "type": "VALUE",
+   "string": "4536775,0%",
+   "value": 45367.75,
+   "error": 0,
+   "format": "0,0%"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 5,
+   "type": "VALUE",
+   "string": "4,54E+04",
+   "value": 45367.75,
+   "error": 0,
+   "format": "0,00E+00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 6,
+   "type": "VALUE",
+   "string": "$45.367,75",
+   "value": 45367.75,
+   "error": 0,
+   "format": "\\$#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 7,
+   "type": "VALUE",
+   "string": "45.368",
+   "value": 45367.75,
+   "error": 0,
+   "format": "#.##0;\\(#.##0\\)"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 8,
+   "type": "VALUE",
+   "string": "45367,8",
+   "value": 45367.75,
+   "error": 0,
+   "format": "0,0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 9,
+   "type": "VALUE",
+   "string": "16/03/2024",
+   "value": 45367.75,
+   "error": 0,
+   "format": "DD/MM/AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 10,
+   "type": "VALUE",
+   "string": "sábado 16 marzo 2024",
+   "value": 45367.75,
+   "error": 0,
+   "format": "DDDD D MMMM AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 11,
+   "type": "VALUE",
+   "string": "16-mar-2024",
+   "value": 45367.75,
+   "error": 0,
+   "format": "D-MMM-AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 12,
+   "type": "VALUE",
+   "string": "marzo",
+   "value": 45367.75,
+   "error": 0,
+   "format": "MMMM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 13,
+   "type": "VALUE",
+   "string": "18:00:00",
+   "value": 45367.75,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 14,
+   "type": "VALUE",
+   "string": "2024-03-16 18:00",
+   "value": 45367.75,
+   "error": 0,
+   "format": "AAAA-MM-DD HH:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 5,
+   "col": 15,
+   "type": "VALUE",
+   "string": "1088826:00",
+   "value": 45367.75,
+   "error": 0,
+   "format": "[HH]:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 0,
+   "type": "VALUE",
+   "string": "45658",
+   "value": 45658.0,
+   "error": 0,
+   "format": "Estandar"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 1,
+   "type": "VALUE",
+   "string": "45658,00",
+   "value": 45658.0,
+   "error": 0,
+   "format": "0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 2,
+   "type": "VALUE",
+   "string": "45.658,00",
+   "value": 45658.0,
+   "error": 0,
+   "format": "#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 3,
+   "type": "VALUE",
+   "string": "45.658",
+   "value": 45658.0,
+   "error": 0,
+   "format": "#.##0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 4,
+   "type": "VALUE",
+   "string": "4565800,0%",
+   "value": 45658.0,
+   "error": 0,
+   "format": "0,0%"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 5,
+   "type": "VALUE",
+   "string": "4,57E+04",
+   "value": 45658.0,
+   "error": 0,
+   "format": "0,00E+00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 6,
+   "type": "VALUE",
+   "string": "$45.658,00",
+   "value": 45658.0,
+   "error": 0,
+   "format": "\\$#.##0,00"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 7,
+   "type": "VALUE",
+   "string": "45.658",
+   "value": 45658.0,
+   "error": 0,
+   "format": "#.##0;\\(#.##0\\)"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 8,
+   "type": "VALUE",
+   "string": "45658,0",
+   "value": 45658.0,
+   "error": 0,
+   "format": "0,0"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 9,
+   "type": "VALUE",
+   "string": "01/01/2025",
+   "value": 45658.0,
+   "error": 0,
+   "format": "DD/MM/AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 10,
+   "type": "VALUE",
+   "string": "miércoles 1 enero 2025",
+   "value": 45658.0,
+   "error": 0,
+   "format": "DDDD D MMMM AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 11,
+   "type": "VALUE",
+   "string": "1-ene-2025",
+   "value": 45658.0,
+   "error": 0,
+   "format": "D-MMM-AAAA"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 12,
+   "type": "VALUE",
+   "string": "enero",
+   "value": 45658.0,
+   "error": 0,
+   "format": "MMMM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 13,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 45658.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 14,
+   "type": "VALUE",
+   "string": "2025-01-01 00:00",
+   "value": 45658.0,
+   "error": 0,
+   "format": "AAAA-MM-DD HH:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 6,
+   "col": 15,
+   "type": "VALUE",
+   "string": "1095792:00",
+   "value": 45658.0,
+   "error": 0,
+   "format": "[HH]:MM"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 9,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "VERDADERO",
+   "value": 1.0,
+   "error": 0,
+   "format": "BOOLEAN",
+   "formula": "=TRUE()",
+   "result": 1
+  },
+  {
+   "sheet": "Numbers",
+   "row": 9,
+   "col": 1,
+   "type": "FORMULA",
+   "string": "FALSO",
+   "value": 0.0,
+   "error": 0,
+   "format": "BOOLEAN",
+   "formula": "=FALSE()",
+   "result": 1
+  },
+  {
+   "sheet": "Numbers",
+   "row": 9,
+   "col": 2,
+   "type": "TEXT",
+   "string": "text",
+   "value": 0.0,
+   "error": 0,
+   "format": "Estandar"
+  },
+  {
+   "sheet": "Numbers",
+   "row": 10,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "1234,5",
+   "value": 0.0,
+   "error": 0,
+   "format": "Estandar",
+   "formula": "=1234,5&\"\"",
+   "result": 2
+  },
+  {
+   "sheet": "Numbers",
+   "row": 10,
+   "col": 1,
+   "type": "FORMULA",
+   "string": "55,43%",
+   "value": 0.0,
+   "error": 0,
+   "format": "Estandar",
+   "formula": "=0,5543*100&\"%\"",
+   "result": 2
+  },
+  {
+   "sheet": "Numbers",
+   "row": 10,
+   "col": 2,
+   "type": "FORMULA",
+   "string": "1.234,50",
+   "value": 0.0,
+   "error": 0,
+   "format": "Estandar",
+   "formula": "=TEXT(1234,5;\"#,##0.00\")",
+   "result": 2
+  },
+  {
+   "sheet": "Numbers",
+   "row": 10,
+   "col": 3,
+   "type": "FORMULA",
+   "string": "50%",
+   "value": 0.0,
+   "error": 0,
+   "format": "Estandar",
+   "formula": "=TEXT(0,5;\"0.0%\")",
+   "result": 2
+  },
+  {
+   "sheet": "Numbers",
+   "row": 10,
+   "col": 4,
+   "type": "FORMULA",
+   "string": "0,25",
+   "value": 0.25,
+   "error": 0,
+   "format": "Estandar",
+   "formula": "=1/4",
+   "result": 1
+  },
+  {
+   "sheet": "Numbers",
+   "row": 10,
+   "col": 5,
+   "type": "FORMULA",
+   "string": "-1234,5",
+   "value": -1234.5,
+   "error": 0,
+   "format": "Estandar",
+   "formula": "=-1234,5",
+   "result": 1
+  }
+ ],
+ "notes": []
+}

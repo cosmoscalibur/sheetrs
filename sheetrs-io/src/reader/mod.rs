@@ -435,6 +435,23 @@ pub(crate) fn read_date_system_from_reader<R: std::io::Read + std::io::Seek>(
     }
 }
 
+/// The language and country the document declares (an ODS: the default cell style), as a tag; `None`
+/// for an XLSX, which declares none, and for a document that states no language.
+///
+/// # Errors
+///
+/// When the file cannot be read or is not a workbook of a supported format.
+pub(crate) fn read_document_locale_from_reader<R: std::io::Read + std::io::Seek>(
+    reader: R,
+) -> Result<Option<String>> {
+    let mut archive = open_archive(reader)?;
+    if detect::detect_archive(&mut archive)? == Format::Ods {
+        Ok(OdsReader::new(&mut archive)?.read_locale())
+    } else {
+        Ok(None)
+    }
+}
+
 /// The defined names of the workbook in `reader` and those it defines in more than one scope
 /// (its format is read from its content). An XLSX is not read beyond its workbook part; an ODS has its names
 /// after its tables, so it is read through.

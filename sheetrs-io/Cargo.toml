@@ -14,6 +14,8 @@ description = "Input and output of the SheetRS suite: the Book (a workbook from 
 [features]
 # The writers of XLSX and ODS (`write`): a workbook rewritten as a stream. Off by default.
 write = ["dep:tempfile", "dep:sheetrs-protocol", "dep:serde_json"]
+# `locale::from_config`: the locale of a configuration file (`sheetrs.toml`). Off by default.
+config = ["dep:toml"]
 
 [dependencies]
 sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.1" }
@@ -28,13 +30,14 @@ aho-corasick.workspace = true
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 tempfile = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
 tempfile = "3.27"
 anyhow.workspace = true
 # The tests of the writers run with the feature `write` on.
-sheetrs-io = { path = ".", features = ["write"] }
+sheetrs-io = { path = ".", features = ["write", "config"] }
 
 [lints]
 workspace = true

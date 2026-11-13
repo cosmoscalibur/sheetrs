@@ -159,6 +159,10 @@ Rules may accept configuration parameters via `LinterConfig`:
 
 - `calc203_allow_double_negative` (bool) — If `true`, `--` (double negative /
   coercion to number) is not flagged by CALC203.
+- `locale` (a locale tag such as `"es-CO"`, in `[global]`; not set by default) — The locale of the
+  workbook for the tools that read the same file (`sheetrs query`, `sheetrs edit`; the lint rules do
+  not use it). A value that is not a tag is a configuration error. In `sheetc.toml` the key is
+  `tag` of the `[locale]` table. The resolution order is in *The locale of a `Book`*.
 - `enable_features` (array of names, default empty) — Compatibility features,
   all off unless listed; known: `LONGTEXT` (ERR102 accepts the `#NAME?` of
   `_xlfn._LONGTEXT(…)`). Unknown names make the configuration invalid.
@@ -294,6 +298,38 @@ idiomatic Rust where that differs (`write` and not Save, `io::Write` sinks, cons
   without one (WebAssembly) replaces once with `clock::set_wall_clock`; nothing else in the workspace reads
   the time.
 
+### The locale of a `Book`
+
+The locale (the regional settings that give a text to a number and read a number from a text) is a
+property of the workbook: `Book::with_locale` (a `sheetrs_io::locale::LocaleTag`, which parses with
+`FromStr`) and `Book::locale`. Every tool that takes the `Book` follows it: `TEXT` and the conversion of
+a number to text in `calculate` and in the recalculation that follows an edit (`sheetrs-edit` gives
+every intermediate `Book` of a plan the one of its source, `Book::with_locale_of`), the `display` of
+a query and the dates a search reads. The first of these that is set decides, and the same name,
+`locale`, is the argument in every layer:
+
+1. the `locale` of a single call, which wins over the rest: the `locale` of a `Query` (`--locale` of
+   `sheetrs query`), of `evaluate`, of the options of `inspect` and `compile`, and `--locale` and the
+   `[locale]` table of `sheetc` (the build configuration of a program is one thing: its flags win over
+   its file);
+2. the locale given to the `Book`: `Book::with_locale`, `--locale` of `sheetrs edit`,
+   `Book(..., locale=...)` in Python, `new Book(bytes, locale)` in WebAssembly;
+3. the configuration file: `locale` in `[global]` of `sheetrs.toml` (`--config`, else the one of the
+   working directory) for `sheetrs query` and `sheetrs edit`; these command lines read it
+   (`sheetrs_io::locale::configured`, feature `config`) and give it to the `Book` as the item above,
+   so that a flag wins over it. (`sheetc` has its own build configuration, `[locale] tag` of
+   `sheetc.toml`, which is item 1.) An invalid value fails when the
+   configuration is read (the shape of the tag) or when it is first used (a locale the engine's table
+   lacks), before any work;
+4. the default of the format (`Book::default_locale`): an ODS says it (the language and country of the
+   default cell style), an XLSX takes the locale of the system (`LC_ALL`, `LC_CTYPE`, then `LANG`, the
+   ones `LibreOffice` reads on Linux; `C` and `POSIX` ask for none), and `en-US` when there is none and
+   in WebAssembly. A default that the engine's table lacks is skipped (it is not an error, as it is not
+   one for `LibreOffice`, which falls back to `en-US`), and a locale that was asked for is an error.
+
+`sheetrs_compiler::locale::resolve` is the one place that applies the order for the engine. The
+adapters (`sheetrs-py`, `sheetrs-wasm`, the command lines) only convert the argument.
+
 ### Versioning
 
 The workspace uses [semantic versioning](https://semver.org/):
@@ -311,7 +347,8 @@ Every tool is a library plus an executable; the bindings are adapters
 over those libraries. Where code lives follows who uses it (see `ARCHITECTURE.md`, *Layering*):
 
 - `sheetrs-io` (shared kernel): `reader` (the `Workbook` model, `Grid`, `CellSink`, `ExcelError`,
-  the XLSX/ODS parsers, and `Format`) and `Book` (`sheetrs_io::Book`: the one reference to a workbook that every tool takes, with the operations pending on it). Add to it only what two tools need and has no meaning outside the
+  the XLSX/ODS parsers, and `Format`), `locale` (`LocaleTag`, the locale of the system and of a
+  configuration file) and `Book` (`sheetrs_io::Book`: the one reference to a workbook that every tool takes, with its locale and the operations pending on it). Add to it only what two tools need and has no meaning outside the
   workbook model; code used by one tool belongs to that tool's crate.
 - `sheetrs-linter`: `rules` (`WalkerRule`, the registry and the catalog), `config`, `violation`,
   `report` (`group_by_scope`, `ViolationRecord`), the output formats (`human`, `json`, `sarif`, and
