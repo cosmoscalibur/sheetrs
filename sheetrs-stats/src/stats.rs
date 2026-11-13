@@ -45,9 +45,12 @@ pub struct SheetStats {
     pub formulas: u64,
     /// Cells whose value (cached result for formulas) is an error.
     pub errors: u64,
-    /// Cells without value or formula inside the used area, which spans from
-    /// A1 to the last row and column holding a used cell.
+    /// Cells without value or formula inside the used range.
     pub empty_cells: u64,
+    /// Rectangle of the used cells (`D10:E11`), from the first used row and column to the last,
+    /// as the used area of `LibreOffice`; `None` for a sheet without used cells. A single used cell
+    /// gives `D10:D10`.
+    pub used_range: Option<String>,
     /// Bottom right corner of the used area (`GV5439`), `None` for a sheet without used cells.
     pub end_of_sheet: Option<String>,
     /// Notes of the sheet's cells.
@@ -65,8 +68,8 @@ pub(crate) struct Tally {
     used_cells: u64,
     formulas: u64,
     errors: u64,
-    /// Bottom right corner of the used cells, `(row, col)` 0-based.
-    used_area: Option<(u32, u32)>,
+    /// Rectangle of the used cells, `(first_row, first_col, last_row, last_col)` 0-based.
+    used_area: Option<(u32, u32, u32, u32)>,
 }
 
 /// Counts the cells of each sheet as the reader hands them over, so the workbook's cells are never
@@ -90,8 +93,13 @@ impl CellSink for StatsSink {
         tally.formulas += u64::from(cell.is_formula());
         tally.errors += u64::from(cell.value.is_error());
         tally.used_area = Some(match tally.used_area {
-            Some((max_row, max_col)) => (max_row.max(row), max_col.max(col)),
-            None => (row, col),
+            Some((min_row, min_col, max_row, max_col)) => (
+                min_row.min(row),
+                min_col.min(col),
+                max_row.max(row),
+                max_col.max(col),
+            ),
+            None => (row, col, row, col),
         });
     }
 }
@@ -179,9 +187,10 @@ impl SheetStats {
             used_area,
         }: Tally,
     ) -> Self {
-        let area = used_area.map_or(0, |(max_row, max_col)| {
-            (u64::from(max_row) + 1) * (u64::from(max_col) + 1)
+        let area = used_area.map_or(0, |(min_row, min_col, max_row, max_col)| {
+            (u64::from(max_row - min_row) + 1) * (u64::from(max_col - min_col) + 1)
         });
+        let corner = |row: u32, col: u32| format!("{}{}", column_letters(col), row + 1);
 
         Self {
             name: sheet.name.clone(),
@@ -190,8 +199,10 @@ impl SheetStats {
             formulas,
             errors,
             empty_cells: area - used_cells,
-            end_of_sheet: used_area
-                .map(|(max_row, max_col)| format!("{}{}", column_letters(max_col), max_row + 1)),
+            used_range: used_area.map(|(min_row, min_col, max_row, max_col)| {
+                format!("{}:{}", corner(min_row, min_col), corner(max_row, max_col))
+            }),
+            end_of_sheet: used_area.map(|(_, _, max_row, max_col)| corner(max_row, max_col)),
             comments: sheet.comments as u64,
             charts: sheet.charts as u64,
             tables: sheet.tables as u64,
@@ -269,6 +280,77 @@ mod tests {
         assert_eq!(stats.errors, 1);
         assert_eq!(stats.empty_cells, 2);
         assert_eq!(stats.end_of_sheet.as_deref(), Some("B3"));
+    }
+
+    #[test]
+    fn the_used_range_is_the_rectangle_of_the_used_cells() {
+        // D10 and E11 (0-based (9, 3) and (10, 4)), given out of order.
+        let stats = stats_of(vec![
+            cell(10, 4, CellValue::Text(Arc::from("y")), None),
+            cell(9, 3, CellValue::Text(Arc::from("x")), None),
+            cell(0, 0, CellValue::Empty, None),
+        ]);
+        assert_eq!(stats.used_range.as_deref(), Some("D10:E11"));
+        assert_eq!(stats.end_of_sheet.as_deref(), Some("E11"));
+        assert_eq!(stats.used_cells, 2);
+        assert_eq!(stats.empty_cells, 2);
+        assert_eq!(stats_of(vec![]).used_range, None);
+    }
+
+    /// The used cells D10 and E11 of a workbook written in each format, read from bytes.
+    #[test]
+    fn the_used_range_of_a_file_starts_at_its_first_used_cell() {
+        let xlsx = {
+            use std::io::Write;
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            let opts = zip::write::SimpleFileOptions::default();
+            for (name, body) in [
+                (
+                    "[Content_Types].xml",
+                    r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#,
+                ),
+                (
+                    "_rels/.rels",
+                    r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+                ),
+                (
+                    "xl/workbook.xml",
+                    r#"<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+                ),
+                (
+                    "xl/_rels/workbook.xml.rels",
+                    r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+                ),
+                (
+                    "xl/worksheets/sheet1.xml",
+                    r#"<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:E11"/><sheetData><row r="10"><c r="D10" t="inlineStr"><is><t>x</t></is></c></row><row r="11"><c r="E11"><v>2</v></c></row></sheetData></worksheet>"#,
+                ),
+            ] {
+                zip.start_file(name, opts).unwrap();
+                zip.write_all(body.as_bytes()).unwrap();
+            }
+            zip.finish().unwrap().into_inner()
+        };
+        let ods = {
+            use std::io::Write;
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            let stored = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            zip.start_file("mimetype", stored).unwrap();
+            zip.write_all(b"application/vnd.oasis.opendocument.spreadsheet")
+                .unwrap();
+            zip.start_file("content.xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(br#"<?xml version="1.0"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" office:version="1.2"><office:body><office:spreadsheet><table:table table:name="Sheet1"><table:table-column table:number-columns-repeated="3"/><table:table-column/><table:table-column/><table:table-row table:number-rows-repeated="9"><table:table-cell table:number-columns-repeated="5"/></table:table-row><table:table-row><table:table-cell table:number-columns-repeated="3"/><table:table-cell office:value-type="string"><text:p>x</text:p></table:table-cell></table:table-row><table:table-row><table:table-cell table:number-columns-repeated="4"/><table:table-cell office:value-type="float" office:value="2"><text:p>2</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>"#).unwrap();
+            zip.finish().unwrap().into_inner()
+        };
+        for (bytes, ext) in [(xlsx, "xlsx"), (ods, "ods")] {
+            let stats = stats_for(&bytes);
+            let sheet = &stats.sheets[0];
+            assert_eq!(sheet.used_range.as_deref(), Some("D10:E11"), "{ext}");
+            assert_eq!(sheet.used_cells, 2, "{ext}");
+            assert_eq!(sheet.empty_cells, 2, "{ext}");
+        }
     }
 
     #[test]

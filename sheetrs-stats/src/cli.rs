@@ -113,6 +113,10 @@ fn print_human(stats: &WorkbookStats) {
             with_share(sheet.empty_cells, stats.total_empty_cells)
         );
         println!(
+            "  Used Range: {}",
+            sheet.used_range.as_deref().unwrap_or("-")
+        );
+        println!(
             "  End Of Sheet: {}",
             sheet.end_of_sheet.as_deref().unwrap_or("-")
         );

@@ -27,7 +27,7 @@ def test_the_sheets_are_looked_up_by_name_or_by_position_and_iterate_in_order(st
 def test_a_sheet_says_its_used_range_and_counts_what_the_stats_total(structure):
     book = sheetrs.Book(structure)
     sheet = book.stats().sheets["F"]
-    assert sheet.used_range.startswith("A1:")
+    assert sheet.used_range is not None and ":" in sheet.used_range
     assert sheet.state == "visible"
     assert sheet.formulas > 0 and sheet.used_cells >= sheet.formulas
     assert sheet.empty_cells >= 0 and sheet.xml_size > 0
@@ -49,7 +49,12 @@ def test_a_sheet_without_cells_has_no_used_range(tmp_path):
     path = make_xlsx(tmp_path / "w.xlsx", {"Empty": {}, "Full": {"B3": 1}})
     book = sheetrs.Book(path)
     assert book.stats().sheets["Empty"].used_range is None
-    assert book.stats().sheets["Full"].used_range == "A1:B3"
+    assert book.stats().sheets["Full"].used_range == "B3:B3"
+
+
+def test_the_used_range_starts_at_the_first_used_cell(tmp_path):
+    path = make_xlsx(tmp_path / "d.xlsx", {"Sheet1": {"D10": "x", "E11": "y"}})
+    assert sheetrs.Book(path).stats().sheets["Sheet1"].used_range == "D10:E11"
 
 
 def test_a_hidden_sheet_says_its_state(tmp_path):

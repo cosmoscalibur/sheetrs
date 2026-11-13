@@ -438,14 +438,11 @@ impl PySheet {
         &self.inner.name
     }
 
-    /// The area from `A1` to the bottom right corner of the cells that hold a value or a formula
-    /// (`"A1:GV5439"`); `None` for a sheet with none.
+    /// The rectangle of the cells that hold a value or a formula, from the first used row and
+    /// column to the last (`"D10:GV5439"`); `None` for a sheet with none.
     #[getter]
     fn used_range(&self) -> Option<String> {
-        self.inner
-            .end_of_sheet
-            .as_ref()
-            .map(|end| format!("A1:{end}"))
+        self.inner.used_range.clone()
     }
 
     /// `"visible"`, `"hidden"` or `"very_hidden"`.

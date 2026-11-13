@@ -55,11 +55,12 @@ the workbook total):
 | Used cells | Cells holding a value or a formula. Cells kept only for their style are not counted. |
 | Formulas | Used cells with a formula. |
 | Errors | Used cells whose value, or cached formula result, is an error (`#DIV/0!`, `#REF!`, ...). |
-| End of sheet | Bottom right corner of the used area (`GV5439`): the last row and the last column that hold a used cell. Absent in a sheet without used cells. |
+| Used range | Rectangle of the used cells (`D10:E11`), from the first row and column that hold a used cell to the last, as the used area of LibreOffice (not anchored at `A1`; the `<dimension>` element is not read). Absent in a sheet without used cells. |
+| End of sheet | Bottom right corner of the used range (`GV5439`). Absent in a sheet without used cells. |
 | Comments | Notes of the cells: the comments of an XLSX (the threaded ones when the sheet has no others) and the annotations of an ODS. |
 | Charts | Charts the sheet shows: the chart parts its drawing relates to in an XLSX, the embedded objects of an ODS. |
 | Tables | Table objects of an XLSX; named database ranges of an ODS (the one of an autofilter is not a table). |
-| Empty cells | Cells without value or formula inside the used area, which spans from A1 to the last row and column holding a used cell. |
+| Empty cells | Cells without value or formula inside the used range. |
 | XML size | Uncompressed size of the XML describing the sheet: the worksheet part in XLSX, the `<table:table>` element of `content.xml` in ODS. |
 
 XML size depends on each format's markup, so it compares sheets within a
@@ -87,6 +88,7 @@ workbook, not across formats.
       "formulas": 3,
       "errors": 1,
       "empty_cells": 4,
+      "used_range": "A1:D4",
       "end_of_sheet": "D4",
       "comments": 1,
       "charts": 0,
