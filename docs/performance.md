@@ -97,6 +97,7 @@ The counts are taken while the reader goes: the workbook is never built.
 | `--sheet Summary` | 0.003-0.004 s, 17 MB | 1.34-1.40 s, 19 MB |
 | `--find K00` (values, every sheet; 14 930 cells) | 2.32-2.38 s, 17-18 MB | 3.61-3.82 s, 19 MB |
 | `--find VLOOKUP --in formula` (every formula) | 6.17-6.29 s, 103 MB | 6.49-6.79 s, 108 MB |
+| `--find K00 --include-formulas` (values and the results of 2.4 M formulas) | 17.74-18.51 s, 621 MB | 22.46-23.01 s, 646 MB |
 
 The readers skip the sheets that are not asked for and stop after the last row a window reaches; an ODS has to read
 its content part to know where the sheets are.
@@ -326,8 +327,8 @@ a running total.
 - Without `calculateAll()` LibreOffice converts the zeros that the file stores as results (the conversion takes
   38.4-39.7 s, 3276-3278 MB): it is faster, and wrong for this file.
 - The search in an ODS is not the same flow: LibreOffice also looks at the results of formulas (29 760 cells in the
-  ODS of this file), and `sheetrs query --find --include-formulas` did not finish on it in five minutes (see the
-  [known limits](#known-limits)).
+  ODS of this file), and `sheetrs query --find --include-formulas` takes 22.46-23.01 s on it (see the
+  [`sheetrs query`](#sheetrs-query) table).
 - Memory of LibreOffice is the `VmHWM` of `soffice.bin`; a deletion keeps the undo data, which is why it takes
   1.1 GB more than the calculation alone.
 
@@ -350,8 +351,10 @@ Measured at this state; none is being worked on here.
   ([#86](https://github.com/cosmoscalibur/sheetrs/issues/86)).
 - **Deleting columns of an ODS** takes 136-139 s on `formulas.ods`, five times the XLSX and about 3.5 times deleting rows
   of the same file.
-- **A search in formulas with their results** (`query --find … --include-formulas`) did not finish on 2.4 M formulas in
-  five minutes (`sheetrs query -i formulas.xlsx --find K00 --include-formulas`, killed at 300 s, 100 % of one core).
+- **A search that also looks at the results of formulas** (`query --find … --include-formulas`) keeps every formula
+  cell to infer the format of its result: 621-646 MB and 18-23 s on 2.4 M formulas, against 17 MB and 2.3 s of a search
+  by value alone. Before the change that reads each sheet whole after eight windows (instead of the file once per
+  referenced range) and finds the cells of a range by position, it did not finish in five minutes.
 - **The XLSX reader** is not profiled in detail ([#83](https://github.com/cosmoscalibur/sheetrs/issues/83)).
 - **`sheetc calculate -o`** writes the results truncated to 14 digits while the planner writes the full number
   ([#103](https://github.com/cosmoscalibur/sheetrs/issues/103)).
