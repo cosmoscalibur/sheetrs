@@ -233,7 +233,7 @@ impl BookCompile for Book {
 fn build(source: &Book, options: &Options, mode: Mode) -> Result<(Program, Report)> {
     let model = loader::load(source)?;
     let spec = options.spec(&model, mode)?;
-    let (mut program, report) = compile(&model, &spec)?;
+    let (mut program, report) = compile(model, &spec)?;
     program.build.built_at = crate::compile::build_time()?;
     Ok((program, report))
 }
@@ -538,7 +538,7 @@ pub fn evaluate(formula: &str, locale: Option<&str>, options: &Options) -> Resul
         host: options.config.host.clone().unwrap_or_default(),
         ..Spec::default()
     };
-    let (program, _) = compile(&model, &spec)?;
+    let (program, _) = compile(model, &spec)?;
     let out = program.calculate(&Json::Null, &Overrides::default())?;
     Ok(out["Sheet1!A1"].clone())
 }

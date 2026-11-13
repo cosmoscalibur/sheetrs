@@ -175,7 +175,7 @@ range that holds the formulas given the error; the rest (377) keep their result.
 ### `sheetc calculate` and `sheetc build`
 
 `sheetc calculate -i formulas.xlsx`: every formula calculated again, the workbook written (`-o OUT`) 10.39-10.82 s,
-1598 MB; one declared output as JSON (`--range Summary!A1`) 10.52-10.54 s, 1598 MB.
+1598 MB; one declared output as JSON (`--range Summary!A1`) 10.52-10.54 s, 1598 MB. Those two figures predate the changes below; `-o OUT` measured again after the model went by value into `compile` (see below): 8.3-8.9 s, 1152 MB (1309 MB before it, same session), the workbook byte-identical.
 
 `sheetc build` and the executable it writes, one run per row group (`sheetrs-compiler/scripts/measure_perf.py`; the
 stages come from `SHEETC_TRACE`; median of 3):
@@ -187,10 +187,10 @@ stages come from `SHEETC_TRACE`; median of 3):
 | `data.xlsx` (49.19 MB, no settings: inputs deduced) | build total (executable 114.78 MB) | 7.59 | 1540 |
 | | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.48 / 0.23 / 2.37 / 0.08 / 0.03 / 0.49 | |
 | | engine start-up (`--meta`) / execute a request | 0.620 / 2.745 | 453 / 757 |
-| `data_declared.xlsx` (inputs and outputs declared) | build total (executable 9.00 MB) | 4.52 | 724 |
+| `data_declared.xlsx` (inputs and outputs declared) | build total (executable 9.00 MB) | 4.52 | 704 |
 | | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.40 / 0.16 / 0.21 / 0.67 / 0.00 / 0.01 | |
 | | engine start-up / execute a request | 0.003 / 0.002 | 14 / 14 |
-| `formulas.xlsx` (28.98 MB) | build total (executable 93.54 MB) | 6.85 | 1309 |
+| `formulas.xlsx` (28.98 MB) | build total (executable 93.54 MB) | 6.85 | 1152 |
 | | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 2.29 / 0.83 / 0.76 / 1.13 / 1.06 / 0.61 | |
 | | engine start-up / execute a request | 0.722 / 1.994 | 423 / 496 |
 
@@ -204,6 +204,8 @@ above, the recalculation of `sheetrs edit`, Python `calculate`, and the model us
 should take less memory and time; they were not measured again, nor were the start-up and request rows of the
 executables, which the change does not touch. A workbook that declares its inputs and outputs keeps only what the outputs need, so its executable is small and
 answers in milliseconds; one that does not carries every cell.
+
+`sheetc build` and `calculate` hand the model to `compile` by value, which frees the text of the formulas as soon as they are lowered (nothing after reads it, only whether a cell is a formula): `formulas.xlsx` peaks at 1152 MB instead of 1309 MB and `data_declared.xlsx` at 704 MB instead of 724 MB, with the same time and the same program (`--emit-ir` identical). `data.xlsx` (about 600 000 short formulas, almost all of the peak in the cells and the graph) did not move: 1540-1584 MB either way, and its row above is as it was. The `formulas.xlsx` and `data_declared.xlsx` figures were measured on the same machine in the same session as their baselines; the stage rows were not measured again.
 
 The rows of this table were measured again with the payload in `postcard` (see
 [the executable format](../sheetrs-compiler/docs/DESIGN.md#executable-format)): with `bincode` the executables of

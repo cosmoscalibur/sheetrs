@@ -588,7 +588,7 @@ fn build(mut args: Args) -> Result<i32, Fail> {
     let mut spec = spec_for(cli, explicit, file, &model)?;
     spec.mode = mode;
     let t1 = std::time::Instant::now();
-    let (mut program, report) = compile(&model, &spec)?;
+    let (mut program, report) = compile(model, &spec)?;
     program.build.built_at = sheetrs_compiler::compile::build_time()?;
     stage(&t1, "compile (total)");
     print_report(&report, &program);
@@ -642,7 +642,6 @@ fn build(mut args: Args) -> Result<i32, Fail> {
     );
     // The process ends here: freeing millions of cells one by one would only delay it.
     std::mem::forget(program);
-    std::mem::forget(model);
     Ok(0)
 }
 
@@ -769,7 +768,7 @@ fn calculate(mut args: Args) -> Result<i32, Fail> {
         let model = load_model(file)?;
         let mut spec = spec_for(cli, explicit, file, &model)?;
         spec.mode = mode;
-        let (mut p, report) = compile(&model, &spec)?;
+        let (mut p, report) = compile(model, &spec)?;
         p.build.built_at = sheetrs_compiler::compile::build_time()?;
         print_report(&report, &p);
         p
@@ -836,7 +835,7 @@ fn evaluate(mut args: Args) -> Result<i32, Fail> {
         host: o.host.clone(),
         ..Spec::default()
     };
-    let (program, report) = compile(&m, &spec)?;
+    let (program, report) = compile(m, &spec)?;
     for d in &program.diagnostics {
         log(&Diagnostic::warning("BUILD_DIAGNOSTIC", d.clone()));
     }
