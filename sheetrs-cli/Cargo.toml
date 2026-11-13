@@ -16,11 +16,11 @@ name = "sheetrs"
 path = "src/main.rs"
 
 [dependencies]
-sheetrs-query = { path = "../sheetrs-query", version = "0.4.0", features = ["cli"] }
-sheetrs-edit = { path = "../sheetrs-edit", version = "0.4.0", features = ["cli"] }
-sheetrs-linter = { path = "../sheetrs-linter", version = "0.4.0", features = ["cli"] }
-sheetrs-stats = { path = "../sheetrs-stats", version = "0.4.0", features = ["cli"] }
-sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.0", features = ["cli"] }
+sheetrs-query = { path = "../sheetrs-query", version = "0.4.1", features = ["cli"] }
+sheetrs-edit = { path = "../sheetrs-edit", version = "0.4.1", features = ["cli"] }
+sheetrs-linter = { path = "../sheetrs-linter", version = "0.4.1", features = ["cli"] }
+sheetrs-stats = { path = "../sheetrs-stats", version = "0.4.1", features = ["cli"] }
+sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.1", features = ["cli"] }
 clap.workspace = true
 anyhow.workspace = true
 
@@ -28,7 +28,7 @@ anyhow.workspace = true
 tempfile.workspace = true
 serde_json.workspace = true
 zip.workspace = true
-sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.1" }
 
 [lints]
 workspace = true

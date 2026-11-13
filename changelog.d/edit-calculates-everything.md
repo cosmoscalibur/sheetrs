@@ -1,3 +1,0 @@
-### Changed
-
-- A plan of `sheetrs edit` that deletes rows, columns, sheets or names, or replaces text, ends with the engine calculating every formula again. The analysis that decided which formulas a deletion leaves stale (and wrote `#REF!` or calculated only those) is removed: on the 2.4-million-formula workbook it cost 15-16 s of an ODS run (7-8 s of an XLSX one) and, where nearly every formula is stale, spared nothing. What a cell holds is the value its formula gives now; the result a file cached is not a fidelity goal (see `docs/approved-differences.md`). `--dry-run` no longer reads the workbook to say which formulas are given `#REF!`.

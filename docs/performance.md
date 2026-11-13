@@ -239,7 +239,7 @@ decoding its program, about 1.5 times the time and memory of the native executab
 | `sheetrs` (all the tools, `dist`) | 16,105,512 | |
 | `sheetc` (compiler, engine and the base of an executable) | 8,791,704 | 3,570,291 |
 | `sheetrs_wasm_bg.wasm` (package of every tool; carries the two bases) | 16,982,478 | 5,457,150 |
-| `sheetrs-wasm-0.4.0.tgz` | 5,635,391 | |
+| `sheetrs-wasm-0.4.1.tgz` | 5,635,391 | |
 | `sheetrs-rt.wasm` (base module, engine) | 3,684,056 | 1,239,594 |
 | `sheetrs-rt-template.wasm` (base, engine with readers and writers) | 4,708,523 | 1,621,735 |
 | Python wheel, linux x86_64 (`manylinux_2_38`) | 6,961,523 | |

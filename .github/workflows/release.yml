@@ -1,6 +1,9 @@
 name: Release
 
-# A `vX.Y.Z` tag builds every distribution and attaches it to a GitHub release:
+# A version that reaches `main` is released: when the workspace version of `Cargo.toml` has no `vX.Y.Z`
+# tag yet, the job `plan` creates it on that commit, and the tag builds every distribution and
+# attaches it to a GitHub release (a tag pushed by hand does the same; a push to `main` whose
+# version already has its tag stops after `plan`):
 #   - executables (sheetrs, sheetc, sheetrs-rt) for Linux x86_64 and aarch64, with the base
 #     modules of the WebAssembly target (sheetrs-rt.wasm, sheetrs-rt-template.wasm),
 #   - Python wheels (abi3, Python 3.13 to 3.15: linux x86_64 and aarch64) and the sdist,
@@ -16,6 +19,8 @@ name: Release
 
 on:
   push:
+    branches: [main]
+    paths: [Cargo.toml]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -25,37 +30,70 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   GH_TOKEN: ${{ github.token }}
-  # Only a tag touches a release.
-  RELEASE: ${{ github.ref_type == 'tag' }}
 
 jobs:
-  draft:
+  # What this run does, from what triggered it:
+  #   - a tag: release it (the tag must match the workspace version);
+  #   - a push to `main`: release the workspace version if it has no tag yet (the tag is created here, on
+  #     the pushed commit; a tag made with the workflow token does not start another run), else do nothing;
+  #   - a manual run: a dry run, which builds and smoke-tests and touches no release.
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      release: ${{ steps.plan.outputs.release }}
+      tag: ${{ steps.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
-      - name: The tag matches the workspace version
-        if: env.RELEASE == 'true'
+      - id: plan
         run: |
           version="$(awk -F'"' '/^version = / {print $2; exit}' Cargo.toml)"
-          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != workspace version $version" >&2; exit 1; }
+          case "$GITHUB_REF_TYPE:$GITHUB_REF_NAME" in
+            tag:*)
+              [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != workspace version $version" >&2; exit 1; }
+              echo "run=true" >> "$GITHUB_OUTPUT"; echo "release=true" >> "$GITHUB_OUTPUT"; echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT" ;;
+            branch:main)
+              if [ "$GITHUB_EVENT_NAME" = push ]; then
+                if [ -n "$(git ls-remote --tags origin "refs/tags/v$version")" ]; then
+                  echo "v$version is already tagged: nothing to release"
+                  echo "run=false" >> "$GITHUB_OUTPUT"
+                else
+                  gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$version" -f sha="$GITHUB_SHA"
+                  echo "run=true" >> "$GITHUB_OUTPUT"; echo "release=true" >> "$GITHUB_OUTPUT"; echo "tag=v$version" >> "$GITHUB_OUTPUT"
+                fi
+              else
+                echo "run=true" >> "$GITHUB_OUTPUT"; echo "release=false" >> "$GITHUB_OUTPUT"
+              fi ;;
+            *)
+              echo "run=true" >> "$GITHUB_OUTPUT"; echo "release=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  draft:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
       # The notes: the section of the version in CHANGELOG.md (the merged fragments), then what GitHub
       # generates from the pull requests.
       - name: Create the draft release
-        if: env.RELEASE == 'true'
+        if: needs.plan.outputs.release == 'true'
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           awk -v v="$version" '
             /^## \[/ { if (found) exit; if (index($0, "## [" v "]") == 1) { found = 1; next } }
             found { print }
           ' CHANGELOG.md > notes.md
           if [ -s notes.md ]; then
-            gh release create "$GITHUB_REF_NAME" --draft --generate-notes --notes-file notes.md --title "$GITHUB_REF_NAME"
+            gh release create "$TAG" --draft --generate-notes --notes-file notes.md --title "$TAG"
           else
-            gh release create "$GITHUB_REF_NAME" --draft --generate-notes --title "$GITHUB_REF_NAME"
+            gh release create "$TAG" --draft --generate-notes --title "$TAG"
           fi
 
   binaries:
-    needs: draft
+    needs: [plan, draft]
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +103,8 @@ jobs:
           # macOS and Windows executables are out of scope for now (Linux and WebAssembly are the
           # priority): issue #99 has what is needed to put them back.
     runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ needs.plan.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install
@@ -74,7 +114,7 @@ jobs:
       - run: scripts/build-wasm-rt.sh
       - name: Package
         run: |
-          name="sheetrs-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="sheetrs-${TAG}-${{ matrix.target }}"
           mkdir "$name"
           for bin in sheetrs sheetc sheetrs-rt; do
             cp "target/dist/$bin" "$name/"
@@ -88,11 +128,11 @@ jobs:
           name: executables-${{ matrix.target }}
           path: sheetrs-*.tar.gz*
       - name: Attach to the release
-        if: env.RELEASE == 'true'
-        run: gh release upload "$GITHUB_REF_NAME" sheetrs-*.tar.gz sheetrs-*.tar.gz.sha256 --clobber
+        if: needs.plan.outputs.release == 'true'
+        run: gh release upload "$TAG" sheetrs-*.tar.gz sheetrs-*.tar.gz.sha256 --clobber
 
   wheels:
-    needs: draft
+    needs: [plan, draft]
     strategy:
       fail-fast: false
       matrix:
@@ -101,6 +141,8 @@ jobs:
           - { os: ubuntu-24.04-arm, maturin: "--compatibility manylinux_2_28 --zig" }
           # macOS and Windows wheels are out of scope for now: issue #99.
     runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ needs.plan.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install
@@ -119,12 +161,14 @@ jobs:
           name: wheel-${{ matrix.os }}
           path: dist/*.whl
       - name: Attach to the release
-        if: env.RELEASE == 'true'
-        run: gh release upload "$GITHUB_REF_NAME" dist/*.whl --clobber
+        if: needs.plan.outputs.release == 'true'
+        run: gh release upload "$TAG" dist/*.whl --clobber
 
   sdist:
-    needs: draft
+    needs: [plan, draft]
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.plan.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install
@@ -135,12 +179,14 @@ jobs:
           name: sdist
           path: dist/*.tar.gz
       - name: Attach to the release
-        if: env.RELEASE == 'true'
-        run: gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --clobber
+        if: needs.plan.outputs.release == 'true'
+        run: gh release upload "$TAG" dist/*.tar.gz --clobber
 
   wasm:
-    needs: draft
+    needs: [plan, draft]
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.plan.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install
@@ -152,8 +198,8 @@ jobs:
           name: wasm-package
           path: target/npm/*.tgz
       - name: Attach to the release
-        if: env.RELEASE == 'true'
-        run: gh release upload "$GITHUB_REF_NAME" target/npm/*.tgz --clobber
+        if: needs.plan.outputs.release == 'true'
+        run: gh release upload "$TAG" target/npm/*.tgz --clobber
 
   # What was built is what a user installs: the executables run, the wheel imports in a clean
   # environment and the npm tarball loads in Node (Linux x86_64).
@@ -207,8 +253,10 @@ jobs:
           BOOK="$GITHUB_WORKSPACE/sheetrs-compiler/tests/assets/loan.xlsx" node check.mjs
 
   publish:
-    needs: [smoke, sdist]
-    if: github.ref_type == 'tag'
+    needs: [plan, smoke, sdist]
+    if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
-      - run: gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
+      - run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"

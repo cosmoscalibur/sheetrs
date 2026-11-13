@@ -21,13 +21,13 @@ path = "src/lib.rs"
 cli = ["dep:clap", "dep:anyhow"]
 
 [dependencies]
-sheetrs-io = { path = "../sheetrs-io", version = "0.4.0", features = ["write"] }
-sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
-sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.0" }
-sheetrs-query = { path = "../sheetrs-query", version = "0.4.0" }
-sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.0" }
-sheetrs-compiler = { path = "../sheetrs-compiler", version = "0.4.0" }
-sheetrs-answer = { path = "../sheetrs-answer", version = "0.4.0" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.1", features = ["write"] }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.1" }
+sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.1" }
+sheetrs-query = { path = "../sheetrs-query", version = "0.4.1" }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.1" }
+sheetrs-compiler = { path = "../sheetrs-compiler", version = "0.4.1" }
+sheetrs-answer = { path = "../sheetrs-answer", version = "0.4.1" }
 serde_json.workspace = true
 clap = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }

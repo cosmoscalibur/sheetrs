@@ -330,7 +330,7 @@ updates its README (and the type stubs of `sheetrs-py`), and a new capability is
 bindings.
 
 Path dependencies between publishable crates carry a `version`
-(`sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }`) so that they can be published;
+(`sheetrs-io = { path = "../sheetrs-io", version = "0.4.1" }`) so that they can be published;
 `cargo set-version --workspace <version>` (cargo-edit) updates them with the workspace version.
 
 ### API stability
