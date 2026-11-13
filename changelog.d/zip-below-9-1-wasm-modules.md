@@ -4,4 +4,4 @@
 
 ### Changed
 
-- The tests of `sheetc` that had vague names say what they check (`the_locale_is_fixed_when_the_program_is_built_and_a_run_time_flag_is_refused`, `the_emitted_ir_calculates_without_the_workbook`, ...), and the two that checked several things are split: `run_time_options_are_only_what_a_file_cannot_say` in four and `executable_is_self_describing_and_strict` in two.
+- The tests of `sheetc` that had vague names have short ones that say what they check (`locale_flag_is_refused_at_run_time`, `emitted_ir_calculates_without_the_workbook`, ...). The two that checked several things are split (`run_time_options_are_only_what_a_file_cannot_say` in three, `executable_is_self_describing_and_strict` in two), and the test that only said that there is no `--dialect` flag is removed: an unknown flag is already refused by `bad_requests_are_refused`.
