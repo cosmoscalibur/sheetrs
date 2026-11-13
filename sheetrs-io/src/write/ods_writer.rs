@@ -1537,7 +1537,7 @@ fn write_cells<W: Write>(
         // edge and a reader would take it for formatted cells to keep, one per column.
         let run = if layout.is_some()
             && formula.is_none()
-            && value_type.is_none()
+            && !has_value_type
             && !has_paragraph
             && col.saturating_add(count) >= MAX_COLUMNS
         {
