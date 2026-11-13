@@ -97,7 +97,7 @@ pub struct Args {
     )]
     pub with: Vec<String>,
 
-    /// `--replace` is a regular expression (the subset of ICU that is reproduced)
+    /// `--replace` is a regular expression (ICU, the subset that is reproduced; `^` and `$` anchor the text of the cell)
     #[arg(long, requires = "replace", conflicts_with = "wildcards")]
     pub regex: bool,
 

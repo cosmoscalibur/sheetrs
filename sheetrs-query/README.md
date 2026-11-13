@@ -137,10 +137,10 @@ The anchors `^` and `$` are in that subset for a search, as LibreOffice reads th
 the start of the text and `$` its end (or the place before the line terminator that ends it), never
 the start or the end of a line, so `^(Code|Resumen Contadia)$` finds the cells with exactly one of
 the two texts, in the middle of a pattern (`a^b`, `a$b`) they match nothing, and they work inside
-groups and alternations (`(^a|b$)`). `.` still leaves out the line breaks. A pattern that can match
-the empty text (`^`, `$`, `^$`, `a*$`) is refused. `sheetrs edit --replace` refuses the anchors:
-what LibreOffice does with them when it replaces (the empty match, the match at the end of the text)
-is not reproduced. The searches with anchors are compared with `findAll` of LibreOffice in
+groups and alternations (`(^a|b$)`). `.` still leaves out the line breaks. A search refuses a pattern
+that can match the empty text (`^`, `$`, `^$`, `a*$`): what `findAll` does with it is not compared yet.
+`sheetrs edit --replace` reads the anchors and those patterns too, as LibreOffice replaces (see
+`sheetrs-edit/README.md`). The searches with anchors are compared with `findAll` of LibreOffice in
 `tests/libreoffice_find.rs` (workbooks `tests/assets/anchors.*`, made by
 `tests/assets/make_anchors_fixtures.py`).
 

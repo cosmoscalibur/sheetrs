@@ -9,14 +9,18 @@
 //!
 //! The subset: literals and escaped punctuation, `.`, `\d \D \w \W \s \S`, sets (`[a-c]`, `[^x]`,
 //! with ranges and `\d \w \s` inside), groups `( )` and `(?: )`, alternation, and the quantifiers
-//! `* + ? {n} {n,} {n,m}` with their lazy forms. The pattern must not match the empty text, and
-//! nothing that repeats may match it.
+//! `* + ? {n} {n,} {n,m}` with their lazy forms. Nothing that repeats may match the empty text.
 //!
-//! The anchors `^` and `$` are read only for a search that does not replace ([`translate_find`]):
-//! where a hit is a yes or a no, they mean what `LibreOffice` gives them (the start of the text, and
-//! its end or the place before a line terminator that ends it; never the start or end of a line).
-//! What a replacement does with them (an empty match, a match at the end of the text) is not
-//! reproduced, so [`translate`] and [`translate_capturing`] refuse them.
+//! The anchors `^` and `$` are read by the searches of the Find & Replace of `LibreOffice`
+//! ([`translate_find`], [`translate_replace`]) and refused by the functions ([`translate`],
+//! [`translate_capturing`]: `REGEX`, `COUNTIF`...), whose semantics are another matter. They mean
+//! what `LibreOffice` gives them in a cell: the start of the text, and its end or the place before
+//! a line terminator that ends it; never the start or end of a line.
+//!
+//! A pattern that can match the empty text is refused by all of them but [`translate_replace`]:
+//! what a replacement does with an empty match is the loop of `LibreOffice` (an empty match is
+//! not a hit, except one at the very end of the text, and no search starts at the end), which the
+//! caller of that translation runs (`sheetrs_query::Matcher`).
 
 use std::fmt::Write as _;
 
@@ -51,7 +55,7 @@ enum SetItem {
 struct Parser {
     chars: Vec<char>,
     at: usize,
-    /// Whether `^` and `$` are read (a search) or refused (a replacement, a function).
+    /// Whether `^` and `$` are read (Find & Replace) or refused (a function).
     anchors: bool,
 }
 
@@ -407,7 +411,7 @@ fn write(n: &Node, out: &mut String, captures: bool) {
 ///
 /// When `pattern` uses a construct outside the subset.
 pub fn translate(pattern: &str) -> R<String> {
-    translate_with(pattern, false, false)
+    translate_with(pattern, false, false, false)
 }
 
 /// Like [`translate`], keeping the groups that capture (for the replacements of `REGEX`).
@@ -416,7 +420,7 @@ pub fn translate(pattern: &str) -> R<String> {
 ///
 /// When `pattern` uses a construct outside the subset.
 pub fn translate_capturing(pattern: &str) -> R<String> {
-    translate_with(pattern, true, false)
+    translate_with(pattern, true, false, false)
 }
 
 /// Like [`translate_capturing`], and reading the anchors `^` and `$`, for a search that only asks
@@ -427,10 +431,24 @@ pub fn translate_capturing(pattern: &str) -> R<String> {
 ///
 /// When `pattern` uses a construct outside the subset.
 pub fn translate_find(pattern: &str) -> R<String> {
-    translate_with(pattern, true, true)
+    translate_with(pattern, true, true, false)
 }
 
-fn translate_with(pattern: &str, captures: bool, anchors: bool) -> R<String> {
+/// Like [`translate_find`], for a replacement: the pattern may match the empty text (`x*`, `^`,
+/// `$`, `a*$`), which the caller handles as `LibreOffice` does (an empty match is replaced only at
+/// the end of the text, and a search never starts there). The empty pattern is still refused.
+///
+/// # Errors
+///
+/// When `pattern` uses a construct outside the subset.
+pub fn translate_replace(pattern: &str) -> R<String> {
+    if pattern.is_empty() {
+        return Err("an empty pattern".into());
+    }
+    translate_with(pattern, true, true, true)
+}
+
+fn translate_with(pattern: &str, captures: bool, anchors: bool, empty: bool) -> R<String> {
     let mut p = Parser {
         chars: pattern.chars().collect(),
         at: 0,
@@ -440,7 +458,7 @@ fn translate_with(pattern: &str, captures: bool, anchors: bool) -> R<String> {
     if p.at < p.chars.len() {
         return Err("a `)` that closes nothing".into());
     }
-    if min_len(&node) == 0 {
+    if !empty && min_len(&node) == 0 {
         return Err("a pattern that can match the empty text".into());
     }
     let mut out = String::new();
@@ -513,6 +531,24 @@ mod tests {
     fn an_anchor_alone_is_an_empty_match_and_is_refused_in_a_search() {
         for bad in ["^", "$", "^$", "^a*", "a*$", "(^|$)", "^*", "(^)+a", "^+"] {
             assert!(translate_find(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_replacement_reads_the_anchors_and_the_patterns_that_match_the_empty_text() {
+        for ok in [
+            "^a", "a$", "^", "$", "^$", "a*$", "^a*", "x*", "(^|x)a", "(a|)", "a|", "(|a)$", "a?",
+        ] {
+            assert!(translate_replace(ok).is_ok(), "{ok}");
+        }
+    }
+
+    #[test]
+    fn a_replacement_still_refuses_what_is_not_reproduced() {
+        for bad in [
+            "", "^*", "(^)+a", "^+", "(a*)*", "(^|$)*", "\\b", "(?=a)", "a**",
+        ] {
+            assert!(translate_replace(bad).is_err(), "{bad}");
         }
     }
 }

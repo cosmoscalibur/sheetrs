@@ -11,11 +11,17 @@
 //!   `sheetrs_engine::regex_subset`, and a pattern outside it is refused instead of giving another
 //!   result. `.` does not match a line break.
 //! - `^` and `$` anchor the text of the cell, not its lines: `^` is its start, `$` its end or the
-//!   place before a line terminator that ends it. A search ([`Matcher::for_find`]) reads them; a
-//!   replacement ([`Matcher::new`]) refuses them, because `LibreOffice` replaces at the end of the
-//!   text with `$` but not at the start with `^`, and the empty matches of an anchor are not
-//!   reproduced.
-//! - A match of no characters is not a hit.
+//!   place before a line terminator that ends it. A search ([`Matcher::for_find`]) and a
+//!   replacement ([`Matcher::new`]) read them.
+//! - A match of no characters is not a hit, with one exception: at the very end of the text it is
+//!   (`abc` with `$` replaced by `X` gives `abcX`, with `^` or `x*` nothing changes). The hits are
+//!   found as `LibreOffice` finds them: from the start of the text, each search begins where the
+//!   replacement of the last hit ended (the replacement is made in the text itself, so `^a` replaced
+//!   by nothing empties `aa`), or one character after an empty match that was skipped, and none
+//!   begins at the end of the text (`a` with `a*` replaced by `X` gives `X`, not `XX`; `a` and a line break with
+//!   `$` is not changed: the one empty match, before the line break, is skipped, and the end is
+//!   not searched). A search ([`Matcher::for_find`]) refuses a pattern that can match the empty
+//!   text; a replacement reads it.
 //! - Every hit of a cell is replaced. In a regular expression the replacement reads `&` as the
 //!   whole match, `$0` to `$9` as the groups, `\t` as a tab, and `\&`, `\$` and `\\` as the
 //!   character they escape; in the other modes the replacement is taken as it is.
@@ -30,6 +36,9 @@ pub struct Matcher {
     re: Regex,
     regex_mode: bool,
     entire: bool,
+    /// Whether the pattern matches the empty text in the middle of a text (`x*` does, `$` and `^`
+    /// do not): see [`Matcher::next_hit`].
+    empty_inside: bool,
 }
 
 /// The pattern of a literal text.
@@ -59,35 +68,35 @@ fn wildcards(text: &str) -> String {
 }
 
 impl Matcher {
-    /// A matcher to replace with.
+    /// A matcher to replace with: a regular expression may have the anchors `^` and `$` and may
+    /// match the empty text.
     ///
     /// # Errors
     ///
-    /// When the regular expression is outside what is reproduced (the anchors `^` and `$` are), or
-    /// does not compile.
+    /// When the regular expression is outside what is reproduced, or does not compile.
     pub fn new(find: &Find) -> Result<Self> {
-        Self::build(find, false)
+        Self::build(find, true)
     }
 
     /// A matcher to find the cells with a hit: a regular expression may have the anchors `^` and
-    /// `$`. Do not [`replace_all`](Self::replace_all) with it.
+    /// `$`, but not match the empty text (what `findAll` does with those is not reproduced yet).
     ///
     /// # Errors
     ///
     /// When the regular expression is outside what is reproduced, or does not compile.
     pub fn for_find(find: &Find) -> Result<Self> {
-        Self::build(find, true)
+        Self::build(find, false)
     }
 
-    fn build(find: &Find, anchors: bool) -> Result<Self> {
+    fn build(find: &Find, replacing: bool) -> Result<Self> {
         let body = match find.mode {
             Mode::Literal => escape(&find.text),
             Mode::Wildcards => wildcards(&find.text),
             Mode::Regex => {
-                let translated = if anchors {
-                    sheetrs_engine::regex_subset::translate_find(&find.text)
+                let translated = if replacing {
+                    sheetrs_engine::regex_subset::translate_replace(&find.text)
                 } else {
-                    sheetrs_engine::regex_subset::translate_capturing(&find.text)
+                    sheetrs_engine::regex_subset::translate_find(&find.text)
                 };
                 translated.map_err(|e| Error::Unsupported(e.to_string()))?
             }
@@ -95,57 +104,93 @@ impl Matcher {
         let flags = if find.match_case { "" } else { "(?i)" };
         let re =
             Regex::new(&format!("{flags}{body}")).map_err(|e| Error::Unsupported(e.to_string()))?;
+        // A text of three characters that no pattern of a search names, and its middle.
+        let probe = "\u{E000}\u{E000}\u{E000}";
+        let empty_inside = re
+            .captures_from_pos(probe, '\u{E000}'.len_utf8())
+            .ok()
+            .flatten()
+            .and_then(|c| c.get(0).map(|m| m.start() == 3 && m.end() == 3))
+            .unwrap_or(false);
         Ok(Self {
             re,
             regex_mode: find.mode == Mode::Regex,
             entire: find.entire_cells,
+            empty_inside,
         })
     }
 
     /// Whether the text holds a hit.
     #[must_use]
     pub fn is_match(&self, text: &str) -> bool {
-        self.hits(text).next().is_some()
+        self.next_hit(text, 0, false).is_some_and(|caps| {
+            !self.entire
+                || caps
+                    .get(0)
+                    .is_some_and(|m| m.start() == 0 && m.end() == text.len())
+        })
     }
 
-    /// The hits to take: every non-empty match, or, when the whole cell is asked, the first match if
-    /// it covers the text.
-    fn hits<'a>(&'a self, text: &'a str) -> impl Iterator<Item = Captures<'a, str>> {
-        let whole = |c: &Captures<'_, str>| {
-            c.get(0)
-                .is_some_and(|m| m.start() == 0 && m.end() == text.len())
-        };
-        let entire = self.entire;
-        self.re
-            .captures_iter(text)
-            .filter_map(std::result::Result::ok)
-            .filter(|c| c.get(0).is_some_and(|m| !m.as_str().is_empty()))
-            .take(if entire { 1 } else { usize::MAX })
-            .filter(move |c| !entire || whole(c))
+    /// The next hit that begins at or after `start`, as `LibreOffice` searches: an empty match is
+    /// not a hit, unless it is at the end of the text, and no search begins at the end of it.
+    ///
+    /// `LibreOffice` counts in UTF-16 units and goes on one unit after a skipped empty match, so
+    /// after one before a character outside the Basic Multilingual Plane its next search begins
+    /// inside that character (`mid`), which is not the end of the text yet when the character is
+    /// the last one. There a pattern that matches the empty text anywhere (`x*`) matches it again
+    /// and is skipped again; one that does not (`$`) finds its match after the character, at the
+    /// end of the text if the character is the last one. A pattern that matches the half of the
+    /// character (`.`) gives a text that is not valid: that is not reproduced.
+    fn next_hit<'a>(
+        &self,
+        text: &'a str,
+        mut start: usize,
+        mut mid: bool,
+    ) -> Option<Captures<'a, str>> {
+        while start < text.len() || mid {
+            let caps = self.re.captures_from_pos(text, start).ok().flatten()?;
+            let whole = caps.get(0)?;
+            if !whole.as_str().is_empty() || whole.start() == text.len() {
+                return Some(caps);
+            }
+            // Skipped: the next search begins one character on.
+            let skipped = text[whole.start()..].chars().next()?;
+            start = whole.start() + skipped.len_utf8();
+            mid = skipped.len_utf16() == 2 && !self.empty_inside;
+        }
+        None
     }
 
     /// The text with every hit replaced by `with`, or `None` when it holds none.
+    ///
+    /// The replacement is made in the text itself and the next search begins after it, in what is
+    /// left: `^a` replaced by nothing empties `aa`, since the second `a` is then at the start.
+    /// With `entire_cells` only the first hit is taken, and only if it covers the text.
     #[must_use]
     pub fn replace_all(&self, text: &str, with: &str) -> Option<String> {
-        let mut out = String::with_capacity(text.len());
-        let mut last = 0;
-        let mut hit = false;
-        for caps in self.hits(text) {
+        let mut text = text.to_string();
+        let mut start = 0;
+        let mut replaced = false;
+        while let Some(caps) = self.next_hit(&text, start, false) {
             let whole = caps.get(0)?;
-            hit = true;
-            out.push_str(&text[last..whole.start()]);
-            if self.regex_mode {
-                expand(with, &caps, &mut out);
-            } else {
-                out.push_str(with);
+            let range = whole.start()..whole.end();
+            if self.entire && range != (0..text.len()) {
+                return None;
             }
-            last = whole.end();
+            let mut new = String::new();
+            if self.regex_mode {
+                expand(with, &caps, &mut new);
+            } else {
+                new.push_str(with);
+            }
+            start = range.start + new.len();
+            text.replace_range(range, &new);
+            replaced = true;
+            if self.entire {
+                break;
+            }
         }
-        if !hit {
-            return None;
-        }
-        out.push_str(&text[last..]);
-        Some(out)
+        replaced.then_some(text)
     }
 }
 
@@ -323,10 +368,26 @@ mod tests {
     }
 
     #[test]
-    fn a_replacement_refuses_the_anchors() {
-        // `LibreOffice` replaces at the end of the text with `$` but not at the start with `^`:
-        // behaviours that are not reproduced.
-        for pattern in ["^a", "a$", "^(a|b)$", "^"] {
+    fn a_replacement_reads_the_anchors_as_libreoffice_does() {
+        let r = |p: &str, text: &str, with: &str| replaced(&find(p, Mode::Regex), text, with);
+        assert_eq!(r("^a", "aa", "X").as_deref(), Some("Xa"));
+        assert_eq!(r("a$", "aa", "X").as_deref(), Some("aX"));
+        assert_eq!(r("^(a|b)$", "b", "X").as_deref(), Some("X"));
+        // An empty match is not replaced, but one at the end of the text is.
+        assert_eq!(r("^", "abc", "X"), None);
+        assert_eq!(r("$", "abc", "X").as_deref(), Some("abcX"));
+        assert_eq!(r("x*", "abc", "X"), None);
+        // No search begins at the end of the text.
+        assert_eq!(r("a*", "ab", "X").as_deref(), Some("Xb"));
+        assert_eq!(r("(^|$)", "a", "X"), None);
+        // The empty match before the line break that ends the text is skipped, and so is the end.
+        assert_eq!(r("$", "a\n", "X"), None);
+        assert_eq!(r("a$", "a\n", "X").as_deref(), Some("X\n"));
+    }
+
+    #[test]
+    fn a_replacement_refuses_what_is_not_reproduced() {
+        for pattern in ["", "^*", "\\b", "(a*)*"] {
             assert!(
                 matches!(
                     Matcher::new(&find(pattern, Mode::Regex)),

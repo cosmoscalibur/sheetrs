@@ -106,7 +106,7 @@ or a list: `"workbook"`, `{sheet: "Data"}`, `{range: "Data!A1:C9"}`), `propertie
 reads in the shape they are used in: `range(ranges, {properties, major: "rows" | "columns", dates})`
 and `find(text, {mode, matchCase, entireCells, searchIn, includeFormulas, formatted, filtered, scope,
 properties, by, dates})`. A `regex` search reads the anchors `^` and `$` (the start and the end of the
-text of the cell); `replace` refuses them.
+text of the cell); `replace` reads them too, and a pattern that can match the empty text (`x*`, `$`), as LibreOffice replaces (an empty match is replaced only at the very end of the text).
 
 ### `calculate` and `valueRanges`
 
