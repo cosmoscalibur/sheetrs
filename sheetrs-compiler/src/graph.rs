@@ -17,6 +17,7 @@ pub struct Csr {
 }
 
 impl Csr {
+    #[cfg(test)]
     pub fn from_adjacency(adj: &[Vec<u32>]) -> Self {
         let mut offsets = Vec::with_capacity(adj.len() + 1);
         let mut targets = Vec::with_capacity(adj.iter().map(Vec::len).sum());
@@ -24,6 +25,28 @@ impl Csr {
         for edges in adj {
             targets.extend_from_slice(edges);
             offsets.push(targets.len() as u32);
+        }
+        Self { offsets, targets }
+    }
+
+    /// The rows in order, each an iterator over its targets; the iterator is read twice (once to
+    /// count, once to fill), so it must be cheap to clone.
+    pub fn from_rows<R, I>(rows: R) -> Self
+    where
+        R: Iterator<Item = I> + Clone,
+        I: Iterator<Item = u32> + ExactSizeIterator,
+    {
+        let (rows_hint, _) = rows.size_hint();
+        let mut offsets = Vec::with_capacity(rows_hint + 1);
+        let mut total = 0usize;
+        offsets.push(0);
+        for row in rows.clone() {
+            total += row.len();
+            offsets.push(total as u32);
+        }
+        let mut targets = Vec::with_capacity(total);
+        for row in rows {
+            targets.extend(row);
         }
         Self { offsets, targets }
     }
@@ -139,6 +162,21 @@ mod tests {
         let g = Csr::from_adjacency(&[vec![1, 2], vec![2], vec![]]);
         let s = tarjan(&g);
         assert_eq!(s.order, vec![2, 1, 0]);
+    }
+
+    #[test]
+    fn rows_make_the_same_graph_as_an_adjacency() {
+        let adj: Vec<Vec<u32>> = vec![vec![1, 2], vec![], vec![0, 0, 3], vec![]];
+        let a = Csr::from_adjacency(&adj);
+        let b = Csr::from_rows(adj.iter().map(|row| row.iter().copied()));
+        assert_eq!(b.len(), a.len());
+        for v in 0..adj.len() as u32 {
+            assert_eq!(b.edges(v), a.edges(v));
+        }
+        assert_eq!(
+            Csr::from_rows(std::iter::empty::<std::iter::Empty<u32>>()).len(),
+            0
+        );
     }
 
     #[test]

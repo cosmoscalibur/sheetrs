@@ -1,0 +1,3 @@
+### Changed
+
+- Lower the time and the peak memory of `sheetc build`: the dependency graph is built straight into its compressed form and freed once the evaluation order is known (no second copy of the adjacency, no copy of each node's edges while it is walked), the graph node of a cell is found through the row of the sorted node list instead of a hash table of every position, and the references that lie inside an output are no longer collected only to be skipped. On the generated workbooks of `docs/performance.md`, `formulas.xlsx` builds in 6.8 s instead of 8.3 s with 1355 MB instead of 1598 MB, and `data.xlsx` in 7.6 s instead of 9.1 s with 1540 MB instead of 1942 MB; the executables are byte-identical.

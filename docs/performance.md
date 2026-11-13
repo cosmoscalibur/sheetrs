@@ -172,17 +172,25 @@ stages come from `SHEETC_TRACE`; median of 3):
 |---|---|--:|--:|
 | `small.xlsx` (0.03 MB) | build total (executable 9.02 MB) | 0.02 | 17 |
 | | execute a request | 0.004 | 14 |
-| `data.xlsx` (49.19 MB, no settings: inputs deduced) | build total (executable 114.78 MB) | 9.53 | 1942 |
-| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.27 / 0.20 / 4.20 / 0.08 / 0.07 / 0.46 | |
+| `data.xlsx` (49.19 MB, no settings: inputs deduced) | build total (executable 114.78 MB) | 7.59 | 1540 |
+| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.48 / 0.23 / 2.37 / 0.08 / 0.03 / 0.49 | |
 | | engine start-up (`--meta`) / execute a request | 0.620 / 2.745 | 453 / 757 |
-| `data_declared.xlsx` (inputs and outputs declared) | build total (executable 9.00 MB) | 4.94 | 760 |
-| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.29 / 0.18 / 0.48 / 0.85 / 0.00 / 0.01 | |
+| `data_declared.xlsx` (inputs and outputs declared) | build total (executable 9.00 MB) | 4.52 | 724 |
+| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.40 / 0.16 / 0.21 / 0.67 / 0.00 / 0.01 | |
 | | engine start-up / execute a request | 0.003 / 0.002 | 14 / 14 |
-| `formulas.xlsx` (28.98 MB) | build total (executable 93.54 MB) | 9.40 | 1598 |
-| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 2.12 / 0.95 / 2.37 / 1.29 / 1.61 / 0.60 | |
+| `formulas.xlsx` (28.98 MB) | build total (executable 93.54 MB) | 6.83 | 1355 |
+| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 2.16 / 0.86 / 0.82 / 1.14 / 0.98 / 0.65 | |
 | | engine start-up / execute a request | 0.780 / 2.527 | 455 / 530 |
 
-The stage rows are parts of the build total of their workbook (the peak memory is that of the process). A workbook that declares its inputs and outputs keeps only what the outputs need, so its executable is small and
+The stage rows are parts of the build total of their workbook (the peak memory is that of the process). The build keeps one
+copy of the graph (built straight into its compressed rows, and freed once the order and the taint are known), finds a
+graph node by the row of its cell in the sorted node list instead of in a hash table, and does not keep the references
+that lie inside an output (with nothing declared, almost every one): against the build before this, in the same
+session, `formulas.xlsx` took 8.33 s and 1598 MB, `data.xlsx` 9.08 s and 1942 MB and `data_declared.xlsx` 4.81 s and
+760 MB. The executables are byte-identical. The rows of the other flows that compile in memory (`sheetc calculate`
+above, the recalculation of `sheetrs edit`, Python `calculate`, and the model use below) share these stages and
+should take less memory and time; they were not measured again, nor were the start-up and request rows of the
+executables, which the change does not touch. A workbook that declares its inputs and outputs keeps only what the outputs need, so its executable is small and
 answers in milliseconds; one that does not carries every cell.
 
 The rows of this table were measured again with the payload in `postcard` (see
