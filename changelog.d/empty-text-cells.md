@@ -1,3 +1,0 @@
-### Fixed
-
-- An empty text is read as `LibreOffice` reads it from each file, not alike in both: in an XLSX a shared string, an inline string or a `t="str"` cell of an empty text is a blank cell (`ISBLANK` true, `COUNTA` 0), where it was `Text("")`; in an ODS a text cell with a paragraph, even an empty one (`<text:p/>`), is an empty text (`ISBLANK` false, `COUNTA` 1), where it was no value, and one with no paragraph (`office:string-value=""` alone) is blank. A formula whose result is the empty text keeps it in both. `tests/assets/empty_text.{xlsx,ods}` (`oracle/make_empty_text.py`) hold every way a file writes it, with what `LibreOffice` answers about each.
