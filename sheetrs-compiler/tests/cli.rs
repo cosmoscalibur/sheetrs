@@ -28,12 +28,9 @@ fn run(cmd: &Path, args: &[&str], stdin: &str) -> (i32, String, String) {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
+    // A program that refuses its arguments exits without reading the input: the pipe may be closed
+    // already, which is not what the test is about.
+    let _ = child.stdin.take().unwrap().write_all(stdin.as_bytes());
     let out = child.wait_with_output().unwrap();
     (
         out.status.code().unwrap_or(-1),
