@@ -56,7 +56,7 @@ objects, and what a query does not ask for is neither read nor kept.
 | --- | --- | --- |
 | **Format** | `format` | A property: `"xlsx"`, `"xlsm"` or `"ods"`, from the content. |
 | **Operations** | `delete_sheets`, `delete_names`, `formula_to_value`, `delete_rows`, `delete_columns`, `hide_rows`, `show_rows`, `hide_columns`, `show_columns`, `hide_sheets`, `show_sheets`, `replace`, `calculate(inputs=None, ranges=None, major="rows")` | Accumulate on the same `Book`, which each one returns, so the calls chain. Each takes the **array of its targets** (one `str`, or any iterable of `str`; an empty one does nothing; anything else in it is a `TypeError`). |
-| **The cut** | `save(dest=None, *, json=None)`, `to_bytes()`, `value_ranges()`, `explain()` | `save` plans all the operations in the fewest passes over the file and runs them, and writes the workbook: `save(dest)` a new one to a path or a binary stream, `save()` over the original (the file, or the stream the `Book` was made from); `json=` a path or stream for the value ranges of `calculate`. `to_bytes()` runs them in memory and returns the workbook as `bytes`. `value_ranges()` runs them in memory and gives the value ranges. `explain` says what it will do. |
+| **The cut** | `save(dest=None, *, json=None, recalculate=True)`, `to_bytes(*, recalculate=True)`, `value_ranges()`, `explain(*, recalculate=True)` | `save` plans all the operations in the fewest passes over the file and runs them, and writes the workbook: `save(dest)` a new one to a path or a binary stream, `save()` over the original (the file, or the stream the `Book` was made from); `json=` a path or stream for the value ranges of `calculate`. `to_bytes()` runs them in memory and returns the workbook as `bytes`. `value_ranges()` runs them in memory and gives the value ranges. `explain` says what it will do. |
 | **Queries** | `range`, `find`, `lint`, `inspect`, `stats` | Read what they need; `stats()` reads the workbook in a single streaming pass and gives a `Stats` (the eleven `total_*`, `sheets[name]` with `name`, `used_range` (the rectangle of the used cells, `"D10:GV5439"`, not anchored at `A1`; `None` for a sheet with no cells), `state` and the counts, `has_macros`, `defined_names`). They raise `PendingOperationsError` with operations pending. |
 | **Free functions** | `evaluate(formula)`, `lint_rules()` | The value of one formula; the rules of the linter. |
 
@@ -100,6 +100,18 @@ content as Python dicts and lists, `to_json()` as JSON text (and, for the lint r
   `save(path)` writes for the same plan, `Book(book.to_bytes())` reads them back, and
   with no operations it returns the workbook as it is. Like `save(path)` it keeps the operations of
   the `Book`; `report` and the diagnostics say what the run did.
+- `recalculate` (default `True`) says what the cut does with the formulas the operations leave stale
+  (anything that deletes or replaces what a formula reads): the engine calculates every formula of the
+  workbook again as the last thing, so a cell the operations do not touch can change value too, if the
+  engine and the application that wrote the file differ on that formula. `recalculate=False`
+  keeps the results the file caches: the cells no operation touches keep the value the application
+  wrote, the engine is not asked (so it cannot fail and there is no `RecalculationWarning`), and the
+  workbook is not marked to be recalculated when it is opened either. The formulas an operation
+  rewrites (a reference to a deleted cell, a range that shrinks) are written without a cached result,
+  as they are stale, and the application that opens the file calculates them; a `calculate` step
+  runs either way. The default recalculates every formula, not only the stale ones: the engine
+  calculates the workbook as a whole and does not read the cached results of the formulas it does
+  not rewrite (see `sheetrs-edit/README.md`).
 - `calculate(inputs=None, ranges=None, major="rows")` is an operation like the others, not a query: the engine,
   which reproduces LibreOffice, writes `inputs` (`{"Data!B2": 1500}`; a number, text, boolean or a
   list of rows for a range) and calculates every formula of the workbook as it is (before the conversions and

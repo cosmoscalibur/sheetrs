@@ -51,9 +51,24 @@
 //! the cached results dropped in an ODS) and the [`Report`] says why
 //! ([`RECALC_NOT_SUPPORTED`](crate::RECALC_NOT_SUPPORTED)): the spreadsheet program that opens it
 //! does the recalculation then. Nothing assigns or clears the mark beforehand, and there is no way to
-//! ask for it or to avoid it. A run that only converts formulas to the values they have changes no
+//! ask for it. A run that only converts formulas to the values they have changes no
 //! other result and has nothing to calculate. A workbook that came marked and was calculated by the
 //! engine loses the mark, since its results are fresh.
+//!
+//! **A run can keep the results the file caches** ([`Book::set_recalculate`] with `false`, the option
+//! `recalculate` of the bindings, `--no-recalculate` of the command line). The planner then adds no
+//! recalculation: not the one that ends the run and not the one before a conversion that the
+//! operations of the plan made necessary, so the cells that no operation touches keep the value the
+//! application that wrote the file cached (and a formula whose precedents were deleted keeps its
+//! old result, which the caller chose over the engine's), and, since the engine is not asked to
+//! calculate, the workbook is not marked to be recalculated when it is opened either. The `calculate`
+//! operation, which asks for the calculation itself, runs as ever; a workbook that says it is stale
+//! when the run starts is still calculated before a conversion reads it, because its cached results
+//! do not exist (an ODS) or are declared unreliable. The default recalculates every formula, not only
+//! the ones that depend on what the plan changed: the engine calculates the workbook as a whole and
+//! reads a formula it does not rewrite as its formula, never as the value the file caches, so the
+//! results of a partial recalculation would mix two sources, and a stale value left by a gap of the
+//! analysis would go unnoticed. Whoever wants the cached results asks for them.
 //!
 //! The plan is a description, not a model of the workbook: it holds the operations (a few bands
 //! and names), and each pass streams the file once, rewriting each cell as it goes by. The memory
@@ -246,7 +261,21 @@ pub(crate) fn passes(operations: &[Operation]) -> Vec<Vec<Operation>> {
 /// it (or the file itself) left them stale, they are calculated again first: a pass of its own that
 /// no operation asks for ([`Operation::Recalculate`]). That is what running the operations one at
 /// a time gives in an application that calculates as it goes.
-pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<Operation>> {
+pub(crate) fn passes_from(operations: &[Operation], stale: bool) -> Vec<Vec<Operation>> {
+    passes_with(operations, stale, true)
+}
+
+/// As [`passes_from`], for a run that recalculates what the operations leave stale
+/// (`recalculate`, the default of a [`Book`]) or keeps the results the file caches (`false`): then
+/// the operations leave nothing stale for the planner to calculate, so no pass of the engine is
+/// added after them or before a conversion. What the file itself says is stale when the run starts
+/// (`stale`) is still calculated before a conversion, because the results to convert do not
+/// exist. A `calculate` step is an operation, and runs either way.
+pub(crate) fn passes_with(
+    operations: &[Operation],
+    mut stale: bool,
+    recalculate: bool,
+) -> Vec<Vec<Operation>> {
     let mut passes = Vec::new();
     let mut last: Vec<Operation> = Vec::new();
     for operation in canonical(operations) {
@@ -266,7 +295,7 @@ pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<
             Operation::Replace(_) | Operation::WriteCells(_) => {
                 // A replacement reads what the operations before it leave and decides the cells it
                 // changes; a write addresses the cells as they are at that point: a pass of its own.
-                stale |= leaves_results_stale(&operation);
+                stale |= recalculate && leaves_results_stale(&operation);
                 passes.push(vec![operation]);
             }
             Operation::FormulaToValue(_) => {
@@ -278,7 +307,7 @@ pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<
             }
             Operation::Recalculate => {}
             _ => {
-                stale = true;
+                stale |= recalculate;
                 last.push(operation);
             }
         }
@@ -286,7 +315,7 @@ pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<
     if !last.is_empty() {
         passes.push(last);
     }
-    if stale {
+    if stale && recalculate {
         // What the operations left stale is calculated again by the engine, as the last thing.
         passes.push(vec![Operation::Recalculate]);
     }
@@ -605,7 +634,7 @@ fn calculate_pass(
 /// the conversion if so.
 fn passes_for(book: &Book, operations: &[Operation]) -> Result<Vec<Vec<Operation>>> {
     let stale_start = reads_results(operations) && crate::stale::input_is_stale(book)?;
-    Ok(passes_from(operations, stale_start))
+    Ok(passes_with(operations, stale_start, book.recalculate()))
 }
 
 /// The first conversion of formulas to values, as text, for what is said about it.
@@ -864,6 +893,28 @@ mod tests {
             Operation::DeleteRows(rows(&["T!3"])),
             Operation::Calculate(Calculation::default()),
         ]));
+    }
+
+    #[test]
+    fn a_run_that_keeps_the_cached_results_adds_no_recalculation() {
+        let recalculation = vec![Operation::Recalculate];
+        let operations = [
+            Operation::DeleteRows(rows(&["T!3"])),
+            Operation::FormulaToValue(scopes(&["F"])),
+        ];
+        // The deletion leaves results stale and the conversion reads them: the engine runs.
+        assert_eq!(passes_with(&operations, false, true).len(), 2);
+        assert!(passes_with(&operations, false, true).contains(&recalculation));
+        // Asked to keep them, the plan is the one pass of the operations.
+        assert_eq!(passes_with(&operations, false, false).len(), 1);
+        let deleting = [Operation::DeleteRows(rows(&["T!3"]))];
+        assert_eq!(passes_with(&deleting, false, false).len(), 1);
+        // What the file says is stale is still calculated before a conversion reads it.
+        let converting = [Operation::FormulaToValue(scopes(&["F"]))];
+        assert!(passes_with(&converting, true, false).contains(&recalculation));
+        // A calculation is an operation: it runs.
+        let calculating = [Operation::Calculate(Calculation::default())];
+        assert_eq!(passes_with(&calculating, false, false).len(), 1);
     }
 
     #[test]

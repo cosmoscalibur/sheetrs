@@ -233,6 +233,13 @@ for (const file of [book, bookOds]) {
     assert.ok(edited.explain().includes("delete rows"));
     // The plan is not consumed: saved again it gives the same bytes.
     sameBytes(edited.save(), saved);
+    // `recalculate = false` keeps the cached results: the plan has no recalculation pass.
+    assert.equal(edited.recalculate, true);
+    assert.ok(edited.explain().includes("recalculate every formula"));
+    edited.recalculate = false;
+    assert.equal(edited.recalculate, false);
+    assert.ok(!edited.explain().includes("recalculate every formula"));
+    edited.recalculate = true;
   });
 }
 // A sweep: arrays of targets and a replace with pairs, the same as the command with its flags repeated.

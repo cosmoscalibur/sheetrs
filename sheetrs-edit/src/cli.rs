@@ -131,6 +131,13 @@ pub struct Args {
     #[arg(long, value_name = "SCOPE", requires = "replace")]
     pub scope: Vec<String>,
 
+    /// Keep the results the file caches: do not recalculate the formulas the edit leaves stale. The
+    /// cells no operation touches keep the value the application that wrote the file cached, and the
+    /// workbook is not marked to be recalculated when it is opened. By default every formula is
+    /// calculated again by the engine
+    #[arg(long)]
+    pub no_recalculate: bool,
+
     /// Output file (required unless `--in-place`)
     #[arg(short, long, conflicts_with = "in_place")]
     pub output: Option<PathBuf>,
@@ -191,6 +198,7 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
     // The flags of a command are all written against the input file, in no order: the planner
     // decides what runs first (see `sheetrs_edit::BookEdit`), as it does for every other caller.
     let mut book = Book::from_file(&cli.file)?;
+    book.set_recalculate(!cli.no_recalculate);
     if !cli.replace.is_empty() {
         let mode = if cli.regex {
             Mode::Regex

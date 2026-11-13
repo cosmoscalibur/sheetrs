@@ -438,6 +438,22 @@ impl Book {
         self.inner.operations().len()
     }
 
+    /// Whether `save` calculates again the formulas the operations leave stale (`true`, the
+    /// default): the engine calculates every formula as the last step. `false` keeps the results the
+    /// file caches: the engine is not asked, so the cells no operation touches keep the value the
+    /// application that wrote the file computed and the workbook is not marked to be recalculated
+    /// when it is opened. A `calculate` step runs either way.
+    #[wasm_bindgen(getter)]
+    pub fn recalculate(&self) -> bool {
+        self.inner.recalculate()
+    }
+
+    /// Sets [`recalculate`](Self::recalculate).
+    #[wasm_bindgen(setter)]
+    pub fn set_recalculate(&mut self, recalculate: bool) {
+        self.inner.set_recalculate(recalculate);
+    }
+
     /// What `save` will do: the passes over the file, one operation per line.
     pub fn explain(&self) -> String {
         self.inner.explain()

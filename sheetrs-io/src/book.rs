@@ -51,6 +51,10 @@ pub struct Book {
     format: Format,
     #[cfg(feature = "write")]
     operations: Vec<crate::write::Operation>,
+    /// Whether a run recalculates the formulas the operations leave stale (the default). Off, the
+    /// results the file caches are kept as they are.
+    #[cfg(feature = "write")]
+    recalculate: bool,
 }
 
 impl Book {
@@ -104,6 +108,8 @@ impl Book {
             format,
             #[cfg(feature = "write")]
             operations: Vec::new(),
+            #[cfg(feature = "write")]
+            recalculate: true,
         }
     }
 
@@ -306,6 +312,24 @@ impl Book {
     #[must_use]
     pub fn operations(&self) -> &[crate::write::Operation] {
         &self.operations
+    }
+
+    /// Whether a run recalculates the formulas the pending operations leave stale (the default).
+    /// See [`set_recalculate`](Self::set_recalculate).
+    #[must_use]
+    pub fn recalculate(&self) -> bool {
+        self.recalculate
+    }
+
+    /// Whether a run recalculates the formulas that the operations leave stale, as the last thing it
+    /// does (`true`, the default), or keeps the results the file caches (`false`), as
+    /// `LibreOffice` does when it is set to never recalculate a file on load: a deletion, a removal
+    /// or a replacement then changes only the cells it has to, and no recalculation is asked of the
+    /// application that opens the workbook either. A `calculate` step is an operation that asks for
+    /// the calculation and runs in either case.
+    pub fn set_recalculate(&mut self, recalculate: bool) -> &mut Self {
+        self.recalculate = recalculate;
+        self
     }
 
     /// Drops the pending operations.

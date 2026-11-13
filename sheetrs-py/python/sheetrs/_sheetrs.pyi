@@ -381,8 +381,14 @@ class Book:
     def value_ranges(self) -> ValueRanges:
         """The value ranges of the calculation, in memory: runs the operations and writes the workbook
         nowhere. Raises `Error` without a `calculate` step."""
-    def explain(self) -> str: ...
-    def save(self, dest: Destination | None = None, *, json: Destination | None = None) -> Book:
+    def explain(self, *, recalculate: bool = True) -> str: ...
+    def save(
+        self,
+        dest: Destination | None = None,
+        *,
+        json: Destination | None = None,
+        recalculate: bool = True,
+    ) -> Book:
         """The cut: run the operations and write the workbook.
 
         `save(dest)` writes to a path or to a binary stream (`io.BytesIO()`) and returns a `Book` on what
@@ -390,13 +396,19 @@ class Book:
         from (rewritten from its start), and returns this `Book`, which then has no operations. `json`
         is a path or a stream where the value ranges of the `calculate` step are written as JSON besides the
         workbook.
+
+        By default a workbook the operations leave stale is calculated again by the engine, every formula
+        of it. With `recalculate=False` the engine is not asked: the formulas keep the results the file
+        caches (the ones the operations rewrite lose theirs, as they are stale), and the workbook is not
+        marked to be recalculated when it is opened. A `calculate` step runs either way.
         """
-    def to_bytes(self) -> bytes:
+    def to_bytes(self, *, recalculate: bool = True) -> bytes:
         """The workbook the operations make, as bytes in the format of the source: the cut like `save`,
         but to memory, with no file. The bytes are the ones `save(path)` writes for the same plan. Like
         `save(path)` it keeps the operations of this `Book`; `report` says what the run did and a
         `RecalculationWarning` is issued where `save` would issue it. With no operations it returns
-        the workbook as it is (the file, or the bytes the `Book` was made from)."""
+        the workbook as it is (the file, or the bytes the `Book` was made from). `recalculate` is the
+        one of `save`."""
     def range(
         self,
         ranges: Targets,

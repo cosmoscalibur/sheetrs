@@ -666,8 +666,11 @@ impl PyBook {
     /// What `save` will do: the passes over the file that run the operations, one operation per
     /// line, and the calculations in their place. The operations are not run in the order they were
     /// given: each is written against the workbook as it is, and the planner orders them.
-    fn explain(&self) -> String {
-        plan::explain(&self.source, &self.steps)
+    #[pyo3(signature = (*, recalculate=true))]
+    fn explain(&self, recalculate: bool) -> String {
+        let mut source = self.source.clone();
+        source.set_recalculate(recalculate);
+        plan::explain(&source, &self.steps)
     }
 
     /// The cut: run the operations and write the workbook.
@@ -687,14 +690,17 @@ impl PyBook {
     /// the operations leave stale is calculated again by the engine, so it is written with fresh
     /// results; where the engine cannot, it is written marked so that the application that opens it
     /// recalculates every formula, and a `RecalculationWarning` says so (also logged by `sheetrs`).
+    /// With `recalculate=False` the engine is not asked: the formulas keep the results the file
+    /// caches (the ones the operations rewrite lose theirs), and the workbook is not marked.
     /// Raises `OSError` for a file that cannot be read or written and `sheetrs.Error` when the
     /// workbook cannot be edited (including when there are no operations).
-    #[pyo3(signature = (dest=None, *, json=None))]
+    #[pyo3(signature = (dest=None, *, json=None, recalculate=true))]
     fn save<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
         dest: Option<&Bound<'py, PyAny>>,
         json: Option<&Bound<'py, PyAny>>,
+        recalculate: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         if json.is_some() && !plan::has_calculate(&slf.steps) {
             return Err(raise(
@@ -703,7 +709,8 @@ impl PyBook {
                  call calculate() first",
             ));
         }
-        let source = slf.source.clone();
+        let mut source = slf.source.clone();
+        source.set_recalculate(recalculate);
         let steps = slf.steps.clone();
         let stream_dest = match dest {
             Some(dest) if is_stream(dest)? => Some(dest.clone()),
@@ -792,11 +799,14 @@ impl PyBook {
     ///
     /// Raises `OSError` for a file that cannot be read when there are no operations, and
     /// `sheetrs.Error` when the workbook cannot be read or edited to run them.
+    #[pyo3(signature = (*, recalculate=true))]
     fn to_bytes<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
+        recalculate: bool,
     ) -> PyResult<Bound<'py, PyBytes>> {
-        let source = slf.source.clone();
+        let mut source = slf.source.clone();
+        source.set_recalculate(recalculate);
         if slf.steps.is_empty() {
             let bytes = py
                 .detach(|| match (source.path(), source.bytes()) {
