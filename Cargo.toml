@@ -30,7 +30,7 @@ colored = "3.1"
 
 # XML parsing
 quick-xml = "0.42.0"
-zip = { version = "8.3", default-features = false, features = ["deflate"] }
+zip = { version = "9.0", default-features = false, features = ["deflate"] }
 
 # HTTP client for link validation
 reqwest = { version = "0.13.5", features = ["blocking"] }
