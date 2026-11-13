@@ -387,9 +387,9 @@ fn defined_names_bind_and_parse() {
 
 #[test]
 fn bad_targets_fail_early() {
-    let e = sheetrs_compiler::compile(&model(), &spec(&["Nope!A1"], &["C2"])).unwrap_err();
+    let e = sheetrs_compiler::compile(model(), &spec(&["Nope!A1"], &["C2"])).unwrap_err();
     assert!(e.to_string().contains("cannot resolve"));
-    let e = sheetrs_compiler::compile(&model(), &spec(&["A1", "A1"], &["C2"])).unwrap_err();
+    let e = sheetrs_compiler::compile(model(), &spec(&["A1", "A1"], &["C2"])).unwrap_err();
     assert!(e.to_string().contains("declared twice"));
 }
 

@@ -128,7 +128,9 @@ pub trait BookStats {
 impl BookStats for Book {
     fn stats(&self) -> Result<WorkbookStats> {
         let mut sink = StatsSink::default();
-        let workbook = self.analysis_into(&mut sink)?;
+        // The counts do not depend on the notation of a formula: the file's own (`workbook_into`)
+        // skips the conversion of every ODS formula to Excel's that `analysis_into` does.
+        let workbook = self.workbook_into(&mut sink)?;
         Ok(WorkbookStats::from_workbook(&workbook, &sink))
     }
 }

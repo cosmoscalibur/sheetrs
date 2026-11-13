@@ -60,6 +60,14 @@ impl CellStore {
         old
     }
 
+    /// Frees the text of every formula and keeps that the cell has one (see
+    /// [`ModelCell::release_formula`]).
+    pub fn release_formulas(&mut self) {
+        for cell in self.sheets.iter_mut().flat_map(Grid::values_mut) {
+            cell.release_formula();
+        }
+    }
+
     /// The cells in order of sheet, row and column.
     pub fn iter(&self) -> impl Iterator<Item = (CellRef, &ModelCell)> {
         self.sheets.iter().enumerate().flat_map(|(s, grid)| {

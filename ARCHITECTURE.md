@@ -173,10 +173,11 @@ The input of the suite and its shared kernel: the format-agnostic workbook model
     (`Book::workbook_into`, `Book::selection_into`): Excel's in an XLSX, `OpenFormula` in an ODS
     (`[.A1]+[$T.B2]`, without the `of:=`). What `LibreOffice` shows depends on it (an ODS keeps
     sheets that are relative, `T.A1`, and ranges that name their sheet twice), so `sheetrs-query` and
-    `sheetrs-edit` work on the native text. The tools that only analyse formulas (the linter, the
-    statistics, the compiler) work on an **analysis form**, Excel's notation for both formats, through
+    `sheetrs-edit` work on the native text. The tools that analyse the text of formulas (the linter, the
+    compiler) work on an **analysis form**, Excel's notation for both formats, through
     `Book::analysis_into` / `Book::workbook` (the `ExcelFormulas` sink converts an ODS formula
-    once, with the name of its sheet); the `Workbook` model is that form.
+    once, with the name of its sheet); the `Workbook` model is that form. The statistics only
+    count cells, so they read the native text (`Book::workbook_into`) and skip that conversion.
   - `Selection` (sheets, `Window`s of rows and columns, and the `Properties` wanted of each cell) is
     what a selective read takes: `Book::selection_into(selection, sink)` does not parse a sheet that
     is not selected, stops the reading of a sheet after the last row a window reaches (an ODS ends

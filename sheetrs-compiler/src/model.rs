@@ -12,10 +12,21 @@ use std::collections::HashMap;
 pub struct ModelCell {
     /// Constant value, or the cached result of the formula.
     pub value: Value,
-    /// Formula text without the leading `=`, in Excel syntax.
+    /// Formula text without the leading `=`, in Excel syntax. `Some("")` is a formula whose text
+    /// was released (see [`ModelCell::release_formula`]): the cell still is a formula.
     pub formula: Option<String>,
     /// Array (Ctrl+Shift+Enter) formula: its operators work element-wise.
     pub array: bool,
+}
+
+impl ModelCell {
+    /// Frees the text of the formula, as `compile` does of a model it owns once every formula is
+    /// lowered: after that only whether the cell is a formula is read (`formula.is_some()`).
+    pub fn release_formula(&mut self) {
+        if let Some(text) = &mut self.formula {
+            *text = String::new();
+        }
+    }
 }
 
 /// Calculation settings stored in the document, resolved into engine terms.
