@@ -24,6 +24,7 @@ use sheetrs_engine::ir::{
 };
 use sheetrs_engine::options::{DateSystem, EngineOptions, Iteration, Locale, Search};
 use sheetrs_engine::value::Value;
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 
 /// A cell or range declared as input or output.
@@ -438,6 +439,24 @@ fn lower_chunk(
     out
 }
 
+/// What [`compile`] takes as the model: `&Model` (the caller keeps it, unchanged) or a `Model` (the
+/// compiler owns it and frees what it no longer needs).
+pub trait ModelArg<'m> {
+    fn into_cow(self) -> Cow<'m, Model>;
+}
+
+impl<'m> ModelArg<'m> for &'m Model {
+    fn into_cow(self) -> Cow<'m, Model> {
+        Cow::Borrowed(self)
+    }
+}
+
+impl ModelArg<'_> for Model {
+    fn into_cow(self) -> Cow<'static, Model> {
+        Cow::Owned(self)
+    }
+}
+
 /// # Errors
 ///
 /// When the document defines a setting that the spec overrides, or the model cannot be compiled (an unknown name, a reference that cannot be resolved, a formula that does not parse).
@@ -445,7 +464,12 @@ fn lower_chunk(
 /// # Panics
 ///
 /// When a thread that lowers formulas panics.
-pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
+pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Report)> {
+    // A model passed by value is the compiler's: once every formula is lowered the text of the
+    // formulas is freed (nothing after reads it), which lowers the peak of the rest of the build.
+    // A model passed by reference is the caller's and stays as it is.
+    let mut owned: Cow<'m, Model> = model.into_cow();
+    let model: &Model = &owned;
     // The editor's recalculation (`Mode::Recalculate`, built by no command) has no declarations: every
     // formula is an output and any constant an input. An embedded program takes them as any program
     // does, and deduces what it does not declare.
@@ -586,6 +610,11 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
     }
     formulas.sort_unstable_by_key(|(at, _)| *at);
     subtotal_cells.sort_unstable();
+    drop(formula_cells);
+    if let Cow::Owned(own) = &mut owned {
+        own.cells.release_formulas();
+    }
+    let model: &Model = &owned;
 
     trace(t0.as_ref(), "parsed formulas");
     if !model.unsupported_options.is_empty() && !spec.inspect {
