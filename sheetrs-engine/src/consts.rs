@@ -14,7 +14,7 @@ use crate::value::Value;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Seek, SeekFrom};
 
 /// Constants a block holds, at least (whole rows go together).
 pub const BLOCK_CELLS: usize = 4096;
@@ -223,10 +223,10 @@ impl StoredConsts {
         let from = usize::try_from(self.start + b.offset).unwrap_or(usize::MAX);
         match &self.backing {
             Backing::File(file) => {
-                let mut buf = vec![0u8; b.len as usize];
                 let mut f = file.borrow_mut();
-                f.seek(SeekFrom::Start(self.start + b.offset))
-                    .and_then(|_| f.read_exact(&mut buf))
+                let buf = f
+                    .seek(SeekFrom::Start(self.start + b.offset))
+                    .and_then(|_| crate::archive::read_aligned(&mut *f, b.len as usize))
                     .unwrap_or_else(|e| damaged(&e));
                 crate::archive::decode(&buf)
                     .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))

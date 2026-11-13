@@ -203,8 +203,7 @@ pub fn read_embedded() -> Option<Embedded> {
     }
     let start = size - total;
     f.seek(SeekFrom::Start(start)).ok()?;
-    let mut buf = vec![0u8; usize::try_from(skeleton).ok()?];
-    f.read_exact(&mut buf).ok()?;
+    let buf = crate::archive::read_aligned(&mut f, usize::try_from(skeleton).ok()?).ok()?;
     let packed: Packed = crate::archive::decode(&buf).ok()?;
     let template = if template_len >= EXTENSION_BYTES as u64 {
         f.seek(SeekFrom::Start(start + skeleton + blocks)).ok()?;

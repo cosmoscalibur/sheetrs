@@ -21,7 +21,7 @@ use sheetrs_formula::DateSystem;
 /// # Errors
 ///
 /// When the value cannot be encoded.
-pub(crate) fn encode<T>(value: &T) -> Result<AlignedVec, rkyv::rancor::Error>
+pub(crate) fn encode<T>(value: &T) -> Result<AlignedVec<ALIGNMENT>, rkyv::rancor::Error>
 where
     T: for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>>,
 {
@@ -39,9 +39,31 @@ where
     T::Archived: for<'a> CheckBytes<HighValidator<'a, rkyv::rancor::Error>>
         + Deserialize<T, HighDeserializer<rkyv::rancor::Error>>,
 {
-    let mut aligned = AlignedVec::<16>::with_capacity(bytes.len());
+    if bytes.as_ptr().align_offset(ALIGNMENT) == 0 {
+        return rkyv::from_bytes::<T, rkyv::rancor::Error>(bytes);
+    }
+    let mut aligned = AlignedVec::<ALIGNMENT>::with_capacity(bytes.len());
     aligned.extend_from_slice(bytes);
     rkyv::from_bytes::<T, rkyv::rancor::Error>(&aligned)
+}
+
+/// Alignment of the buffers [`encode`] gives and [`read_aligned`] fills.
+const ALIGNMENT: usize = 16;
+
+/// Read `len` bytes from `reader` into memory aligned for [`decode`], which then reads them
+/// without a copy.
+///
+/// # Errors
+///
+/// When `reader` has fewer than `len` bytes.
+pub(crate) fn read_aligned(
+    reader: &mut impl std::io::Read,
+    len: usize,
+) -> std::io::Result<AlignedVec<ALIGNMENT>> {
+    let mut buf = AlignedVec::<ALIGNMENT>::with_capacity(len);
+    buf.resize(len, 0);
+    reader.read_exact(&mut buf)?;
+    Ok(buf)
 }
 
 /// An unreadable name inside an archive.
