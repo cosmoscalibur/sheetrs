@@ -254,7 +254,7 @@ pub(crate) fn run(source: &Book, query: &Query) -> Result<QueryResponse> {
     let matcher = query
         .find
         .as_ref()
-        .map(|f| Matcher::new(f).map(|m| (f, m)))
+        .map(|f| Matcher::for_find(f).map(|m| (f, m)))
         .transpose()?;
 
     // A search in formulas needs the name of the sheet of each cell (the formula says `$Sheet.A1`

@@ -83,10 +83,16 @@ def test_regular_expressions(texts):
     assert cells(texts.find("b(an)+a", regex=True)) == ["S!A3"]
 
 
+def test_the_anchors_of_a_regular_expression_are_those_of_the_text(texts):
+    assert cells(texts.find("^ban", regex=True)) == ["S!A3", "S!C3"]
+    assert cells(texts.find("^b(an)+a$", regex=True, entire_cells=True)) == ["S!A3"]
+    assert cells(texts.find("^(Banana|Apple pie)$", regex=True, match_case=True)) == ["S!A3"]
+
+
 def test_a_regular_expression_outside_the_subset_is_a_value_error(texts):
-    # The anchors are not reproduced yet: the search is refused, not answered differently.
+    # What is not reproduced is refused, not answered differently.
     with pytest.raises(ValueError, match="unsupported search"):
-        texts.find("^ban", regex=True)
+        texts.find("\\bban", regex=True)
 
 
 def test_wildcards(texts):

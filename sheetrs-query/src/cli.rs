@@ -73,7 +73,7 @@ pub struct Args {
     #[arg(long, value_name = "TEXT")]
     pub find: Option<String>,
 
-    /// The search is a regular expression (ICU, the subset that is reproduced)
+    /// The search is a regular expression (ICU, the subset that is reproduced; `^` and `$` anchor the text of the cell)
     #[arg(long, conflicts_with = "wildcards")]
     pub regex: bool,
 

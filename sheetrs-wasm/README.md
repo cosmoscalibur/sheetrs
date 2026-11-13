@@ -99,7 +99,8 @@ or a list: `"workbook"`, `{sheet: "Data"}`, `{range: "Data!A1:C9"}`), `propertie
 `include_formulas`, `formatted`, `filtered`), `locale` and `dates`. `range` and `find` are the same
 reads in the shape they are used in: `range(ranges, {properties, major: "rows" | "columns", dates})`
 and `find(text, {mode, matchCase, entireCells, searchIn, includeFormulas, formatted, filtered, scope,
-properties, by, dates})`.
+properties, by, dates})`. A `regex` search reads the anchors `^` and `$` (the start and the end of the
+text of the cell); `replace` refuses them.
 
 ### `calculate` and `valueRanges`
 

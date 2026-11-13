@@ -129,6 +129,17 @@ reads an XLSX sheet to its end, because the range of the autofilter comes after 
 A regular expression outside the subset of ICU that was compared with LibreOffice
 (`sheetrs_engine::regex_subset`) is refused instead of giving another result.
 
+The anchors `^` and `$` are in that subset for a search, as LibreOffice reads them in a cell: `^` is
+the start of the text and `$` its end (or the place before the line terminator that ends it), never
+the start or the end of a line, so `^(Code|Resumen Contadia)$` finds the cells with exactly one of
+the two texts, in the middle of a pattern (`a^b`, `a$b`) they match nothing, and they work inside
+groups and alternations (`(^a|b$)`). `.` still leaves out the line breaks. A pattern that can match
+the empty text (`^`, `$`, `^$`, `a*$`) is refused. `sheetrs edit --replace` refuses the anchors:
+what LibreOffice does with them when it replaces (the empty match, the match at the end of the text)
+is not reproduced. The searches with anchors are compared with `findAll` of LibreOffice in
+`tests/libreoffice_find.rs` (workbooks `tests/assets/anchors.*`, made by
+`tests/assets/make_anchors_fixtures.py`).
+
 ## The format of a formula cell
 
 LibreOffice gives a formula cell whose style is `General` the format its result has: `=A1` over a

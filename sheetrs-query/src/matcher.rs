@@ -10,13 +10,18 @@
 //! - `Regex`: ICU syntax; the part of it that was compared with `LibreOffice` is the subset of
 //!   `sheetrs_engine::regex_subset`, and a pattern outside it is refused instead of giving another
 //!   result. `.` does not match a line break.
+//! - `^` and `$` anchor the text of the cell, not its lines: `^` is its start, `$` its end or the
+//!   place before a line terminator that ends it. A search ([`Matcher::for_find`]) reads them; a
+//!   replacement ([`Matcher::new`]) refuses them, because `LibreOffice` replaces at the end of the
+//!   text with `$` but not at the start with `^`, and the empty matches of an anchor are not
+//!   reproduced.
 //! - A match of no characters is not a hit.
 //! - Every hit of a cell is replaced. In a regular expression the replacement reads `&` as the
 //!   whole match, `$0` to `$9` as the groups, `\t` as a tab, and `\&`, `\$` and `\\` as the
 //!   character they escape; in the other modes the replacement is taken as it is.
 
 use crate::error::{Error, Result};
-use regex::Regex;
+use fancy_regex::{Captures, Regex};
 use sheetrs_protocol::{Find, Mode};
 
 /// A [`Find`] ready to test texts.
@@ -29,7 +34,7 @@ pub struct Matcher {
 
 /// The pattern of a literal text.
 fn escape(text: &str) -> String {
-    regex::escape(text)
+    fancy_regex::escape(text).into_owned()
 }
 
 /// The pattern of a text with wildcards.
@@ -54,15 +59,38 @@ fn wildcards(text: &str) -> String {
 }
 
 impl Matcher {
+    /// A matcher to replace with.
+    ///
+    /// # Errors
+    ///
+    /// When the regular expression is outside what is reproduced (the anchors `^` and `$` are), or
+    /// does not compile.
+    pub fn new(find: &Find) -> Result<Self> {
+        Self::build(find, false)
+    }
+
+    /// A matcher to find the cells with a hit: a regular expression may have the anchors `^` and
+    /// `$`. Do not [`replace_all`](Self::replace_all) with it.
+    ///
     /// # Errors
     ///
     /// When the regular expression is outside what is reproduced, or does not compile.
-    pub fn new(find: &Find) -> Result<Self> {
+    pub fn for_find(find: &Find) -> Result<Self> {
+        Self::build(find, true)
+    }
+
+    fn build(find: &Find, anchors: bool) -> Result<Self> {
         let body = match find.mode {
             Mode::Literal => escape(&find.text),
             Mode::Wildcards => wildcards(&find.text),
-            Mode::Regex => sheetrs_engine::regex_subset::translate_capturing(&find.text)
-                .map_err(|e| Error::Unsupported(e.to_string()))?,
+            Mode::Regex => {
+                let translated = if anchors {
+                    sheetrs_engine::regex_subset::translate_find(&find.text)
+                } else {
+                    sheetrs_engine::regex_subset::translate_capturing(&find.text)
+                };
+                translated.map_err(|e| Error::Unsupported(e.to_string()))?
+            }
         };
         let flags = if find.match_case { "" } else { "(?i)" };
         let re =
@@ -82,14 +110,15 @@ impl Matcher {
 
     /// The hits to take: every non-empty match, or, when the whole cell is asked, the first match if
     /// it covers the text.
-    fn hits<'a>(&'a self, text: &'a str) -> impl Iterator<Item = regex::Captures<'a>> {
-        let whole = |c: &regex::Captures<'_>| {
+    fn hits<'a>(&'a self, text: &'a str) -> impl Iterator<Item = Captures<'a, str>> {
+        let whole = |c: &Captures<'_, str>| {
             c.get(0)
                 .is_some_and(|m| m.start() == 0 && m.end() == text.len())
         };
         let entire = self.entire;
         self.re
             .captures_iter(text)
+            .filter_map(std::result::Result::ok)
             .filter(|c| c.get(0).is_some_and(|m| !m.as_str().is_empty()))
             .take(if entire { 1 } else { usize::MAX })
             .filter(move |c| !entire || whole(c))
@@ -121,7 +150,7 @@ impl Matcher {
 }
 
 /// The replacement of a regular expression, with its `&`, `$n` and escapes.
-fn expand(with: &str, caps: &regex::Captures<'_>, out: &mut String) {
+fn expand(with: &str, caps: &Captures<'_, str>, out: &mut String) {
     let mut chars = with.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
@@ -285,13 +314,79 @@ mod tests {
         );
     }
 
+    fn found(pattern: &str, entire_cells: bool, text: &str) -> bool {
+        let f = Find {
+            entire_cells,
+            ..find(pattern, Mode::Regex)
+        };
+        Matcher::for_find(&f).unwrap().is_match(text)
+    }
+
     #[test]
-    fn a_pattern_that_is_not_reproduced_is_refused() {
+    fn a_replacement_refuses_the_anchors() {
         // `LibreOffice` replaces at the end of the text with `$` but not at the start with `^`:
-        // behaviours the subset does not promise.
-        assert!(matches!(
-            Matcher::new(&find("^", Mode::Regex)),
-            Err(Error::Unsupported(_))
-        ));
+        // behaviours that are not reproduced.
+        for pattern in ["^a", "a$", "^(a|b)$", "^"] {
+            assert!(
+                matches!(
+                    Matcher::new(&find(pattern, Mode::Regex)),
+                    Err(Error::Unsupported(_))
+                ),
+                "{pattern}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_search_reads_the_anchors_of_the_text_of_the_cell() {
+        assert!(found("^ab", false, "abc"));
+        assert!(!found("^bc", false, "abc"));
+        assert!(found("bc$", false, "abc"));
+        assert!(!found("ab$", false, "abc"));
+        // The text, not its lines.
+        assert!(!found("^b", false, "a\nb"));
+        assert!(!found("a$", false, "a\nb"));
+        // `$` is also the place before the line terminator that ends the text.
+        for end in [
+            "\n", "\r", "\r\n", "\u{b}", "\u{c}", "\u{85}", "\u{2028}", "\u{2029}",
+        ] {
+            assert!(found("a$", false, &format!("a{end}")), "{end:?}");
+        }
+        assert!(!found("a$", false, "a\n\n"));
+        assert!(!found("a$", false, "a\r\nb"));
+    }
+
+    #[test]
+    fn an_anchor_in_a_group_or_in_the_middle_of_a_pattern() {
+        assert!(found("^(Code|Resumen Contadia)$", true, "Resumen Contadia"));
+        assert!(!found("^(Code|Resumen Contadia)$", false, "Code x"));
+        assert!(found("(^a|b$)", false, "xxb"));
+        assert!(found("(^a|b$)", false, "axx"));
+        assert!(!found("(^a|b$)", false, "xax"));
+        assert!(!found("a^b", false, "ab"));
+        assert!(!found("a$b", false, "ab"));
+        // The first match must be the whole text with `entire_cells`, anchors or not.
+        assert!(!found("^a|ab$", true, "ab"));
+        assert!(found("^ab|a$", true, "ab"));
+    }
+
+    #[test]
+    fn a_dot_next_to_an_anchor_leaves_out_a_line_break() {
+        assert!(!found("^.b", false, "\nb"));
+        assert!(!found("a.$", false, "a\n"));
+        assert!(found("^a.$", false, "ab"));
+    }
+
+    #[test]
+    fn a_search_refuses_a_pattern_that_can_match_the_empty_text() {
+        for pattern in ["^", "$", "^$", "^a*", "a*$", "(^|$)"] {
+            assert!(
+                matches!(
+                    Matcher::for_find(&find(pattern, Mode::Regex)),
+                    Err(Error::Unsupported(_))
+                ),
+                "{pattern}"
+            );
+        }
     }
 }

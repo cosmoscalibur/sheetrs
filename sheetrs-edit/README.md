@@ -54,7 +54,7 @@ same `replaceAll`, in XLSX and ODS; `tests/assets/replace/make_fixtures.py` make
   **first** match must be the whole text (`a|ab` does not match `ab`; `a*b` does not match `abab`).
 - `--wildcards`: `*` (as little as it can), `?`, and `\` to escape (not `~`, which is `COUNTIF`'s).
 - `--regex`: ICU syntax, the subset that was compared with LibreOffice (groups `$1`, `&` for the
-  whole match, `\t`, `\&`, `\$`, `\\` in the replacement); a pattern outside it is refused.
+  whole match, `\t`, `\&`, `\$`, `\\` in the replacement); a pattern outside it is refused, and the anchors `^` and `$` are outside it (`sheetrs query --find` reads them: what a replacement does with them, an empty match or a match at the end of the text, is not reproduced).
 - The text searched in a cell is the one of its **input line**: `1234.5` for a cell that shows
   `1,234.50`, `25.6%`, the date `03/15/2023` (the ISO date when the format of the cell is an ISO
   one). Every hit of the cell is replaced.

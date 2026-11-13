@@ -11,6 +11,12 @@
 //! with ranges and `\d \w \s` inside), groups `( )` and `(?: )`, alternation, and the quantifiers
 //! `* + ? {n} {n,} {n,m}` with their lazy forms. The pattern must not match the empty text, and
 //! nothing that repeats may match it.
+//!
+//! The anchors `^` and `$` are read only for a search that does not replace ([`translate_find`]):
+//! where a hit is a yes or a no, they mean what `LibreOffice` gives them (the start of the text, and
+//! its end or the place before a line terminator that ends it; never the start or end of a line).
+//! What a replacement does with them (an empty match, a match at the end of the text) is not
+//! reproduced, so [`translate`] and [`translate_capturing`] refuse them.
 
 use std::fmt::Write as _;
 
@@ -27,6 +33,10 @@ enum Node {
     Concat(Vec<Node>),
     Alt(Vec<Node>),
     Repeat(Box<Node>, u32, Option<u32>, bool),
+    /// `^`: the start of the text.
+    Start,
+    /// `$`: the end of the text, or the place before the line terminator that ends it.
+    End,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +51,8 @@ enum SetItem {
 struct Parser {
     chars: Vec<char>,
     at: usize,
+    /// Whether `^` and `$` are read (a search) or refused (a replacement, a function).
+    anchors: bool,
 }
 
 /// A construct of a pattern that is outside the subset, described as the text says it.
@@ -201,7 +213,9 @@ impl Parser {
                 p if p.is_ascii_punctuation() => Node::Lit(p),
                 other => return Err(format!("the escape `\\{other}`").into()),
             },
-            '^' | '$' => return Err("an anchor (`^`, `$`)".into()),
+            '^' | '$' if !self.anchors => return Err("an anchor (`^`, `$`)".into()),
+            '^' => Node::Start,
+            '$' => Node::End,
             '*' | '+' | '?' | '{' => return Err("a repetition with nothing to repeat".into()),
             ']' | '}' => return Err(format!("a lone `{c}`").into()),
             c => Node::Lit(c),
@@ -273,7 +287,7 @@ impl Parser {
 
 fn min_len(n: &Node) -> u32 {
     match n {
-        Node::Empty => 0,
+        Node::Empty | Node::Start | Node::End => 0,
         Node::Lit(_)
         | Node::Dot
         | Node::Digit(_)
@@ -289,6 +303,11 @@ fn min_len(n: &Node) -> u32 {
 
 /// What ICU's `.` leaves out: its line terminators.
 const LINE_ENDS: &str = "\\n\\x0B\\x0C\\r\\x{85}\\x{2028}\\x{2029}";
+
+/// ICU's `$` without the multi-line flag: the end of the text, or the place before the one line
+/// terminator that ends it (`\r\n` counts as one, so the place between the two is not it).
+const END: &str =
+    "(?:\\z|(?=\\r\\n\\z)|(?<!\\r)(?=\\n\\z)|(?=[\\x0B\\x0C\\r\\x{85}\\x{2028}\\x{2029}]\\z))";
 
 fn lit(c: char, out: &mut String) {
     let mut b = [0u8; 4];
@@ -312,6 +331,8 @@ fn set_char(c: char, out: &mut String) {
 fn write(n: &Node, out: &mut String, captures: bool) {
     match n {
         Node::Empty => {}
+        Node::Start => out.push_str("\\A"),
+        Node::End => out.push_str(END),
         Node::Lit(c) => lit(*c, out),
         Node::Dot => {
             out.push_str("[^");
@@ -386,7 +407,7 @@ fn write(n: &Node, out: &mut String, captures: bool) {
 ///
 /// When `pattern` uses a construct outside the subset.
 pub fn translate(pattern: &str) -> R<String> {
-    translate_with(pattern, false)
+    translate_with(pattern, false, false)
 }
 
 /// Like [`translate`], keeping the groups that capture (for the replacements of `REGEX`).
@@ -395,13 +416,25 @@ pub fn translate(pattern: &str) -> R<String> {
 ///
 /// When `pattern` uses a construct outside the subset.
 pub fn translate_capturing(pattern: &str) -> R<String> {
-    translate_with(pattern, true)
+    translate_with(pattern, true, false)
 }
 
-fn translate_with(pattern: &str, captures: bool) -> R<String> {
+/// Like [`translate_capturing`], and reading the anchors `^` and `$`, for a search that only asks
+/// whether a text holds a hit. The result needs an engine with look-around (`fancy_regex`) when it
+/// has a `$`.
+///
+/// # Errors
+///
+/// When `pattern` uses a construct outside the subset.
+pub fn translate_find(pattern: &str) -> R<String> {
+    translate_with(pattern, true, true)
+}
+
+fn translate_with(pattern: &str, captures: bool, anchors: bool) -> R<String> {
     let mut p = Parser {
         chars: pattern.chars().collect(),
         at: 0,
+        anchors,
     };
     let node = p.alt()?;
     if p.at < p.chars.len() {
@@ -464,6 +497,22 @@ mod tests {
             "[\\d-x]",
         ] {
             assert!(translate(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn reads_the_anchors_of_a_search_only() {
+        for ok in ["^a", "a$", "^(a|b)$", "(^a|b$)", "a^b", "(^|x)a", "^a.$"] {
+            assert!(translate_find(ok).is_ok(), "{ok}");
+            assert!(translate(ok).is_err(), "{ok}");
+            assert!(translate_capturing(ok).is_err(), "{ok}");
+        }
+    }
+
+    #[test]
+    fn an_anchor_alone_is_an_empty_match_and_is_refused_in_a_search() {
+        for bad in ["^", "$", "^$", "^a*", "a*$", "(^|$)", "^*", "(^)+a", "^+"] {
+            assert!(translate_find(bad).is_err(), "{bad}");
         }
     }
 }

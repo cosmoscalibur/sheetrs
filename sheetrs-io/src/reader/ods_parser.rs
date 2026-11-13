@@ -1799,6 +1799,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         // Read text content from <text:p> elements
                         // This handles both error cells and regular text cells
                         let mut text_content = String::new();
+                        let mut paragraphs = 0usize;
                         let mut note: Option<String> = None;
                         text_buf.clear();
                         loop {
@@ -1819,15 +1820,21 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                         reader.read_to_end_into(end.name(), &mut skip)?;
                                     }
                                 }
+                                // Paragraphs of one cell are separate lines, an empty one too
+                                // (`a` and an empty paragraph are the text `a` and a line break).
                                 Event::Empty(ref te) if te.name().as_ref() == "text:p" => {
                                     saw_paragraph = true;
+                                    if paragraphs > 0 {
+                                        text_content.push('\n');
+                                    }
+                                    paragraphs += 1;
                                 }
                                 Event::Start(ref te) if te.name().as_ref() == "text:p" => {
                                     saw_paragraph = true;
-                                    // Paragraphs of one cell are separate lines.
-                                    if !text_content.is_empty() {
+                                    if paragraphs > 0 {
                                         text_content.push('\n');
                                     }
+                                    paragraphs += 1;
                                     let mut p_buf = Vec::new();
                                     loop {
                                         match reader.read_event_into(&mut p_buf)? {
@@ -3683,6 +3690,42 @@ mod tests {
             sheet.cells.get(&(0, 2)).unwrap().value,
             CellValue::Number(3.0)
         );
+    }
+
+    #[test]
+    fn test_empty_paragraphs_of_a_cell_are_line_breaks_ods() {
+        use std::io::Cursor;
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            zip.start_file("content.xml", options).unwrap();
+            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+    <office:body><office:spreadsheet>
+        <table:table table:name="Sheet1">
+            <table:table-row>
+                <table:table-cell office:value-type="string"><text:p>a</text:p><text:p/></table:table-cell>
+                <table:table-cell office:value-type="string"><text:p/><text:p>a</text:p></table:table-cell>
+                <table:table-cell office:value-type="string"><text:p>a</text:p><text:p/><text:p/></table:table-cell>
+                <table:table-cell office:value-type="string"><text:p/></table:table-cell>
+            </table:table-row>
+        </table:table>
+    </office:spreadsheet></office:body>
+</office:document-content>"#).unwrap();
+            zip.finish().unwrap();
+        }
+        let mut archive = ZipArchive::new(Cursor::new(buf)).unwrap();
+        let sheets = OdsReader::new(&mut archive).unwrap().read_sheets().unwrap();
+        let text = |col| sheets[0].cells.get(&(0, col)).unwrap().value.clone();
+        assert_eq!(text(0), CellValue::Text(Arc::from("a\n")));
+        assert_eq!(text(1), CellValue::Text(Arc::from("\na")));
+        assert_eq!(text(2), CellValue::Text(Arc::from("a\n\n")));
+        assert_eq!(text(3), CellValue::Text(Arc::from("")));
     }
 }
 

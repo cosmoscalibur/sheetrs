@@ -1562,5 +1562,1837 @@
   "entire_cells": false,
   "regex": false,
   "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A13",
+   "T!A14",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A11",
+   "T!A12",
+   "T!A17",
+   "T!A18",
+   "T!A20",
+   "T!A21",
+   "T!A3",
+   "T!A5",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A17",
+   "T!A20",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^(a|b)$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A17",
+   "T!A20",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^(a|b)$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^(Code|Resumen Contadia)$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A11",
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^(Code|Resumen Contadia)$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A11",
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a|b$)",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A13",
+   "T!A14",
+   "T!A15",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A4",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a|b$)",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a.",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A16",
+   "T!A2",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a.",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A2",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a.$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A2",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a.$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A2",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^.",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A10",
+   "T!A11",
+   "T!A12",
+   "T!A13",
+   "T!A14",
+   "T!A15",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A3",
+   "T!A4",
+   "T!A5",
+   "T!A6",
+   "T!A7",
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^.",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^ab|cd$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A16",
+   "T!A2"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^ab|cd$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A2"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^|x)a",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A13",
+   "T!A14",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^|x)a",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a($|x)",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A11",
+   "T!A12",
+   "T!A17",
+   "T!A18",
+   "T!A20",
+   "T!A21",
+   "T!A3",
+   "T!A5",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a($|x)",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a|a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A11",
+   "T!A12",
+   "T!A13",
+   "T!A14",
+   "T!A16",
+   "T!A17",
+   "T!A18",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A21",
+   "T!A3",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a|a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A3",
+   "T!A4"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A4"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "b$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A14",
+   "T!A15",
+   "T!A2",
+   "T!A4",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "b$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A4"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^code",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A10",
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^code",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^code x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A10"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^code x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A10"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A10",
+   "T!A13"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^x",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A12",
+   "T!A15"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^x",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a.\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a.\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A17",
+   "T!A19",
+   "T!A20"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A17",
+   "T!A20"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a|a$)\\s",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A13",
+   "T!A14",
+   "T!A17",
+   "T!A19",
+   "T!A20",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a|a$)\\s",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A17",
+   "T!A20"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^.*x",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A10",
+   "T!A12",
+   "T!A15"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^.*x",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A10"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^\\s",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A18",
+   "T!A21"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^\\s",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A17",
+   "T!A19",
+   "T!A20"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$|^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A11",
+   "T!A12",
+   "T!A17",
+   "T!A18",
+   "T!A20",
+   "T!A21",
+   "T!A3",
+   "T!A4",
+   "T!A5",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$|^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a)+",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A13",
+   "T!A14",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a)+",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A13",
+   "T!A14",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A11",
+   "T!A12",
+   "T!A17",
+   "T!A18",
+   "T!A20",
+   "T!A21",
+   "T!A3",
+   "T!A5",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A17",
+   "T!A20",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^(a|b)$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A17",
+   "T!A20",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^(a|b)$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^(Code|Resumen Contadia)$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A11",
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^(Code|Resumen Contadia)$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A11",
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a|b$)",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A13",
+   "T!A14",
+   "T!A15",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A4",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a|b$)",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a.",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A16",
+   "T!A2",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a.",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A2",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a.$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A2",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a.$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A2",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^.",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A10",
+   "T!A11",
+   "T!A12",
+   "T!A13",
+   "T!A14",
+   "T!A15",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A3",
+   "T!A4",
+   "T!A5",
+   "T!A6",
+   "T!A7",
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^.",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^ab|cd$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A16",
+   "T!A2"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^ab|cd$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A2"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^|x)a",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A13",
+   "T!A14",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^|x)a",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a($|x)",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A11",
+   "T!A12",
+   "T!A17",
+   "T!A18",
+   "T!A20",
+   "T!A21",
+   "T!A3",
+   "T!A5",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a($|x)",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a|a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A11",
+   "T!A12",
+   "T!A13",
+   "T!A14",
+   "T!A16",
+   "T!A17",
+   "T!A18",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A21",
+   "T!A3",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^a|a$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A3",
+   "T!A4"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A4"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "b$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A14",
+   "T!A15",
+   "T!A2",
+   "T!A4",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "b$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A4"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^code",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A10",
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^code",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A8",
+   "T!A9"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^code x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A10"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^code x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A10"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A10",
+   "T!A13"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "x$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^x",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A12",
+   "T!A15"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^x",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a.\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a.\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A17",
+   "T!A19",
+   "T!A20"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A17",
+   "T!A20"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a|a$)\\s",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A13",
+   "T!A14",
+   "T!A17",
+   "T!A19",
+   "T!A20",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a|a$)\\s",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A17",
+   "T!A20"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^.*x",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A10",
+   "T!A12",
+   "T!A15"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^.*x",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A10"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^\\s",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A18",
+   "T!A21"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "^\\s",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A17",
+   "T!A19",
+   "T!A20"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "\\s$",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": []
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$|^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A11",
+   "T!A12",
+   "T!A17",
+   "T!A18",
+   "T!A20",
+   "T!A21",
+   "T!A3",
+   "T!A4",
+   "T!A5",
+   "T!A6"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "a$|^b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A4",
+   "T!A5"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a)+",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A13",
+   "T!A14",
+   "T!A16",
+   "T!A17",
+   "T!A19",
+   "T!A2",
+   "T!A20",
+   "T!A5",
+   "T!A6",
+   "T!A7"
+  ]
+ },
+ {
+  "file": "anchors.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "(^a)+",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": true,
+  "found": [
+   "T!A1",
+   "T!A5"
+  ]
  }
 ]

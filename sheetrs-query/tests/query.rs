@@ -215,7 +215,7 @@ fn an_unsupported_pattern_is_an_error_and_an_unknown_locale_too() {
     let bad = Query {
         find: Some(Find {
             mode: Mode::Regex,
-            ..Find::literal("^a")
+            ..Find::literal("\\bfoo")
         }),
         ..Query::default()
     };
