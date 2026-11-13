@@ -130,7 +130,8 @@ pub enum Expr {
     Cell(CellRef),
     Range(Rect),
     Unary(UnOp, Box<Expr>),
-    Binary(BinOp, Box<Expr>, Box<Expr>),
+    /// The two operands in one allocation: a node is one of the millions a big workbook has.
+    Binary(BinOp, Box<[Expr; 2]>),
     Call(FuncId, Vec<Expr>),
     /// Call to a function missing from the registry, by name and arguments: evaluates to
     /// `#NAME?`. Boxed because it is rare and would otherwise set the size of every node.
@@ -145,10 +146,7 @@ impl Expr {
         f(self);
         match self {
             Self::Unary(_, a) => a.walk(f),
-            Self::Binary(_, a, b) => {
-                a.walk(f);
-                b.walk(f);
-            }
+            Self::Binary(_, ab) => ab.iter().for_each(|a| a.walk(f)),
             Self::Call(_, args) => args.iter().for_each(|a| a.walk(f)),
             Self::Unknown(call) => call.1.iter().for_each(|a| a.walk(f)),
             _ => {}
@@ -158,10 +156,7 @@ impl Expr {
     pub fn walk_mut(&mut self, f: &mut impl FnMut(&mut Expr)) {
         match self {
             Self::Unary(_, a) => a.walk_mut(f),
-            Self::Binary(_, a, b) => {
-                a.walk_mut(f);
-                b.walk_mut(f);
-            }
+            Self::Binary(_, ab) => ab.iter_mut().for_each(|a| a.walk_mut(f)),
             Self::Call(_, args) => args.iter_mut().for_each(|a| a.walk_mut(f)),
             Self::Unknown(call) => call.1.iter_mut().for_each(|a| a.walk_mut(f)),
             _ => {}

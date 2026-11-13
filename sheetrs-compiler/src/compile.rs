@@ -298,7 +298,7 @@ fn check_bindings(model: &Model, spec: &Spec) -> Result<()> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 struct Flags {
     dynamic: bool,
     volatile: bool,
@@ -835,18 +835,8 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
     trace(t0.as_ref(), "bindings");
     let n = formulas.len();
     let (ats, mut kinds): (Vec<CellRef>, Vec<CellKind>) = formulas.into_iter().unzip();
-    let mut ids: FastMap<CellRef, u32> =
-        FastMap::with_capacity_and_hasher(n, std::hash::BuildHasherDefault::default());
-    let mut by_sheet: Vec<Vec<u32>> = vec![Vec::new(); model.sheets.len().max(1)];
-    for (i, at) in ats.iter().enumerate() {
-        ids.insert(*at, i as u32);
-        by_sheet[at.sheet as usize].push(i as u32);
-    }
-    let index = Index {
-        ats: &ats,
-        ids: &ids,
-        by_sheet: &by_sheet,
-    };
+    let index_owned = NodeIndex::new(&ats, model.sheets.len());
+    let index = &index_owned;
     let view = ConstView::new(model, &cached);
 
     trace(t0.as_ref(), "index built");
@@ -857,7 +847,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
         adj: vec![None; n],
         rect_ids: FastMap::default(),
         rect_members: Vec::new(),
-        flags: FastMap::default(),
+        flags: vec![Flags::default(); n],
         deps: Vec::new(),
     };
     // What the program has to compute: the outputs.
@@ -875,25 +865,28 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
             continue;
         }
         cone.push(v);
-        let adj = g.adj_of(v).to_vec();
-        if (v as usize) < n && g.flags.get(&v).is_some_and(|f| f.dynamic) && !all {
+        g.adj_of(v);
+        if (v as usize) < n && g.flags[v as usize].dynamic && !all {
             all = true;
             report.dynamic_refs = true;
             stack.extend(0..n as u32);
         }
-        stack.extend(adj);
+        stack.extend_from_slice(g.adj_of(v));
     }
     // Compact ids over the cone.
     let mut compact = vec![u32::MAX; visited.len()];
     for (i, &v) in cone.iter().enumerate() {
         compact[v as usize] = i as u32;
     }
-    let adj_c: Vec<Vec<u32>> = cone
-        .iter()
-        .map(|&v| g.adj_of(v).iter().map(|&w| compact[w as usize]).collect())
-        .collect();
-    let csr = Csr::from_adjacency(&adj_c);
-    drop(adj_c);
+    // The graph over the compact ids, built straight from the adjacency of each node of the cone
+    // (every one has been read above): no second copy of the adjacency in between.
+    let csr = Csr::from_rows(
+        cone.iter()
+            .map(|&v| g.adj_known(v).iter().map(|&w| compact[w as usize])),
+    );
+    // The adjacency is in the CSR now; what the taint still reads of the graph is the flags.
+    let flags = std::mem::take(&mut g.flags);
+    drop(g);
     trace(t0.as_ref(), "cone + csr");
     let sccs = graph::tarjan(&csr);
     report.cells_reachable = cone.iter().filter(|&&v| (v as usize) < n).count();
@@ -910,9 +903,9 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
                 match &kinds[v as usize] {
                     CellKind::Input(_) => t = true,
                     CellKind::Formula(e) => {
-                        let f = g.flags.get(&v);
+                        let f = flags[v as usize];
                         let _ = e;
-                        t |= !fold || f.is_some_and(|f| f.dynamic || f.volatile);
+                        t |= !fold || f.dynamic || f.volatile;
                     }
                     CellKind::Const(_) => {}
                 }
@@ -924,6 +917,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
         }
         comp_cyclic.push(graph::is_cycle(&csr, comp));
     }
+    drop(csr);
 
     // Precedence: explicit option > what the document states > default.
     // The locale is the user's regional setting, which a file does not carry
@@ -1062,6 +1056,17 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
     // What the surviving computation (and the outputs) still read: folded
     // formulas as constants, and the workbook's own constants.
     let mut need_rects: FastSet<Rect> = FastSet::default();
+    // A rectangle inside one of the outputs adds nothing the output does not have: with the whole of
+    // every sheet an output (nothing declared) that is almost every rectangle of the formulas, so
+    // they are not kept: a set of every reference of every formula was the largest thing this stage
+    // held, only to be skipped one by one.
+    let inside_an_output = |r: &Rect| {
+        !wanted.contains(r)
+            && wanted.iter().any(|o| {
+                o.sheet == r.sheet && o.r0 <= r.r0 && o.c0 <= r.c0 && o.r1 >= r.r1 && o.c1 >= r.c1
+            })
+    };
+    let mut refs: Vec<Rect> = Vec::new();
     // With the inputs deduced, the constants the formulas read are the inputs already (nodes of the
     // graph, or listed apart when they are lazy): what these rectangles can still add is a folded
     // formula, so with every formula tainted (nothing folded) only the outputs may hold constants
@@ -1073,12 +1078,16 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
                 && (v as usize) < n
                 && let CellKind::Formula(e) = &kinds[v as usize]
             {
-                need_rects.extend(dependencies(e).0);
+                refs.clear();
+                dependencies_into(e, &mut refs);
+                need_rects.extend(refs.iter().copied().filter(|r| !inside_an_output(r)));
             }
         }
         for &id in &blank_ids {
             if let CellKind::Formula(e) = &kinds[id as usize] {
-                need_rects.extend(dependencies(e).0);
+                refs.clear();
+                dependencies_into(e, &mut refs);
+                need_rects.extend(refs.iter().copied().filter(|r| !inside_an_output(r)));
             }
         }
     }
@@ -1088,24 +1097,13 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
     // Where the constants that are not in order begin, when the first run is (see `all_consts`).
     let mut ordered_until = 0;
     let mut members = Vec::new();
-    // A rectangle inside one of the outputs adds nothing the output does not have: with the whole of
-    // every sheet an output (nothing declared) that is almost every rectangle of the formulas.
-    let inside_an_output = |r: &Rect| {
-        !wanted.contains(r)
-            && wanted.iter().any(|o| {
-                o.sheet == r.sheet && o.r0 <= r.r0 && o.c0 <= r.c0 && o.r1 >= r.r1 && o.c1 >= r.c1
-            })
-    };
     for r in &need_rects {
-        if inside_an_output(r) {
-            continue;
-        }
         members.clear();
         index.members(r, &mut members);
         need_folded.extend(members.iter().copied().filter(|&id| {
             compact[id as usize] != u32::MAX && !tainted[compact[id as usize] as usize]
         }));
-        view.consts_in(r, &ids, &mut const_cells);
+        view.consts_in(r, index, &mut const_cells);
     }
     if all {
         need_folded.extend(
@@ -1114,7 +1112,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
                 .filter(|&v| (v as usize) < n && !tainted[compact[v as usize] as usize]),
         );
         const_cells.clear();
-        ordered_until = view.all_consts(&ids, &mut const_cells);
+        ordered_until = view.all_consts(index, &mut const_cells);
     }
     // The constants of the model are in order: sort only what is not, and merge the two runs.
     let mut rest = const_cells.split_off(ordered_until);
@@ -1317,14 +1315,14 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
                         _ => Some(String::new()),
                     },
                 },
-                Expr::Binary(sheetrs_engine::ir::BinOp::Concat, a, b) => {
-                    Some(code_text(a, model, lookup)? + &code_text(b, model, lookup)?)
+                Expr::Binary(sheetrs_engine::ir::BinOp::Concat, ab) => {
+                    Some(code_text(&ab[0], model, lookup)? + &code_text(&ab[1], model, lookup)?)
                 }
                 _ => None,
             }
         }
         let lookup = |r: CellRef| -> Option<Option<Value>> {
-            let id = *ids.get(&r)?;
+            let id = index.get(&r)?;
             let c = compact[id as usize];
             if c != u32::MAX && !tainted[c as usize] {
                 Some(folded[id as usize].clone())
@@ -1848,13 +1846,13 @@ impl<'m> ConstView<'m> {
     }
 
     /// Positions of constants inside `r` that are not graph nodes.
-    fn consts_in(&self, r: &Rect, nodes: &FastMap<CellRef, u32>, out: &mut Vec<CellRef>) {
+    fn consts_in(&self, r: &Rect, nodes: &NodeIndex, out: &mut Vec<CellRef>) {
         let total = self.model.cells.len() as u64;
         if r.area() <= total * 4 + 64 {
             for row in r.r0..=r.r1 {
                 for col in r.c0..=r.c1 {
                     let at = CellRef::new(r.sheet, row, col);
-                    if !nodes.contains_key(&at) && self.get(at).is_some() {
+                    if !nodes.contains(&at) && self.get(at).is_some() {
                         out.push(at);
                     }
                 }
@@ -1864,7 +1862,7 @@ impl<'m> ConstView<'m> {
                 self.model
                     .cells
                     .keys()
-                    .filter(|at| r.contains(*at) && !nodes.contains_key(at))
+                    .filter(|at| r.contains(*at) && !nodes.contains(at))
                     .filter(|at| self.get(*at).is_some()),
             );
         }
@@ -1873,15 +1871,15 @@ impl<'m> ConstView<'m> {
     /// Every constant, in `out`: first those of the model, which come in the order of the
     /// positions, then the cached results of folded formulas, which come in any order. Returns where
     /// the second run starts.
-    fn all_consts(&self, nodes: &FastMap<CellRef, u32>, out: &mut Vec<CellRef>) -> usize {
+    fn all_consts(&self, nodes: &NodeIndex, out: &mut Vec<CellRef>) -> usize {
         out.extend(
             self.model
                 .cells
                 .keys()
-                .filter(|at| !nodes.contains_key(at) && self.get(*at).is_some()),
+                .filter(|at| !nodes.contains(at) && self.get(*at).is_some()),
         );
         let ordered = out.len();
-        out.extend(self.cached.keys().filter(|at| !nodes.contains_key(at)));
+        out.extend(self.cached.keys().filter(|at| !nodes.contains(at)));
         ordered
     }
 }
@@ -1903,46 +1901,129 @@ impl ConstSource for ConstView<'_> {
     }
 }
 
-/// Where the cells that are graph nodes sit: node `i` is at `ats[i]`.
-#[derive(Clone, Copy)]
-struct Index<'a> {
+/// Where the cells that are graph nodes sit: node `i` is at `ats[i]`. The nodes come in order of
+/// position (sheet, row, column), so those of a sheet are consecutive and those of a row too: a
+/// cell is found by the first node of its row and a short search along the row, with no hash table
+/// (four bytes a node less than one would take, and no hashing of every position to build it).
+struct NodeIndex<'a> {
     ats: &'a [CellRef],
-    ids: &'a FastMap<CellRef, u32>,
-    by_sheet: &'a [Vec<u32>],
+    sheets: Vec<SheetNodes>,
 }
 
-impl Index<'_> {
-    /// Existing cells inside `r`.
-    fn members(&self, r: &Rect, out: &mut Vec<u32>) {
-        let slots = &self.by_sheet[r.sheet as usize];
-        if r.area() <= slots.len() as u64 * 4 + 64 {
-            for row in r.r0..=r.r1 {
-                for col in r.c0..=r.c1 {
-                    if let Some(&id) = self.ids.get(&CellRef::new(r.sheet, row, col)) {
-                        out.push(id);
+#[derive(Clone, Default)]
+struct SheetNodes {
+    /// The nodes of the sheet are `start..end`.
+    start: u32,
+    end: u32,
+    /// `rows[r]` is the first node at row `r` or after, up to one past the last row of the sheet.
+    /// Empty for a sheet whose nodes lie so far apart that the table would outweigh them: a search
+    /// over the sheet's nodes does then.
+    rows: Vec<u32>,
+}
+
+impl<'a> NodeIndex<'a> {
+    /// `ats` must be sorted by position, without repeats.
+    fn new(ats: &'a [CellRef], sheets: usize) -> Self {
+        debug_assert!(ats.windows(2).all(|w| w[0] < w[1]));
+        let mut out = vec![SheetNodes::default(); sheets.max(1)];
+        let mut i = 0;
+        while i < ats.len() {
+            let sheet = ats[i].sheet;
+            let mut j = i;
+            while j < ats.len() && ats[j].sheet == sheet {
+                j += 1;
+            }
+            let last_row = ats[j - 1].row as usize;
+            let mut rows = Vec::new();
+            if last_row <= 8 * (j - i) + 4096 {
+                rows.reserve_exact(last_row + 2);
+                let mut k = i;
+                for row in 0..=last_row + 1 {
+                    while k < j && (ats[k].row as usize) < row {
+                        k += 1;
                     }
+                    rows.push(k as u32);
                 }
             }
-        } else {
-            out.extend(
-                slots
-                    .iter()
-                    .copied()
-                    .filter(|&s| r.contains(self.ats[s as usize])),
-            );
+            out[usize::from(sheet)] = SheetNodes {
+                start: i as u32,
+                end: j as u32,
+                rows,
+            };
+            i = j;
         }
+        Self { ats, sheets: out }
+    }
+
+    /// The node at `at`, if the cell is one.
+    fn get(&self, at: &CellRef) -> Option<u32> {
+        let sheet = self.sheets.get(usize::from(at.sheet))?;
+        let (lo, hi) = if sheet.rows.is_empty() {
+            (sheet.start, sheet.end)
+        } else {
+            let row = at.row as usize;
+            if row + 1 >= sheet.rows.len() {
+                return None;
+            }
+            (sheet.rows[row], sheet.rows[row + 1])
+        };
+        let found = self.ats[lo as usize..hi as usize]
+            .binary_search_by_key(&(at.row, at.col), |c| (c.row, c.col))
+            .ok()?;
+        Some(lo + found as u32)
+    }
+
+    fn contains(&self, at: &CellRef) -> bool {
+        self.get(at).is_some()
+    }
+
+    /// Existing cells inside `r`, in order of position.
+    fn members(&self, r: &Rect, out: &mut Vec<u32>) {
+        let Some(sheet) = self.sheets.get(usize::from(r.sheet)) else {
+            return;
+        };
+        if !sheet.rows.is_empty() {
+            // Row by row: the cost follows the rows of `r` (one for a cell), not the nodes of the sheet.
+            let last_row = sheet.rows.len() - 2;
+            if r.r0 as usize > last_row {
+                return;
+            }
+            for row in r.r0 as usize..=(r.r1 as usize).min(last_row) {
+                let (lo, hi) = (sheet.rows[row] as usize, sheet.rows[row + 1] as usize);
+                let nodes = &self.ats[lo..hi];
+                let from = nodes.partition_point(|c| c.col < r.c0);
+                out.extend(
+                    nodes[from..]
+                        .iter()
+                        .take_while(|c| c.col <= r.c1)
+                        .enumerate()
+                        .map(|(k, _)| (lo + from + k) as u32),
+                );
+            }
+            return;
+        }
+        let nodes = &self.ats[sheet.start as usize..sheet.end as usize];
+        // A sparse sheet: the nodes of the rows of `r`, found by two searches, and among them those in its columns.
+        let first = nodes.partition_point(|c| c.row < r.r0);
+        let last = first + nodes[first..].partition_point(|c| c.row <= r.r1);
+        out.extend(
+            (first..last)
+                .filter(|&i| (r.c0..=r.c1).contains(&nodes[i].col))
+                .map(|i| sheet.start + i as u32),
+        );
     }
 }
 
 /// Lazily-built dependency adjacency over cell nodes (`0..n`) and shared
 /// rectangle nodes (`n..`).
 struct Lazy<'a> {
-    index: Index<'a>,
+    index: &'a NodeIndex<'a>,
     kinds: &'a [CellKind],
     adj: Vec<Option<Vec<u32>>>,
     rect_ids: FastMap<Rect, u32>,
     rect_members: Vec<Vec<u32>>,
-    flags: FastMap<u32, Flags>,
+    /// What the functions of each formula (node `0..n`) call; the default for one not read yet.
+    flags: Vec<Flags>,
     /// The references of the formula being read, reused by every formula.
     deps: Vec<Rect>,
 }
@@ -1982,6 +2063,14 @@ impl Lazy<'_> {
         }
     }
 
+    /// The adjacency of a node whose `adj_of` has been called already.
+    fn adj_known(&self, v: u32) -> &[u32] {
+        if v >= self.n() {
+            return &self.rect_members[(v - self.n()) as usize];
+        }
+        self.adj[v as usize].as_deref().unwrap_or(&[])
+    }
+
     fn adj_of(&mut self, v: u32) -> &[u32] {
         // The members of a range node are already stored: no copy.
         if v >= self.n() {
@@ -1996,12 +2085,12 @@ impl Lazy<'_> {
                     let mut deps = std::mem::take(&mut self.deps);
                     deps.clear();
                     let flags = dependencies_into(e, &mut deps);
-                    self.flags.insert(v, flags);
+                    self.flags[v as usize] = flags;
                     let mut out = Vec::with_capacity(deps.len());
                     for &r in &deps {
                         // One cell is its own node: no rectangle to share.
                         if r.is_single() {
-                            out.extend(self.index.ids.get(&r.top_left()).copied());
+                            out.extend(self.index.get(&r.top_left()));
                         } else {
                             out.extend(self.rect_node(r));
                         }
@@ -2018,12 +2107,6 @@ impl Lazy<'_> {
         }
         self.adj[v as usize].as_deref().unwrap_or(&[])
     }
-}
-
-fn dependencies(e: &Expr) -> (Vec<Rect>, Flags) {
-    let mut deps = Vec::new();
-    let flags = dependencies_into(e, &mut deps);
-    (deps, flags)
 }
 
 /// Appends the references of `e` to `deps` and returns the flags of the functions it calls.
@@ -2184,5 +2267,89 @@ mod build_time_tests {
             cells.iter().map(|c| (c.sheet, c.row, c.col)).collect();
         wanted.sort_unstable();
         assert_eq!(held, wanted, "no constant, no formula left out");
+    }
+}
+
+#[cfg(test)]
+mod node_index_tests {
+    use super::NodeIndex;
+    use sheetrs_engine::addr::{CellRef, Rect};
+
+    /// The nodes `ats` of `NodeIndex`, found as a plain scan of the positions would find them.
+    fn check_index(ats: &[CellRef], sheets: usize) {
+        let index = NodeIndex::new(ats, sheets);
+        for (i, at) in ats.iter().enumerate() {
+            assert_eq!(index.get(at), Some(i as u32), "{at:?}");
+        }
+        let last = ats
+            .iter()
+            .map(|a| (a.row, a.col))
+            .fold((0, 0), |m, x| (m.0.max(x.0), m.1.max(x.1)));
+        for sheet in 0..=(sheets as u16) {
+            for row in 0..last.0 + 3 {
+                for col in 0..last.1 + 3 {
+                    let at = CellRef::new(sheet, row, col);
+                    assert_eq!(
+                        index.get(&at),
+                        ats.iter().position(|a| *a == at).map(|i| i as u32)
+                    );
+                }
+            }
+        }
+        for sheet in 0..=(sheets as u16) {
+            for (r0, r1) in [(0, 0), (1, 1), (0, 3), (2, 9), (5, 5), (0, u32::MAX)] {
+                for (c0, c1) in [(0, 0), (1, 1), (0, 2), (1, 7), (0, u32::MAX)] {
+                    let r = Rect::new(sheet, r0, c0, r1, c1);
+                    let mut got = Vec::new();
+                    index.members(&r, &mut got);
+                    let want: Vec<u32> = ats
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, a)| r.contains(**a))
+                        .map(|(i, _)| i as u32)
+                        .collect();
+                    assert_eq!(got, want, "{r:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_node_index_finds_cells_and_rectangles_as_a_scan_does() {
+        let ats = [
+            (0, 0, 0),
+            (0, 0, 3),
+            (0, 2, 1),
+            (0, 2, 2),
+            (0, 5, 0),
+            (1, 1, 1),
+            (1, 3, 0),
+            (1, 3, 7),
+            (3, 0, 0),
+        ]
+        .map(|(s, r, c)| CellRef::new(s, r, c));
+        check_index(&ats, 4);
+        check_index(&[], 2);
+    }
+
+    #[test]
+    fn the_node_index_of_a_sparse_sheet_has_no_row_table_and_still_finds_cells() {
+        // Two nodes a million rows apart: a table of rows would outweigh them.
+        let ats = [
+            CellRef::new(0, 1, 1),
+            CellRef::new(0, 900_000, 2),
+            CellRef::new(1, 4, 4),
+        ];
+        let index = NodeIndex::new(&ats, 2);
+        assert!(index.sheets[0].rows.is_empty());
+        assert!(!index.sheets[1].rows.is_empty());
+        assert_eq!(index.get(&CellRef::new(0, 900_000, 2)), Some(1));
+        assert_eq!(index.get(&CellRef::new(0, 900_000, 3)), None);
+        let mut got = Vec::new();
+        index.members(&Rect::new(0, 0, 0, 1_048_575, 16_383), &mut got);
+        assert_eq!(got, vec![0, 1]);
+        got.clear();
+        index.members(&Rect::new(0, 2, 0, 899_999, 16_383), &mut got);
+        assert!(got.is_empty());
     }
 }
