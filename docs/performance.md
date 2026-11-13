@@ -113,18 +113,25 @@ and not repeated); the others are the minimum and the maximum of 3 runs.
 
 | Scenario (flags) | `formulas.xlsx` | `formulas.ods` |
 |---|---|---|
-| `--delete-sheets Lookup` | 22.48-22.60 s, 1839-1840 MB | 49.05-49.98 s, 1893 MB † |
+| `--delete-sheets Lookup` | 22.48-22.60 s, 1839-1840 MB | 48.6-50.8 s, 1893 MB |
 | `--delete-names base_rate` | 16.3 s, 1646 MB * | 25.3 s, 1656 MB * |
 | `--formula-to-value Calc` | 24.25-25.65 s, 1646 MB † | 7.64-7.89 s, 19 MB † |
 | `--formula-to-value Calc!B:D Calc!1:1000` | 25.99-26.44 s, 1646 MB † | 8.29-8.57 s, 19 MB † |
 | delete sheet + name, convert `Calc` (one command) | 23.4 s, 1646 MB * | 12.4 s, 297 MB * |
-| `--delete-rows Data!10:20` | 25.39-25.57 s, 1646 MB | 51.59-52.54 s, 1745 MB † |
+| `--delete-rows Data!10:20` | 25.39-25.57 s, 1646 MB | 53.3-55.5 s, 1799 MB |
 | `--delete-rows Data!10:20 --formula-to-value Calc` | 24.9 s, 1646 MB * | 30.7 s, 1656 MB * |
 | `--delete-rows Calc!3:10` | 23.3 s, 1646 MB * | not measured |
 | `--delete-rows Calc!3:10 --formula-to-value Summary` | 41.0 s, 1890 MB * | not measured |
-| `--delete-columns Data!B:D` | 21.59-22.07 s, 2195-2196 MB | 135.98-139.21 s, 2218 MB † |
+| `--delete-columns Data!B:D` | 21.59-22.07 s, 2195-2196 MB | 53.3-54.4 s, 2395 MB |
 | rows and columns together | 23.93-24.25 s, 2196 MB | 136.55-137.26 s, 2214 MB † |
 | sheet, name, rows and columns (one command) | 24.81-26.28 s, 2200 MB † | 134.74-138.87 s, 2218 MB † |
+
+The ODS deletions cost about twice the XLSX ones because the analysis of the stale formulas (a dry run of a deletion takes
+19 s: 12 s reading and compiling the workbook, 7 s for the rest, of which the cached values it needs and the check of the
+file) comes on top of the write and of the recalculation, which each read and compile the workbook again; on this
+workbook it spares nothing (1.8 M formulas read the deleted cells), while the XLSX of this table has no trustworthy cached
+results, skips the analysis and calculates all. Before the fix of the empty runs that close each row,
+`--delete-columns` took 136-160 s (see [#107](https://github.com/cosmoscalibur/sheetrs/issues/107)).
 
 † Not measured again after the last change of the analysis (it reads the cached results of the cells the plan leaves
 alone, and a defined name that points to cells no deleted row or column touches no longer sends the plan to the

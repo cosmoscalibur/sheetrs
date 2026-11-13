@@ -34,12 +34,12 @@
 //! [`Verdict::Unknown`] and the plan calculates the whole workbook, as it does for what it cannot
 //! tell.
 
-use sheetrs_compiler::memory::{BookCompile, Options};
+use sheetrs_compiler::Model;
+use sheetrs_compiler::memory::{Options, compile_keeping};
 use sheetrs_engine::addr::{CellRef, Rect};
 use sheetrs_engine::ir::{BinOp, CellKind, Expr, Mode};
 use sheetrs_engine::value::Value;
 use sheetrs_io::Book;
-use sheetrs_io::reader::{Cell, CellSink, CellValue};
 use sheetrs_io::write::{ColumnRange, RowRange, ValueScope};
 use std::collections::{BTreeSet, HashMap};
 
@@ -105,32 +105,15 @@ pub(crate) struct Known {
 }
 
 /// The cells of the input whose cached value can give another error than the one a deleted
-/// reference gives, or none at all: a text, an error, or an array formula. Streamed from the file
-/// without keeping the workbook; every other cell is a number, a boolean or empty.
-struct Unsure<'a> {
-    /// The sheets of the program, to put the cells in its numbering.
-    names: &'a [String],
-    /// The program's number of the sheet being read.
-    sheet: Option<u16>,
-    cells: BTreeSet<(u16, u32, u32)>,
-}
-
-impl CellSink for Unsure<'_> {
-    fn sheet(&mut self, _index: u16, name: &str) {
-        self.sheet = self
-            .names
-            .iter()
-            .position(|n| n == name)
-            .and_then(|i| u16::try_from(i).ok());
-    }
-
-    fn cell(&mut self, _sheet: u16, at: (u32, u32), cell: Cell) {
-        let unsure =
-            cell.is_array || matches!(cell.value, CellValue::Text(_) | CellValue::Error(_));
-        if let (true, Some(sheet)) = (unsure, self.sheet) {
-            self.cells.insert((sheet, at.0, at.1));
-        }
-    }
+/// reference gives, or none at all: a text, an error, or an array formula, in the program's
+/// numbering of the sheets. Every other cell is a number, a boolean or empty.
+fn unsure_cells(model: &Model) -> BTreeSet<(u16, u32, u32)> {
+    model
+        .cells
+        .iter()
+        .filter(|(_, cell)| cell.array || matches!(cell.value, Value::Text(_) | Value::Error(_)))
+        .map(|(at, _)| (at.sheet, at.row, at.col))
+        .collect()
 }
 
 /// The answer of the analysis.
@@ -293,7 +276,11 @@ enum Gives {
 ///
 /// `book` is the workbook the pass runs on (the input of the pass that applies `changes`).
 pub(crate) fn analyze(book: &Book, changes: &Changes) -> Verdict {
-    let Ok((program, _)) = book.compile(&Options::default(), Mode::Recalculate) else {
+    // The cached values that are not numbers, booleans or empty are taken from the model the program
+    // is built from, so the workbook is read once.
+    let Ok((program, _, unsure)) =
+        compile_keeping(book, &Options::default(), Mode::Recalculate, unsure_cells)
+    else {
         return Verdict::Unknown;
     };
     if !program.cycles.is_empty() {
@@ -342,14 +329,6 @@ pub(crate) fn analyze(book: &Book, changes: &Changes) -> Verdict {
                 .collect(),
         );
     }
-    let mut unsure = Unsure {
-        names: &program.sheets,
-        sheet: None,
-        cells: BTreeSet::new(),
-    };
-    if book.workbook_into(&mut unsure).is_err() {
-        return Verdict::Unknown;
-    }
     let converted = |at: CellRef| {
         let name = &program.sheets[usize::from(at.sheet)];
         changes
@@ -361,7 +340,7 @@ pub(crate) fn analyze(book: &Book, changes: &Changes) -> Verdict {
         cuts: &cuts,
         assigned: HashMap::new(),
         index: BTreeSet::new(),
-        unsure: unsure.cells,
+        unsure,
     };
     let mut known = Known::default();
     for cell in &program.cells {

@@ -38,6 +38,11 @@ fn scan<R: Read + Seek>(reader: R, format: Format) -> Result<bool> {
             Ok(xlsx_marks_recalculation(&xml))
         }
         Format::Ods => {
+            // Almost every file has a result in each formula cell: a scan of the bytes tells it
+            // without building an XML event per element; the reader below decides the rest.
+            if !ods_may_have_a_formula_without_result(archive.by_name("content.xml")?)? {
+                return Ok(false);
+            }
             let entry = archive.by_name("content.xml")?;
             ods_has_a_formula_without_result(BufReader::new(entry))
         }
@@ -60,6 +65,98 @@ fn xlsx_marks_recalculation(xml: &str) -> bool {
         }
     }
     false
+}
+
+const CELL_START: &[u8] = b"<table:table-cell";
+
+/// Where the start tag that begins at `from` ends: just past its `>`, which an attribute value
+/// may hold between its quotes. `None` when `bytes` ends before it.
+fn tag_end(bytes: &[u8], from: usize) -> Option<usize> {
+    let mut quote = None;
+    for (i, &byte) in bytes.iter().enumerate().skip(from) {
+        match (quote, byte) {
+            (Some(q), b) if b == q => quote = None,
+            (None, b'"' | b'\'') => quote = Some(byte),
+            (None, b'>') => return Some(i + 1),
+            (Some(_) | None, _) => {}
+        }
+    }
+    None
+}
+
+/// Whether the attributes of a cell (`attributes`, the bytes after its name up to the `>`) name a
+/// formula and no value type.
+fn formula_without_value_type_in(attributes: &[u8]) -> bool {
+    let (mut formula, mut value_type) = (false, false);
+    let mut i = 0;
+    while i < attributes.len() {
+        while i < attributes.len() && (attributes[i].is_ascii_whitespace() || attributes[i] == b'/')
+        {
+            i += 1;
+        }
+        let name_start = i;
+        while i < attributes.len() && attributes[i] != b'=' && !attributes[i].is_ascii_whitespace()
+        {
+            i += 1;
+        }
+        let name = &attributes[name_start..i];
+        while i < attributes.len() && (attributes[i] == b'=' || attributes[i].is_ascii_whitespace())
+        {
+            i += 1;
+        }
+        let Some(&quote) = attributes.get(i) else {
+            break;
+        };
+        // The value runs to the matching quote.
+        i += 1;
+        while i < attributes.len() && attributes[i] != quote {
+            i += 1;
+        }
+        i += 1;
+        formula |= name == b"table:formula";
+        value_type |= name == b"office:value-type";
+    }
+    formula && !value_type
+}
+
+/// Whether `content.xml` may hold a formula cell with no cached result, looking only at the bytes of
+/// the start tags of its cells. `false` is certain; `true` is for the reader of
+/// [`ods_has_a_formula_without_result`] to decide (a cell with no value type may still hold a
+/// paragraph with its result, and a file that is not well formed is its error to report).
+fn ods_may_have_a_formula_without_result<R: Read>(mut input: R) -> Result<bool> {
+    let finder = aho_corasick::AhoCorasick::new([CELL_START]).expect("a literal pattern");
+    let mut window: Vec<u8> = Vec::new();
+    let mut chunk = vec![0u8; 1 << 20];
+    loop {
+        let read = input.read(&mut chunk)?;
+        window.extend_from_slice(&chunk[..read]);
+        let mut at = 0;
+        loop {
+            let Some(found) = finder.find(&window[at..]) else {
+                // The end of the window may hold the start of a name.
+                at = window.len().saturating_sub(CELL_START.len());
+                break;
+            };
+            let start = at + found.start();
+            let name_end = start + CELL_START.len();
+            let Some(end) = tag_end(&window, name_end) else {
+                at = start;
+                break;
+            };
+            // `<table:table-cell-range-source` is not a cell.
+            if matches!(window[name_end], b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'/')
+                && formula_without_value_type_in(&window[name_end..end - 1])
+            {
+                return Ok(true);
+            }
+            at = end;
+        }
+        window.drain(..at);
+        if read == 0 {
+            // Anything left is a tag that never ends.
+            return Ok(window.windows(CELL_START.len()).any(|w| w == CELL_START));
+        }
+    }
 }
 
 /// Whether a cell of `content.xml` has a formula and no cached result: no value type, and no text
@@ -125,6 +222,53 @@ mod tests {
         assert!(ods(
             r#"<table:table-cell table:formula="of:=1+1"></table:table-cell>"#
         ));
+    }
+
+    /// The scan of the bytes never says `false` where the reader says `true`, whatever the size of
+    /// the pieces the file arrives in.
+    #[test]
+    fn the_scan_of_the_bytes_agrees_with_the_reader() {
+        struct Pieces<'a>(&'a [u8], usize);
+        impl Read for Pieces<'_> {
+            fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.1.min(self.0.len()).min(out.len());
+                out[..n].copy_from_slice(&self.0[..n]);
+                self.0 = &self.0[n..];
+                Ok(n)
+            }
+        }
+        let cases = [
+            (r#"<table:table-cell table:formula="of:=1+1"/>"#, true),
+            (
+                r#"<table:table-cell table:formula="of:=1+1"></table:table-cell>"#,
+                true,
+            ),
+            (
+                r#"<table:table-cell table:formula="of:=A&gt;1" office:value-type="float" office:value="2"/>"#,
+                false,
+            ),
+            // A value type named inside a quoted value is not an attribute.
+            (
+                r#"<table:table-cell table:formula='of:=" office:value-type="'/>"#,
+                true,
+            ),
+            (
+                r#"<table:table-cell-range-source table:formula="x"/>"#,
+                false,
+            ),
+            (
+                r#"<table:table-cell office:value-type="string"><text:p>table:formula=</text:p></table:table-cell>"#,
+                false,
+            ),
+        ];
+        for (cells, expected) in cases {
+            let xml = format!("<table:table-row>{cells}</table:table-row>");
+            for piece in [1, 2, 7, 1 << 20] {
+                let got =
+                    ods_may_have_a_formula_without_result(Pieces(xml.as_bytes(), piece)).unwrap();
+                assert_eq!(got, expected, "{cells} in pieces of {piece}");
+            }
+        }
     }
 
     #[test]
