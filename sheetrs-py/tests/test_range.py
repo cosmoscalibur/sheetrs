@@ -240,10 +240,11 @@ def test_the_date_system_is_the_one_of_the_file(name, origin):
 
 
 def test_a_date_system_that_is_none_of_the_three_is_an_error_that_names_the_date():
-    """LibreOffice stores another null date (its API); SheetRS refuses it when the workbook is read,
-    and a `Book` reads the workbook when it is opened."""
+    """LibreOffice stores another null date (its API); SheetRS refuses it when the workbook is read:
+    a `Book` reads nothing when it is made, so it is the first read that raises."""
+    book = sheetrs.Book(io_asset("other_null_date.ods"))
     with pytest.raises(sheetrs.UnsupportedDateSystemError) as raised:
-        sheetrs.Book(io_asset("other_null_date.ods"))
+        book.date_system
     message = str(raised.value)
     assert "1950-06-15" in message
     for supported in ("1899-12-30", "1900-01-01", "1904-01-01"):

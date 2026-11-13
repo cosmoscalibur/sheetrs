@@ -153,7 +153,7 @@ class ValueRanges:
         """The JSON answer of `sheetc calculate` (`{"valueRanges": [...]}`), as text."""
 
 class Sheet:
-    """A sheet of the workbook and what the read at open found out about it."""
+    """A sheet of the workbook and what the description of the workbook found out about it."""
 
     @property
     def name(self) -> str: ...
@@ -278,8 +278,8 @@ class Inspection:
 class Book:
     """A workbook: a file, its bytes or a binary stream, with the operations to make to it.
 
-    It reads the workbook once when it is made, to count what it holds (the properties below), and
-    keeps only the numbers. The operations (`delete_sheets`, `delete_names`, `formula_to_value`,
+    It reads nothing when it is made: the first property that describes the workbook (below) reads it
+    once, to count what it holds, and keeps only the numbers. The operations (`delete_sheets`, `delete_names`, `formula_to_value`,
     `delete_rows`, `delete_columns`, `replace`, `calculate`) accumulate on the same `Book` and return
     it, so the calls chain; each is written against the workbook as it is, the order they are given
     in changes nothing, and nothing runs until `save`, the cut. The queries (`range`, `find`, `lint`,

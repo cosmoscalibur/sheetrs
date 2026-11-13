@@ -32,13 +32,14 @@ workbook.
 
 ## `Book`
 
-`new Book(bytes)` detects the format from the content and **reads the workbook once**, in a single
-streaming pass that counts what it holds (a cost proportional to the size of the workbook, paid at
-construction), and keeps only those numbers. Everything else is read when it is asked for.
+`new Book(bytes)` detects the format from the content and reads nothing else. The first property that
+describes the workbook (below) **reads it once**, in a single streaming pass that counts what it holds (a
+cost proportional to the size of the workbook, paid then), and keeps only those numbers; a workbook that
+cannot be read throws there. Everything else is read when it is asked for.
 
 | | Member | Gives |
 | - | ------ | ----- |
-| **at open** | `format`, `dateSystem`, `hasMacros`, `sheetNames`, `definedNames` | `"xlsx"`, `"xlsm"` or `"ods"`; the date of serial 0 (`"1899-12-30"`, `"1900-01-01"` or `"1904-01-01"`; another is an error that names it); macros found, never run; the sheet names in order; `{name: refersTo}` |
+| **first read** | `format`, `dateSystem`, `hasMacros`, `sheetNames`, `definedNames` | `"xlsx"`, `"xlsm"` or `"ods"`; the date of serial 0 (`"1899-12-30"`, `"1900-01-01"` or `"1904-01-01"`; another is an error that names it); macros found, never run; the sheet names in order; `{name: refersTo}` |
 | | `sheets` | `book.sheets["Data"]`: `name`, `usedRange` (`"A1:C9"` or `null`), `state` (`visible`, `hidden`, `very_hidden`), `usedCells`, `formulas`, `errors`, `emptyCells`, `comments`, `charts`, `tables`, `xmlSize` |
 | | `stats` | `Stats`: `toJSON()` is `sheetrs stats --format json` (`total_file_size` is 0: bytes carry no size) |
 | | `totalSheets`, `totalNamedRanges`, `totalFileSize`, `totalUsedCells`, `totalFormulas`, `totalErrors`, `totalEmptyCells`, `totalComments`, `totalCharts`, `totalTables`, `totalXmlSize` | the eleven totals of the statistics |

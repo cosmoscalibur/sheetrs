@@ -15,8 +15,8 @@ sheetrs lint -i recalculated.xlsx                                     # the rule
 sheetrs query -i recalculated.xlsx --workbook -p value,display        # or read them
 ```
 
-- There is no `--recalculate`: `calculate` with an output and no inputs, no `--range` and no declarations
-  calculates every formula again. The output is a copy of the workbook with the same formulas,
+- `calculate` with an output and no inputs, no `--range` and no declarations calculates every formula
+  again. The output is a copy of the workbook with the same formulas,
   styles and formats, and the results of this calculation.
 - The results are the ones the engine computes with LibreOffice's semantics, not the cache. The
   codes only LibreOffice has are written as the format can: an XLSX has none (`#VALUE!`), an ODS

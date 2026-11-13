@@ -1,4 +1,4 @@
-"""What a `Book` says about the workbook it reads when it is opened: the formats, the sheets, the
+"""What a `Book` says about the workbook it reads the first time it is described: the formats, the sheets, the
 names, the date system, the macros and the totals; and the `Stats` and `Sheet` values that hold them."""
 
 import datetime

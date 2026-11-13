@@ -201,7 +201,7 @@ sheetc calculate -i model.xlsx --in-place                                    # r
   so with outputs declared the answer refreshes only those; to refresh every formula, declare no
   outputs.
 * **Recalculating a workbook** is `sheetc calculate -i FILE -o OUT` with nothing declared and
-  nothing given: every formula is calculated again (there is no `--recalculate`). `-o` never
+  nothing given: every formula is calculated again. `-o` never
   overwrites the input; `--in-place` replaces it through a temporary file and a rename, so a failure
   leaves the original. The executable has `-o` but no `--in-place`.
 * The cells of an array formula other than its first keep what the file cached.

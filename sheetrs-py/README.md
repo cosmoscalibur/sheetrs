@@ -11,7 +11,7 @@ import sheetrs
 
 book = sheetrs.Book("book.xlsx")          # a path, bytes or a binary stream (io.BytesIO)
 
-# The opening reads the workbook once and keeps what it counted.
+# Opening reads nothing; the first of these reads the workbook once and keeps what it counted.
 book.sheet_names, book.sheets["Data"].used_range, book.total_formulas
 book.defined_names, book.date_system, book.has_macros, book.stats.to_dict()
 
@@ -47,14 +47,14 @@ sheetrs.evaluate("=SUM(1,2,3)")            # 6
 
 A `Book` is a workbook: a path, an `os.PathLike`, the bytes of a file (`bytes`, `bytearray`) or a binary
 stream that reads and seeks (`io.BytesIO`, a file opened with `"rb"`, read from its start). The format
-(XLSX, XLSM or ODS) is the one of the content, not of the extension, and is not an argument. It reads the
-workbook **once, when it is opened**, in a single streaming pass that counts what it holds; it keeps those
-numbers and nothing else, and it is not a navigable model of the workbook: there are no row or cell
+(XLSX, XLSM or ODS) is the one of the content, not of the extension, and is not an argument. It reads
+nothing when it is made: the first property that describes the workbook reads it **once**, in a single
+streaming pass that counts what it holds; it keeps those numbers and nothing else, and it is not a navigable model of the workbook: there are no row or cell
 objects, and what a query does not ask for is neither read nor kept.
 
 | | Members | What they do |
 | --- | --- | --- |
-| **What the opening found out** | `format`, `date_system`, `has_macros`, `sheet_names`, `sheets[name]`, `defined_names`, `stats` and the eleven `total_*` (`total_sheets`, `total_named_ranges`, `total_file_size`, `total_used_cells`, `total_formulas`, `total_errors`, `total_empty_cells`, `total_comments`, `total_charts`, `total_tables`, `total_xml_size`) | Properties. `sheets[name]` (or by position, or iterating) is a `Sheet` with `name`, `used_range` (`"A1:GV5439"`, `None` for a sheet with no cells), `state` (`"visible"`, `"hidden"`, `"very_hidden"`) and the counts `used_cells`, `formulas`, `errors`, `empty_cells`, `comments`, `charts`, `tables`, `xml_size`. `date_system` is the `datetime.date` of serial 0. `format` always works; the rest describes the file and raises `PendingOperationsError` with operations pending. A workbook whose date system is none of the three of LibreOffice raises `UnsupportedDateSystemError` when it is opened. |
+| **What the description of the workbook finds out** | `format`, `date_system`, `has_macros`, `sheet_names`, `sheets[name]`, `defined_names`, `stats` and the eleven `total_*` (`total_sheets`, `total_named_ranges`, `total_file_size`, `total_used_cells`, `total_formulas`, `total_errors`, `total_empty_cells`, `total_comments`, `total_charts`, `total_tables`, `total_xml_size`) | Properties. `sheets[name]` (or by position, or iterating) is a `Sheet` with `name`, `used_range` (`"A1:GV5439"`, `None` for a sheet with no cells), `state` (`"visible"`, `"hidden"`, `"very_hidden"`) and the counts `used_cells`, `formulas`, `errors`, `empty_cells`, `comments`, `charts`, `tables`, `xml_size`. `date_system` is the `datetime.date` of serial 0. `format` always works; the rest describes the file and raises `PendingOperationsError` with operations pending. A workbook whose date system is none of the three of LibreOffice raises `UnsupportedDateSystemError` when it is read (the first property that describes it, or a query). |
 | **Operations** | `delete_sheets`, `delete_names`, `formula_to_value`, `delete_rows`, `delete_columns`, `replace`, `calculate(inputs=None, ranges=None, major="rows")` | Accumulate on the same `Book`, which each one returns, so the calls chain. Each takes the **array of its targets** (one `str`, or any iterable of `str`; an empty one does nothing; anything else in it is a `TypeError`). |
 | **The cut** | `save(dest=None, *, json=None)`, `to_bytes()`, `value_ranges()`, `explain()` | `save` plans all the operations in the fewest passes over the file and runs them, and writes the workbook: `save(dest)` a new one to a path or a binary stream, `save()` over the original (the file, or the stream the `Book` was made from); `json=` a path or stream for the value ranges of `calculate`. `to_bytes()` runs them in memory and returns the workbook as `bytes`. `value_ranges()` runs them in memory and gives the value ranges. `explain` says what it will do. |
 | **Queries** | `range`, `find`, `lint`, `inspect` | Read what they need. |
@@ -155,7 +155,7 @@ returns, or run the query before adding the operations if it does not depend on 
   `Violation` that writes itself as `sheetrs lint` does: `to_text()`, `to_json()` (the document for an
   interface of your own), `to_sarif()` (SARIF 2.1.0), all as text, and `to_dict()`. Each takes a `file`
   that names the workbook in the document.
-- **`stats`** is a `Stats` (a property: the opening counted it); `stats.to_dict()` is
+- **`stats`** is a `Stats` (a property: the first read of the workbook counts it); `stats.to_dict()` is
   `sheetrs stats --format json`.
 - **`inspect()`** is `sheetc inspect`: an `Inspection` with the sheets, the date system, the cells and
   formulas, the circular groups, the functions the workbook uses (`FunctionUse` with `name`, `calls` and

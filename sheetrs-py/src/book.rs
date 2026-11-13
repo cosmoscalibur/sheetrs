@@ -20,7 +20,7 @@ use sheetrs_stats::{BookStats, WorkbookStats};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-/// What the read that happens when a `Book` is opened found out: the statistics (which hold the
+/// What the first read that describes the workbook found out: the statistics (which hold the
 /// sheets, their states, the macros and the defined names) and the date system, or why the date
 /// system cannot be told.
 struct Opened {
@@ -30,9 +30,9 @@ struct Opened {
 
 /// A workbook: a file, its bytes or a binary stream, with the operations to make to it.
 ///
-/// A `Book` is a reference: it reads the workbook once when it is opened, in a single streaming pass
-/// that counts what it holds (the sheets, the used cells, the formulas, the names, the macros), and it
-/// keeps only those numbers. The queries (`range`, `find`, `lint`) read what they need, and
+/// A `Book` is a reference: it reads nothing when it is made. The first property that describes the
+/// workbook (the sheets, the used cells, the formulas, the names, the macros) reads it in a single
+/// streaming pass that counts what it holds, and keeps only those numbers. The queries (`range`, `find`, `lint`) read what they need, and
 /// the operations (`delete_sheets`, `delete_names`, `formula_to_value`, `delete_rows`,
 /// `delete_columns`, `replace`, `calculate`) only accumulate: every one is added to the same
 /// `Book`, which it returns so the calls chain, and each is written against the workbook as it is:
@@ -49,8 +49,7 @@ pub struct PyBook {
     report: Option<PyReport>,
     /// The binary stream the workbook was read from or written to: `save()` rewrites it.
     stream: Option<Py<PyAny>>,
-    /// What the read at open found out; `None` until it is made (a `Book` that `save` returns reads
-    /// the file it wrote the first time it is asked).
+    /// What the first read that describes the workbook found out; `None` until it is made.
     opened: Mutex<Option<Arc<Opened>>>,
 }
 
@@ -283,7 +282,7 @@ impl PyBook {
         }
     }
 
-    /// What the read at open found out, made now if it was not. The lock is not held while the
+    /// What the first read that describes the workbook found out, made now if it was not. The lock is not held while the
     /// workbook is read: two threads that ask at once both read it, and the first answer stays.
     fn opened(&self, py: Python<'_>) -> PyResult<Arc<Opened>> {
         let poisoned = || raise("Error", "the Book is poisoned");
@@ -303,14 +302,14 @@ impl PyBook {
         Ok(Arc::clone(slot.get_or_insert(read)))
     }
 
-    /// What the read at open found out, for a query: it is about the workbook as the file has it,
+    /// What the description of the workbook found out, for a query: it is about the workbook as the file has it,
     /// so it cannot be asked while operations are pending.
     fn described(&self, py: Python<'_>) -> PyResult<Arc<Opened>> {
         self.queryable()?;
         self.opened(py)
     }
 
-    /// Forgets what the read at open found out: the workbook changed under this `Book`.
+    /// Forgets what the description found out: the workbook changed under this `Book`.
     fn forget_opened(&self) {
         if let Ok(mut slot) = self.opened.lock() {
             *slot = None;
@@ -343,14 +342,15 @@ impl PyBook {
     /// a binary stream that reads and seeks (`io.BytesIO`, a file opened with `"rb"`). The format (XLSX,
     /// XLSM or ODS) is the one of the content, whatever the extension says.
     ///
-    /// The workbook is read once, here, to count what it holds (see the properties); a file is never
+    /// The workbook is not read here: the properties that describe it read it when they are first asked
+    /// (once), and the queries read what they need. A file is never
     /// modified except by `save()` without a destination, which also rewrites a stream the `Book` was
     /// made from.
     ///
     /// Raises `FileNotFoundError` for a path that is not a file and `FormatError` for a workbook
     /// that is not an XLSX, XLSM or ODS one.
     #[new]
-    fn new(py: Python<'_>, source: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn new(source: &Bound<'_, PyAny>) -> PyResult<Self> {
         let mut book = if let Ok(bytes) = source.cast::<PyBytes>() {
             Self::from_source(Book::from_bytes(bytes.as_bytes().to_vec()).map_err(format_error)?)
         } else if let Ok(bytes) = source.cast::<PyByteArray>() {
@@ -375,7 +375,6 @@ impl PyBook {
             })?;
             Self::from_source(opened)
         };
-        book.opened(py)?;
         book.report = None;
         Ok(book)
     }

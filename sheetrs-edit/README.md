@@ -263,8 +263,7 @@ formulas are dropped) and the run says why (a `Diagnostic` with the code `RECALC
 written by the command line to the standard error): the spreadsheet program that opens it does the recalculation then. Nothing
 assigns the mark before the engine has run, and nothing takes it off except the engine having
 calculated a workbook that came with it. A run that only converts formulas to values changes no other
-result and has nothing to calculate. The mark cannot be asked for or avoided, in the command line
-(`--recalculate-on-open` was removed) or in the library. What the engine costs is in
+result and has nothing to calculate. The mark cannot be asked for or avoided, in the command line or in the library. What the engine costs is in
 [`docs/performance.md`](../docs/performance.md#sheetrs-edit). `--dry-run` reads the workbook to say
 which formulas are given `#REF!` and how many the engine calculates.
 

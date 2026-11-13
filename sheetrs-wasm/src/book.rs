@@ -1,9 +1,9 @@
 //! `Book`: the workbook, the one object of the package.
 //!
 //! A `Book` is made from the bytes of a workbook (`new Book(bytes)`), whose format is the one of the
-//! content. It reads the workbook once, when it is made, in a single streaming pass that counts
-//! what it holds (sheets, used cells, formulas, names, macros) and keeps only those numbers: they are
-//! the shortcut properties (`format`, `sheetNames`, `sheets`, `definedNames`, `dateSystem`,
+//! content. It reads nothing when it is made: the first shortcut property that describes the workbook
+//! reads it once, in a single streaming pass that counts what it holds (sheets, used cells, formulas,
+//! names, macros), and keeps only those numbers: they are the shortcut properties (`format`, `sheetNames`, `sheets`, `definedNames`, `dateSystem`,
 //! `hasMacros`, the eleven `total*`). Everything else is read when it is asked for, from the bytes
 //! the `Book` keeps: `range`, `find` and `lint` read what they need, and the operations
 //! (`deleteSheets`, `deleteNames`, `formulaToValue`, `deleteRows`, `deleteColumns`, `replace`,
@@ -19,10 +19,11 @@ use sheetrs_io::Book as Inner;
 use sheetrs_io::reader::SheetState;
 use sheetrs_linter::{BookLint, Linter, LinterConfig};
 use sheetrs_stats::{BookStats, WorkbookStats};
+use std::cell::OnceCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
-/// What the read at open found out.
+/// What the first read that describes the workbook found out.
 struct Opened {
     stats: Rc<WorkbookStats>,
     /// The null date as `YYYY-MM-DD`, or the reason the workbook has none the package supports.
@@ -33,7 +34,8 @@ struct Opened {
 #[wasm_bindgen]
 pub struct Book {
     pub(crate) inner: Inner,
-    opened: Opened,
+    /// Made the first time a property describes the workbook, with the reason if it cannot be read.
+    opened: OnceCell<Result<Opened, String>>,
     pub(crate) on_diagnostic: Option<js_sys::Function>,
     pub(crate) dates: bool,
     #[cfg(feature = "edit")]
@@ -55,25 +57,39 @@ impl Book {
     #[wasm_bindgen(constructor)]
     pub fn new(data: &[u8]) -> Result<Book, JsValue> {
         let inner = Inner::from_bytes(data).map_err(|e| failure("Reader error", e))?;
-        let stats = inner.stats().map_err(|e| failure("Reader error", e))?;
-        let date_system = inner
-            .date_system()
-            .map(|system| {
-                let (year, month, day) = system.null_date();
-                format!("{year:04}-{month:02}-{day:02}")
-            })
-            .map_err(|e| format!("{e:#}"));
         Ok(Book {
             inner,
-            opened: Opened {
-                stats: Rc::new(stats),
-                date_system,
-            },
+            opened: OnceCell::new(),
             on_diagnostic: None,
             dates: false,
             #[cfg(feature = "edit")]
             report: None,
         })
+    }
+
+    /// What the first read that describes the workbook found out, made now if it was not.
+    fn described(&self) -> Result<&Opened, JsValue> {
+        self.opened
+            .get_or_init(|| {
+                let stats = self
+                    .inner
+                    .stats()
+                    .map_err(|e| format!("Reader error: {e}"))?;
+                let date_system = self
+                    .inner
+                    .date_system()
+                    .map(|system| {
+                        let (year, month, day) = system.null_date();
+                        format!("{year:04}-{month:02}-{day:02}")
+                    })
+                    .map_err(|e| format!("{e:#}"));
+                Ok(Opened {
+                    stats: Rc::new(stats),
+                    date_system,
+                })
+            })
+            .as_ref()
+            .map_err(|e| JsValue::from_str(e))
     }
 
     /// `"xlsx"`, `"xlsm"` or `"ods"`.
@@ -89,7 +105,7 @@ impl Book {
     /// A message when the workbook has another date system.
     #[wasm_bindgen(getter, js_name = dateSystem)]
     pub fn date_system(&self) -> Result<String, JsValue> {
-        self.opened
+        self.described()?
             .date_system
             .clone()
             .map_err(|e| JsValue::from_str(&e))
@@ -97,19 +113,20 @@ impl Book {
 
     /// Whether the workbook carries macros (found, never run).
     #[wasm_bindgen(getter, js_name = hasMacros)]
-    pub fn has_macros(&self) -> bool {
-        self.opened.stats.has_macros
+    pub fn has_macros(&self) -> Result<bool, JsValue> {
+        Ok(self.described()?.stats.has_macros)
     }
 
     /// The names of the sheets, in order.
     #[wasm_bindgen(getter, js_name = sheetNames)]
-    pub fn sheet_names(&self) -> Vec<String> {
-        self.opened
+    pub fn sheet_names(&self) -> Result<Vec<String>, JsValue> {
+        Ok(self
+            .described()?
             .stats
             .sheets
             .iter()
             .map(|s| s.name.clone())
-            .collect()
+            .collect())
     }
 
     /// The sheets by name (`book.sheets["Data"]`): `name`, `usedRange` (`"A1:C9"` or `null`),
@@ -137,7 +154,7 @@ impl Book {
             xml_size: u64,
         }
         let sheets = js_sys::Object::new();
-        for sheet in &self.opened.stats.sheets {
+        for sheet in &self.described()?.stats.sheets {
             let view = SheetView {
                 name: &sheet.name,
                 used_range: sheet.end_of_sheet.as_ref().map(|end| format!("A1:{end}")),
@@ -167,71 +184,71 @@ impl Book {
     /// A message when the result cannot be built.
     #[wasm_bindgen(getter, js_name = definedNames)]
     pub fn defined_names(&self) -> Result<JsValue, JsValue> {
-        to_js(&self.opened.stats.defined_names)
+        to_js(&self.described()?.stats.defined_names)
     }
 
     /// The statistics of the workbook, as `sheetrs stats` reports them.
     #[wasm_bindgen(getter)]
-    pub fn stats(&self) -> Stats {
-        Stats {
-            inner: Rc::clone(&self.opened.stats),
-        }
+    pub fn stats(&self) -> Result<Stats, JsValue> {
+        Ok(Stats {
+            inner: Rc::clone(&self.described()?.stats),
+        })
     }
 
     #[wasm_bindgen(getter, js_name = totalSheets)]
-    pub fn total_sheets(&self) -> usize {
-        self.opened.stats.total_sheets
+    pub fn total_sheets(&self) -> Result<usize, JsValue> {
+        Ok(self.described()?.stats.total_sheets)
     }
 
     #[wasm_bindgen(getter, js_name = totalNamedRanges)]
-    pub fn total_named_ranges(&self) -> usize {
-        self.opened.stats.total_named_ranges
+    pub fn total_named_ranges(&self) -> Result<usize, JsValue> {
+        Ok(self.described()?.stats.total_named_ranges)
     }
 
     /// 0: bytes carry no file size.
     #[wasm_bindgen(getter, js_name = totalFileSize)]
-    pub fn total_file_size(&self) -> f64 {
-        self.opened.stats.total_file_size as f64
+    pub fn total_file_size(&self) -> Result<f64, JsValue> {
+        Ok(self.described()?.stats.total_file_size as f64)
     }
 
     #[wasm_bindgen(getter, js_name = totalUsedCells)]
-    pub fn total_used_cells(&self) -> f64 {
-        self.opened.stats.total_used_cells as f64
+    pub fn total_used_cells(&self) -> Result<f64, JsValue> {
+        Ok(self.described()?.stats.total_used_cells as f64)
     }
 
     #[wasm_bindgen(getter, js_name = totalFormulas)]
-    pub fn total_formulas(&self) -> f64 {
-        self.opened.stats.total_formulas as f64
+    pub fn total_formulas(&self) -> Result<f64, JsValue> {
+        Ok(self.described()?.stats.total_formulas as f64)
     }
 
     #[wasm_bindgen(getter, js_name = totalErrors)]
-    pub fn total_errors(&self) -> f64 {
-        self.opened.stats.total_errors as f64
+    pub fn total_errors(&self) -> Result<f64, JsValue> {
+        Ok(self.described()?.stats.total_errors as f64)
     }
 
     #[wasm_bindgen(getter, js_name = totalEmptyCells)]
-    pub fn total_empty_cells(&self) -> f64 {
-        self.opened.stats.total_empty_cells as f64
+    pub fn total_empty_cells(&self) -> Result<f64, JsValue> {
+        Ok(self.described()?.stats.total_empty_cells as f64)
     }
 
     #[wasm_bindgen(getter, js_name = totalComments)]
-    pub fn total_comments(&self) -> f64 {
-        self.opened.stats.total_comments as f64
+    pub fn total_comments(&self) -> Result<f64, JsValue> {
+        Ok(self.described()?.stats.total_comments as f64)
     }
 
     #[wasm_bindgen(getter, js_name = totalCharts)]
-    pub fn total_charts(&self) -> f64 {
-        self.opened.stats.total_charts as f64
+    pub fn total_charts(&self) -> Result<f64, JsValue> {
+        Ok(self.described()?.stats.total_charts as f64)
     }
 
     #[wasm_bindgen(getter, js_name = totalTables)]
-    pub fn total_tables(&self) -> f64 {
-        self.opened.stats.total_tables as f64
+    pub fn total_tables(&self) -> Result<f64, JsValue> {
+        Ok(self.described()?.stats.total_tables as f64)
     }
 
     #[wasm_bindgen(getter, js_name = totalXmlSize)]
-    pub fn total_xml_size(&self) -> f64 {
-        self.opened.stats.total_xml_size as f64
+    pub fn total_xml_size(&self) -> Result<f64, JsValue> {
+        Ok(self.described()?.stats.total_xml_size as f64)
     }
 
     /// Whether `range`, `find`, `lint` and `query` give dates and times as typed values

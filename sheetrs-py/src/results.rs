@@ -424,7 +424,7 @@ impl PyValueRanges {
 
 // ---- Stats and Sheet -------------------------------------------------------------------------
 
-/// A sheet of the workbook, with what the read at open found out about it.
+/// A sheet of the workbook, with what the description of the workbook found out about it.
 #[pyclass(name = "Sheet", frozen, module = "sheetrs")]
 #[derive(Clone)]
 pub struct PySheet {

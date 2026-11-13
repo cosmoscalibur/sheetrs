@@ -16,7 +16,7 @@
 //! | `sheetrs_meta() -> status` | the `--meta` of an executable, in the result buffer |
 //! | `sheetrs_info() -> status` | the `--info` |
 //! | `sheetrs_calculate(ptr, len) -> status` | the JSON answer to a request |
-//! | `sheetrs_write(ptr, len, with_json) -> status` | the workbook with the answer written, in the workbook buffer, and the JSON in the result buffer if `with_json` (modules built `--embed-template` or `--recalculate`, from the base with the writer) |
+//! | `sheetrs_write(ptr, len, with_json) -> status` | the workbook with the answer written, in the workbook buffer, and the JSON in the result buffer if `with_json` (modules built `--embed-template`, from the base with the writer) |
 //! | `sheetrs_result_ptr() -> ptr`, `sheetrs_result_len() -> len` | the result buffer |
 //! | `sheetrs_workbook_ptr() -> ptr`, `sheetrs_workbook_len() -> len` | the workbook buffer |
 //! | `sheetrs_has_writer() -> i32` | `1` when the module can write a workbook |

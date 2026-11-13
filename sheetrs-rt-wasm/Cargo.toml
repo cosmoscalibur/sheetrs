@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
-# The module that also writes the workbook (the template of `--embed-template` and `--recalculate`):
+# The module that also writes the workbook (the template of `--embed-template`):
 # it carries the readers and writers of XLSX and ODS.
 template = ["dep:sheetrs-answer", "dep:sheetrs-io"]
 
