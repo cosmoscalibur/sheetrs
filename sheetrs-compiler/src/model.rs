@@ -50,6 +50,11 @@ pub struct ModelSettings {
 pub struct Model {
     pub sheets: Vec<String>,
     pub cells: CellStore,
+    /// The cells of an array formula that are not its top-left one: how far below and to the right
+    /// of that cell each one sits (`(rows, columns)`), for it to show its own element of the
+    /// result. A model that is not read from a file holds none, and every cell of an array formula
+    /// then shows the first element.
+    pub array_members: HashMap<CellRef, (u32, u32)>,
     /// Defined names: name → formula text (usually a reference).
     pub names: HashMap<String, String>,
     pub date_system: DateSystem,
@@ -87,6 +92,7 @@ impl Model {
         Self {
             sheets: Vec::new(),
             cells: CellStore::default(),
+            array_members: HashMap::new(),
             names: HashMap::new(),
             // LibreOffice numbers dates from 1899-12-30 on the real calendar.
             date_system: DateSystem::Null1899,

@@ -1930,6 +1930,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         // The cells of the range of an array formula show its formula, as
                         // `LibreOffice` shows it: the covered cells hold only their value.
                         let mut in_array = false;
+                        let mut array_offset = None;
                         if props.formula {
                             if let (Some(f), true) = (formula.as_ref(), is_matrix_array) {
                                 array_ranges.push((
@@ -1947,14 +1948,17 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             {
                                 array_ranges
                                     .retain(|((_, _, last_row, _), _)| *last_row >= current_row);
-                                if let Some((_, master)) = array_ranges.iter().find(
-                                    |((first_row, first_col, last_row, last_col), _)| {
+                                if let Some(((first_row, first_col, _, _), master)) = array_ranges
+                                    .iter()
+                                    .find(|((first_row, first_col, last_row, last_col), _)| {
                                         (*first_row..=*last_row).contains(&current_row)
                                             && (*first_col..=*last_col).contains(&current_col)
-                                    },
-                                ) {
+                                    })
+                                {
                                     formula = Some(master.clone());
                                     in_array = true;
+                                    array_offset =
+                                        Some((current_row - first_row, current_col - first_col));
                                 }
                             }
                         }
@@ -2029,6 +2033,13 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                 (mr.max(at.0), mc.max(at.1))
                                             }));
                                         if !skip_current_sheet {
+                                            if let Some((dr, dc)) = array_offset {
+                                                sink.array_member(
+                                                    sheets.len() as u16,
+                                                    at,
+                                                    (dr + r, dc + c),
+                                                );
+                                            }
                                             sink.cell(sheets.len() as u16, at, cell);
                                         }
 

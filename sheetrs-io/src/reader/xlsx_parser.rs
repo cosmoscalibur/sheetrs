@@ -1577,19 +1577,22 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         // The cells of the range of an array formula show its formula, as `LibreOffice`
                         // shows it: every cell holds it. It is known when the formulas are read.
                         let mut in_array = false;
+                        let mut array_offset = None;
                         if props.formula {
                             if let (Some(f), Some(range)) = (formula.as_ref(), array_range) {
                                 array_ranges.push((range, f.clone()));
                             } else if formula.is_none() && !array_ranges.is_empty() {
                                 array_ranges.retain(|((_, _, last_row, _), _)| *last_row >= row);
-                                if let Some((_, master)) = array_ranges.iter().find(
-                                    |((first_row, first_col, last_row, last_col), _)| {
+                                if let Some(((first_row, first_col, _, _), master)) = array_ranges
+                                    .iter()
+                                    .find(|((first_row, first_col, last_row, last_col), _)| {
                                         (*first_row..=*last_row).contains(&row)
                                             && (*first_col..=*last_col).contains(&col)
-                                    },
-                                ) {
+                                    })
+                                {
                                     formula = Some(master.clone());
                                     in_array = true;
+                                    array_offset = Some((row - first_row, col - first_col));
                                 }
                             }
                         }
@@ -1612,6 +1615,9 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                                 f = f[1..].to_string();
                             }
                             cell.formula = Some(f.into());
+                        }
+                        if let Some(offset) = array_offset {
+                            sink.array_member(sheet_index, (row, col), offset);
                         }
                         sink.cell(sheet_index, (row, col), cell);
                     }

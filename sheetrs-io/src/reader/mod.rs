@@ -61,6 +61,13 @@ pub trait CellSink {
     /// rows inside that range are the filtered ones. Whoever uses it keeps the ranges and applies
     /// them when the sheet is done, in either format.
     fn filtered_rows(&mut self, _sheet: u16, _first: u32, _last: u32) {}
+
+    /// The cell of the sheet at `(row, column)` (0-based) is a member of an array formula, and sits
+    /// `offset` = (rows, columns) below and to the right of the top-left cell of the block the
+    /// formula fills. It comes **before** the [`cell`](CellSink::cell) it is about, and only for the
+    /// members that are not the top-left cell (a formula that holds one value has none): each member
+    /// shows its own element of the result.
+    fn array_member(&mut self, _sheet: u16, _at: (u32, u32), _offset: (u32, u32)) {}
 }
 
 /// A sink that hands on the cells of `inner` with their formulas in Excel's notation, the
@@ -99,6 +106,10 @@ impl CellSink for ExcelFormulas<'_> {
 
     fn filtered_rows(&mut self, sheet: u16, first: u32, last: u32) {
         self.inner.filtered_rows(sheet, first, last);
+    }
+
+    fn array_member(&mut self, sheet: u16, at: (u32, u32), offset: (u32, u32)) {
+        self.inner.array_member(sheet, at, offset);
     }
 
     fn cell(&mut self, sheet: u16, at: (u32, u32), mut cell: Cell) {

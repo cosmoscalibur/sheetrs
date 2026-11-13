@@ -386,7 +386,14 @@ fn lower_chunk(
                     && let Some(id) =
                         sheetrs_engine::functions::lookup(sheetrs_engine::ir::Ns::Core, "_ARRAY")
                 {
-                    e = Expr::Call(id, vec![e]);
+                    // A member of the block shows its own element of the result: the call is told
+                    // how far it sits from the top-left cell.
+                    let mut args = vec![e];
+                    if let Some(&(rows, cols)) = model.array_members.get(&at) {
+                        args.push(Expr::Const(Value::Number(f64::from(rows))));
+                        args.push(Expr::Const(Value::Number(f64::from(cols))));
+                    }
+                    e = Expr::Call(id, args);
                 }
                 let mut holds_subtotal = false;
                 e.walk(&mut |x| match x {
