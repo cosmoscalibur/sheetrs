@@ -226,7 +226,7 @@ impl Lowering<'_, '_> {
             ast::Expr::Binary(op, a, b) => {
                 let (l, r) = (self.expr(a), self.expr(b));
                 match bin_op(*op) {
-                    Some(op) => Expr::Binary(op, Box::new(l), Box::new(r)),
+                    Some(op) => Expr::Binary(op, Box::new([l, r])),
                     None => range_of(l, r),
                 }
             }
@@ -1195,14 +1195,14 @@ mod tests {
     #[test]
     fn unary_minus_and_the_operators_bind_as_in_spreadsheets() {
         // -2^2 = 4: unary minus binds tighter than ^.
-        let Expr::Binary(BinOp::Pow, l, _) = p("-2^2") else {
+        let Expr::Binary(BinOp::Pow, operands) = p("-2^2") else {
             panic!()
         };
-        assert_eq!(*l, n(-2.0));
-        let Expr::Binary(BinOp::Add, _, r) = p("1+2*3") else {
+        assert_eq!(operands[0], n(-2.0));
+        let Expr::Binary(BinOp::Add, operands) = p("1+2*3") else {
             panic!()
         };
-        assert!(matches!(*r, Expr::Binary(BinOp::Mul, ..)));
+        assert!(matches!(operands[1], Expr::Binary(BinOp::Mul, _)));
         assert!(matches!(p("1&2=3"), Expr::Binary(BinOp::Eq, ..)));
         assert!(matches!(p("50%"), Expr::Unary(UnOp::Percent, _)));
     }

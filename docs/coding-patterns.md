@@ -205,6 +205,13 @@ parsers and rules:
   cell (REF309), and a classification of every cell with a copy of its formula pattern, three
   times over (INT401–403): +590 MB on a 6.6 M-cell workbook. Repeated text (formula patterns) is
   interned and kept as an id.
+- The dependency graph (`LinterContext::cell_dependencies`) is a `CellDependencies`: the formula
+  cells, sorted, with their references in one flat arena. A `HashMap<Cell, Vec<Cell>>` cost about
+  100 bytes a formula and a hash of each cell for the search of loops (CALC202 alone on 2.4 M
+  formulas: 782 → 440 MB and 11.3 → 4.5 s with this and one parse per formula). A rule that has to find equal texts among millions (VUL601) keeps the hash of
+  each text and the position (16 bytes), sorts them and compares the texts of the equal hashes only,
+  not a map of the texts. Read a formula once for what a rule needs from it (CALC202 gets references
+  and links from one parse), and read a parameter of the configuration once per sheet, not per cell.
 - Output is written as it is produced (`sheetrs lint --format json` and `--format sarif` serialize each violation):
   building a tree of the whole document costs about 4 KB a violation.
 - Memory is measured as the peak of the run (`measure_perf.py` does it for `sheetc`; for the

@@ -31,6 +31,7 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
+use aho_corasick::AhoCorasick;
 use sheetrs_io::reader::{Cell, Sheet};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
@@ -61,6 +62,16 @@ static SEARCH_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
         .map(|(name, _)| format!("{name}("))
         .collect()
 });
+
+/// One automaton over every pattern, so that a formula is scanned once for all of them instead of
+/// once per pattern (each `str::find` builds its own searcher).
+static SEARCHER: LazyLock<AhoCorasick> = LazyLock::new(|| {
+    AhoCorasick::new(SEARCH_PATTERNS.iter().map(String::as_str))
+        .expect("VUL606 patterns must build an automaton")
+});
+
+// The patterns found in a cell are kept as the bits of a `u64`.
+const _: () = assert!(DEPRECATED_FUNCTIONS.len() <= 64);
 
 /// Per-sheet cell collection: `sheet_index` → Vec<(`func_index`, row, col)>.
 type SheetCellMap = HashMap<u16, Vec<(u8, u32, u32)>>;
@@ -147,28 +158,22 @@ impl WalkerRule for DeprecatedFuncRule {
     ) {
         if let Some(formula_upper) = ctx.formula_upper(sheet, at, cell) {
             let formula_bytes = formula_upper.as_bytes();
-            let mut matches = Vec::new();
-            for (idx, pattern) in SEARCH_PATTERNS.iter().enumerate() {
-                // Find all occurrences and check word boundary before each
-                let pat_bytes = pattern.as_bytes();
-                let mut search_from = 0;
-                while let Some(rel_pos) = formula_upper[search_from..].find(pattern.as_str()) {
-                    let abs_pos = search_from + rel_pos;
-                    // Only match if NOT preceded by a letter (rejects VLOOKUP→LOOKUP, etc.)
-                    let is_word_start =
-                        abs_pos == 0 || !formula_bytes[abs_pos - 1].is_ascii_alphabetic();
-                    if is_word_start {
-                        matches.push((idx as u8, at.0, at.1));
-                        break; // Found a genuine match for this pattern in this cell
-                    }
-                    search_from = abs_pos + pat_bytes.len();
+            // Every occurrence of every pattern, as `(pattern, start)`.
+            let mut found = 0_u64;
+            for m in SEARCHER.find_overlapping_iter(formula_upper) {
+                let start = m.start();
+                // Only match if NOT preceded by a letter (rejects VLOOKUP→LOOKUP, etc.)
+                if start == 0 || !formula_bytes[start - 1].is_ascii_alphabetic() {
+                    found |= 1 << m.pattern().as_usize();
                 }
             }
-            if !matches.is_empty() {
-                self.sheet_cells
-                    .entry(sheet.sheet_index)
-                    .or_default()
-                    .extend(matches);
+            if found != 0 {
+                let cells = self.sheet_cells.entry(sheet.sheet_index).or_default();
+                for idx in 0..DEPRECATED_FUNCTIONS.len() {
+                    if found & (1 << idx) != 0 {
+                        cells.push((idx as u8, at.0, at.1));
+                    }
+                }
             }
         }
     }

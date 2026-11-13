@@ -72,12 +72,14 @@ With `scripts/benchmark.toml`: every default-active rule, thresholds fixed so th
 
 | Workbook | Wall time | Peak memory |
 |---|---|---|
-| `formulas.xlsx` | 30.85-31.65 s | 1087 MB |
-| `formulas.ods` | 35.70-35.84 s | 1122-1124 MB |
+| `formulas.xlsx` | 16.36-16.80 s | 658-661 MB |
+| `formulas.ods` | 21.52-21.69 s | 693-701 MB |
 
-Where the time goes (XLSX): reading the workbook 7 %, rule execution 88 %, writing the report 4 %; the rules
-that cost most are `CALC202` (27 %) and `REF310` (11 %): the table is in
-[PROFILING.md](../sheetrs-linter/docs/PROFILING.md).
+Where the time goes (XLSX): reading the workbook 15 %, rule execution 79 %, writing the report 5 %; the rules
+that cost most are `INT401-403` (16 %) and `CALC202` (14 %): the table is in
+[PROFILING.md](../sheetrs-linter/docs/PROFILING.md). The peak of the run is the floor of the workbook read
+(329 MB) plus what the rules keep: the dependency graph of `CALC202` (about 110 MB) and the 1.2 M violations of
+`CALC201` that this configuration produces.
 
 ### `sheetrs stats`
 
@@ -97,6 +99,7 @@ The counts are taken while the reader goes: the workbook is never built.
 | `--sheet Summary` | 0.003-0.004 s, 17 MB | 1.34-1.40 s, 19 MB |
 | `--find K00` (values, every sheet; 14 930 cells) | 2.32-2.38 s, 17-18 MB | 3.61-3.82 s, 19 MB |
 | `--find VLOOKUP --in formula` (every formula) | 6.17-6.29 s, 103 MB | 6.49-6.79 s, 108 MB |
+| `--find K00 --include-formulas` (values and the results of 2.4 M formulas) | 17.74-18.51 s, 621 MB | 22.46-23.01 s, 646 MB |
 
 The readers skip the sheets that are not asked for and stop after the last row a window reaches; an ODS has to read
 its content part to know where the sheets are.
@@ -115,7 +118,7 @@ and not repeated); the others are the minimum and the maximum of 3 runs.
 |---|---|---|
 | `--delete-sheets Lookup` | 22.48-22.60 s, 1839-1840 MB | 48.6-50.8 s, 1893 MB |
 | `--delete-names base_rate` | 16.3 s, 1646 MB * | 25.3 s, 1656 MB * |
-| `--formula-to-value Calc` | 24.25-25.65 s, 1646 MB † | 7.64-7.89 s, 19 MB † |
+| `--formula-to-value Calc` | 24.25-25.65 s, 1646 MB † | 5.89-5.98 s, 14 MB ‡ |
 | `--formula-to-value Calc!B:D Calc!1:1000` | 25.99-26.44 s, 1646 MB † | 8.29-8.57 s, 19 MB † |
 | delete sheet + name, convert `Calc` (one command) | 23.4 s, 1646 MB * | 12.4 s, 297 MB * |
 | `--delete-rows Data!10:20` | 25.39-25.57 s, 1646 MB | 53.3-55.5 s, 1799 MB |
@@ -137,6 +140,12 @@ results, skips the analysis and calculates all. Before the fix of the empty runs
 alone, and a defined name that points to cells no deleted row or column touches no longer sends the plan to the
 whole-workbook path): a conversion alone does not use the analysis; the ODS rows are those of
 [#107](https://github.com/cosmoscalibur/sheetrs/issues/107) and were left out of the last round.
+
+‡ Measured after the writers stopped allocating per cell (3 runs, same session as the binary before the change: 6.96-7.02 s, 14 MB,
+the same output byte for byte). The writers alone, without the analysis or the engine, on `formulas.xlsx` / `formulas.ods`
+(`WorkbookModifications` through `modify_workbook`, 14 MB peak in every case): conversion of `Calc` 3.97 → 3.07 s / 5.37 → 4.24 s,
+`--delete-rows Data!10:20` 7.98 → 6.28 s / 11.55 → 9.84 s, `--delete-columns Data!B:D` 7.03 → 5.54 s / 10.67 → 8.95 s. The 136-139 s
+of the ODS column deletion are not the writer: end to end it took 143 s and 2416 MB, so the rest is the analysis and the engine.
 
 A conversion alone streams (the ODS rows: 19 to 298 MB); what needs the engine (a deletion that leaves a formula
 stale, or an XLSX whose results are not stored) holds the formulas of the workbook in memory, about 1.6-2.2 GB for
@@ -179,17 +188,25 @@ stages come from `SHEETC_TRACE`; median of 3):
 |---|---|--:|--:|
 | `small.xlsx` (0.03 MB) | build total (executable 9.02 MB) | 0.02 | 17 |
 | | execute a request | 0.004 | 14 |
-| `data.xlsx` (49.19 MB, no settings: inputs deduced) | build total (executable 114.78 MB) | 9.53 | 1942 |
-| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.27 / 0.20 / 4.20 / 0.08 / 0.07 / 0.46 | |
+| `data.xlsx` (49.19 MB, no settings: inputs deduced) | build total (executable 114.78 MB) | 7.59 | 1540 |
+| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.48 / 0.23 / 2.37 / 0.08 / 0.03 / 0.49 | |
 | | engine start-up (`--meta`) / execute a request | 0.620 / 2.745 | 453 / 757 |
-| `data_declared.xlsx` (inputs and outputs declared) | build total (executable 9.00 MB) | 4.94 | 760 |
-| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.29 / 0.18 / 0.48 / 0.85 / 0.00 / 0.01 | |
+| `data_declared.xlsx` (inputs and outputs declared) | build total (executable 9.00 MB) | 4.52 | 724 |
+| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.40 / 0.16 / 0.21 / 0.67 / 0.00 / 0.01 | |
 | | engine start-up / execute a request | 0.003 / 0.002 | 14 / 14 |
-| `formulas.xlsx` (28.98 MB) | build total (executable 93.54 MB) | 9.40 | 1598 |
-| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 2.12 / 0.95 / 2.37 / 1.29 / 1.61 / 0.60 | |
-| | engine start-up / execute a request | 0.780 / 2.527 | 455 / 530 |
+| `formulas.xlsx` (28.98 MB) | build total (executable 93.54 MB) | 6.85 | 1309 |
+| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 2.29 / 0.83 / 0.76 / 1.13 / 1.06 / 0.61 | |
+| | engine start-up / execute a request | 0.722 / 1.994 | 423 / 496 |
 
-The stage rows are parts of the build total of their workbook (the peak memory is that of the process). A workbook that declares its inputs and outputs keeps only what the outputs need, so its executable is small and
+The stage rows are parts of the build total of their workbook (the peak memory is that of the process). The build keeps one
+copy of the graph (built straight into its compressed rows, and freed once the order and the taint are known), finds a
+graph node by the row of its cell in the sorted node list instead of in a hash table, and does not keep the references
+that lie inside an output (with nothing declared, almost every one): against the build before this, in the same
+session, `formulas.xlsx` took 8.33 s and 1598 MB (1355 MB before the operands of a binary operator went in one allocation), `data.xlsx` 9.08 s and 1942 MB and `data_declared.xlsx` 4.81 s and
+760 MB. The executables are byte-identical. The rows of the other flows that compile in memory (`sheetc calculate`
+above, the recalculation of `sheetrs edit`, Python `calculate`, and the model use below) share these stages and
+should take less memory and time; they were not measured again, nor were the start-up and request rows of the
+executables, which the change does not touch. A workbook that declares its inputs and outputs keeps only what the outputs need, so its executable is small and
 answers in milliseconds; one that does not carries every cell.
 
 The rows of this table were measured again with the payload in `postcard` (see
@@ -208,9 +225,12 @@ opens the `Book` first (the statistics are read at open), so the peak of a step 
 | `Book(path)` (reads the workbook once, for the statistics) | 1.97-2.05 s | 1.99-2.06 s | 17 MB |
 | `range(["Calc!A1:H1000"])` | 0.01 s | 1.92-1.94 s | 21 MB |
 | `find("K00")` | 2.34-2.39 s | 4.26-4.40 s | 24 MB |
-| `lint()` | 26.72-27.67 s | 28.79-29.85 s | 1021-1023 MB |
+| `lint()` ‡ | 26.72-27.67 s | 28.79-29.85 s | 1021-1023 MB |
 | `delete_rows("Calc!3:10").save(out)` (with the recalculation) | 24.83-25.46 s | 26.87-27.56 s | 1655 MB |
 | `calculate({"rate": 0.07}, ["Summary!A1", "Summary!A3", "Summary!A4"]).value_ranges()` | 10.83-11.34 s | 12.86-13.38 s | 1698-1699 MB |
+
+‡ Measured before the linter used less time and memory (see [`sheetrs lint`](#sheetrs-lint), which is about half
+of it now); not measured again, as the wheel is not built here.
 
 ### WebAssembly
 
@@ -333,8 +353,8 @@ a running total.
 - Without `calculateAll()` LibreOffice converts the zeros that the file stores as results (the conversion takes
   38.4-39.7 s, 3276-3278 MB): it is faster, and wrong for this file.
 - The search in an ODS is not the same flow: LibreOffice also looks at the results of formulas (29 760 cells in the
-  ODS of this file), and `sheetrs query --find --include-formulas` did not finish on it in five minutes (see the
-  [known limits](#known-limits)).
+  ODS of this file), and `sheetrs query --find --include-formulas` takes 22.46-23.01 s on it (see the
+  [`sheetrs query`](#sheetrs-query) table).
 - Memory of LibreOffice is the `VmHWM` of `soffice.bin`; a deletion keeps the undo data, which is why it takes
   1.1 GB more than the calculation alone.
 
@@ -357,8 +377,10 @@ Measured at this state; none is being worked on here.
   ([#86](https://github.com/cosmoscalibur/sheetrs/issues/86)).
 - **Deleting columns of an ODS** takes 136-139 s on `formulas.ods`, five times the XLSX and about 3.5 times deleting rows
   of the same file.
-- **A search in formulas with their results** (`query --find … --include-formulas`) did not finish on 2.4 M formulas in
-  five minutes (`sheetrs query -i formulas.xlsx --find K00 --include-formulas`, killed at 300 s, 100 % of one core).
+- **A search that also looks at the results of formulas** (`query --find … --include-formulas`) keeps every formula
+  cell to infer the format of its result: 621-646 MB and 18-23 s on 2.4 M formulas, against 17 MB and 2.3 s of a search
+  by value alone. Before the change that reads each sheet whole after eight windows (instead of the file once per
+  referenced range) and finds the cells of a range by position, it did not finish in five minutes.
 - **The XLSX reader** is not profiled in detail ([#83](https://github.com/cosmoscalibur/sheetrs/issues/83)).
 - **`sheetc calculate -o`** writes the results truncated to 14 digits while the planner writes the full number
   ([#103](https://github.com/cosmoscalibur/sheetrs/issues/103)).

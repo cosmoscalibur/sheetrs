@@ -769,10 +769,10 @@ impl<'p> Engine<'p> {
                 self.logical_fmt = if boolean { FMT_NEGATED } else { FMT_NONE };
                 r
             }
-            Expr::Binary(op, a, b) => {
-                let l = self.eval(a);
+            Expr::Binary(op, ab) => {
+                let l = self.eval(&ab[0]);
                 let l = self.comparand(*op, l);
-                let r = self.eval(b);
+                let r = self.eval(&ab[1]);
                 let r = self.comparand(*op, r);
                 let v = self.binary(*op, l, r);
                 self.logical_fmt = FMT_NONE;

@@ -461,11 +461,11 @@ impl Stale<'_> {
                 }
             }
             Expr::Unary(_, a) => self.result(a),
-            Expr::Binary(op, a, b) => {
+            Expr::Binary(op, ab) => {
                 // Operators evaluate the left operand first: its error is the result; the right
                 // operand's error is the result only when the left one is no error.
                 let _: &BinOp = op;
-                self.first_error(&[a, b])
+                self.first_error(&[&ab[0], &ab[1]])
             }
             Expr::Call(id, args) if PASS_THE_ERROR_ON.contains(&id.def().name) => {
                 let args: Vec<&Expr> = args.iter().collect();
