@@ -29,22 +29,54 @@ fn array(rows: usize, cols: usize, data: Vec<f64>) -> Value {
     )))
 }
 
-fn pair_sums(e: &mut Engine, a: &[Value], f: fn(f64, f64) -> f64) -> Res<Value> {
+/// How a pair of the two sets of `SUMX2MY2`, `SUMX2PY2` and `SUMXMY2` is read when one of its elements is
+/// not a number, as `LibreOffice` does.
+#[derive(Clone, Copy, PartialEq)]
+enum Pairs {
+    /// A pair with a text or an empty element is left out, an error element in it included
+    /// (`SUMX2MY2("a",{1}/0)` is 0): `SUMX2MY2` and `SUMX2PY2`.
+    SkipNonNumbers,
+    /// An empty element is 0, a text makes the sum `#VALUE!` and an error element is that error, before
+    /// the text (`SUMXMY2("a",{1}/0)` is `#DIV/0!`): `SUMXMY2`.
+    EmptyIsZero,
+}
+
+fn pair_sums(e: &mut Engine, a: &[Value], how: Pairs, f: fn(f64, f64) -> f64) -> Res<Value> {
     let (x, y) = (e.array_of(a[0].clone()), e.array_of(a[1].clone()));
+    // Two sets of different sizes are a plain `#VALUE!` in `LibreOffice` (`#N/A` in Excel).
     if x.data.len() != y.data.len() {
-        return Err(ErrorKind::Na);
+        return Err(ErrorKind::Value);
     }
     let mut s = 0.0;
+    let mut text = false;
     for (p, q) in x.data.iter().zip(&y.data) {
+        let number = |v: &Value| match v {
+            Value::Number(n) => Some(*n),
+            Value::Bool(b) => Some(f64::from(u8::from(*b))),
+            Value::Empty if how == Pairs::EmptyIsZero => Some(0.0),
+            _ => None,
+        };
+        if how == Pairs::SkipNonNumbers
+            && [p, q]
+                .iter()
+                .any(|v| matches!(v, Value::Text(_) | Value::Empty))
+        {
+            continue;
+        }
         if let Value::Error(k) = p {
             return Err(*k);
         }
         if let Value::Error(k) = q {
             return Err(*k);
         }
-        if let (Value::Number(p), Value::Number(q)) = (p, q) {
-            s += f(*p, *q);
+        match (number(p), number(q)) {
+            (Some(p), Some(q)) => s += f(p, q),
+            _ if how == Pairs::EmptyIsZero => text = true,
+            _ => {}
         }
+    }
+    if text {
+        return Err(ErrorKind::Value);
     }
     num(s)
 }
@@ -181,7 +213,11 @@ pub(super) fn register(r: &mut Reg) {
         let mut out = Vec::with_capacity(m.data.len());
         for c in 0..cols {
             for r in 0..rows {
-                out.push(m.get(r, c).clone());
+                out.push(match m.get(r, c) {
+                    // What a missing `else` gave is an empty element there: the cell shows 0.
+                    x if x.is_empty_path() => Value::Empty,
+                    x => x.clone(),
+                });
             }
         }
         Ok(Value::Array(Arc::new(Array::new(cols, rows, out))))
@@ -234,15 +270,15 @@ pub(super) fn register(r: &mut Reg) {
         ))
     });
     r.eager("SUMXMY2", 2, 2, |e, a| {
-        pair_sums(e, a, |x, y| (x - y) * (x - y))
+        pair_sums(e, a, Pairs::EmptyIsZero, |x, y| (x - y) * (x - y))
     })
     .array_args();
     r.eager("SUMX2MY2", 2, 2, |e, a| {
-        pair_sums(e, a, |x, y| x * x - y * y)
+        pair_sums(e, a, Pairs::SkipNonNumbers, |x, y| x * x - y * y)
     })
     .array_args();
     r.eager("SUMX2PY2", 2, 2, |e, a| {
-        pair_sums(e, a, |x, y| x * x + y * y)
+        pair_sums(e, a, Pairs::SkipNonNumbers, |x, y| x * x + y * y)
     })
     .array_args();
 
@@ -298,12 +334,12 @@ pub(super) fn register(r: &mut Reg) {
         let v = match &a[0] {
             // It does not look inside a range.
             Value::Ref(r) if !r.is_single() => return Err(ErrorKind::Value),
+            Value::Array(_) => return num(64.0),
             v => e.scalar(v.clone()),
         };
         num(match v {
-            Value::Number(_) | Value::Empty | Value::Ref(_) => 1.0,
+            Value::Number(_) | Value::Empty | Value::Ref(_) | Value::Bool(_) => 1.0,
             Value::Text(_) => 2.0,
-            Value::Bool(_) => 1.0,
             Value::Error(_) => 16.0,
             Value::Array(_) => 64.0,
         })

@@ -12,17 +12,18 @@
 //!    engine and keep only the resulting constants. What remains is the
 //!    minimal run-time computation.
 
-use crate::addr::{self, CellRef, Rect};
-use crate::engine::{ConstSource, Engine};
-use crate::fastmap::{FastMap, FastSet};
+use crate::error::{Error, Result};
 use crate::formula::{self, ParseCtx};
 use crate::graph::{self, Csr};
-use crate::ir::{
-    Binding, BuildInfo, BuildOptions, CellDef, CellKind, Expr, Meta, Program, Queryable,
-};
 use crate::model::{Model, ModelCell};
-use crate::options::{DateSystem, EngineOptions, Iteration, Locale, Search};
-use crate::value::Value;
+use sheetrs_engine::addr::{self, CellRef, Rect};
+use sheetrs_engine::engine::{ConstSource, Engine};
+use sheetrs_engine::fastmap::{FastMap, FastSet};
+use sheetrs_engine::ir::{
+    Binding, BuildInfo, BuildOptions, CellDef, CellKind, Expr, Meta, Mode, Program, Queryable,
+};
+use sheetrs_engine::options::{DateSystem, EngineOptions, Iteration, Locale, Search};
+use sheetrs_engine::value::Value;
 use std::collections::{BTreeSet, HashSet};
 
 /// A cell or range declared as input or output.
@@ -35,6 +36,7 @@ pub struct BindingSpec {
 }
 
 impl BindingSpec {
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         Self {
             target: s.trim().to_string(),
@@ -42,6 +44,16 @@ impl BindingSpec {
         }
     }
 
+    /// A declared range, with the alias that names it in a request, if it has one.
+    #[must_use]
+    pub fn declared(name: Option<&str>, target: &str) -> Self {
+        match name {
+            Some(n) => Self::named(n, target),
+            None => Self::parse(target),
+        }
+    }
+
+    #[must_use]
     pub fn named(name: &str, target: &str) -> Self {
         Self {
             target: target.trim().to_string(),
@@ -52,8 +64,14 @@ impl BindingSpec {
 
 #[derive(Debug, Clone)]
 pub struct Spec {
+    /// Declared inputs. Empty: no input is declared, and they are deduced (the constants the
+    /// outputs start from, once the workbook is pruned to what the outputs read).
     pub inputs: Vec<BindingSpec>,
-    /// Empty: one binding per sheet covering its formula cells.
+    /// The inputs were declared, even if the list is empty: there are none, so everything that
+    /// does not read one is evaluated at build time.
+    pub inputs_declared: bool,
+    /// Declared outputs. Empty: none is declared and they are deduced, the same in every mode: the
+    /// cells that are calculated (the formulas, not the constants), as the rectangles that hold them.
     pub outputs: Vec<BindingSpec>,
     /// Defaults to the date system of the source workbook.
     pub date_system: Option<DateSystem>,
@@ -66,8 +84,11 @@ pub struct Spec {
     pub host: sheetrs_engine::options::Host,
     /// Evaluate input-independent cells at build time.
     pub fold: bool,
-    /// Which ranges a caller may ask for besides the outputs.
-    pub query: QueryLevel,
+    /// What the program is for. A recalculated workbook (`Recalculate`) has every formula for an
+    /// output and any constant for an input, whatever `inputs` and `outputs` say. An embedded one
+    /// (`Embedded`) is any program with the workbook inside: it takes them as they are declared, and
+    /// deduces what is not.
+    pub mode: Mode,
     /// Settings-sheet rows, carried into the program for `--meta`.
     pub meta: Vec<Meta>,
     /// The settings sheet: not part of the computation's outputs or queries.
@@ -81,10 +102,10 @@ pub struct Spec {
 }
 
 /// Optional compatibility behaviours, resolved while the program is built. All are off by default:
-/// each one reads a formula differently from the reference (LibreOffice 26.8), so the user opts in.
+/// each one reads a formula differently from the reference (`LibreOffice` 26.8), so the user opts in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Features {
-    /// `_xlfn._LONGTEXT(…)` with constant text arguments: LibreOffice 26.2 wrote a text literal of
+    /// `_xlfn._LONGTEXT(…)` with constant text arguments: `LibreOffice` 26.2 wrote a text literal of
     /// more than 255 characters as pieces joined by it. The pieces are joined into one literal.
     pub longtext: bool,
 }
@@ -94,16 +115,20 @@ impl Features {
     pub const NAMES: &'static [&'static str] = &["LONGTEXT"];
 
     /// The features of an `enable_features` list (names in any case); only those listed are on.
-    pub fn parse(names: &[String]) -> Result<Self, String> {
+    ///
+    /// # Errors
+    ///
+    /// When a name is not one of the known features.
+    pub fn parse(names: &[String]) -> Result<Self> {
         let mut f = Self::default();
         for n in names {
             match n.trim().to_ascii_uppercase().as_str() {
                 "LONGTEXT" => f.longtext = true,
                 other => {
-                    return Err(format!(
-                        "unknown feature `{other}` in enable_features (known: {})",
-                        Self::NAMES.join(", ")
-                    ));
+                    return Err(Error::UnknownFeature {
+                        name: other.to_string(),
+                        known: Self::NAMES,
+                    });
                 }
             }
         }
@@ -111,43 +136,21 @@ impl Features {
     }
 }
 
-/// How much of the workbook the program keeps for run-time queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum QueryLevel {
-    /// Only the declared outputs; everything else is pruned.
-    #[default]
-    Declared,
-    /// The declared outputs plus the workbook's defined names.
-    Named,
-    /// Any range.
-    Any,
-}
-
-impl QueryLevel {
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "declared" => Some(Self::Declared),
-            "named" => Some(Self::Named),
-            "any" => Some(Self::Any),
-            _ => None,
-        }
-    }
-}
-
 impl Default for Spec {
     fn default() -> Self {
         Self {
             inputs: Vec::new(),
+            inputs_declared: false,
             outputs: Vec::new(),
             date_system: None,
             iteration: None,
             locale: None,
             search: None,
             now: None,
-            host: Default::default(),
+            host: sheetrs_engine::options::Host::default(),
             rand_seed: None,
             fold: true,
-            query: QueryLevel::Declared,
+            mode: Mode::Values,
             meta: Vec::new(),
             skip_sheet: None,
             inspect: false,
@@ -172,32 +175,25 @@ pub struct Report {
     /// A reference computed at run time forced the whole workbook to be kept.
     pub dynamic_refs: bool,
     pub unsupported: BTreeSet<String>,
-    /// Warnings of the build (text outside the scripts the collation orders as LibreOffice does…).
+    /// Warnings of the build (text outside the scripts the collation orders as `LibreOffice` does…).
     pub warnings: Vec<String>,
     /// Every function called in the workbook's formulas and how many times
     /// (including the ones the engine does not implement).
     pub function_uses: std::collections::BTreeMap<String, usize>,
 }
 
-#[derive(Debug)]
-pub struct CompileError(pub String);
-
-impl std::fmt::Display for CompileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for CompileError {}
-
-fn err<T>(msg: impl Into<String>) -> Result<T, CompileError> {
-    Err(CompileError(msg.into()))
+fn err<T>(msg: impl Into<String>) -> Result<T> {
+    Err(Error::Compile(msg.into()))
 }
 
 const MAX_BINDING_CELLS: u64 = 10_000_000;
 
 /// Resolve a user-facing target to a rectangle.
-pub fn resolve_target(model: &Model, target: &str) -> Result<Rect, CompileError> {
+///
+/// # Errors
+///
+/// When `target` is not a name or an address of the model, or names a sheet it does not have.
+pub fn resolve_target(model: &Model, target: &str) -> Result<Rect> {
     let (sheet, tail) = addr::split_sheet(target.trim());
     let sheet_id = match &sheet {
         Some(n) => model.sheet_id(n),
@@ -228,7 +224,7 @@ pub fn resolve_target(model: &Model, target: &str) -> Result<Rect, CompileError>
 /// an input holds constants (an input with a value keeps it as its default, and
 /// one without is simply empty), and an output covers at least one value or
 /// formula.
-fn check_bindings(model: &Model, spec: &Spec) -> Result<(), CompileError> {
+fn check_bindings(model: &Model, spec: &Spec) -> Result<()> {
     let label = |b: &BindingSpec| match &b.name {
         Some(n) => format!("`{n}` ({})", b.target),
         None => format!("`{}`", b.target),
@@ -309,6 +305,7 @@ struct Flags {
 }
 
 /// The peak resident memory of the process so far, in MB, where `/proc` reports it.
+#[must_use]
 pub fn peak_rss_mb() -> Option<u64> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
     let kb = status
@@ -322,9 +319,15 @@ pub fn peak_rss_mb() -> Option<u64> {
     Some(kb / 1024)
 }
 
+/// The start of the stage timing, taken only when `SHEETC_TRACE` is set: reading the clock panics on
+/// `wasm32-unknown-unknown`, where the variable is never set.
+fn trace_start() -> Option<std::time::Instant> {
+    std::env::var_os("SHEETC_TRACE").map(|_| std::time::Instant::now())
+}
+
 /// Phase timing and peak memory on stderr when `SHEETC_TRACE` is set.
-fn trace(t0: &std::time::Instant, label: &str) {
-    if std::env::var_os("SHEETC_TRACE").is_some() {
+fn trace(t0: Option<&std::time::Instant>, label: &str) {
+    if let Some(t0) = t0 {
         eprintln!(
             "[compile {:>8.2?}] {label} (peak {} MB)",
             t0.elapsed(),
@@ -341,7 +344,7 @@ struct Lowered {
     cached: FastMap<CellRef, Value>,
     diags: Vec<String>,
     unsupported: BTreeSet<String>,
-    /// Functions of LibreOffice the engine lacks, with the first cell that calls each.
+    /// Functions of `LibreOffice` the engine lacks, with the first cell that calls each.
     missing: std::collections::BTreeMap<String, CellRef>,
     /// Formulas whose syntax the parser does not read: the cell, the formula and why.
     syntax: Vec<(CellRef, String, String)>,
@@ -379,7 +382,8 @@ fn lower_chunk(
                     model.settings.string_ref_excel.unwrap_or(true),
                 );
                 if c.array
-                    && let Some(id) = crate::functions::lookup(crate::ir::Ns::Core, "_ARRAY")
+                    && let Some(id) =
+                        sheetrs_engine::functions::lookup(sheetrs_engine::ir::Ns::Core, "_ARRAY")
                 {
                     e = Expr::Call(id, vec![e]);
                 }
@@ -388,7 +392,7 @@ fn lower_chunk(
                     Expr::Unknown(call) => {
                         let name = &call.0;
                         out.unsupported.insert(name.to_string());
-                        if crate::functions::in_catalogue(name) {
+                        if sheetrs_engine::functions::in_catalogue(name) {
                             out.missing.entry(name.to_string()).or_insert(at);
                         }
                         *out.function_uses.entry(name.to_string()).or_default() += 1;
@@ -397,7 +401,7 @@ fn lower_chunk(
                         let name = id.def().name;
                         if name == "TEXT"
                             && let Some(Expr::Const(Value::Text(code))) = args.get(1)
-                            && crate::format::has_foreign_language_tag(code)
+                            && sheetrs_engine::format::has_foreign_language_tag(code)
                         {
                             out.options.push((
                                 at,
@@ -420,7 +424,7 @@ fn lower_chunk(
             // references, `#` spills…): the build stops, see `compile`.
             Err(e) => {
                 out.diags.push(format!("unsupported syntax ({e})"));
-                out.syntax.push((at, f.to_string(), e.to_string()));
+                out.syntax.push((at, f.clone(), e.to_string()));
             }
         }
         let sheet = model
@@ -434,8 +438,58 @@ fn lower_chunk(
     out
 }
 
-pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileError> {
-    let t0 = std::time::Instant::now();
+/// # Errors
+///
+/// When the document defines a setting that the spec overrides, or the model cannot be compiled (an unknown name, a reference that cannot be resolved, a formula that does not parse).
+///
+/// # Panics
+///
+/// When a thread that lowers formulas panics.
+pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
+    // The editor's recalculation (`Mode::Recalculate`, built by no command) has no declarations: every
+    // formula is an output and any constant an input. An embedded program takes them as any program
+    // does, and deduces what it does not declare.
+    let cleared;
+    let spec = if spec.mode == Mode::Recalculate
+        && (!spec.inputs.is_empty() || spec.inputs_declared || !spec.outputs.is_empty())
+    {
+        let mut notes = spec.notes.clone();
+        notes.push(
+            "the inputs and outputs the settings declare are discarded: in this mode every formula is an output and any constant an input"
+                .into(),
+        );
+        cleared = Spec {
+            notes,
+            inputs: Vec::new(),
+            inputs_declared: false,
+            outputs: Vec::new(),
+            // What the settings declared as inputs and outputs is not exposed: the rest is kept.
+            meta: spec
+                .meta
+                .iter()
+                .filter(|m| !matches!(m.meta_type.as_str(), "input" | "output"))
+                .cloned()
+                .collect(),
+            ..spec.clone()
+        };
+        &cleared
+    } else {
+        spec
+    };
+    // With no input declared they are deduced, in every mode: the dependency graph decides, the
+    // inputs are the constants a path starts from. Only a recalculated workbook (no input is given
+    // to it) keeps every constant as a node, as it is.
+    let deduce_inputs = spec.inputs.is_empty() && !spec.inputs_declared;
+    let every_constant_input = deduce_inputs && spec.mode == Mode::Recalculate;
+    let analyse_inputs = deduce_inputs && !every_constant_input;
+    // An embedded workbook with no outputs declared calculates every formula and writes them all:
+    // the inputs it deduces (the constants some formula reads) need no node in the graph, which
+    // would only taint what depends on them for a fold that has nothing to fold. They are listed as
+    // the inputs, and the constants stay where they are, as in a workbook mode that takes them all.
+    let lazy_inputs = analyse_inputs && spec.mode == Mode::Embedded && spec.outputs.is_empty();
+    let fold = spec.fold && !every_constant_input && !lazy_inputs;
+    let mut deduced: Vec<CellRef> = Vec::new();
+    let t0 = trace_start();
     if model.from_file
         && let Some(what) = [
             (spec.date_system.is_some(), "date system"),
@@ -478,6 +532,9 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         .filter(|(_, c)| c.formula.is_some())
         .collect();
     report.formulas_total += formula_cells.len();
+    // Where the formulas are, whatever becomes of each below (lowered, folded, or kept as the value
+    // the file cached): the outputs nothing declares are the cells that are calculated.
+    let formula_positions: Vec<CellRef> = formula_cells.iter().map(|(at, _)| *at).collect();
     // Lowering a formula reads only the model: the cells go to as many threads as
     // the machine has, and what each one found is merged afterwards (the result is
     // sorted below, so the order they finish in does not matter).
@@ -485,17 +542,30 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         .map_or(1, usize::from)
         .min(8);
     let chunk = formula_cells.len().div_ceil(workers).max(1);
-    let lowered: Vec<Lowered> = std::thread::scope(|scope| {
-        let handles: Vec<_> = formula_cells
-            .chunks(chunk)
-            .map(|part| scope.spawn(move || lower_chunk(model, part, calc_syntax, spec.features)))
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().expect("a lowering thread panicked"))
-            .collect()
-    });
-    let mut missing: std::collections::BTreeMap<String, CellRef> = Default::default();
+    let lowered: Vec<Lowered> = if workers == 1 {
+        // No thread to start: the only way on `wasm32-unknown-unknown`, which has none.
+        vec![lower_chunk(
+            model,
+            &formula_cells,
+            calc_syntax,
+            spec.features,
+        )]
+    } else {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = formula_cells
+                .chunks(chunk)
+                .map(|part| {
+                    scope.spawn(move || lower_chunk(model, part, calc_syntax, spec.features))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("a lowering thread panicked"))
+                .collect()
+        })
+    };
+    let mut missing: std::collections::BTreeMap<String, CellRef> =
+        std::collections::BTreeMap::default();
     let mut syntax: Vec<(CellRef, String, String)> = Vec::new();
     let mut options: Vec<(CellRef, String)> = Vec::new();
     for part in lowered {
@@ -517,9 +587,9 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
     formulas.sort_unstable_by_key(|(at, _)| *at);
     subtotal_cells.sort_unstable();
 
-    trace(&t0, "parsed formulas");
+    trace(t0.as_ref(), "parsed formulas");
     if !model.unsupported_options.is_empty() && !spec.inspect {
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "the workbook uses an option this engine does not support, so it cannot replace LibreOffice for it: {}",
             model.unsupported_options.join("; ")
         )));
@@ -534,10 +604,13 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                     .sheets
                     .get(at.sheet as usize)
                     .map_or("?", String::as_str);
-                format!("{sheet}!{} `{f}` ({why})", crate::addr::a1(at.row, at.col))
+                format!(
+                    "{sheet}!{} `{f}` ({why})",
+                    sheetrs_engine::addr::a1(at.row, at.col)
+                )
             })
             .collect();
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "{} formula(s) use syntax this engine does not support, so it cannot replace LibreOffice for the workbook; first: {}",
             syntax.len(),
             list.join("; ")
@@ -553,10 +626,13 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                     .sheets
                     .get(at.sheet as usize)
                     .map_or("?", String::as_str);
-                format!("{sheet}!{}: {what}", crate::addr::a1(at.row, at.col))
+                format!(
+                    "{sheet}!{}: {what}",
+                    sheetrs_engine::addr::a1(at.row, at.col)
+                )
             })
             .collect();
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "{} formula(s) use an option this engine does not support, so it cannot replace LibreOffice for the workbook; first: {}",
             options.len(),
             list.join("; ")
@@ -573,11 +649,11 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                 format!(
                     "{name} ({}x, first at {sheet}!{})",
                     report.function_uses.get(name).copied().unwrap_or(0),
-                    crate::addr::a1(at.row, at.col)
+                    sheetrs_engine::addr::a1(at.row, at.col)
                 )
             })
             .collect();
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "the workbook calls {} function(s) of LibreOffice that this engine does not implement, so it cannot replace LibreOffice for it: {}",
             missing.len(),
             list.join(", ")
@@ -608,14 +684,42 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         }
         inputs.push(Binding { name, rect });
     }
+    if lazy_inputs {
+        deduced = constants_that_start_a_path(model, &formulas, spec.skip_sheet);
+    } else if analyse_inputs {
+        input_nodes.extend(
+            constants_that_start_a_path(model, &formulas, spec.skip_sheet)
+                .into_iter()
+                .map(|at| {
+                    let value = model
+                        .cells
+                        .get(&at)
+                        .map_or(Value::Empty, |mc| mc.value.clone());
+                    (at, CellKind::Input(value))
+                }),
+        );
+    }
+    trace(t0.as_ref(), "constants that start a path");
     if !input_nodes.is_empty() {
-        // An input replaces whatever formula or constant sat in its cell.
-        let set: FastSet<CellRef> = input_nodes.iter().map(|(a, _)| *a).collect();
-        formulas.retain(|(a, _)| !set.contains(a));
-        cached.retain(|a, _| !set.contains(a));
-        formulas.extend(input_nodes);
-        formulas.sort_unstable_by_key(|(at, _)| *at);
-        formulas.dedup_by_key(|(at, _)| *at);
+        // An input replaces whatever formula or constant sat in its cell. Both lists are in order
+        // of position (`formulas` was sorted above), so one merge puts them together.
+        input_nodes.sort_by_key(|(a, _)| *a);
+        input_nodes.dedup_by_key(|(a, _)| *a);
+        let mut merged: Vec<(CellRef, CellKind)> =
+            Vec::with_capacity(formulas.len() + input_nodes.len());
+        let mut rest = std::mem::take(&mut formulas).into_iter().peekable();
+        for (at, kind) in input_nodes {
+            while rest.peek().is_some_and(|(a, _)| *a < at) {
+                merged.extend(rest.next());
+            }
+            if rest.peek().is_some_and(|(a, _)| *a == at) {
+                rest.next();
+                cached.remove(&at);
+            }
+            merged.push((at, kind));
+        }
+        merged.extend(rest);
+        formulas = merged;
     }
     let mut outputs = Vec::new();
     for b in &spec.outputs {
@@ -631,25 +735,44 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             rect,
         });
     }
-    if spec.outputs.is_empty() && spec.query == QueryLevel::Declared {
-        let mut bbs: Vec<Option<(u32, u32, u32, u32)>> = vec![None; model.sheets.len()];
-        for (at, k) in &formulas {
-            if matches!(k, CellKind::Formula(_)) && Some(at.sheet) != spec.skip_sheet {
-                let bb = &mut bbs[at.sheet as usize];
+    if spec.outputs.is_empty() {
+        // Nothing declared: the outputs are the cells that are calculated (the formulas, not the
+        // constants), as the rectangles that hold them, the same in every mode.
+        let positions: Vec<CellRef> = formula_positions
+            .iter()
+            .copied()
+            .filter(|at| Some(at.sheet) != spec.skip_sheet)
+            .collect();
+        let rects = formula_rects(&positions);
+        if rects.len() > MAX_FORMULA_OUTPUTS {
+            // A scatter of formulas that needs a rectangle for each few of them: the used area of
+            // the formulas of each sheet, constants in between included, is one output per sheet.
+            diags.push(format!(
+                "the formulas lie in {} separate rectangles: each sheet's outputs are the area that holds its formulas, constants in it included",
+                rects.len()
+            ));
+            let mut bbs: Vec<Option<Rect>> = vec![None; model.sheets.len()];
+            for r in &rects {
+                let bb = &mut bbs[usize::from(r.sheet)];
                 *bb = Some(match *bb {
-                    None => (at.row, at.col, at.row, at.col),
-                    Some((r0, c0, r1, c1)) => (
-                        r0.min(at.row),
-                        c0.min(at.col),
-                        r1.max(at.row),
-                        c1.max(at.col),
+                    None => *r,
+                    Some(b) => Rect::new(
+                        r.sheet,
+                        b.r0.min(r.r0),
+                        b.c0.min(r.c0),
+                        b.r1.max(r.r1),
+                        b.c1.max(r.c1),
                     ),
                 });
             }
-        }
-        for (s, bb) in bbs.into_iter().enumerate() {
-            if let Some((r0, c0, r1, c1)) = bb {
-                let rect = Rect::new(s as u16, r0, c0, r1, c1);
+            for rect in bbs.into_iter().flatten() {
+                outputs.push(Binding {
+                    name: addr::qualified(&model.sheets, &rect),
+                    rect,
+                });
+            }
+        } else {
+            for rect in rects {
                 outputs.push(Binding {
                     name: addr::qualified(&model.sheets, &rect),
                     rect,
@@ -666,64 +789,54 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         }
     }
 
-    // Ranges kept for run-time queries.
-    let mut query_rects: Vec<Rect> = Vec::new();
+    // The defined names that can be used as aliases: a name that points inside the outputs is an
+    // alias of that output, one that points inside the declared inputs of those inputs (one inside
+    // deduced inputs is added once they are known). None may point into the settings sheet.
     let mut named: Vec<Binding> = Vec::new();
-    // Defined names that can be read by name: all but the plain-range ones are
-    // reported, and none may point into the settings sheet.
-    if spec.query != QueryLevel::Declared {
+    let mut outside: Vec<Binding> = Vec::new();
+    {
         let mut skipped = Vec::new();
+        let inside = |rect: &Rect, list: &[Binding]| {
+            list.iter().any(|b| {
+                let o = &b.rect;
+                o.sheet == rect.sheet
+                    && o.r0 <= rect.r0
+                    && o.c0 <= rect.c0
+                    && o.r1 >= rect.r1
+                    && o.c1 >= rect.c1
+            })
+        };
         for name in model.names.keys() {
             match resolve_target(model, name) {
                 Ok(rect) if Some(rect.sheet) == spec.skip_sheet => {}
-                Ok(rect) if rect.area() <= MAX_BINDING_CELLS => named.push(Binding {
-                    name: name.clone(),
-                    rect,
-                }),
+                Ok(rect) if rect.area() <= MAX_BINDING_CELLS => {
+                    let b = Binding {
+                        name: name.clone(),
+                        rect,
+                    };
+                    if inside(&rect, &outputs) || inside(&rect, &inputs) {
+                        named.push(b);
+                    } else {
+                        outside.push(b);
+                    }
+                }
                 _ => skipped.push(name.as_str()),
             }
         }
-        named.sort_by(|a, b| a.name.cmp(&b.name));
         if !skipped.is_empty() {
             skipped.sort_unstable();
             diags.push(format!(
-                "defined names that are not a plain range cannot be read by name: {}",
+                "defined names that are not a plain range cannot be used as aliases: {}",
                 skipped.join(", ")
             ));
         }
     }
-    match spec.query {
-        QueryLevel::Declared => {}
-        QueryLevel::Named => query_rects.extend(named.iter().map(|b| b.rect)),
-        QueryLevel::Any => {
-            let mut ext = vec![(0u32, 0u32); model.sheets.len().max(1)];
-            for at in model.cells.keys() {
-                let e = &mut ext[at.sheet as usize];
-                e.0 = e.0.max(at.row + 1);
-                e.1 = e.1.max(at.col + 1);
-            }
-            for (s, (rows, cols)) in ext.into_iter().enumerate() {
-                if rows > 0 && cols > 0 && Some(s as u16) != spec.skip_sheet {
-                    query_rects.push(Rect::new(s as u16, 0, 0, rows - 1, cols - 1));
-                }
-            }
-        }
-    }
-    // The names that can be read by name are also listed by `--meta`.
-    let queryable_names: Vec<String> = named.iter().map(|b| b.name.clone()).collect();
-    let queryable = match spec.query {
-        QueryLevel::Declared => Queryable::Declared,
-        QueryLevel::Named => Queryable::Named(named),
-        QueryLevel::Any => Queryable::Any {
-            excluded: spec.skip_sheet.into_iter().collect(),
-            names: named,
-        },
-    };
 
-    trace(&t0, "bindings");
+    trace(t0.as_ref(), "bindings");
     let n = formulas.len();
     let (ats, mut kinds): (Vec<CellRef>, Vec<CellKind>) = formulas.into_iter().unzip();
-    let mut ids: FastMap<CellRef, u32> = FastMap::with_capacity_and_hasher(n, Default::default());
+    let mut ids: FastMap<CellRef, u32> =
+        FastMap::with_capacity_and_hasher(n, std::hash::BuildHasherDefault::default());
     let mut by_sheet: Vec<Vec<u32>> = vec![Vec::new(); model.sheets.len().max(1)];
     for (i, at) in ats.iter().enumerate() {
         ids.insert(*at, i as u32);
@@ -736,7 +849,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
     };
     let view = ConstView::new(model, &cached);
 
-    trace(&t0, "index built");
+    trace(t0.as_ref(), "index built");
     // ----- 2. dependency graph, lazily, from the outputs -----
     let mut g = Lazy {
         index,
@@ -747,8 +860,10 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         flags: FastMap::default(),
         deps: Vec::new(),
     };
+    // What the program has to compute: the outputs.
+    let wanted: Vec<Rect> = outputs.iter().map(|b| b.rect).collect();
     let mut roots: Vec<u32> = Vec::new();
-    for r in outputs.iter().map(|b| &b.rect).chain(&query_rects) {
+    for r in &wanted {
         g.members(r, &mut roots);
     }
     let mut visited = vec![false; n];
@@ -756,7 +871,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
     let mut stack = roots;
     let mut all = false;
     while let Some(v) = stack.pop() {
-        if g.seen(&mut visited, v) {
+        if Lazy::seen(&mut visited, v) {
             continue;
         }
         cone.push(v);
@@ -779,11 +894,11 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         .collect();
     let csr = Csr::from_adjacency(&adj_c);
     drop(adj_c);
-    trace(&t0, "cone + csr");
+    trace(t0.as_ref(), "cone + csr");
     let sccs = graph::tarjan(&csr);
     report.cells_reachable = cone.iter().filter(|&&v| (v as usize) < n).count();
 
-    trace(&t0, "scc");
+    trace(t0.as_ref(), "scc");
     // ----- 3/4. taint and fold -----
     let mut tainted = vec![false; cone.len()];
     let mut comp_cyclic = Vec::new();
@@ -797,7 +912,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                     CellKind::Formula(e) => {
                         let f = g.flags.get(&v);
                         let _ = e;
-                        t |= !spec.fold || f.is_some_and(|f| f.dynamic || f.volatile);
+                        t |= !fold || f.is_some_and(|f| f.dynamic || f.volatile);
                     }
                     CellKind::Const(_) => {}
                 }
@@ -845,7 +960,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         },
     };
 
-    trace(&t0, "taint");
+    trace(t0.as_ref(), "taint");
     // Evaluate the input-independent formulas now, reading the workbook's
     // constants in place.
     let mut folded: Vec<Option<Value>> = vec![None; n];
@@ -887,13 +1002,15 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             cycles,
             inputs: Vec::new(),
             outputs: Vec::new(),
-            queryable: Queryable::Declared,
+            queryable: Queryable::default(),
+            mode: Mode::Values,
+            formula_cells: Vec::new(),
             meta: Vec::new(),
             diagnostics: Vec::new(),
-            build: Default::default(),
+            build: BuildInfo::default(),
         };
         let mut eng = Engine::with_base(&tmp, opts.clone(), &view);
-        eng.run();
+        eng.calculate();
         if !eng.violations.is_empty() && !spec.inspect {
             let mut kinds: Vec<&'static str> = eng.violations.iter().map(|v| v.1).collect();
             kinds.sort_unstable();
@@ -916,7 +1033,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                             .sheets
                             .get(a.sheet as usize)
                             .map_or("?", String::as_str);
-                        format!("{sheet}!{}", crate::addr::a1(a.row, a.col))
+                        format!("{sheet}!{}", sheetrs_engine::addr::a1(a.row, a.col))
                     })
                     .collect();
                 msgs.push(format!(
@@ -925,7 +1042,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                     list.join(", ")
                 ));
             }
-            return Err(CompileError(msgs.join("; ")));
+            return Err(Error::Compile(msgs.join("; ")));
         }
         for (d, &v) in tmp.cells.iter().zip(&handed) {
             report.formulas_folded += 1;
@@ -941,29 +1058,48 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         }
     }
 
-    trace(&t0, "fold evaluated");
+    trace(t0.as_ref(), "fold evaluated");
     // What the surviving computation (and the outputs) still read: folded
     // formulas as constants, and the workbook's own constants.
     let mut need_rects: FastSet<Rect> = FastSet::default();
-    for (i, &v) in cone.iter().enumerate() {
-        if tainted[i]
-            && (v as usize) < n
-            && let CellKind::Formula(e) = &kinds[v as usize]
-        {
-            need_rects.extend(dependencies(e).0);
+    // With the inputs deduced, the constants the formulas read are the inputs already (nodes of the
+    // graph, or listed apart when they are lazy): what these rectangles can still add is a folded
+    // formula, so with every formula tainted (nothing folded) only the outputs may hold constants
+    // of their own.
+    let nothing_folded = tainted.iter().all(|&t| t);
+    if !(lazy_inputs || analyse_inputs && nothing_folded) {
+        for (i, &v) in cone.iter().enumerate() {
+            if tainted[i]
+                && (v as usize) < n
+                && let CellKind::Formula(e) = &kinds[v as usize]
+            {
+                need_rects.extend(dependencies(e).0);
+            }
+        }
+        for &id in &blank_ids {
+            if let CellKind::Formula(e) = &kinds[id as usize] {
+                need_rects.extend(dependencies(e).0);
+            }
         }
     }
-    for &id in &blank_ids {
-        if let CellKind::Formula(e) = &kinds[id as usize] {
-            need_rects.extend(dependencies(e).0);
-        }
-    }
-    need_rects.extend(outputs.iter().map(|b| b.rect));
-    need_rects.extend(query_rects.iter().copied());
+    need_rects.extend(wanted.iter().copied());
     let mut need_folded: FastSet<u32> = FastSet::default();
     let mut const_cells: Vec<CellRef> = Vec::new();
+    // Where the constants that are not in order begin, when the first run is (see `all_consts`).
+    let mut ordered_until = 0;
     let mut members = Vec::new();
+    // A rectangle inside one of the outputs adds nothing the output does not have: with the whole of
+    // every sheet an output (nothing declared) that is almost every rectangle of the formulas.
+    let inside_an_output = |r: &Rect| {
+        !wanted.contains(r)
+            && wanted.iter().any(|o| {
+                o.sheet == r.sheet && o.r0 <= r.r0 && o.c0 <= r.c0 && o.r1 >= r.r1 && o.c1 >= r.c1
+            })
+    };
     for r in &need_rects {
+        if inside_an_output(r) {
+            continue;
+        }
         members.clear();
         index.members(r, &mut members);
         need_folded.extend(members.iter().copied().filter(|&id| {
@@ -978,34 +1114,146 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                 .filter(|&v| (v as usize) < n && !tainted[compact[v as usize] as usize]),
         );
         const_cells.clear();
-        view.all_consts(&ids, &mut const_cells);
+        ordered_until = view.all_consts(&ids, &mut const_cells);
     }
-    const_cells.sort_unstable();
+    // The constants of the model are in order: sort only what is not, and merge the two runs.
+    let mut rest = const_cells.split_off(ordered_until);
+    rest.sort_unstable();
+    if ordered_until == 0 {
+        const_cells = rest;
+    } else {
+        let mut merged = Vec::with_capacity(const_cells.len() + rest.len());
+        let (mut a, mut b) = (const_cells.iter().peekable(), rest.iter().peekable());
+        while let (Some(x), Some(y)) = (a.peek(), b.peek()) {
+            merged.push(
+                if x <= y { a.next() } else { b.next() }
+                    .copied()
+                    .expect("peeked"),
+            );
+        }
+        merged.extend(a.copied());
+        merged.extend(b.copied());
+        const_cells = merged;
+    }
     const_cells.dedup();
+    if !deduced.is_empty() {
+        // The deduced inputs are cells of the program, read or not: a name may cover them.
+        let mut union = Vec::with_capacity(const_cells.len() + deduced.len());
+        let (mut a, mut b) = (const_cells.iter().peekable(), deduced.iter().peekable());
+        loop {
+            let next = match (a.peek(), b.peek()) {
+                (Some(x), Some(y)) => match x.cmp(y) {
+                    std::cmp::Ordering::Less => a.next(),
+                    std::cmp::Ordering::Greater => b.next(),
+                    std::cmp::Ordering::Equal => {
+                        b.next();
+                        a.next()
+                    }
+                },
+                (Some(_), None) => a.next(),
+                (None, Some(_)) => b.next(),
+                (None, None) => break,
+            };
+            union.extend(next.copied());
+        }
+        const_cells = union;
+    }
 
-    trace(&t0, "needed");
+    trace(t0.as_ref(), "needed");
     // ----- assemble -----
-    let mut consts: Vec<(CellRef, Value)> = const_cells
+    // The constants of the workbook are in order already; the formulas folded to a value come out
+    // of a hash set. The nodes are numbered in the order of their positions (`ats` is sorted), so
+    // sorting their numbers (four bytes each) puts them in order, and the two runs are merged: no
+    // sort of the fat pairs, and each value is built once.
+    let mut folded_ids: Vec<u32> = need_folded
         .iter()
-        .map(|&at| (at, view.get(at).unwrap_or_default()))
+        .copied()
+        .filter(|id| !blank_ids.contains(id))
         .collect();
-    consts.extend(
-        need_folded
+    folded_ids.sort_unstable();
+    let mut cells: Vec<CellDef> = Vec::with_capacity(const_cells.len() + folded_ids.len());
+    let (mut next_const, mut next_folded) =
+        (const_cells.iter().peekable(), folded_ids.iter().peekable());
+    let mut next_input = deduced.iter().peekable();
+    loop {
+        let take_const = match (next_const.peek(), next_folded.peek()) {
+            (Some(c), Some(&&f)) => **c <= ats[f as usize],
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => break,
+        };
+        let (at, v) = if take_const {
+            let at = *next_const.next().expect("peeked");
+            (at, view.get(at).unwrap_or_default())
+        } else {
+            let id = *next_folded.next().expect("peeked");
+            let v = folded[id as usize].clone();
+            (ats[id as usize], v.expect("a folded formula has its value"))
+        };
+        // In a workbook mode every constant is an input; otherwise the ones that start a path are
+        // already nodes of the graph (`Input`), and the rest are constants.
+        let is_input = take_const
+            && (every_constant_input || {
+                while next_input.peek().is_some_and(|d| **d < at) {
+                    next_input.next();
+                }
+                next_input.peek().is_some_and(|d| **d == at)
+            });
+        let kind = if is_input {
+            CellKind::Input(v)
+        } else {
+            CellKind::Const(v)
+        };
+        cells.push(CellDef { at, kind });
+    }
+    if every_constant_input {
+        // The inputs are all the constants the program keeps, as the fewest rectangles that cover
+        // exactly them; a name that points inside them is an alias of those inputs.
+        for rect in coalesce(&const_cells) {
+            inputs.push(Binding {
+                name: addr::qualified(&model.sheets, &rect),
+                rect,
+            });
+        }
+        add_input_aliases(&mut named, outside, &const_cells);
+    } else if lazy_inputs {
+        // The inputs are the constants some formula reads (or a name covers), as the fewest
+        // rectangles that cover exactly them.
+        for rect in coalesce(&deduced) {
+            inputs.push(Binding {
+                name: addr::qualified(&model.sheets, &rect),
+                rect,
+            });
+        }
+        add_input_aliases(&mut named, outside, &deduced);
+    } else if analyse_inputs {
+        // The inputs are the constants a path of the kept computation starts from: those that
+        // survived the pruning, as the fewest rectangles that cover exactly them.
+        let mut started: Vec<CellRef> = cells
             .iter()
-            .filter(|id| !blank_ids.contains(id))
-            .map(|&id| {
-                let v = folded[id as usize].clone();
-                (ats[id as usize], v.expect("a folded formula has its value"))
-            }),
-    );
-    consts.sort_unstable_by_key(|(at, _)| *at);
-    let mut cells: Vec<CellDef> = consts
-        .into_iter()
-        .map(|(at, v)| CellDef {
-            at,
-            kind: CellKind::Const(v),
-        })
-        .collect();
+            .filter(|c| matches!(c.kind, CellKind::Input(_)))
+            .map(|c| c.at)
+            .collect();
+        for comp in sccs.components() {
+            for &m in comp {
+                let v = cone[m as usize];
+                if (v as usize) < n && matches!(kinds[v as usize], CellKind::Input(_)) {
+                    started.push(ats[v as usize]);
+                }
+            }
+        }
+        started.sort_unstable();
+        started.dedup();
+        for rect in coalesce(&started) {
+            inputs.push(Binding {
+                name: addr::qualified(&model.sheets, &rect),
+                rect,
+            });
+        }
+        add_input_aliases(&mut named, outside, &started);
+    }
+    named.sort_by(|a, b| a.name.cmp(&b.name));
+    let queryable = Queryable { names: named };
     let mut cycles = Vec::new();
     for (ci, comp) in sccs.components().enumerate() {
         if !tainted[comp[0] as usize] {
@@ -1169,7 +1417,7 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
                 {
                     match code_text(code, model, &lookup) {
                         None => unknown.push((d.at, "TEXT has a format code that depends on data that changes, which may name a language the engine has no names for".into())),
-                        Some(t) if crate::format::has_foreign_language_tag(&t) => {
+                        Some(t) if sheetrs_engine::format::has_foreign_language_tag(&t) => {
                             bad.push((d.at, format!("the code `{t}` names a language the engine has no month and day names for")));
                         }
                         Some(_) => {}
@@ -1227,6 +1475,28 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
         ));
     }
 
+    let meta = program_meta(model, spec, &queryable, &inputs, &outputs);
+    let formula_cells = if spec.mode.is_workbook() {
+        // The formulas the workbook answer writes: the ones inside the outputs (all of
+        // them when nothing is declared). They come in the order of the positions.
+        let declared = !spec.outputs.is_empty();
+        let written: Vec<CellRef> = formula_positions
+            .into_iter()
+            .filter(|at| {
+                Some(at.sheet) != spec.skip_sheet
+                    && (!declared
+                        || outputs.iter().any(|b| {
+                            let r = &b.rect;
+                            r.sheet == at.sheet
+                                && (r.r0..=r.r1).contains(&at.row)
+                                && (r.c0..=r.c1).contains(&at.col)
+                        }))
+            })
+            .collect();
+        sheetrs_engine::ir::CellRun::runs(written)
+    } else {
+        Vec::new()
+    };
     Ok((
         Program {
             sheets: model.sheets.clone(),
@@ -1237,8 +1507,10 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
             cycles,
             inputs,
             outputs,
+            mode: spec.mode,
+            formula_cells,
+            meta,
             queryable,
-            meta: program_meta(model, spec, &queryable_names),
             diagnostics: diags,
             build: build_info(model, spec),
         },
@@ -1249,14 +1521,17 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report), CompileE
 /// The moment of a build in UTC (`2026-10-30T12:00:00Z`): `SOURCE_DATE_EPOCH` (seconds since 1970)
 /// when it is set, so that a build can be repeated exactly; else the clock. A value that is not a
 /// number of seconds is an error: a build that was meant to repeat must not silently use the clock.
-pub fn build_time() -> Result<String, String> {
+///
+/// # Errors
+///
+/// When `SOURCE_DATE_EPOCH` is set and is not a number of seconds.
+pub fn build_time() -> Result<String> {
     let seconds = match std::env::var("SOURCE_DATE_EPOCH") {
-        Ok(value) => value.trim().parse::<i64>().map_err(|_| {
-            format!("SOURCE_DATE_EPOCH must be a number of seconds since 1970, not `{value}`")
-        })?,
-        Err(_) => std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs().cast_signed()),
+        Ok(value) => value
+            .trim()
+            .parse::<i64>()
+            .map_err(|_| Error::BuildTime(value.clone()))?,
+        Err(_) => sheetrs_engine::clock::unix_now().as_secs().cast_signed(),
     };
     Ok(format_utc(seconds))
 }
@@ -1287,6 +1562,49 @@ fn format_utc(seconds: i64) -> String {
     )
 }
 
+/// Most rectangles the formula cells of a workbook may be outputs as, before the outputs
+/// become the used area of the formulas of each sheet.
+const MAX_FORMULA_OUTPUTS: usize = 4096;
+
+/// The rectangles that hold exactly the cells `at` (sorted by position): the runs of consecutive
+/// cells of a row, and one under another when two rows have the same run.
+fn formula_rects(at: &[CellRef]) -> Vec<Rect> {
+    let mut rects: Vec<Rect> = Vec::new();
+    // The rectangle that ends in the row before, by sheet and columns.
+    let mut open: FastMap<(u16, u32, u32), usize> = FastMap::default();
+    let mut i = 0;
+    while i < at.len() {
+        let first = at[i];
+        let mut last = first.col;
+        let mut j = i + 1;
+        while j < at.len()
+            && at[j].sheet == first.sheet
+            && at[j].row == first.row
+            && at[j].col == last + 1
+        {
+            last = at[j].col;
+            j += 1;
+        }
+        let key = (first.sheet, first.col, last);
+        match open.get(&key).copied() {
+            Some(k) if first.row > 0 && rects[k].r1 + 1 == first.row => rects[k].r1 = first.row,
+            _ => {
+                open.insert(key, rects.len());
+                rects.push(Rect::new(
+                    first.sheet,
+                    first.row,
+                    first.col,
+                    first.row,
+                    last,
+                ));
+            }
+        }
+        i = j;
+    }
+    rects.sort_unstable_by_key(|r| (r.sheet, r.r0, r.c0));
+    rects
+}
+
 /// How the program is built: the compiler, the options that shape it and the workbook. The time
 /// is left empty: the command that builds sets it with [`build_time`].
 fn build_info(model: &Model, spec: &Spec) -> BuildInfo {
@@ -1295,10 +1613,16 @@ fn build_info(model: &Model, spec: &Spec) -> BuildInfo {
         target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         built_at: String::new(),
         options: BuildOptions {
-            outputs: match spec.query {
-                QueryLevel::Declared => "declared",
-                QueryLevel::Named => "named",
-                QueryLevel::Any => "any",
+            outputs: if spec.outputs.is_empty() {
+                "deduced"
+            } else {
+                "declared"
+            }
+            .to_string(),
+            inputs: if spec.inputs.is_empty() {
+                "deduced"
+            } else {
+                "declared"
             }
             .to_string(),
             locale: spec
@@ -1317,9 +1641,16 @@ fn build_info(model: &Model, spec: &Spec) -> BuildInfo {
 }
 
 /// What `--meta` lists, in this order: the properties the document declares (`document`), the rows
-/// of the settings sheet, and the defined names the program can read by name (`name`, only when it
-/// was built with `outputs = named` or `any`).
-fn program_meta(model: &Model, spec: &Spec, names: &[String]) -> Vec<Meta> {
+/// of the settings sheet, the inputs and the outputs that were not declared (so that what the
+/// program exposes is always listed: `input` and `output`, the value is the range), and the defined
+/// names that can be used as aliases (`name`).
+fn program_meta(
+    model: &Model,
+    spec: &Spec,
+    queryable: &Queryable,
+    inputs: &[Binding],
+    outputs: &[Binding],
+) -> Vec<Meta> {
     let entry = |key: &str, value: &str, meta_type: &str| Meta {
         key: key.to_string(),
         value: serde_json::Value::String(value.to_string()),
@@ -1332,7 +1663,23 @@ fn program_meta(model: &Model, spec: &Spec, names: &[String]) -> Vec<Meta> {
         .map(|(key, value)| entry(key, value, "document"))
         .collect();
     meta.extend(spec.meta.iter().cloned());
-    let mut names: Vec<&String> = names.iter().collect();
+    for (declared, list, kind) in [
+        (
+            !spec.inputs.is_empty() || spec.inputs_declared,
+            inputs,
+            "input",
+        ),
+        (!spec.outputs.is_empty(), outputs, "output"),
+    ] {
+        // A declared one is in the settings already (a row of the sheet, an entry of the file).
+        if !declared || !spec.meta.iter().any(|m| m.meta_type == kind) {
+            meta.extend(list.iter().map(|b| {
+                let range = addr::qualified(&model.sheets, &b.rect);
+                entry(&b.name, &range, kind)
+            }));
+        }
+    }
+    let mut names: Vec<&String> = queryable.names.iter().map(|b| &b.name).collect();
     names.sort();
     meta.extend(
         names
@@ -1340,6 +1687,142 @@ fn program_meta(model: &Model, spec: &Spec, names: &[String]) -> Vec<Meta> {
             .filter_map(|name| Some(entry(name, model.names.get(name)?, "name"))),
     );
     meta
+}
+
+/// The names that point inside the inputs are aliases of them: those whose every cell is one.
+fn add_input_aliases(named: &mut Vec<Binding>, outside: Vec<Binding>, inputs: &[CellRef]) {
+    for b in outside {
+        let all_inputs = b.rect.area() <= inputs.len() as u64
+            && (b.rect.r0..=b.rect.r1).all(|r| {
+                (b.rect.c0..=b.rect.c1).all(|c| {
+                    inputs
+                        .binary_search(&CellRef::new(b.rect.sheet, r, c))
+                        .is_ok()
+                })
+            });
+        if all_inputs {
+            named.push(b);
+        }
+    }
+}
+
+/// The constants a path of the dependency graph starts from, in order: those a formula reads (a
+/// reference or a range) and those inside a defined name or a table, which are exposed under that
+/// name. A constant that no formula reads and no name covers starts no path, so it is not an input
+/// (it may still be an output). A workbook that resolves references while it runs (`INDIRECT`,
+/// `OFFSET`) can read any cell, so there every constant counts.
+fn constants_that_start_a_path(
+    model: &Model,
+    formulas: &[(CellRef, CellKind)],
+    skip_sheet: Option<u16>,
+) -> Vec<CellRef> {
+    let key =
+        |at: CellRef| (u64::from(at.sheet) << 34) | (u64::from(at.row) << 14) | u64::from(at.col);
+    let unkey = |k: u64| {
+        CellRef::new(
+            (k >> 34) as u16,
+            ((k >> 14) & 0xF_FFFF) as u32,
+            (k & 0x3FFF) as u32,
+        )
+    };
+    let is_constant = |at: &CellRef| {
+        Some(at.sheet) != skip_sheet
+            && model
+                .cells
+                .get(at)
+                .is_some_and(|c| c.formula.is_none() && !matches!(c.value, Value::Empty))
+    };
+    // The references to one cell (almost all of them) go straight to a list of positions, and only
+    // the ranges are kept as rectangles: a set of millions of rectangles is the cost of this pass.
+    let mut keys: Vec<u64> = Vec::new();
+    let mut rects: FastSet<Rect> = FastSet::default();
+    let mut dynamic = false;
+    let mut deps: Vec<Rect> = Vec::new();
+    for (_, kind) in formulas {
+        if let CellKind::Formula(e) = kind {
+            deps.clear();
+            dynamic |= dependencies_into(e, &mut deps).dynamic;
+            for r in &deps {
+                if r.r0 == r.r1 && r.c0 == r.c1 {
+                    keys.push(key(CellRef::new(r.sheet, r.r0, r.c0)));
+                } else {
+                    rects.insert(*r);
+                }
+            }
+        }
+    }
+    for name in model.names.keys() {
+        if let Ok(rect) = resolve_target(model, name)
+            && rect.area() <= MAX_BINDING_CELLS
+        {
+            rects.insert(rect);
+        }
+    }
+    let total = model.cells.len() as u64;
+    if dynamic {
+        keys.clear();
+        keys.extend(model.cells.keys().filter(|at| is_constant(at)).map(key));
+    } else {
+        keys.sort_unstable();
+        keys.dedup();
+        keys.retain(|k| is_constant(&unkey(*k)));
+        for r in &rects {
+            if r.area() <= total * 4 + 64 {
+                for row in r.r0..=r.r1 {
+                    for col in r.c0..=r.c1 {
+                        let at = CellRef::new(r.sheet, row, col);
+                        if is_constant(&at) {
+                            keys.push(key(at));
+                        }
+                    }
+                }
+            } else {
+                keys.extend(
+                    model
+                        .cells
+                        .keys()
+                        .filter(|at| r.contains(*at) && is_constant(at))
+                        .map(key),
+                );
+            }
+        }
+    }
+    keys.sort_unstable();
+    keys.dedup();
+    keys.into_iter().map(unkey).collect()
+}
+
+/// The fewest rectangles that cover exactly the cells (sorted, without repeats): the runs of a row,
+/// joined with the run of the row above that has the same columns.
+fn coalesce(cells: &[CellRef]) -> Vec<Rect> {
+    use std::collections::HashMap;
+    let mut rects: Vec<Rect> = Vec::new();
+    // The rectangle that ends in the previous row, by sheet and columns.
+    let mut open: HashMap<(u16, u32, u32), usize> = HashMap::new();
+    let mut i = 0;
+    while i < cells.len() {
+        let (sheet, row, c0) = (cells[i].sheet, cells[i].row, cells[i].col);
+        let mut c1 = c0;
+        let mut j = i + 1;
+        while j < cells.len()
+            && cells[j].sheet == sheet
+            && cells[j].row == row
+            && cells[j].col == c1 + 1
+        {
+            c1 += 1;
+            j += 1;
+        }
+        match open.get(&(sheet, c0, c1)).copied() {
+            Some(k) if rects[k].r1 + 1 == row => rects[k].r1 = row,
+            _ => {
+                open.insert((sheet, c0, c1), rects.len());
+                rects.push(Rect::new(sheet, row, c0, row, c1));
+            }
+        }
+        i = j;
+    }
+    rects.sort_by_key(|r| (r.sheet, r.r0, r.c0));
+    rects
 }
 
 /// The workbook's constants, read in place (see `ConstSource`).
@@ -1387,14 +1870,19 @@ impl<'m> ConstView<'m> {
         }
     }
 
-    fn all_consts(&self, nodes: &FastMap<CellRef, u32>, out: &mut Vec<CellRef>) {
+    /// Every constant, in `out`: first those of the model, which come in the order of the
+    /// positions, then the cached results of folded formulas, which come in any order. Returns where
+    /// the second run starts.
+    fn all_consts(&self, nodes: &FastMap<CellRef, u32>, out: &mut Vec<CellRef>) -> usize {
         out.extend(
             self.model
                 .cells
                 .keys()
                 .filter(|at| !nodes.contains_key(at) && self.get(*at).is_some()),
         );
+        let ordered = out.len();
         out.extend(self.cached.keys().filter(|at| !nodes.contains_key(at)));
+        ordered
     }
 }
 
@@ -1464,7 +1952,7 @@ impl Lazy<'_> {
         self.kinds.len() as u32
     }
 
-    fn seen(&self, visited: &mut Vec<bool>, v: u32) -> bool {
+    fn seen(visited: &mut Vec<bool>, v: u32) -> bool {
         if visited.len() <= v as usize {
             visited.resize(v as usize + 1, false);
         }
@@ -1649,7 +2137,8 @@ fn offset_const(args: &[Expr]) -> Option<Rect> {
 
 #[cfg(test)]
 mod build_time_tests {
-    use super::format_utc;
+    use super::{format_utc, formula_rects};
+    use sheetrs_engine::addr::{self, CellRef};
 
     #[test]
     fn the_time_is_utc() {
@@ -1662,5 +2151,38 @@ mod build_time_tests {
         ] {
             assert_eq!(format_utc(epoch), text, "{epoch}");
         }
+    }
+
+    #[test]
+    fn formula_cells_become_the_rectangles_that_hold_exactly_them() {
+        let at = |sheet, row, col| CellRef::new(sheet, row, col);
+        // Sheet 0: a column (B1:B3), a cell (D1), a block (F1:G2) and a lone cell below the
+        // column (B5, not joined to it); sheet 1: one cell.
+        let cells = [
+            at(0, 0, 1),
+            at(0, 0, 3),
+            at(0, 0, 5),
+            at(0, 0, 6),
+            at(0, 1, 1),
+            at(0, 1, 5),
+            at(0, 1, 6),
+            at(0, 2, 1),
+            at(0, 4, 1),
+            at(1, 0, 0),
+        ];
+        let rects = formula_rects(&cells);
+        let text: Vec<String> = rects.iter().map(addr::rect_text).collect();
+        assert_eq!(text, ["B1:B3", "D1", "F1:G2", "B5", "A1"]);
+        let mut held: Vec<(u16, u32, u32)> = rects
+            .iter()
+            .flat_map(|r| {
+                (r.r0..=r.r1).flat_map(move |row| (r.c0..=r.c1).map(move |c| (r.sheet, row, c)))
+            })
+            .collect();
+        held.sort_unstable();
+        let mut wanted: Vec<(u16, u32, u32)> =
+            cells.iter().map(|c| (c.sheet, c.row, c.col)).collect();
+        wanted.sort_unstable();
+        assert_eq!(held, wanted, "no constant, no formula left out");
     }
 }

@@ -2,15 +2,24 @@
 name = "sheetrs-formula"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
+readme = "README.md"
 repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Lossless spreadsheet formula AST: parser, printer, reference rewriting"
 
 [dependencies]
+serde = { workspace = true, optional = true }
+
+[features]
+# `serde::{Serialize, Deserialize}` for `DateSystem`, which the engine stores in its programs.
+serde = ["dep:serde"]
 
 [dev-dependencies]
-sheetrs-core = { path = "../sheetrs-core", default-features = false }
+sheetrs-io = { path = "../sheetrs-io", default-features = false }
 
 [lints]
 workspace = true

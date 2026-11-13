@@ -1,0 +1,378 @@
+{
+ "sheets": [
+  {
+   "name": "Summary",
+   "visible": true
+  },
+  {
+   "name": "Data",
+   "visible": true
+  },
+  {
+   "name": "Rates",
+   "visible": true
+  },
+  {
+   "name": "Text",
+   "visible": true
+  },
+  {
+   "name": "Hidden",
+   "visible": false
+  },
+  {
+   "name": "Empty",
+   "visible": true
+  }
+ ],
+ "formulas": [
+  {
+   "sheet": "Summary",
+   "row": 0,
+   "col": 0,
+   "formula": "=SUM($Data.D3:D12)",
+   "array": false,
+   "string": "$10,175.00"
+  },
+  {
+   "sheet": "Summary",
+   "row": 0,
+   "col": 1,
+   "formula": "=$Rates.B1+$Text.C2",
+   "array": false,
+   "string": "$30.50"
+  },
+  {
+   "sheet": "Summary",
+   "row": 1,
+   "col": 0,
+   "formula": "=Total*2",
+   "array": false,
+   "string": "$20,350.00"
+  },
+  {
+   "sheet": "Summary",
+   "row": 2,
+   "col": 0,
+   "formula": "=AVERAGE(UnitPrice)",
+   "array": false,
+   "string": "$17.00"
+  },
+  {
+   "sheet": "Summary",
+   "row": 3,
+   "col": 0,
+   "formula": "=VLOOKUP(\"North\";$Data.A3:D12;4;0)",
+   "array": false,
+   "string": "125"
+  },
+  {
+   "sheet": "Summary",
+   "row": 4,
+   "col": 0,
+   "formula": "=$Hidden.A1+1",
+   "array": false,
+   "string": "551"
+  },
+  {
+   "sheet": "Summary",
+   "row": 5,
+   "col": 0,
+   "formula": "=COUNTIF($Data.E3:E12;\"high\")",
+   "array": false,
+   "string": "5"
+  },
+  {
+   "sheet": "Summary",
+   "row": 6,
+   "col": 0,
+   "formula": "=\"Total: \"&TEXT(Total;\"#,##0\")",
+   "array": false,
+   "string": "Total: 10,175"
+  },
+  {
+   "sheet": "Summary",
+   "row": 7,
+   "col": 0,
+   "formula": "='file://<folder>/ext.xlsx'#$Sheet1.B3",
+   "array": false,
+   "string": "42"
+  },
+  {
+   "sheet": "Data",
+   "row": 0,
+   "col": 7,
+   "formula": "{=SUM(B3:B12*C3:C12)}",
+   "array": true,
+   "string": "10175"
+  },
+  {
+   "sheet": "Data",
+   "row": 2,
+   "col": 3,
+   "formula": "=B3*C3",
+   "array": false,
+   "string": "$125.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 2,
+   "col": 4,
+   "formula": "=IF(D3>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "low"
+  },
+  {
+   "sheet": "Data",
+   "row": 2,
+   "col": 6,
+   "formula": "=H3+1",
+   "array": false,
+   "string": "21"
+  },
+  {
+   "sheet": "Data",
+   "row": 2,
+   "col": 7,
+   "formula": "{=B3:B5*2}",
+   "array": true,
+   "string": "20"
+  },
+  {
+   "sheet": "Data",
+   "row": 3,
+   "col": 3,
+   "formula": "=B4*C4",
+   "array": false,
+   "string": "$270.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 3,
+   "col": 4,
+   "formula": "=IF(D4>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "low"
+  },
+  {
+   "sheet": "Data",
+   "row": 3,
+   "col": 7,
+   "formula": "{=B3:B5*2}",
+   "array": true,
+   "string": "40"
+  },
+  {
+   "sheet": "Data",
+   "row": 4,
+   "col": 3,
+   "formula": "=B5*C5",
+   "array": false,
+   "string": "$435.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 4,
+   "col": 4,
+   "formula": "=IF(D5>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "low"
+  },
+  {
+   "sheet": "Data",
+   "row": 4,
+   "col": 7,
+   "formula": "{=B3:B5*2}",
+   "array": true,
+   "string": "60"
+  },
+  {
+   "sheet": "Data",
+   "row": 5,
+   "col": 3,
+   "formula": "=B6*C6",
+   "array": false,
+   "string": "$620.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 5,
+   "col": 4,
+   "formula": "=IF(D6>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "low"
+  },
+  {
+   "sheet": "Data",
+   "row": 6,
+   "col": 3,
+   "formula": "=B7*C7",
+   "array": false,
+   "string": "$825.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 6,
+   "col": 4,
+   "formula": "=IF(D7>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "low"
+  },
+  {
+   "sheet": "Data",
+   "row": 7,
+   "col": 3,
+   "formula": "=B8*C8",
+   "array": false,
+   "string": "$1,050.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 7,
+   "col": 4,
+   "formula": "=IF(D8>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "high"
+  },
+  {
+   "sheet": "Data",
+   "row": 8,
+   "col": 3,
+   "formula": "=B9*C9",
+   "array": false,
+   "string": "$1,295.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 8,
+   "col": 4,
+   "formula": "=IF(D9>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "high"
+  },
+  {
+   "sheet": "Data",
+   "row": 9,
+   "col": 3,
+   "formula": "=B10*C10",
+   "array": false,
+   "string": "$1,560.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 9,
+   "col": 4,
+   "formula": "=IF(D10>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "high"
+  },
+  {
+   "sheet": "Data",
+   "row": 10,
+   "col": 3,
+   "formula": "=B11*C11",
+   "array": false,
+   "string": "$1,845.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 10,
+   "col": 4,
+   "formula": "=IF(D11>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "high"
+  },
+  {
+   "sheet": "Data",
+   "row": 11,
+   "col": 3,
+   "formula": "=B12*C12",
+   "array": false,
+   "string": "$2,150.00"
+  },
+  {
+   "sheet": "Data",
+   "row": 11,
+   "col": 4,
+   "formula": "=IF(D12>1000;\"high\";\"low\")",
+   "array": false,
+   "string": "high"
+  },
+  {
+   "sheet": "Data",
+   "row": 12,
+   "col": 1,
+   "formula": "=SUM(B3:B12)",
+   "array": false,
+   "string": "550"
+  },
+  {
+   "sheet": "Data",
+   "row": 12,
+   "col": 3,
+   "formula": "=SUM(D3:D12)",
+   "array": false,
+   "string": "$10,175.00"
+  },
+  {
+   "sheet": "Rates",
+   "row": 0,
+   "col": 1,
+   "formula": "=INDEX(UnitPrice;2)",
+   "array": false,
+   "string": "$13.50"
+  },
+  {
+   "sheet": "Rates",
+   "row": 0,
+   "col": 2,
+   "formula": "=SUM(UnitPrice)",
+   "array": false,
+   "string": "$170.00"
+  },
+  {
+   "sheet": "Text",
+   "row": 0,
+   "col": 2,
+   "formula": "=A1&\" \"&A6",
+   "array": false,
+   "string": "Hello World hello Hello"
+  },
+  {
+   "sheet": "Text",
+   "row": 1,
+   "col": 2,
+   "formula": "=LEN(A1)",
+   "array": false,
+   "string": "17"
+  },
+  {
+   "sheet": "Text",
+   "row": 2,
+   "col": 2,
+   "formula": "=UPPER(\"abc\")",
+   "array": false,
+   "string": "ABC"
+  },
+  {
+   "sheet": "Hidden",
+   "row": 0,
+   "col": 0,
+   "formula": "=SUM($Data.B3:B12)",
+   "array": false,
+   "string": "550"
+  },
+  {
+   "sheet": "Hidden",
+   "row": 1,
+   "col": 0,
+   "formula": "=$Summary.A1+1",
+   "array": false,
+   "string": "$10,176.00"
+  }
+ ],
+ "names": [
+  "Total",
+  "UnitPrice"
+ ]
+}

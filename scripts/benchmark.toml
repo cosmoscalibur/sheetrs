@@ -1,5 +1,5 @@
-# Rule thresholds for benchmark.sh. They stay fixed so every Comparisons entry
-# in scripts/README.md measures the same rule work.
+# Rule thresholds for the lint benchmark of scripts/bench.py. They stay fixed so every run
+# of docs/performance.md measures the same rule work.
 
 [global]
 # Empty: every default-active rule runs.

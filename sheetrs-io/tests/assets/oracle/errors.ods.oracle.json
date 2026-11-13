@@ -1,0 +1,154 @@
+{
+ "version": "26.8.2.2",
+ "file": "errors.ods",
+ "sheets": [
+  "Errors"
+ ],
+ "cells": [
+  {
+   "sheet": "Errors",
+   "row": 0,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#REF!",
+   "value": 0.0,
+   "error": 524,
+   "format": "General",
+   "formula": "=#REF!+5",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 1,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#REF!",
+   "value": 0.0,
+   "error": 524,
+   "format": "General",
+   "formula": "=SUM(#REF!,1)",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 2,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#REF!",
+   "value": 0.0,
+   "error": 524,
+   "format": "General",
+   "formula": "=#REF!",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 3,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#REF!",
+   "value": 0.0,
+   "error": 524,
+   "format": "General",
+   "formula": "=IF(TRUE(),#REF!,1)",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 4,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#N/A",
+   "value": 0.0,
+   "error": 32767,
+   "format": "General",
+   "formula": "=#N/A+1",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 5,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#DIV/0!",
+   "value": 0.0,
+   "error": 532,
+   "format": "General",
+   "formula": "=#DIV/0!+1",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 6,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#NAME?",
+   "value": 0.0,
+   "error": 525,
+   "format": "General",
+   "formula": "=casa()",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 7,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#NAME?",
+   "value": 0.0,
+   "error": 525,
+   "format": "General",
+   "formula": "=casa()",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 8,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#NAME?",
+   "value": 0.0,
+   "error": 525,
+   "format": "General",
+   "formula": "=_xlfn.casa()",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 9,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#NAME?",
+   "value": 0.0,
+   "error": 525,
+   "format": "General",
+   "formula": "=_xlfn.casa()",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 10,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#NAME?",
+   "value": 0.0,
+   "error": 525,
+   "format": "General",
+   "formula": "=casa(1,2)+1",
+   "result": 4
+  },
+  {
+   "sheet": "Errors",
+   "row": 11,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#NAME?",
+   "value": 0.0,
+   "error": 525,
+   "format": "General",
+   "formula": "=SUM(casa(),1)",
+   "result": 4
+  }
+ ],
+ "notes": []
+}

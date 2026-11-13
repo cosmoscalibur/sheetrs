@@ -11,25 +11,23 @@
 //! crate reads workbooks, lowers formulas (parsed by `sheetrs-formula`), orders
 //! and prunes them. See `docs/DESIGN.md`.
 
-pub mod cellstore;
+mod cellstore;
 pub mod compile;
 pub mod config;
-pub mod formula;
-pub mod graph;
+mod error;
+mod formula;
+mod graph;
 #[cfg(feature = "load")]
 pub mod loader;
 pub mod locale;
+#[cfg(feature = "load")]
+pub mod memory;
 pub mod model;
 pub mod recalc;
 pub mod settings;
 pub mod verify;
-
-// The engine's modules under their usual paths, so `sheetrs_compiler::ir::Ns`
-// and `crate::value::Value` keep working.
-pub use sheetrs_engine::{
-    Overrides, Program, Value, addr, bundle, cli, coerce, dates, engine, fastmap, format,
-    functions, ir, matching, options, run, value,
-};
+pub mod wasm_target;
 
 pub use compile::{BindingSpec, Features, Report, Spec, compile};
+pub use error::{Error, Result};
 pub use model::Model;

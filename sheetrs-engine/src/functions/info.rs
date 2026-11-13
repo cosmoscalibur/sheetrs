@@ -89,11 +89,11 @@ fn cell(e: &mut Engine, a: &[Value]) -> Res<Value> {
     }
 }
 
-/// The build of the LibreOffice whose results the engine reproduces, which `INFO("release")` of
+/// The build of the `LibreOffice` whose results the engine reproduces, which `INFO("release")` of
 /// that program is.
 const RELEASE: &str = "bf6ef2662401c7d6dce671ab4deb26ee0af3a7c1";
 
-/// The name LibreOffice gives the system of the program.
+/// The name `LibreOffice` gives the system of the program.
 fn system() -> &'static str {
     match std::env::consts::OS {
         "windows" => "WNT",
@@ -102,7 +102,7 @@ fn system() -> &'static str {
     }
 }
 
-/// `Linux 6.18`; the other systems give what LibreOffice gives for compatibility with Excel.
+/// `Linux 6.18`; the other systems give what `LibreOffice` gives for compatibility with Excel.
 fn os_version() -> String {
     if std::env::consts::OS == "linux"
         && let Ok(release) = std::fs::read_to_string("/proc/sys/kernel/osrelease")
@@ -115,7 +115,7 @@ fn os_version() -> String {
     "Windows (32-bit) NT 5.01".to_string()
 }
 
-/// A path as a `file:` URL, as LibreOffice writes the part before the file name.
+/// A path as a `file:` URL, as `LibreOffice` writes the part before the file name.
 fn file_url(path: &str) -> String {
     let path = path.replace('\\', "/");
     let mut out = String::from("file://");
@@ -159,9 +159,8 @@ fn info(e: &mut Engine, a: &[Value]) -> Res<Value> {
     match e.text(&a[0])?.to_uppercase().as_str() {
         "RECALC" => Ok(Value::text("Automatic")),
         "NUMFILE" => Ok(Value::Number(1.0)),
-        "ORIGIN" | "MEMAVAIL" | "TOTMEM" | "MEMUSED" => Err(ErrorKind::Na),
         // LibreOffice answers `#N/A` for the directory too.
-        "DIRECTORY" => Err(ErrorKind::Na),
+        "ORIGIN" | "MEMAVAIL" | "TOTMEM" | "MEMUSED" | "DIRECTORY" => Err(ErrorKind::Na),
         "SYSTEM" => Ok(Value::text(
             e.opts
                 .host

@@ -1,15 +1,15 @@
 //! Every formula in the repository's real workbooks must parse (but for the
 //! documented unsupported syntax) and print to a fixed point.
 
-use sheetrs_core::reader::read_workbook;
 use sheetrs_formula::{Expr, parse, parse_spanned};
+use sheetrs_io::Book;
 use std::path::Path;
 
 fn files() -> Vec<std::path::PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut out = vec![
-        root.join("tests/minimal_test.xlsx"),
-        root.join("tests/minimal_test.ods"),
+        root.join("tests/lint_book.xlsx"),
+        root.join("tests/lint_book.ods"),
     ];
     if let Ok(dir) = std::fs::read_dir(root.join("sheetrs-compiler/tests/assets")) {
         out.extend(
@@ -25,7 +25,7 @@ fn files() -> Vec<std::path::PathBuf> {
 fn workbook_formulas_roundtrip() {
     let (mut total, mut unsupported) = (0usize, Vec::new());
     for path in files() {
-        let wb = read_workbook(&path).unwrap();
+        let wb = Book::from_file(&path).unwrap().workbook().unwrap();
         for sheet in &wb.sheets {
             for cell in sheet.cells.values() {
                 let Some(f) = cell.formula.as_deref() else {

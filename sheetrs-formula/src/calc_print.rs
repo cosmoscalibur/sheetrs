@@ -1,4 +1,4 @@
-//! Printing in LibreOffice's own notation, as `FORMULA()` (`FORMULATEXT` in
+//! Printing in `LibreOffice`'s own notation, as `FORMULA()` (`FORMULATEXT` in
 //! Excel) shows it: `$Sheet.A1:B2` references (the sheet of the formula
 //! itself is left out), `TRUE()`, canonical function names, numbers in the
 //! reader's locale and the separators of that locale.
@@ -7,7 +7,7 @@ use crate::addr::col_name;
 use crate::ast::{CellAddr, Expr, RefArea, Reference, UnOp};
 use std::fmt::Write;
 
-/// Separators a LibreOffice user has set; they follow the decimal separator
+/// Separators a `LibreOffice` user has set; they follow the decimal separator
 /// unless changed (`,` decimal: `;` between arguments, `.` between the columns
 /// of an array constant).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +19,8 @@ pub struct CalcSyntax {
 }
 
 impl CalcSyntax {
-    /// The defaults LibreOffice derives from the decimal separator.
+    /// The defaults `LibreOffice` derives from the decimal separator.
+    #[must_use]
     pub fn for_decimal(decimal: char) -> Self {
         if decimal == ',' {
             Self {
@@ -61,7 +62,7 @@ fn cell(out: &mut String, c: &CellAddr) {
     let _ = write!(out, "{}", c.row + 1);
 }
 
-fn reference(out: &mut String, r: &Reference, home: &str) {
+pub(crate) fn reference(out: &mut String, r: &Reference, home: &str) {
     if let Some(s) = &r.sheet
         && !crate::addr::same_name(s, home)
     {
@@ -99,6 +100,7 @@ fn reference(out: &mut String, r: &Reference, home: &str) {
 
 /// The function an ODS names by its add-in service (`COM.SUN.STAR.SHEET.ADDIN.PRICINGFUNCTIONS.
 /// GETOPTBARRIER`), by the name an XLSX gives it (`OPT_BARRIER`); `name` is uppercase.
+#[must_use]
 pub fn addin_function(name: &str) -> Option<&'static str> {
     Some(
         match name.strip_prefix("COM.SUN.STAR.SHEET.ADDIN.PRICINGFUNCTIONS.GETOPT")? {
@@ -123,6 +125,7 @@ const FUNCTION_NAMESPACES: [&str; 6] = [
 ];
 
 /// The number of characters of the namespace prefix that `raw` carries, 0 when it has none.
+#[must_use]
 pub fn namespace_len(raw: &str) -> usize {
     let up = raw.to_ascii_uppercase();
     FUNCTION_NAMESPACES
@@ -134,6 +137,7 @@ pub fn namespace_len(raw: &str) -> usize {
 /// The characters of the formula `source` as a user sees them: those of its text without the
 /// namespace prefix of the functions, so `_xlfn.CONCAT(…)` and `COM.MICROSOFT.CONCAT(…)` count as
 /// `CONCAT(…)`. A text that is not a formula counts as it is.
+#[must_use]
 pub fn visible_length(source: &str) -> usize {
     let total = source.chars().count();
     let Ok(expr) = crate::parse::parse(source) else {
@@ -148,15 +152,28 @@ pub fn visible_length(source: &str) -> usize {
     total - prefixes
 }
 
-fn function_name(raw: &str) -> String {
+/// The name the application shows for a function called `raw` in the file: the canonical name of one
+/// it has, and, when `known` says it has no such function, the name as it was written (`foo()`).
+pub(crate) fn function_name(raw: &str, known: &dyn Fn(&str) -> bool) -> String {
     let up = raw.to_ascii_uppercase();
     if let Some(n) = addin_function(&up) {
         return n.to_string();
     }
-    up[namespace_len(raw)..].to_string()
+    let canonical = &up[namespace_len(raw)..];
+    if known(canonical) {
+        canonical.to_string()
+    } else {
+        raw.to_string()
+    }
 }
 
-fn number(v: f64, syn: &CalcSyntax) -> String {
+/// Whether the application has the function called `raw` in the file.
+pub(crate) fn has_function(raw: &str, known: &dyn Fn(&str) -> bool) -> bool {
+    let up = raw.to_ascii_uppercase();
+    addin_function(&up).is_some() || known(&up[namespace_len(raw)..])
+}
+
+pub(crate) fn number(v: f64, syn: &CalcSyntax) -> String {
     let t = if v == v.trunc() && v.abs() < 1e15 {
         format!("{}", v as i64)
     } else {
@@ -165,7 +182,7 @@ fn number(v: f64, syn: &CalcSyntax) -> String {
     t.replace('.', &syn.decimal.to_string())
 }
 
-fn expr(out: &mut String, e: &Expr, home: &str, syn: &CalcSyntax) {
+fn expr(out: &mut String, e: &Expr, home: &str, syn: &CalcSyntax, known: &dyn Fn(&str) -> bool) {
     match e {
         Expr::Number(n) => out.push_str(&number(n.value, syn)),
         Expr::Text(t) => {
@@ -183,7 +200,7 @@ fn expr(out: &mut String, e: &Expr, home: &str, syn: &CalcSyntax) {
                     if j > 0 {
                         out.push(syn.column);
                     }
-                    expr(out, x, home, syn);
+                    expr(out, x, home, syn, known);
                 }
             }
             out.push('}');
@@ -191,14 +208,14 @@ fn expr(out: &mut String, e: &Expr, home: &str, syn: &CalcSyntax) {
         Expr::Ref(r) => reference(out, r, home),
         Expr::Name(n) => out.push_str(n),
         Expr::Call(c) => {
-            out.push_str(&function_name(&c.name));
+            out.push_str(&function_name(&c.name, known));
             out.push('(');
             for (i, a) in c.args.iter().enumerate() {
                 if i > 0 {
                     out.push(syn.function);
                 }
                 if let Some(a) = a {
-                    expr(out, a, home, syn);
+                    expr(out, a, home, syn, known);
                 }
             }
             out.push(')');
@@ -208,32 +225,46 @@ fn expr(out: &mut String, e: &Expr, home: &str, syn: &CalcSyntax) {
                 UnOp::Neg => '-',
                 UnOp::Plus => '+',
                 // Not LibreOffice syntax: the intersection is implicit there.
-                UnOp::Implicit => return expr(out, x, home, syn),
+                UnOp::Implicit => return expr(out, x, home, syn, known),
             });
-            expr(out, x, home, syn);
+            expr(out, x, home, syn, known);
         }
         Expr::Percent(x) => {
-            expr(out, x, home, syn);
+            expr(out, x, home, syn, known);
             out.push('%');
         }
         Expr::Binary(op, a, b) => {
-            expr(out, a, home, syn);
+            expr(out, a, home, syn, known);
             out.push_str(op.symbol());
-            expr(out, b, home, syn);
+            expr(out, b, home, syn, known);
         }
         Expr::Paren(x) => {
             out.push('(');
-            expr(out, x, home, syn);
+            expr(out, x, home, syn, known);
             out.push(')');
         }
     }
 }
 
-/// `e` in LibreOffice notation, without the leading `=`. `home` is the sheet the
+/// `e` in `LibreOffice` notation, without the leading `=`. `home` is the sheet the
 /// formula is in.
+#[must_use]
 pub fn to_calc(e: &Expr, home: &str, syn: &CalcSyntax) -> String {
+    to_calc_with(e, home, syn, &|_| true)
+}
+
+/// [`to_calc`] with the functions the application has told apart from the ones it has not: `known`
+/// says whether it has a function of this name (uppercase, without prefix); a function it does not
+/// have is shown as it was written (`foo()`).
+#[must_use]
+pub fn to_calc_with(
+    e: &Expr,
+    home: &str,
+    syn: &CalcSyntax,
+    known: &dyn Fn(&str) -> bool,
+) -> String {
     let mut out = String::new();
-    expr(&mut out, e, home, syn);
+    expr(&mut out, e, home, syn, known);
     out
 }
 

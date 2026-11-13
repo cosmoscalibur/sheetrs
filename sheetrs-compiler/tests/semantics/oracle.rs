@@ -1,71 +1,79 @@
-//! Cross-check against LibreOffice: `tests/assets/semantics.{xlsx,ods}` hold
-//! ~200 formulas whose cached values were computed by LibreOffice (see
+//! Cross-check against `LibreOffice`: `tests/assets/semantics.{xlsx,ods}` hold
+//! ~200 formulas whose cached values were computed by `LibreOffice` (see
 //! `scripts/gen_semantics_fixture.py`). The engine must reproduce them from the
-//! formulas alone, from both container formats.
+//! formulas alone, from each file on its own: the oracle of a file is what `LibreOffice` gives when it
+//! opens that file. An XLSX caches `#VALUE!` for every error that has a code of its own, so the
+//! generator also asks `LibreOffice` to recalculate the XLSX itself and keeps what differs from the
+//! cache in `<name>.xlsx.recalc.json` (`recalculated_oracle` in the script).
 
 use serde_json::Value as Json;
-use sheetrs_compiler::addr::CellRef;
-use sheetrs_compiler::value::Value;
-use sheetrs_compiler::{BindingSpec, Overrides, Spec, compile, loader};
+use sheetrs_compiler::{BindingSpec, Spec, compile, loader};
+use sheetrs_engine::Overrides;
+use sheetrs_engine::addr::CellRef;
+use sheetrs_engine::value::Value;
 use std::path::Path;
 
-/// Formulas where the oracle itself cannot be compared as is (the reference is
-/// LibreOffice for both files): (label, file suffix
-/// or "" for all, reason).
-const ORACLE_GAPS: &[(&str, &str, &str)] = &[
-    (
-        "_xlfn.F.INV(1,5,8)",
-        "",
-        "LibreOffice answers the end of its search range (2.37E+81); the engine does not reproduce it (`notes::F_INV_ONE`)",
-    ),
-    (
-        "Data!A1:A3*2",
-        "xlsx",
-        "sheetrs reads a cached #VALUE! of a formula holding `:` as no value (#62)",
-    ),
-    ("SUM(Data!A1:A3*2)", "xlsx", "same"),
-    ("SUM(Data!A1:A3>3)", "xlsx", "same"),
-    (
-        "\"[\"&100000000000000000000&\"]\"",
-        "xlsx",
-        "LibreOffice writes the exponent with three digits (1E+020)",
-    ),
-];
-
-/// LibreOffice's XLSX export writes every error of an invalid argument as
-/// `#VALUE!` (and sheetrs reads a cached `#VALUE!` of a formula with `:` as no
-/// value, #62), so the kind an Excel-semantics engine must give cannot be read
-/// from it. The ODS twin keeps the real code: when LibreOffice says "error" there,
-/// an engine error of any kind is accepted for the XLSX row.
-fn ods_errors(twin: &str) -> std::collections::HashSet<String> {
+/// What `LibreOffice` gives for the rows of an XLSX when it opens and recalculates that file, where
+/// that is not what the file caches (`{row: {"error": "Err:502"} | {"number": n} | {"bool": b} |
+/// {"text": t}}`, rows 1-based): the codes of the errors, and the rows whose formula the XLSX
+/// export rewrites (`T1:T1` as `T1`, `IF({1;0})` as `IF({1;0},TRUE())`), judged as the file writes
+/// them.
+fn recalculated(file: &str) -> std::collections::HashMap<u32, Json> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
-        .join(twin);
-    let model = loader::load(&path).unwrap();
-    let calc = model.sheet_id("Calc").unwrap();
-    model
-        .cells
-        .iter()
-        .filter(|(at, c)| at.sheet == calc && at.col == 0 && matches!(c.value, Value::Error(_)))
-        .filter_map(
-            |(at, _)| match &model.cells.get(&CellRef::new(calc, at.row, 1))?.value {
-                Value::Text(t) => Some(t.to_string()),
-                _ => None,
-            },
+        .join(format!("{file}.recalc.json"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "{}: {e} (scripts/gen_semantics_fixture.py makes it)",
+            path.display()
         )
+    });
+    let json: Json = serde_json::from_str(&text).unwrap();
+    json["rows"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(row, entry)| (row.parse().unwrap(), entry.clone()))
         .collect()
 }
 
-/// `locale`: the regional settings LibreOffice ran with when it computed `file`.
-fn check(file: &str, locale: &str) {
-    check_rows(file, locale, 150);
+/// The error of `got` against the one `LibreOffice` shows (`Err:502`, `#N/A`…): the Excel name and,
+/// when `LibreOffice` has a code of its own, that code.
+fn same_error(theirs: &str, got: &Json) -> Result<(), String> {
+    use sheetrs_io::reader::ExcelError;
+    use std::str::FromStr;
+    let Json::Object(o) = got else {
+        return Err(format!("engine: {got}"));
+    };
+    let kind = ExcelError::from_str(theirs).map_err(|e| e.to_string())?;
+    let (name, code) = match kind {
+        ExcelError::Libre(522) => ("#CIRC!".to_string(), None),
+        ExcelError::Libre(c) => ("#VALUE!".to_string(), Some(format!("Err:{c}"))),
+        other => (other.to_string(), None),
+    };
+    let ours_name = o.get("error").and_then(Json::as_str).unwrap_or("");
+    let ours_code = o.get("code").and_then(Json::as_str).map(String::from);
+    if ours_name == name && ours_code == code {
+        Ok(())
+    } else {
+        Err(format!(
+            "engine: {ours_name} {ours_code:?}, LibreOffice: {name} {code:?}"
+        ))
+    }
 }
 
-fn check_rows(file: &str, locale: &str, min_rows: usize) {
+/// `locale`: the regional settings `LibreOffice` ran with when it computed `file`.
+fn check(file: &str, locale: &str) {
+    check_rows(file, locale, 150, &[]);
+}
+
+/// `known`: labels of rows where the engine is known to differ from `LibreOffice` in this file. They
+/// must still differ: a row that agrees is an error until it is taken off the list.
+fn check_rows(file: &str, locale: &str, min_rows: usize, known: &[&str]) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(file);
-    let model = loader::load(&path).unwrap();
+    let model = loader::load(&sheetrs_io::Book::from_file(&path).unwrap()).unwrap();
     let calc = model.sheet_id("Calc").unwrap();
     let mut rows: Vec<u32> = model
         .cells
@@ -104,52 +112,107 @@ fn check_rows(file: &str, locale: &str, min_rows: usize) {
         fold: false,
         now,
         locale: Some(
-            sheetrs_compiler::locale::from_tag(locale, &Default::default())
-                .unwrap()
-                .0,
+            sheetrs_compiler::locale::from_tag(
+                locale,
+                &sheetrs_compiler::locale::LocaleOverride::default(),
+            )
+            .unwrap()
+            .0,
         ),
         ..Spec::default()
     };
     let (program, report) = compile(&model, &spec).unwrap();
     let _ = report;
-    let out = program.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = program
+        .calculate(&Json::Null, &Overrides::default())
+        .unwrap();
     let col = out[&format!("Calc!A1:A{}", last + 1)].as_array().unwrap();
 
-    let twin_errors = if file.ends_with("xlsx") {
-        ods_errors(&file.replace(".xlsx", ".ods"))
+    let judged = if file.ends_with("xlsx") {
+        recalculated(file)
     } else {
-        Default::default()
+        std::collections::HashMap::default()
     };
     let mut bad = Vec::new();
+    let mut differ = std::collections::HashSet::new();
     for &row in &rows {
         let cell = &model.cells[&CellRef::new(calc, row, 0)];
-        let label =
-            model
-                .cells
-                .get(&CellRef::new(calc, row, 1))
-                .map_or(String::new(), |c| match &c.value {
-                    Value::Text(t) => t.to_string(),
-                    _ => String::new(),
-                });
+        let label = label_of(row);
         let got = &col[row as usize][0];
-        if let Some((_, _, _)) = ORACLE_GAPS
-            .iter()
-            .find(|(f, ext, _)| *f == label && (ext.is_empty() || file.ends_with(ext)))
-        {
+        // An XLSX is judged on what `LibreOffice` gives when it opens that file and recalculates
+        // it (`recalculated`): the code of an error, and the rows its export rewrote.
+        if let Some(entry) = judged.get(&(row + 1)) {
+            let verdict = if let Some(theirs) = entry.get("error").and_then(Json::as_str) {
+                same_error(theirs, got)
+            } else {
+                let value = if let Some(n) = entry.get("number").and_then(Json::as_f64) {
+                    Value::Number(n)
+                } else if let Some(b) = entry.get("bool").and_then(Json::as_bool) {
+                    Value::Bool(b)
+                } else {
+                    Value::Text(entry["text"].as_str().unwrap_or("").into())
+                };
+                if crate::common::matches_oracle(&value, got) {
+                    Ok(())
+                } else {
+                    Err(format!("oracle: {value:?}\n        engine: {got}"))
+                }
+            };
+            if let Err(why) = verdict {
+                if known.contains(&label.as_str()) {
+                    differ.insert(label);
+                } else {
+                    bad.push(format!("  A{:<4} {label}\n        {why}", row + 1));
+                }
+            }
             continue;
         }
-        let engine_error = matches!(got, Json::Object(_));
-        let oracle_unreadable = matches!(cell.value, Value::Error(_) | Value::Empty);
-        if engine_error && oracle_unreadable && twin_errors.contains(&label) {
+        // An ODS says which error LibreOffice gave (`Err:502`, `Err:523`; `Err:519` is `#VALUE!`):
+        // the engine must give that very code, in every row.
+        if file.ends_with("ods")
+            && let (Value::Error(a), Json::Object(o)) = (&cell.value, got)
+        {
+            let theirs = a.libre_code();
+            let ours = o
+                .get("code")
+                .and_then(Json::as_str)
+                .map(String::from)
+                .or_else(|| {
+                    (o.get("error").and_then(Json::as_str) == Some("#CIRC!"))
+                        .then(|| "Err:522".to_string())
+                });
+            if theirs != ours {
+                if known.contains(&label.as_str()) {
+                    differ.insert(label);
+                } else {
+                    bad.push(format!(
+                        "  A{:<4} {label}\n        LibreOffice: {theirs:?} ({a:?})\n        engine: {ours:?}",
+                        row + 1
+                    ));
+                }
+                continue;
+            }
+            // The code is the one of `LibreOffice`: the error is the same, whatever name the loader
+            // gives its kind .
             continue;
         }
         if !crate::common::matches_oracle(&cell.value, got) {
-            bad.push(format!(
-                "  A{:<4} {label}\n        oracle: {:?}\n        engine: {got}",
-                row + 1,
-                cell.value
-            ));
+            if known.contains(&label.as_str()) {
+                differ.insert(label);
+            } else {
+                bad.push(format!(
+                    "  A{:<4} {label}\n        oracle: {:?}\n        engine: {got}",
+                    row + 1,
+                    cell.value
+                ));
+            }
         }
+    }
+    for k in known {
+        assert!(
+            differ.contains(*k),
+            "{file}: `{k}` agrees with LibreOffice now: take it off the list of known differences"
+        );
     }
     assert!(
         bad.is_empty(),
@@ -159,21 +222,25 @@ fn check_rows(file: &str, locale: &str, min_rows: usize) {
     );
 }
 
+/// `SUM(Data!A1:Wide!A1048576)` is written by `LibreOffice` as `SUM(Data:Wide!A:A)`; the headless
+/// `LibreOffice` that recalculates the file for this oracle reads the whole-column form over two
+/// sheets as `#NAME?` (a file written by `LibreOffice` holds the form, and Excel writes it: the
+/// engine reads it, FIDELITY.md).
 #[test]
-fn xlsx_matches_libreoffice() {
-    check("semantics.xlsx", "en");
+fn the_semantics_xlsx_calculates_every_formula_as_libreoffice_does() {
+    check_rows("semantics.xlsx", "en", 150, &["SUM(Data!A1:Wide!A1048576)"]);
 }
 
 #[test]
-fn ods_matches_libreoffice() {
+fn the_semantics_ods_calculates_every_formula_as_libreoffice_does() {
     check("semantics.ods", "en");
 }
 
-/// Locales with a fixture of their own, computed by a LibreOffice running with that regional
+/// Locales with a fixture of their own, computed by a `LibreOffice` running with that regional
 /// setting (`scripts/gen_semantics_fixture.py`, `LOCALE_FIXTURES`).
 fn check_locale(tag: &str) {
-    check_rows(&format!("semantics_{tag}.xlsx"), tag, 150);
-    check_rows(&format!("semantics_{tag}.ods"), tag, 150);
+    check_rows(&format!("semantics_{tag}.xlsx"), tag, 150, &[]);
+    check_rows(&format!("semantics_{tag}.ods"), tag, 150, &[]);
 }
 
 #[test]
@@ -196,23 +263,25 @@ fn british_english_matches_libreoffice() {
     check_locale("en-GB");
 }
 
-/// A spreadsheet created in LibreOffice (ODF default settings, LibreOffice's own function
+/// A spreadsheet created in `LibreOffice` (ODF default settings, `LibreOffice`'s own function
 /// names such as the native `CEILING`), not imported from XLSX.
+///
+/// The formulas are the ones of `semantics.xlsx` typed again, and `LibreOffice` reads some of them
+/// otherwise than the import did; the engine answers what the typed text says in this row:
+/// - `SUM(Data!A1:Wide!A1048576)`: typed, the whole-column form over two sheets is `#NAME?` in the
+///   headless `LibreOffice` (a file written by `LibreOffice` holds the form the engine reads).
 #[test]
 fn native_ods_matches_libreoffice() {
-    check("native.ods", "en");
+    check_rows("native.ods", "en", 150, &["SUM(Data!A1:Wide!A1048576)"]);
 }
 
-/// Documents created in LibreOffice with another null date (the date of serial 0): the date
-/// system is the document's, whatever it is.
+/// Documents created in `LibreOffice` with the null dates that are not its default (the date of
+/// serial 0): 1900-01-01 (`StarCalc` 1.0) and 1904-01-01. The date system is the document's, one of the
+/// three `LibreOffice` Calc offers.
 #[test]
 fn null_dates_match_libreoffice() {
-    for file in [
-        "null_date_1900.ods",
-        "null_date_1904.ods",
-        "null_date_1950.ods",
-    ] {
-        check_rows(file, "en", 20);
+    for file in ["null_date_1900.ods", "null_date_1904.ods"] {
+        check_rows(file, "en", 20, &[]);
     }
 }
 

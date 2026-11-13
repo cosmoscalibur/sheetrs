@@ -1,4 +1,4 @@
-//! `REGEX` of LibreOffice: the first match of an expression in a text, or the text with the
+//! `REGEX` of `LibreOffice`: the first match of an expression in a text, or the text with the
 //! first (or the nth, or every) match replaced. The expressions are those of
 //! [`crate::regex_subset`]; any other stops the build.
 
@@ -15,7 +15,7 @@ enum Piece {
     Group(usize),
 }
 
-/// The replacement as LibreOffice reads it: `$0` to `$9` are groups, a backslash takes the next
+/// The replacement as `LibreOffice` reads it: `$0` to `$9` are groups, a backslash takes the next
 /// character as it is (a lone one at the end is dropped) and a `$` that is not followed by a digit
 /// is an error.
 fn pieces(replacement: &str) -> Res<Vec<Piece>> {

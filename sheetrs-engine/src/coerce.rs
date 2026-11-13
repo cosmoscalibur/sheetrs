@@ -10,8 +10,22 @@ type Res<T> = Result<T, ErrorKind>;
 
 /// Number → text as the `General` format would show it: 15 significant
 /// digits, positional between 1e-14 and 1e15, scientific otherwise with
-/// the exponent in three digits (`E+017`), as LibreOffice writes it.
+/// the exponent in three digits (`E+017`), as `LibreOffice` writes it.
+#[must_use]
 pub fn fmt_number(x: f64, loc: &Locale) -> String {
+    general(x, loc, false)
+}
+
+/// A number as `General` shows it in a cell. It differs from [`fmt_number`] (the text a number
+/// becomes in a formula) below `1E-4`: the cell goes to the scientific notation when the decimals
+/// pass 16 places or the exponent reaches -10 (observed in 26.8: `0.000012345`, `4.44444444444444E-05`,
+/// `1E-10`), and the exponent has two digits when it is negative.
+#[must_use]
+pub fn fmt_number_display(x: f64, loc: &Locale) -> String {
+    general(x, loc, true)
+}
+
+fn general(x: f64, loc: &Locale, display: bool) -> String {
     if x == 0.0 {
         return "0".into();
     }
@@ -25,7 +39,14 @@ pub fn fmt_number(x: f64, loc: &Locale) -> String {
     if x < 0.0 {
         out.push('-');
     }
-    let positional = (-14..=15).contains(&exp);
+    let decimals = digits.len() as i32 + (-exp - 1);
+    let positional = if !display {
+        (-14..=15).contains(&exp)
+    } else if exp >= 0 {
+        exp <= 15
+    } else {
+        exp >= -4 || (exp >= -9 && decimals <= 16)
+    };
     if positional {
         if exp >= 0 {
             let int_len = exp as usize + 1;
@@ -49,7 +70,7 @@ pub fn fmt_number(x: f64, loc: &Locale) -> String {
             out.push(loc.decimal);
             out.push_str(&digits[1..]);
         }
-        let width = 3;
+        let width = if display && exp < 0 { 2 } else { 3 };
         let _ = write!(
             out,
             "E{}{:0width$}",
@@ -61,6 +82,7 @@ pub fn fmt_number(x: f64, loc: &Locale) -> String {
 }
 
 /// Text → number: locale decimal/group separators, `%` suffix, and ISO dates.
+#[must_use]
 pub fn parse_number(s: &str, loc: &Locale, dc: DateCtx) -> Option<f64> {
     let t = s.trim();
     if t.is_empty() {
@@ -118,6 +140,7 @@ pub fn parse_number(s: &str, loc: &Locale, dc: DateCtx) -> Option<f64> {
 }
 
 /// Complete a two-digit year inside the 100-year window starting at `start`.
+#[must_use]
 pub fn expand_year(y: i64, start: u16) -> i64 {
     if y >= 100 {
         return y;
@@ -127,19 +150,29 @@ pub fn expand_year(y: i64, start: u16) -> i64 {
     if cand < start { cand + 100 } else { cand }
 }
 
+/// # Errors
+///
+/// The error value Excel gives when `v` is not a number (`#VALUE!`), or the error `v` holds.
 pub fn to_num(v: &Value, loc: &Locale, dc: DateCtx) -> Res<f64> {
     match v {
         Value::Number(n) => Ok(*n),
         Value::Empty => Ok(0.0),
         Value::Bool(b) => Ok(f64::from(u8::from(*b))),
+        // The element a missing `else` gave, read by an operator or a function applied to each
+        // element, is the number 0 where a number is taken (and the text `FALSE` where a text is).
+        v @ Value::Text(_) if v.is_element_path() => Ok(0.0),
         Value::Text(s) => parse_number(s, loc, dc).ok_or(ErrorKind::Value),
         Value::Error(e) => Err(*e),
         Value::Array(_) | Value::Ref(_) => Err(ErrorKind::Value),
     }
 }
 
-/// Value → text as LibreOffice writes it (booleans are the numbers 1/0, numbers use its
+/// Value → text as `LibreOffice` writes it (booleans are the numbers 1/0, numbers use its
 /// general format).
+///
+/// # Errors
+///
+/// The error `v` holds.
 pub fn to_text(v: &Value, loc: &Locale) -> Res<String> {
     match v {
         Value::Text(s) => Ok(s.to_string()),
@@ -151,11 +184,15 @@ pub fn to_text(v: &Value, loc: &Locale) -> Res<String> {
     }
 }
 
+/// # Errors
+///
+/// The error value Excel gives when `v` is not a boolean (`#VALUE!`), or the error `v` holds.
 pub fn to_bool(v: &Value, loc: &Locale) -> Res<bool> {
     match v {
         Value::Bool(b) => Ok(*b),
         Value::Number(n) => Ok(*n != 0.0),
         Value::Empty => Ok(false),
+        v @ Value::Text(_) if v.is_element_path() => Ok(false),
         Value::Text(s) => {
             if s.eq_ignore_ascii_case("true") || s.eq_ignore_ascii_case(&loc.true_text) {
                 Ok(true)
@@ -192,11 +229,11 @@ mod tests {
     }
 
     #[test]
-    fn parsing() {
+    fn text_is_read_as_a_number_by_the_locale_and_the_date_system() {
         let en = Locale::en_us();
         let es = Locale::es_es();
         // The clock stands at 2025-01-01.
-        let s = DateCtx::new(crate::options::DateSystem::NULL_1899, Some(45658.0));
+        let s = DateCtx::new(crate::options::DateSystem::Null1899, Some(45658.0));
         assert_eq!(parse_number(" 1,234.5 ", &en, s), Some(1234.5));
         assert_eq!(parse_number("1.234,5", &es, s), Some(1234.5));
         assert_eq!(parse_number("50%", &en, s), Some(0.5));

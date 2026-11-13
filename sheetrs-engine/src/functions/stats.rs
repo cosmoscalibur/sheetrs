@@ -11,7 +11,7 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 pub(super) fn register(r: &mut Reg) {
-    r.eager("AVERAGE", 1, VAR, |e, a| {
+    r.eager("AVERAGE", 0, VAR, |e, a| {
         let v = e.numbers(a)?;
         if v.is_empty() {
             Err(ErrorKind::DivZero)
@@ -35,17 +35,17 @@ pub(super) fn register(r: &mut Reg) {
         num(if n % 2 == 1 {
             v[n / 2]
         } else {
-            (v[n / 2 - 1] + v[n / 2]) / 2.0
+            f64::midpoint(v[n / 2 - 1], v[n / 2])
         })
     });
     r.eager("LARGE", 2, 2, |e, a| nth(e, a, true));
     r.eager("SMALL", 2, 2, |e, a| nth(e, a, false));
-    r.eager("STDEV", 1, VAR, |e, a| {
-        variance(e, a, true).map(|v| v.sqrt()).and_then(num)
+    r.eager("STDEV", 0, VAR, |e, a| {
+        variance(e, a, true).map(f64::sqrt).and_then(num)
     });
-    r.eager("VAR", 1, VAR, |e, a| variance(e, a, true).and_then(num));
-    r.eager("COUNT", 1, VAR, count);
-    r.eager("COUNTA", 1, VAR, |e, a| {
+    r.eager("VAR", 0, VAR, |e, a| variance(e, a, true).and_then(num));
+    r.eager("COUNT", 0, VAR, count);
+    r.eager("COUNTA", 0, VAR, |e, a| {
         let mut n = 0u32;
         for v in a {
             match v {
@@ -54,7 +54,7 @@ pub(super) fn register(r: &mut Reg) {
                         .array_of(v.clone())
                         .data
                         .iter()
-                        .filter(|x| !matches!(x, Value::Empty))
+                        .filter(|x| !matches!(x, Value::Empty) && !x.is_empty_path())
                         .count() as u32;
                 }
                 _ => n += 1,
@@ -80,6 +80,9 @@ pub(super) fn register(r: &mut Reg) {
     r.eager("COUNTIF", 2, 2, |e, a| {
         let crit = Criterion::new(e, &a[1])?;
         let arr = e.array_of(a[0].clone());
+        if matches!(a[0], Value::Array(_)) && crit.matches_no_array() {
+            return num(0.0);
+        }
         let coll = e.collator(false);
         num(arr.data.iter().filter(|v| crit.matches(v, coll)).count() as f64)
     });
@@ -88,15 +91,18 @@ pub(super) fn register(r: &mut Reg) {
     r.eager("MAXIFS", 3, VAR, |e, a| multi(e, a, Agg::Max));
     r.eager("MINIFS", 3, VAR, |e, a| multi(e, a, Agg::Min));
     r.eager("COUNTIFS", 2, VAR, |e, a| {
+        let mut none = false;
         let mut conds = Vec::new();
         for p in a.chunks(2) {
             if p.len() < 2 {
                 return Err(ErrorKind::Value);
             }
-            conds.push((e.array_of(p[0].clone()), Criterion::new(e, &p[1])?));
+            let crit = Criterion::new(e, &p[1])?;
+            none |= matches!(p[0], Value::Array(_)) && crit.matches_no_array();
+            conds.push((e.array_of(p[0].clone()), crit));
         }
         let n = matching(&conds, e.collator(false))?.len();
-        num(n as f64)
+        num(if none { 0.0 } else { n as f64 })
     });
 }
 
@@ -120,6 +126,10 @@ fn count(e: &mut Engine, a: &[Value]) -> Res<Value> {
 }
 
 fn nth(e: &mut Engine, a: &[Value], largest: bool) -> Res<Value> {
+    // Text given directly where the set goes is a parameter list error (`Err:504`).
+    if matches!(a[0], Value::Text(_)) {
+        return Err(ErrorKind::Libre(504));
+    }
     let mut v = e.numbers(&a[..1])?;
     let k = e.num(&a[1])?.trunc();
     if k < 1.0 || k as usize > v.len() {
@@ -147,7 +157,15 @@ pub(crate) enum Criterion {
     /// Text criterion: the operator, the matcher for `=`/`<>` and the plain
     /// text for ordering operators.
     Text(Cmp, Matcher, String, bool),
-    Blank(bool),
+    /// `=` or `<>` alone (the criterion asks for blank cells or for those that are not) and whether
+    /// an operator was written: an array has no blank cells, so `=` and `<>` match nothing in one
+    /// (`COUNTIF({1;2},"<>")` is 0 in `LibreOffice`), while the empty text alone (`""`) matches the
+    /// empty text elements.
+    Blank(bool, bool),
+    /// `TRUE` or `FALSE` written as the text of a criterion: it is that boolean for the numbers (the
+    /// number 1 or 0 and the operator) and the word for a text (`COUNTIF({0;1},"FALSE")` is 1, and so
+    /// is `COUNTIF({"FALSE";1},"FALSE")`).
+    Word(Cmp, f64, Box<Criterion>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -162,6 +180,16 @@ pub(crate) enum Cmp {
 
 impl Criterion {
     pub(crate) fn new(e: &mut Engine, v: &Value) -> Res<Self> {
+        let search = e.opts.search;
+        Self::with_search(e, v, search)
+    }
+
+    /// A criterion whose text is matched as `search` says instead of as the document does.
+    pub(crate) fn with_search(
+        e: &mut Engine,
+        v: &Value,
+        search: crate::options::Search,
+    ) -> Res<Self> {
         let v = e.scalar(v.clone());
         match v {
             Value::Error(er) => Err(er),
@@ -183,18 +211,26 @@ impl Criterion {
                 // `=` and `<>` alone ask for blank cells; the ordering operators alone compare
                 // the text of the cells with the empty text.
                 if rest.is_empty() && matches!(op, Cmp::Eq | Cmp::Ne) {
-                    return Ok(Self::Blank(op != Cmp::Ne));
+                    return Ok(Self::Blank(op != Cmp::Ne, rest.len() != t.len()));
                 }
-                match coerce::parse_number(rest, &e.opts.locale, e.opts.date_ctx()) {
-                    Some(n) => Ok(Self::Num(op, n)),
-                    None => {
-                        let s = e.opts.search;
-                        Ok(Self::Text(
-                            op,
-                            Matcher::new(rest, &s, s.whole_cell),
-                            rest.to_string(),
-                            false,
-                        ))
+                if let Some(n) = coerce::parse_number(rest, &e.opts.locale, e.opts.date_ctx()) {
+                    Ok(Self::Num(op, n))
+                } else {
+                    let s = search;
+                    let text = Self::Text(
+                        op,
+                        Matcher::new(rest, &s, s.whole_cell),
+                        rest.to_string(),
+                        false,
+                    );
+                    let loc = &e.opts.locale;
+                    let word = |w: &str| rest.eq_ignore_ascii_case(w);
+                    if word("true") || word(&loc.true_text) {
+                        Ok(Self::Word(op, 1.0, Box::new(text)))
+                    } else if word("false") || word(&loc.false_text) {
+                        Ok(Self::Word(op, 0.0, Box::new(text)))
+                    } else {
+                        Ok(text)
                     }
                 }
             }
@@ -202,9 +238,36 @@ impl Criterion {
         }
     }
 
+    /// Whether the criterion matches nothing in an array that was written in the formula (not in a
+    /// range of cells): `=` and `<>` alone.
+    pub(crate) fn matches_no_array(&self) -> bool {
+        matches!(self, Self::Blank(_, true))
+    }
+
     pub(crate) fn matches(&self, v: &Value, coll: &Coll) -> bool {
+        // The element a missing `else` of an `IF` gave is the number 0 for a criterion that asks for a
+        // number, and an empty text for one that asks for blank.
+        let zero = Value::Number(0.0);
+        let v = if v.is_empty_path() && matches!(self, Self::Num(..) | Self::Word(..)) {
+            &zero
+        } else {
+            v
+        };
         match self {
-            Self::Blank(want_blank) => {
+            Self::Word(op, n, text) => match v {
+                Value::Number(_) | Value::Bool(_) => {
+                    let x = if let Value::Bool(b) = v {
+                        f64::from(u8::from(*b))
+                    } else if let Value::Number(x) = v {
+                        *x
+                    } else {
+                        0.0
+                    };
+                    apply(*op, x.partial_cmp(n))
+                }
+                v => text.matches(v, coll),
+            },
+            Self::Blank(want_blank, _) => {
                 let blank =
                     matches!(v, Value::Empty) || matches!(v, Value::Text(t) if t.is_empty());
                 blank == *want_blank
@@ -275,7 +338,7 @@ fn matching(conds: &[(Arc<Array>, Criterion)], coll: &Coll) -> Res<Vec<usize>> {
 }
 
 /// The values a conditional aggregate adds up. A reference is read cell by cell
-/// and only where the conditions hold, as LibreOffice and Excel do: a sum range
+/// and only where the conditions hold, as `LibreOffice` and Excel do: a sum range
 /// may contain the formula that is summing it as long as that cell is not selected.
 enum Values {
     Cells(Rect),
@@ -343,23 +406,35 @@ fn conditional(e: &mut Engine, a: &[Value], agg: Agg) -> Res<Value> {
     if vals.len() != range.data.len() {
         return Err(ErrorKind::Value);
     }
-    let idx = matching(&[(range, crit)], e.collator(false))?;
+    let none = matches!(a[0], Value::Array(_)) && crit.matches_no_array();
+    let idx = if none {
+        Vec::new()
+    } else {
+        matching(&[(range, crit)], e.collator(false))?
+    };
     reduce(e, &vals, &idx, agg)
 }
 
 fn multi(e: &mut Engine, a: &[Value], agg: Agg) -> Res<Value> {
     let vals = Values::of(e, a[0].clone());
+    let mut none = false;
     let mut conds = Vec::new();
     for p in a[1..].chunks(2) {
         if p.len() < 2 {
             return Err(ErrorKind::Value);
         }
-        conds.push((e.array_of(p[0].clone()), Criterion::new(e, &p[1])?));
+        let crit = Criterion::new(e, &p[1])?;
+        none |= matches!(p[0], Value::Array(_)) && crit.matches_no_array();
+        conds.push((e.array_of(p[0].clone()), crit));
     }
     if conds.iter().any(|(r, _)| r.data.len() != vals.len()) {
         return Err(ErrorKind::Value);
     }
-    let idx = matching(&conds, e.collator(false))?;
+    let idx = if none {
+        Vec::new()
+    } else {
+        matching(&conds, e.collator(false))?
+    };
     reduce(e, &vals, &idx, agg)
 }
 

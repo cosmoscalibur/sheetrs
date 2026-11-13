@@ -1,11 +1,11 @@
 //! A fast non-cryptographic hasher for the integer-keyed maps that dominate
-//! large workbooks (millions of cell addresses). The default SipHash is
+//! large workbooks (millions of cell addresses). The default `SipHash` is
 //! DoS-resistant, which a compiler reading its own input does not need.
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 
-#[derive(Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct FxHasher(u64);
 
 const SEED: u64 = 0x517c_c1b7_2722_0a95;

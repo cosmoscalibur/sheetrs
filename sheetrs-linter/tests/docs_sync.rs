@@ -1,12 +1,12 @@
-//! Keeps the rule reference in `README.md` and the `sheetlint.toml` example in
+//! Keeps the rule reference in `README.md` and the `sheetrs.toml` example in
 //! sync with the rule registry.
 
-use sheetrs_core::LinterConfig;
-use sheetrs_core::rules::registry::get_all_rule_metadata;
+use sheetrs_linter::LinterConfig;
+use sheetrs_linter::rules::registry::rule_metadata;
 use std::collections::BTreeSet;
 
 const README: &str = include_str!("../README.md");
-const EXAMPLE_CONFIG: &str = include_str!("../../sheetlint.toml");
+const EXAMPLE_CONFIG: &str = include_str!("../../sheetrs.toml");
 
 /// Rows of the rule reference tables, as `(rule ID, Params cell)`.
 fn rule_rows() -> Vec<(&'static str, &'static str)> {
@@ -32,7 +32,7 @@ fn readme_lists_each_registered_rule_once() {
     );
 
     let config = LinterConfig::default();
-    let registered: BTreeSet<&str> = get_all_rule_metadata(&config)
+    let registered: BTreeSet<&str> = rule_metadata(&config)
         .iter()
         .map(|m| m.id.as_str())
         .collect();
@@ -41,12 +41,12 @@ fn readme_lists_each_registered_rule_once() {
 
 #[test]
 fn example_config_lists_every_documented_param() {
-    let config = LinterConfig::from_toml(EXAMPLE_CONFIG).expect("sheetlint.toml must parse");
+    let config = LinterConfig::from_toml(EXAMPLE_CONFIG).expect("sheetrs.toml must parse");
     for (id, params) in rule_rows() {
         for param in params.split('`').skip(1).step_by(2) {
             assert!(
-                config.global.params.contains_key(param),
-                "{id} parameter `{param}` missing from sheetlint.toml"
+                config.has_param(param),
+                "{id} parameter `{param}` missing from sheetrs.toml"
             );
         }
     }

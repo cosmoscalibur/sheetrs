@@ -10,15 +10,27 @@
 //! reference, so rules can inspect the text between tokens and
 //! [`Formula::rewrite`] changes only the references an edit touches, leaving the
 //! rest of the text byte for byte as written.
+//!
+//! ```
+//! use sheetrs_formula::parse;
+//!
+//! let formula = parse("SUM(A1:B2)+1").expect("a valid formula");
+//! // Printing gives the canonical spelling, and parsing it again gives the same formula.
+//! assert_eq!(parse(&formula.to_string()).expect("a valid formula"), formula);
+//! ```
 
 pub mod addr;
 pub mod ast;
 pub mod calc_print;
+pub mod calc_read;
+pub mod calendar;
+mod date_system;
 pub mod edit;
 pub mod grid;
+pub mod lax;
 pub mod parse;
 pub mod print;
-pub mod r1c1;
 
 pub use ast::Expr;
+pub use date_system::{DateSystem, ParseDateSystemError, UnsupportedDateSystem};
 pub use parse::{Formula, ParseError, parse, parse_spanned};

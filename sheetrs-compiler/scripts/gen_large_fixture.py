@@ -3,7 +3,8 @@
 real models (row-wise arithmetic, IF, exact VLOOKUP into a table, running totals,
 SUMIF over blocks, text assembly), one declared input and a few outputs.
 
-Usage: gen_large_fixture.py OUT.xlsx [ROWS]   (default 100000 rows of Calc)
+Usage: gen_large_fixture.py OUT.xlsx [ROWS]   (default 100000 rows of Calc; 300000 rows are 2.4 M formulas, 3.6 M cells,
+29 MB: the size of the benchmarks of scripts/README.md)
 """
 import random
 import sys
@@ -19,6 +20,7 @@ lookup = wb.add_worksheet("Lookup")
 calc = wb.add_worksheet("Calc")
 summ = wb.add_worksheet("Summary")
 sett = wb.add_worksheet("settings")
+wb.define_name("base_rate", "=Data!$I$1")   # a defined name (not "rate": the settings sheet has a key of that name), for the name deletions of the edit benchmark
 
 keys = [f"K{i:04d}" for i in range(2000)]
 for i, k in enumerate(keys):

@@ -1,6 +1,6 @@
-//! `BESSELI`, `BESSELJ`, `BESSELK` and `BESSELY`, with the algorithms of LibreOffice's analysis
+//! `BESSELI`, `BESSELJ`, `BESSELK` and `BESSELY`, with the algorithms of `LibreOffice`'s analysis
 //! add-in (`scaddins/source/analysis/bessel.cxx`): series and adjoint summation for the first
-//! kinds, polynomial approximations for the second, so that the digits are LibreOffice's.
+//! kinds, polynomial approximations for the second, so that the digits are `LibreOffice`'s.
 //! The result is checked against the oracle (`tests/assets/semantics.*`).
 
 use std::f64::consts::{EULER_GAMMA as EGAMMA, FRAC_2_PI, FRAC_PI_2, FRAC_PI_4, PI};
@@ -10,9 +10,9 @@ use crate::engine::Res;
 use crate::value::{ErrorKind, Value};
 
 const DOMAIN: ErrorKind = ErrorKind::Domain;
-/// The iteration did not converge (`Err:523`, which the files store as `#VALUE!`).
-const NO_CONVERGENCE: ErrorKind = ErrorKind::Value;
-const TWO_64: f64 = 18446744073709551616.0;
+/// The iteration did not converge (`Err:523`, which an XLSX stores as `#VALUE!`).
+const NO_CONVERGENCE: ErrorKind = ErrorKind::Libre(523);
+const TWO_64: f64 = 18_446_744_073_709_551_616.0;
 
 fn bessel_j(x: f64, n: i32) -> Res<f64> {
     if n < 0 {
@@ -127,17 +127,18 @@ fn bessel_k0(x: f64) -> Res<f64> {
         let euler = (std::f64::consts::EULER_GAMMA * 1e8).trunc() / 1e8;
         -x2.ln() * bessel_i(x, 0)?
             + (-euler
-                + y * (0.42278420
-                    + y * (0.23069756
-                        + y * (0.3488590e-1 + y * (0.262698e-2 + y * (0.10750e-3 + y * 0.74e-5))))))
+                + y * (0.422_784_20
+                    + y * (0.230_697_56
+                        + y * (0.348_859_0e-1
+                            + y * (0.262_698e-2 + y * (0.10750e-3 + y * 0.74e-5))))))
     } else {
         let y = 2.0 / x;
         (-x).exp() / x.sqrt()
-            * (1.25331414
-                + y * (-0.7832358e-1
-                    + y * (0.2189568e-1
-                        + y * (-0.1062446e-1
-                            + y * (0.587872e-2 + y * (-0.251540e-2 + y * 0.53208e-3))))))
+            * (1.253_314_14
+                + y * (-0.783_235_8e-1
+                    + y * (0.218_956_8e-1
+                        + y * (-0.106_244_6e-1
+                            + y * (0.587_872e-2 + y * (-0.251_540e-2 + y * 0.53208e-3))))))
     })
 }
 
@@ -147,19 +148,19 @@ fn bessel_k1(x: f64) -> Res<f64> {
         let y = x2 * x2;
         x2.ln() * bessel_i(x, 1)?
             + (1.0
-                + y * (0.15443144
-                    + y * (-0.67278579
-                        + y * (-0.18156897
-                            + y * (-0.1919402e-1 + y * (-0.110404e-2 + y * -0.4686e-4))))))
+                + y * (0.154_431_44
+                    + y * (-0.672_785_79
+                        + y * (-0.181_568_97
+                            + y * (-0.191_940_2e-1 + y * (-0.110_404e-2 + y * -0.4686e-4))))))
                 / x
     } else {
         let y = 2.0 / x;
         (-x).exp() / x.sqrt()
-            * (1.25331414
-                + y * (0.23498619
-                    + y * (-0.3655620e-1
-                        + y * (0.1504268e-1
-                            + y * (-0.780353e-2 + y * (0.325614e-2 + y * -0.68245e-3))))))
+            * (1.253_314_14
+                + y * (0.234_986_19
+                    + y * (-0.365_562_0e-1
+                        + y * (0.150_426_8e-1
+                            + y * (-0.780_353e-2 + y * (0.325_614e-2 + y * -0.68245e-3))))))
     })
 }
 

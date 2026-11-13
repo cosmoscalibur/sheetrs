@@ -1,8 +1,9 @@
 //! `INFO` and `CELL("filename")` say what the build fixes, or else the machine and the program.
 
-use sheetrs_compiler::{Model, Spec, Value, compile};
+use sheetrs_compiler::{Model, Spec, compile};
+use sheetrs_engine::Value;
+use sheetrs_engine::calculate::Overrides;
 use sheetrs_engine::options::Host;
-use sheetrs_engine::run::Overrides;
 
 fn value(formula: &str, ods: bool, host: Host, run: Host) -> serde_json::Value {
     let mut m = Model::new();
@@ -23,7 +24,7 @@ fn value(formula: &str, ods: bool, host: Host, run: Host) -> serde_json::Value {
         host: run,
         ..Overrides::default()
     };
-    let out = program.execute(&serde_json::json!({}), &o).unwrap();
+    let out = program.calculate(&serde_json::json!({}), &o).unwrap();
     out["Data!A1"].clone()
 }
 

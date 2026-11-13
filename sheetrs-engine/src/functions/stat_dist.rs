@@ -1,6 +1,6 @@
 //! The continuous and discrete distributions beyond the normal one: gamma, chi-square, t, F,
 //! beta, log-normal, Weibull, hypergeometric, negative binomial and the tests and intervals built
-//! on them. Arguments outside a function's domain are `Domain` (LibreOffice's `Err:502`), as the
+//! on them. Arguments outside a function's domain are `Domain` (`LibreOffice`'s `Err:502`), as the
 //! oracle (`tests/assets/semantics.*`) has them.
 
 use super::math_ext::{norm_cdf, norm_inv};
@@ -15,12 +15,20 @@ use std::f64::consts::PI;
 
 const DOMAIN: ErrorKind = ErrorKind::Domain;
 
-/// A value of the incomplete gamma function, or `Domain` where LibreOffice does not converge.
+/// From these degrees of freedom the inverse of the chi-squared distribution does not converge in
+/// `LibreOffice` (`Err:523`, whatever the probability): 3,401,606 still does, 3,401,607 does not.
+const CHI_INV_NO_CONVERGENCE: f64 = 3_401_607.0;
+
+/// A value of the incomplete gamma function, or `Err:523` where `LibreOffice` does not converge.
 fn converged(v: f64) -> Res<f64> {
-    if v.is_nan() { Err(DOMAIN) } else { Ok(v) }
+    if v.is_nan() {
+        Err(ErrorKind::Libre(523))
+    } else {
+        Ok(v)
+    }
 }
 
-/// The density of the chi-square distribution as LibreOffice computes it: the logarithm form for a
+/// The density of the chi-square distribution as `LibreOffice` computes it: the logarithm form for a
 /// large `df * x`, the product of the terms otherwise.
 fn chisq_pdf(x: f64, df: f64) -> f64 {
     if df * x > 1_391_000.0 {
@@ -43,7 +51,7 @@ fn chisq_pdf(x: f64, df: f64) -> f64 {
     }
 }
 
-/// The shape of a t, F or beta distribution: what LibreOffice computes accurately.
+/// The shape of a t, F or beta distribution: what `LibreOffice` computes accurately.
 fn shape(x: f64) -> Res<()> {
     if x > 1e7 {
         crate::notes::note(crate::notes::BETA_LARGE);
@@ -53,7 +61,7 @@ fn shape(x: f64) -> Res<()> {
     }
 }
 
-/// `invert_increasing` of a function that may not converge (`NaN`): then LibreOffice's iteration
+/// `invert_increasing` of a function that may not converge (`NaN`): then `LibreOffice`'s iteration
 /// fails as well.
 fn invert_checked(f: impl Fn(f64) -> f64, target: f64) -> Res<f64> {
     let bad = std::cell::Cell::new(false);
@@ -77,7 +85,7 @@ fn cumulative(e: &mut Engine, a: &[Value], i: usize) -> Res<bool> {
     }
 }
 
-/// The argument as a whole number (LibreOffice cuts the degrees of freedom and the counts).
+/// The argument as a whole number (`LibreOffice` cuts the degrees of freedom and the counts).
 fn whole(e: &mut Engine, a: &[Value], i: usize) -> Res<f64> {
     Ok(e.num(&a[i])?.floor())
 }
@@ -114,10 +122,10 @@ fn t_two(t: f64, df: f64) -> f64 {
 }
 
 fn t_pdf(t: f64, df: f64) -> f64 {
-    (ln_gamma((df + 1.0) / 2.0)
+    (ln_gamma(f64::midpoint(df, 1.0))
         - ln_gamma(df / 2.0)
         - 0.5 * (df * PI).ln()
-        - (df + 1.0) / 2.0 * (t * t / df).ln_1p())
+        - f64::midpoint(df, 1.0) * (t * t / df).ln_1p())
     .exp()
 }
 
@@ -168,7 +176,7 @@ fn f_pdf(x: f64, d1: f64, d2: f64) -> f64 {
         };
     }
     ((d1 / 2.0) * (d1 / d2).ln() + (d1 / 2.0 - 1.0) * x.ln()
-        - (d1 + d2) / 2.0 * (d1 * x / d2).ln_1p()
+        - f64::midpoint(d1, d2) * (d1 * x / d2).ln_1p()
         - ln_beta(d1 / 2.0, d2 / 2.0))
     .exp()
 }
@@ -227,9 +235,10 @@ fn numbers_of(e: &mut Engine, v: &Value) -> Res<Vec<f64>> {
 }
 
 /// The numbers of a range with its shape; text and empty cells are not numbers.
+#[allow(clippy::unnecessary_wraps)] // same fallible signature as its siblings, which share call sites
 fn grid(e: &mut Engine, v: &Value) -> Res<(usize, usize, Vec<Value>)> {
     let a = e.array_of(v.clone());
-    Ok((a.rows as usize, a.cols as usize, a.data.to_vec()))
+    Ok((a.rows as usize, a.cols as usize, a.data.clone()))
 }
 
 pub(crate) fn register(r: &mut Reg) {
@@ -259,7 +268,7 @@ pub(crate) fn register(r: &mut Reg) {
     });
     r.eager("FISHERINV", 1, 1, |e, a| num(e.num(&a[0])?.tanh()));
     for name in ["GAMMADIST", "GAMMA.DIST"] {
-        r.eager(name, 4, 4, |e, a| {
+        r.eager(name, if name == "GAMMADIST" { 3 } else { 4 }, 4, |e, a| {
             let (x, al, be) = (e.num(&a[0])?, e.num(&a[1])?, e.num(&a[2])?);
             if x < 0.0 || al <= 0.0 || be <= 0.0 {
                 return Err(DOMAIN);
@@ -320,22 +329,28 @@ pub(crate) fn register(r: &mut Reg) {
     }
     r.eager("CHISQ.INV", 2, 2, |e, a| {
         let (p, df) = (e.num(&a[0])?, whole(e, a, 1)?);
-        if !(0.0..1.0).contains(&p) || df < 1.0 || df > 1e10 {
+        if !(0.0..1.0).contains(&p) || df < 1.0 {
             return Err(DOMAIN);
         }
         if p == 0.0 {
             return num(0.0);
+        }
+        if df >= CHI_INV_NO_CONVERGENCE {
+            return Err(ErrorKind::Libre(523));
         }
         num(2.0 * invert_checked(|x| gamma_p(df / 2.0, x), p)?)
     });
     for name in ["CHISQ.INV.RT", "CHIINV"] {
         r.eager(name, 2, 2, |e, a| {
             let (p, df) = (e.num(&a[0])?, whole(e, a, 1)?);
-            if p <= 0.0 || p > 1.0 || df < 1.0 || df > 1e10 {
+            if p <= 0.0 || p > 1.0 || df < 1.0 {
                 return Err(DOMAIN);
             }
             if p == 1.0 {
                 return num(0.0);
+            }
+            if df >= CHI_INV_NO_CONVERGENCE {
+                return Err(ErrorKind::Libre(523));
             }
             num(2.0 * invert_checked(|x| -gamma_q(df / 2.0, x), -p)?)
         });
@@ -364,8 +379,8 @@ pub(crate) fn register(r: &mut Reg) {
         if p == 0.0 {
             return num(0.0);
         }
-        if df > 1e10 {
-            return Err(DOMAIN);
+        if df >= CHI_INV_NO_CONVERGENCE {
+            return Err(ErrorKind::Libre(523));
         }
         num(2.0 * invert_checked(|x| gamma_p(df / 2.0, x), p)?)
     });
@@ -529,7 +544,9 @@ pub(crate) fn register(r: &mut Reg) {
     // `FDIST` and `FINV` are two functions: the OpenDocument ones (`F.DIST`, `F.INV` of Excel,
     // four and three arguments, left tail) are `core`; the legacy ones (right tail) are `legacy`.
     for name in ["F.DIST", "FDIST"] {
-        r.eager(name, 4, 4, |e, a| {
+        // `LibreOffice`'s `F.DIST` (`FDIST` in an ODS) takes the cumulative flag as optional (true
+        // when left out).
+        r.eager(name, 3, 4, |e, a| {
             let (x, d1, d2) = (e.num(&a[0])?, whole(e, a, 1)?, whole(e, a, 2)?);
             if d1 < 1.0 || d2 < 1.0 || d1 >= 1e10 || d2 >= 1e10 || x < 0.0 {
                 return Err(DOMAIN);
@@ -554,18 +571,40 @@ pub(crate) fn register(r: &mut Reg) {
     }
     r.eager("F.DIST.RT", 3, 3, f_rt_args);
     r.eager_in(Ns::Legacy, "FDIST", 3, 3, f_rt_args);
+    /// `F.INV(1, d1, d2)`: `LibreOffice` looks for the root of `1 - F(x)` starting from the bracket
+    /// `d1/2 … d1` and doubling it until the function changes sign; the right tail underflows to
+    /// exactly 0 at `x = d1 * 2^k` for the first `k` at which it does, and that `x` is the answer
+    /// (`F.INV(1, 5, 8)` is `5 * 2^268`). When the tail does not underflow before `x` overflows (one
+    /// or two degrees of freedom in the second argument, say) the search does not converge:
+    /// `Err:523`.
+    fn f_inv_one(d1: f64, d2: f64) -> Res<Value> {
+        // The first end of the bracket is already past the underflow.
+        if f_rt(d1 * 0.5, d1, d2) == 0.0 {
+            return num(d1 * 0.5);
+        }
+        let mut x = d1;
+        for _ in 0..1000 {
+            if f_rt(x, d1, d2) == 0.0 {
+                return num(x);
+            }
+            x *= 2.0;
+            if !x.is_finite() {
+                break;
+            }
+        }
+        Err(ErrorKind::Libre(523))
+    }
     for name in ["F.INV", "FINV"] {
         r.eager(name, 3, 3, |e, a| {
             let (p, d1, d2) = (e.num(&a[0])?, whole(e, a, 1)?, whole(e, a, 2)?);
             if p <= 0.0 || p > 1.0 || d1 < 1.0 || d2 < 1.0 || d1 >= 1e10 || d2 >= 1e10 {
                 return Err(DOMAIN);
             }
-            if p == 1.0 {
-                crate::notes::note(crate::notes::F_INV_ONE);
-                return Err(ErrorKind::Unsupported);
-            }
             shape(d1)?;
             shape(d2)?;
+            if p == 1.0 {
+                return f_inv_one(d1, d2);
+            }
             num(invert_increasing(|x| f_cdf(x, d1, d2), p))
         });
     }
@@ -623,15 +662,25 @@ pub(crate) fn register(r: &mut Reg) {
             num(u.powf(al - 1.0) * (1.0 - u).powf(be - 1.0) / ln_beta(al, be).exp() / (hi - lo))
         }
     });
-    r.eager("BETADIST", 3, 5, |e, a| {
+    // The sixth argument is `LibreOffice`'s cumulative flag (true when left out).
+    r.eager("BETADIST", 3, 6, |e, a| {
         let (x, al, be) = (e.num(&a[0])?, e.num(&a[1])?, e.num(&a[2])?);
         let (lo, hi) = beta_scale(e, a, 3)?;
         if al <= 0.0 || be <= 0.0 || x < lo || x > hi || lo >= hi {
             return Err(DOMAIN);
         }
+        let u = (x - lo) / (hi - lo);
+        if !cumulative(e, a, 5)? {
+            if (u == 0.0 && al < 1.0) || (u == 1.0 && be < 1.0) {
+                return Err(DOMAIN);
+            }
+            return num(u.powf(al - 1.0) * (1.0 - u).powf(be - 1.0)
+                / ln_beta(al, be).exp()
+                / (hi - lo));
+        }
         shape(al)?;
         shape(be)?;
-        num(beta_reg((x - lo) / (hi - lo), al, be))
+        num(beta_reg(u, al, be))
     });
     for name in ["BETA.INV", "BETAINV"] {
         r.eager(name, 3, 5, |e, a| {
@@ -670,20 +719,30 @@ pub(crate) fn register(r: &mut Reg) {
             num((-z * z / 2.0).exp() / (x * s * (2.0 * PI).sqrt()))
         }
     });
-    r.eager("LOGNORMDIST", 3, 3, |e, a| {
-        let (x, m, s) = (e.num(&a[0])?, e.num(&a[1])?, e.num(&a[2])?);
+    // The mean (0), the deviation (1) and the cumulative flag (true) can be left out.
+    r.eager("LOGNORMDIST", 1, 4, |e, a| {
+        let x = e.num(&a[0])?;
+        let m = super::opt_num(e, a, 1, 0.0)?;
+        let s = super::opt_num(e, a, 2, 1.0)?;
         if s <= 0.0 {
             return Err(DOMAIN);
         }
-        num(if x <= 0.0 {
-            0.0
+        let cum = cumulative(e, a, 3)?;
+        if x <= 0.0 {
+            return if cum { num(0.0) } else { Err(DOMAIN) };
+        }
+        let z = (x.ln() - m) / s;
+        num(if cum {
+            norm_cdf(z)
         } else {
-            norm_cdf((x.ln() - m) / s)
+            (-z * z / 2.0).exp() / (x * s * (2.0 * PI).sqrt())
         })
     });
     for name in ["LOGNORM.INV", "LOGINV"] {
-        r.eager(name, 3, 3, |e, a| {
-            let (p, m, s) = (e.num(&a[0])?, e.num(&a[1])?, e.num(&a[2])?);
+        r.eager(name, 1, 3, |e, a| {
+            let p = e.num(&a[0])?;
+            let m = super::opt_num(e, a, 1, 0.0)?;
+            let s = super::opt_num(e, a, 2, 1.0)?;
             if p <= 0.0 || p >= 1.0 || s <= 0.0 {
                 return Err(DOMAIN);
             }
@@ -720,8 +779,19 @@ pub(crate) fn register(r: &mut Reg) {
             num(hyper_pmf(s, n, m, big_n))
         }
     });
-    r.eager("HYPGEOMDIST", 4, 4, |e, a| {
+    // Four arguments are the probability of exactly `s`; the fifth, `LibreOffice`'s cumulative flag
+    // (a number: zero is false), gives the probability of `s` or fewer when it is true.
+    r.eager("HYPGEOMDIST", 4, 5, |e, a| {
         let (s, n, m, big_n) = hyper_args(e, a)?;
+        if a.len() == 5 && e.boolean(&a[4])? {
+            let mut sum = 0.0;
+            let mut i = (n + m - big_n).max(0.0);
+            while i <= s {
+                sum += hyper_pmf(i, n, m, big_n);
+                i += 1.0;
+            }
+            return num(sum.min(1.0));
+        }
         num(hyper_pmf(s, n, m, big_n))
     });
     r.eager("NEGBINOM.DIST", 4, 4, |e, a| {

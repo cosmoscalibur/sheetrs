@@ -27,14 +27,17 @@ fn main() {
         }
     }
     let t = Instant::now();
-    let wb = sheetrs_core::reader::read_workbook(&file).unwrap();
+    let wb = sheetrs_io::Book::from_file(&file)
+        .unwrap()
+        .workbook()
+        .unwrap();
     println!(
         "read (sheetrs)      {:>8.1?}   peak {:.0} MB",
         t.elapsed(),
         peak_rss_mb()
     );
     let t = Instant::now();
-    let model = loader::from_workbook_owned(wb, false);
+    let model = loader::from_workbook_owned(wb, sheetrs_io::reader::Format::Xlsx);
     println!(
         "model               {:>8.1?}   peak {:.0} MB",
         t.elapsed(),
@@ -61,7 +64,10 @@ fn main() {
     );
     let t = Instant::now();
     let out = p
-        .execute(&serde_json::Value::Null, &Default::default())
+        .calculate(
+            &serde_json::Value::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
         .unwrap();
     println!("run                 {:>8.1?}   -> {out}", t.elapsed());
 }

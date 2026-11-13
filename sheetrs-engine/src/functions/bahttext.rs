@@ -27,14 +27,12 @@ fn group(n: u32) -> String {
         if d == 0 {
             continue;
         }
-        match p {
-            1 => out.push_str(match d {
+        if p == 1 {
+            out.push_str(match d {
                 1 => "สิบ",
                 2 => "ยี่สิบ",
                 _ => "",
-            }),
-            0 => {}
-            _ => {}
+            });
         }
         match (p, d) {
             (1, 1 | 2) => {}

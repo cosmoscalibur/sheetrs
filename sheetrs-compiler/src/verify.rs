@@ -1,16 +1,17 @@
 //! Verification against a workbook's own cached values.
 //!
-//! A workbook saved by Excel or LibreOffice holds, next to every formula, the
+//! A workbook saved by Excel or `LibreOffice` holds, next to every formula, the
 //! value the application computed. Recomputing the formulas with the engine, with
 //! the inputs the file holds (its defaults), and comparing is the check of
 //! fidelity on a real model.
 
-use crate::addr::{self, CellRef, Rect};
-use crate::compile::{BindingSpec, CompileError, Spec, compile};
-use crate::engine::Engine;
+use crate::compile::{BindingSpec, Spec, compile};
+use crate::error::{Error, Result};
 use crate::model::Model;
-use crate::run::Overrides;
-use crate::value::{ErrorKind, Value};
+use sheetrs_engine::addr::{self, CellRef, Rect};
+use sheetrs_engine::calculate::Overrides;
+use sheetrs_engine::engine::Engine;
+use sheetrs_engine::value::{ErrorKind, Value};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Clone)]
@@ -64,6 +65,7 @@ pub struct Verification {
 }
 
 impl Verification {
+    #[must_use]
     pub fn mismatches(&self) -> usize {
         self.sheets.iter().map(|s| s.mismatches.len()).sum()
     }
@@ -120,14 +122,18 @@ fn is_volatile(formula: &str) -> bool {
 /// values of the file. `spec` carries the options of the build (locale, folding).
 ///
 /// `reference`: a copy of the workbook whose cached values are the ones to compare with
-/// (what LibreOffice recalculated, see `recalc`); `None` compares with the values `model`
+/// (what `LibreOffice` recalculated, see `recalc`); `None` compares with the values `model`
 /// itself caches.
+///
+/// # Errors
+///
+/// When the program cannot be run or the reference results cannot be read.
 pub fn verify(
     model: &Model,
     spec: &Spec,
     opts: &Options,
     reference: Option<&Model>,
-) -> Result<Verification, CompileError> {
+) -> Result<Verification> {
     let selected: Vec<u16> = (0..model.sheets.len() as u16)
         .filter(|&i| {
             opts.sheets.is_empty()
@@ -138,7 +144,7 @@ pub fn verify(
         })
         .collect();
     if selected.is_empty() {
-        return Err(CompileError(format!(
+        return Err(Error::Compile(format!(
             "none of the sheets {:?} exists (sheets: {})",
             opts.sheets,
             model.sheets.join(", ")
@@ -191,7 +197,7 @@ pub fn verify(
     };
     let (program, report) = compile(model, &spec)?;
     let mut engine = Engine::new(&program, program.effective_options(&Overrides::default()));
-    engine.run();
+    engine.calculate();
 
     let unparsed: std::collections::HashSet<String> = program
         .diagnostics
@@ -276,7 +282,7 @@ mod tests {
             &mut m,
             "B3",
             "A1/0",
-            Value::Error(crate::value::ErrorKind::Value),
+            Value::Error(sheetrs_engine::value::ErrorKind::Value),
         ); // wrong error
         cached(&mut m, "B4", "A9", Value::Number(0.0)); // blank reference holds 0
         cached(&mut m, "B5", "NOW()", Value::Number(1.0)); // not comparable

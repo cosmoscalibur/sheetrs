@@ -2,21 +2,44 @@
 name = "sheetrs-edit"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
+readme = "README.md"
 repository.workspace = true
-description = "CLI tools for SheetChecks"
+keywords.workspace = true
+categories.workspace = true
+description = "Workbook modification: removing sheets and names, converting formulas to values, deleting rows and columns (the library, and the `sheetrs edit` subcommand behind the `cli` feature)"
 
-[[bin]]
-name = "sheetedit"
-path = "src/main.rs"
+
+[lib]
+name = "sheetrs_edit"
+path = "src/lib.rs"
+
+[features]
+# The `sheetrs edit` subcommand (clap arguments and `run`), for the `sheetrs` executable.
+cli = ["dep:clap", "dep:anyhow"]
 
 [dependencies]
-sheetrs-core = { path = "../sheetrs-core" }
-clap.workspace = true
-anyhow.workspace = true
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.0", features = ["write"] }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
+sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.0" }
+sheetrs-query = { path = "../sheetrs-query", version = "0.4.0" }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.0" }
+sheetrs-compiler = { path = "../sheetrs-compiler", version = "0.4.0" }
+sheetrs-answer = { path = "../sheetrs-answer", version = "0.4.0" }
+serde_json.workspace = true
+clap = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+thiserror.workspace = true
 zip.workspace = true
 quick-xml.workspace = true
+aho-corasick.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+regex.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

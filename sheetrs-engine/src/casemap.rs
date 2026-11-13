@@ -1,17 +1,17 @@
-//! Case mapping and the equality of text that ignores case, as LibreOffice does them.
+//! Case mapping and the equality of text that ignores case, as `LibreOffice` does them.
 //!
-//! LibreOffice maps case with ICU's full mappings (`ß` has no one-letter uppercase in Unicode and
-//! becomes `SS` there; LibreOffice has `ẞ`), and compares text ignoring case by comparing the
+//! `LibreOffice` maps case with ICU's full mappings (`ß` has no one-letter uppercase in Unicode and
+//! becomes `SS` there; `LibreOffice` has `ẞ`), and compares text ignoring case by comparing the
 //! uppercase of both. The collator of [`crate::collate`] is only for ordering: `Ñ` written as
 //! `N` and a combining tilde is not equal to the single letter, and a soft hyphen is not ignored.
-//! The mappings here are ICU4X's with the few characters where LibreOffice 26.8 gives another
+//! The mappings here are ICU4X's with the few characters where `LibreOffice` 26.8 gives another
 //! result (found by comparing them for every character).
 
 use icu_casemap::CaseMapperBorrowed;
 use icu_locale_core::LanguageIdentifier;
 use std::borrow::Cow;
 
-/// Characters whose uppercase is not ICU4X's, with LibreOffice's.
+/// Characters whose uppercase is not ICU4X's, with `LibreOffice`'s.
 const UPPER_EXCEPTIONS: &[(char, char)] = &[
     ('\u{df}', '\u{1e9e}'),
     ('\u{277}', '\u{277}'),
@@ -24,7 +24,7 @@ const UPPER_EXCEPTIONS: &[(char, char)] = &[
     ('\u{ab4c}', '\u{ab4c}'),
 ];
 
-/// Characters whose lowercase is not ICU4X's, with LibreOffice's.
+/// Characters whose lowercase is not ICU4X's, with `LibreOffice`'s.
 const LOWER_EXCEPTIONS: &[(char, char)] = &[
     ('\u{130}', '\u{130}'),
     ('\u{2ce4}', '\u{2ce5}'),
@@ -54,7 +54,8 @@ fn map(s: &str, exceptions: &[(char, char)], icu: impl Fn(&str) -> String) -> St
     out
 }
 
-/// `UPPER` of LibreOffice.
+/// `UPPER` of `LibreOffice`.
+#[must_use]
 pub fn upper(s: &str) -> String {
     if s.is_ascii() {
         return s.to_ascii_uppercase();
@@ -73,7 +74,7 @@ pub fn upper(s: &str) -> String {
     out
 }
 
-/// The uppercase of `c` when it is one character and the same in ICU4X and LibreOffice.
+/// The uppercase of `c` when it is one character and the same in ICU4X and `LibreOffice`.
 fn simple_upper(c: char) -> Option<char> {
     if c.is_ascii() {
         return Some(c.to_ascii_uppercase());
@@ -95,7 +96,8 @@ fn upper_icu(s: &str) -> String {
     })
 }
 
-/// `LOWER` of LibreOffice.
+/// `LOWER` of `LibreOffice`.
+#[must_use]
 pub fn lower(s: &str) -> String {
     let und = LanguageIdentifier::UNKNOWN;
     map(s, LOWER_EXCEPTIONS, |t| {
@@ -103,7 +105,7 @@ pub fn lower(s: &str) -> String {
     })
 }
 
-/// `PROPER` of LibreOffice: the first character of the text and every one that follows a
+/// `PROPER` of `LibreOffice`: the first character of the text and every one that follows a
 /// character that is not a letter take the uppercase of the whole text at their position, the others
 /// the lowercase. The positions are those of UTF-16 code units, as there.
 pub fn proper(s: &str) -> String {
@@ -123,7 +125,7 @@ pub fn proper(s: &str) -> String {
     String::from_utf16_lossy(&out)
 }
 
-/// What LibreOffice's `isLetter` says of a character: the alphabetic ones, except two that its
+/// What `LibreOffice`'s `isLetter` says of a character: the alphabetic ones, except two that its
 /// older Unicode data has the other way (found by comparing every character of the plane 0).
 fn is_letter(c: char) -> bool {
     match c {
@@ -135,6 +137,7 @@ fn is_letter(c: char) -> bool {
 
 /// Whether two texts are equal: ignoring case when `case_sensitive` is off (the uppercase of both
 /// is compared), else character by character.
+#[must_use]
 pub fn text_eq(a: &str, b: &str, case_sensitive: bool) -> bool {
     if a == b {
         return true;
@@ -150,6 +153,7 @@ pub fn text_eq(a: &str, b: &str, case_sensitive: bool) -> bool {
 
 /// Whether the text has a letter whose case folding is not one character (`ß` is `ss`, `ﬁ` is
 /// `fi`): ICU matches those against the folded text in ways of its own.
+#[must_use]
 pub fn has_multi_fold(s: &str) -> bool {
     !s.is_ascii()
         && s.chars().any(|c| {
@@ -160,9 +164,10 @@ pub fn has_multi_fold(s: &str) -> bool {
         })
 }
 
-/// The text as LibreOffice's search ignores case (`SEARCH`, a criterion that need not cover the
+/// The text as `LibreOffice`'s search ignores case (`SEARCH`, a criterion that need not cover the
 /// whole cell): each character in its full case folding (`ß` is `ss`; `İ` is left alone), with the
 /// position in `text` of the character each folded one came from.
+#[must_use]
 pub fn fold_search(text: &str) -> (String, Vec<usize>) {
     let mut out = String::with_capacity(text.len());
     let mut from = Vec::with_capacity(text.len());
@@ -182,6 +187,7 @@ pub fn fold_search(text: &str) -> (String, Vec<usize>) {
 }
 
 /// The text with the case ignored, to compare or hash: its uppercase.
+#[must_use]
 pub fn fold(s: &str) -> Cow<'_, str> {
     if s.is_ascii() {
         if s.bytes().any(|b| b.is_ascii_lowercase()) {
@@ -201,7 +207,7 @@ mod tests {
     #[test]
     fn simple_uppercase_is_icus_for_every_character() {
         let mut served = 0;
-        for c in (0..=0x10ffff).filter_map(char::from_u32) {
+        for c in (0..=0x0010_ffff).filter_map(char::from_u32) {
             if let Some(u) = simple_upper(c) {
                 served += 1;
                 assert_eq!(

@@ -1,0 +1,340 @@
+{
+ "version": "26.8.2.2",
+ "file": "input.xlsx",
+ "sheets": [
+  "T",
+  "U Sheet"
+ ],
+ "cells": [
+  {
+   "sheet": "T",
+   "row": 0,
+   "col": 0,
+   "type": "TEXT",
+   "string": "Hello World hello",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 0,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1",
+   "value": 1.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 1,
+   "col": 0,
+   "type": "TEXT",
+   "string": "123",
+   "value": 0.0,
+   "error": 0,
+   "format": "@"
+  },
+  {
+   "sheet": "T",
+   "row": 1,
+   "col": 1,
+   "type": "VALUE",
+   "string": "2",
+   "value": 2.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 2,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1,234.50",
+   "value": 1234.5,
+   "error": 0,
+   "format": "#,##0.00"
+  },
+  {
+   "sheet": "T",
+   "row": 3,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2023-03-15",
+   "value": 45000.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "T",
+   "row": 4,
+   "col": 0,
+   "type": "VALUE",
+   "string": "25.6%",
+   "value": 0.256,
+   "error": 0,
+   "format": "0.0%"
+  },
+  {
+   "sheet": "T",
+   "row": 5,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "3",
+   "value": 3.0,
+   "error": 0,
+   "format": "General",
+   "formula": "=SUM(B1,B2)",
+   "result": 1
+  },
+  {
+   "sheet": "T",
+   "row": 6,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "6",
+   "value": 6.0,
+   "error": 0,
+   "format": "General",
+   "formula": "=$'U Sheet'.A1+1",
+   "result": 1
+  },
+  {
+   "sheet": "T",
+   "row": 7,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "abcd",
+   "value": 0.0,
+   "error": 0,
+   "format": "General",
+   "formula": "=\"abc\"&\"d\"",
+   "result": 2
+  },
+  {
+   "sheet": "T",
+   "row": 8,
+   "col": 0,
+   "type": "TEXT",
+   "string": "abc",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 9,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "2",
+   "value": 2.0,
+   "error": 0,
+   "format": "General",
+   "formula": "=B1*2",
+   "result": 1
+  },
+  {
+   "sheet": "T",
+   "row": 10,
+   "col": 0,
+   "type": "TEXT",
+   "string": "a1 b1 A1",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 11,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "yes",
+   "value": 0.0,
+   "error": 0,
+   "format": "General",
+   "formula": "=IF(B1>0,\"yes\",\"no\")",
+   "result": 2
+  },
+  {
+   "sheet": "T",
+   "row": 12,
+   "col": 0,
+   "type": "VALUE",
+   "string": "7",
+   "value": 7.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 13,
+   "col": 4,
+   "type": "TEXT",
+   "string": "repeat",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 13,
+   "col": 5,
+   "type": "TEXT",
+   "string": "repeat",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 13,
+   "col": 6,
+   "type": "TEXT",
+   "string": "repeat",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 19,
+   "col": 0,
+   "type": "TEXT",
+   "string": "rowrep",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 20,
+   "col": 0,
+   "type": "TEXT",
+   "string": "rowrep",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 21,
+   "col": 0,
+   "type": "TEXT",
+   "string": "rowrep",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "T",
+   "row": 25,
+   "col": 7,
+   "type": "VALUE",
+   "string": "15 Mar 2023",
+   "value": 45000.0,
+   "error": 0,
+   "format": "D MMM YYYY"
+  },
+  {
+   "sheet": "T",
+   "row": 26,
+   "col": 7,
+   "type": "VALUE",
+   "string": "$10.00",
+   "value": 10.0,
+   "error": 0,
+   "format": "[$$-409]#,##0.00"
+  },
+  {
+   "sheet": "T",
+   "row": 27,
+   "col": 7,
+   "type": "VALUE",
+   "string": "x5",
+   "value": 5.0,
+   "error": 0,
+   "format": "\\x0"
+  },
+  {
+   "sheet": "T",
+   "row": 28,
+   "col": 7,
+   "type": "VALUE",
+   "string": "yes",
+   "value": 1.0,
+   "error": 0,
+   "format": "\"yes\";\"yes\";\"no\""
+  },
+  {
+   "sheet": "T",
+   "row": 29,
+   "col": 7,
+   "type": "VALUE",
+   "string": "50.00%",
+   "value": 0.5,
+   "error": 0,
+   "format": "0.00%"
+  },
+  {
+   "sheet": "U Sheet",
+   "row": 0,
+   "col": 0,
+   "type": "VALUE",
+   "string": "5",
+   "value": 5.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "U Sheet",
+   "row": 1,
+   "col": 0,
+   "type": "VALUE",
+   "string": "7",
+   "value": 7.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "U Sheet",
+   "row": 2,
+   "col": 0,
+   "type": "TEXT",
+   "string": "Hello U",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  }
+ ],
+ "notes": [
+  {
+   "sheet": "T",
+   "row": 0,
+   "col": 0,
+   "text": "Hello note\nsecond hello paragraph",
+   "author": "Unknown Author"
+  },
+  {
+   "sheet": "T",
+   "row": 0,
+   "col": 1,
+   "text": "HELLO again\n\nlast hello",
+   "author": "Unknown Author"
+  },
+  {
+   "sheet": "T",
+   "row": 24,
+   "col": 3,
+   "text": "Hello on an empty cell",
+   "author": "Unknown Author"
+  },
+  {
+   "sheet": "U Sheet",
+   "row": 0,
+   "col": 0,
+   "text": "Hello U note",
+   "author": "Unknown Author"
+  }
+ ]
+}

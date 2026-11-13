@@ -8,10 +8,15 @@ use crate::matching::Matcher;
 use crate::value::{ErrorKind, Value};
 
 pub(super) fn register(r: &mut Reg) {
-    r.eager("CONCATENATE", 1, VAR, |e, a| concat(e, a, false));
-    r.eager("CONCAT", 1, VAR, |e, a| concat(e, a, true));
+    r.eager("CONCATENATE", 0, VAR, |e, a| concat(e, a, false));
+    r.eager("CONCAT", 0, VAR, |e, a| concat(e, a, true));
     r.eager("TEXTJOIN", 3, VAR, |e, a| {
-        let sep = e.text(&a[0])?;
+        // The delimiter may be a range or an array: its texts are taken in turn, again from the
+        // first when they run out (`LibreOffice` and Excel alike).
+        let mut seps = Vec::new();
+        for x in &e.array_of(a[0].clone()).data {
+            seps.push(coerce::to_text(x, &e.opts.locale)?);
+        }
         let skip = e.boolean(&a[1])?;
         let mut parts = Vec::new();
         for v in &a[2..] {
@@ -22,7 +27,14 @@ pub(super) fn register(r: &mut Reg) {
                 }
             }
         }
-        Ok(Value::text(parts.join(&sep)))
+        let mut out = String::new();
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 && !seps.is_empty() {
+                out.push_str(&seps[(i - 1) % seps.len()]);
+            }
+            out.push_str(part);
+        }
+        Ok(Value::text(out))
     });
     r.eager("LEN", 1, 1, |e, a| {
         num(e.text(&a[0])?.chars().count() as f64)
@@ -62,7 +74,7 @@ pub(super) fn register(r: &mut Reg) {
         let t = e.text(&a[0])?;
         let (s, n) = (e.num(&a[1])?.trunc(), e.num(&a[2])?.trunc());
         if s < 1.0 || n < 0.0 {
-            return Err(ErrorKind::Value);
+            return Err(ErrorKind::Domain);
         }
         Ok(Value::text(
             t.chars()
@@ -72,9 +84,14 @@ pub(super) fn register(r: &mut Reg) {
         ))
     });
     r.eager("REPT", 2, 2, |e, a| {
-        let (t, n) = (e.text(&a[0])?, e.num(&a[1])?.trunc());
-        if !(0.0..=32767.0).contains(&n) {
-            return Err(ErrorKind::Value);
+        let (t, n) = (e.text(&a[0])?, e.num(&a[1])?);
+        if n < 0.0 {
+            return Err(ErrorKind::Libre(502));
+        }
+        let n = n.trunc();
+        // `LibreOffice` holds a text of up to 2^28 - 1 characters: `Err:513` beyond.
+        if n * t.chars().count() as f64 >= 268_435_456.0 {
+            return Err(ErrorKind::Libre(513));
         }
         Ok(Value::text(t.repeat(n as usize)))
     });
@@ -123,8 +140,19 @@ pub(super) fn register(r: &mut Reg) {
         ))
     });
     r.eager("VALUE", 1, 1, |e, a| match e.scalar(a[0].clone()) {
-        Value::Text(t) => coerce::parse_number(&t, &e.opts.locale, e.opts.date_ctx())
-            .map_or(Err(ErrorKind::Value), |n| Ok(Value::Number(n))),
+        // The words `TRUE` and `FALSE` are the numbers 1 and 0 for `VALUE`.
+        Value::Text(t) => {
+            let loc = &e.opts.locale;
+            let word = |w: &str| t.trim().eq_ignore_ascii_case(w);
+            if word("true") || word(&loc.true_text) {
+                return num(1.0);
+            }
+            if word("false") || word(&loc.false_text) {
+                return num(0.0);
+            }
+            coerce::parse_number(&t, loc, e.opts.date_ctx())
+                .map_or(Err(ErrorKind::Value), |n| Ok(Value::Number(n)))
+        }
         v => num(coerce::to_num(&v, &e.opts.locale, e.opts.date_ctx())?),
     });
     r.eager("NUMBERVALUE", 1, 3, |e, a| {
@@ -267,10 +295,20 @@ fn find(e: &mut Engine, a: &[Value], case_sensitive: bool) -> Res<Value> {
     let needle = e.text(&a[0])?;
     // LibreOffice: nothing is found when searching for the empty text.
     if needle.is_empty() {
-        return Err(ErrorKind::Value);
+        // `SEARCH` looks at the start first: below 1 it is `Err:502` even for the empty text.
+        let low = !case_sensitive && opt_num(e, a, 2, 1.0).is_ok_and(|s| s.trunc() < 1.0);
+        return Err(if low {
+            ErrorKind::Domain
+        } else {
+            ErrorKind::Value
+        });
     }
     let hay: Vec<char> = e.text(&a[1])?.chars().collect();
     let start = opt_num(e, a, 2, 1.0)?.trunc();
+    // `SEARCH` refuses a start below 1 (`Err:502`); `FIND` answers `#VALUE!`.
+    if start < 1.0 && !case_sensitive {
+        return Err(ErrorKind::Domain);
+    }
     if start < 1.0 || start as usize > hay.len() + 1 {
         return Err(ErrorKind::Value);
     }

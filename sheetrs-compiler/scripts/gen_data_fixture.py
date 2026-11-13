@@ -3,7 +3,7 @@
 key and a row `SUM`, plus a Summary sheet with a total, a `COUNTIF`, an exact `VLOOKUP` and
 an input. About 49 MB on disk, 290 MB of XML, 600,005 formulas, no cached values.
 
-Usage: gen_data_fixture.py OUT.xlsx [--declared]       (random.seed(1); same data every run, the zip bytes differ with the clock)
+Usage: gen_data_fixture.py OUT.xlsx [--declared]       (random.seed(1); same data every run; the file is not a fixture, so its zip bytes follow the clock)
 
 --declared adds a `settings` sheet (input `scale`, outputs `total`, `alpha_count`, `lookup`, `scaled`),
 so a build keeps only what those outputs need instead of every cell.

@@ -1,4 +1,4 @@
-//! The tests that compare the engine with LibreOffice's values (the oracle and the probes) and
+//! The tests that compare the engine with `LibreOffice`'s values (the oracle and the probes) and
 //! the compiler's behavior on small workbooks. One test crate, so the helpers of `common` are
 //! shared by its modules.
 

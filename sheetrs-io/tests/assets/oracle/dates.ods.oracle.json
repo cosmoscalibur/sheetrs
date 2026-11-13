@@ -1,0 +1,3970 @@
+{
+ "version": "26.8.2.2",
+ "file": "dates.ods",
+ "sheets": [
+  "Dates"
+ ],
+ "cells": [
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-30",
+   "value": 0.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1899-12-30 00:00:00",
+   "value": 0.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 0.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 3,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 0.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1899-12-30 00:00:00.000",
+   "value": 0.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 5,
+   "type": "VALUE",
+   "string": "0",
+   "value": 0.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 6,
+   "type": "VALUE",
+   "string": "30/12/1899",
+   "value": 0.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 7,
+   "type": "VALUE",
+   "string": "30-Dec-99",
+   "value": 0.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/30/1899",
+   "value": 0.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 0.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 0.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 0,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 0.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-31",
+   "value": 1.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1899-12-31 00:00:00",
+   "value": 1.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 1.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 3,
+   "type": "VALUE",
+   "string": "24:00:00",
+   "value": 1.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1899-12-31 00:00:00.000",
+   "value": 1.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 5,
+   "type": "VALUE",
+   "string": "1",
+   "value": 1.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 6,
+   "type": "VALUE",
+   "string": "31/12/1899",
+   "value": 1.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 7,
+   "type": "VALUE",
+   "string": "31-Dec-99",
+   "value": 1.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/31/1899",
+   "value": 1.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 1.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 1.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 1,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 1.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1900-01-01",
+   "value": 2.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1900-01-01 00:00:00",
+   "value": 2.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 2.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 3,
+   "type": "VALUE",
+   "string": "48:00:00",
+   "value": 2.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1900-01-01 00:00:00.000",
+   "value": 2.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 5,
+   "type": "VALUE",
+   "string": "2",
+   "value": 2.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 6,
+   "type": "VALUE",
+   "string": "01/01/1900",
+   "value": 2.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1-Jan-00",
+   "value": 2.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1/1/1900",
+   "value": 2.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 2.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 2.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 2,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 2.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1900-02-27",
+   "value": 59.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1900-02-27 00:00:00",
+   "value": 59.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 59.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1416:00:00",
+   "value": 59.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1900-02-27 00:00:00.000",
+   "value": 59.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 5,
+   "type": "VALUE",
+   "string": "59",
+   "value": 59.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 6,
+   "type": "VALUE",
+   "string": "27/02/1900",
+   "value": 59.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 7,
+   "type": "VALUE",
+   "string": "27-Feb-00",
+   "value": 59.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 8,
+   "type": "VALUE",
+   "string": "2/27/1900",
+   "value": 59.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 59.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 59.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 3,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 59.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1900-02-28",
+   "value": 60.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1900-02-28 00:00:00",
+   "value": 60.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 60.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1440:00:00",
+   "value": 60.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1900-02-28 00:00:00.000",
+   "value": 60.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 5,
+   "type": "VALUE",
+   "string": "60",
+   "value": 60.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 6,
+   "type": "VALUE",
+   "string": "28/02/1900",
+   "value": 60.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 7,
+   "type": "VALUE",
+   "string": "28-Feb-00",
+   "value": 60.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 8,
+   "type": "VALUE",
+   "string": "2/28/1900",
+   "value": 60.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 60.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 60.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 4,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 60.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1900-03-01",
+   "value": 61.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1900-03-01 00:00:00",
+   "value": 61.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 61.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1464:00:00",
+   "value": 61.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1900-03-01 00:00:00.000",
+   "value": 61.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 5,
+   "type": "VALUE",
+   "string": "61",
+   "value": 61.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 6,
+   "type": "VALUE",
+   "string": "01/03/1900",
+   "value": 61.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1-Mar-00",
+   "value": 61.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 8,
+   "type": "VALUE",
+   "string": "3/1/1900",
+   "value": 61.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 61.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 61.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 5,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 61.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1900-12-31",
+   "value": 366.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1900-12-31 00:00:00",
+   "value": 366.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 366.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 3,
+   "type": "VALUE",
+   "string": "8784:00:00",
+   "value": 366.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1900-12-31 00:00:00.000",
+   "value": 366.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 5,
+   "type": "VALUE",
+   "string": "366",
+   "value": 366.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 6,
+   "type": "VALUE",
+   "string": "31/12/1900",
+   "value": 366.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 7,
+   "type": "VALUE",
+   "string": "31-Dec-00",
+   "value": 366.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/31/1900",
+   "value": 366.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 366.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 366.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 6,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 366.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1901-01-01",
+   "value": 367.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1901-01-01 00:00:00",
+   "value": 367.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 367.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 3,
+   "type": "VALUE",
+   "string": "8808:00:00",
+   "value": 367.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1901-01-01 00:00:00.000",
+   "value": 367.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 5,
+   "type": "VALUE",
+   "string": "367",
+   "value": 367.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 6,
+   "type": "VALUE",
+   "string": "01/01/1901",
+   "value": 367.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1-Jan-01",
+   "value": 367.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1/1/1901",
+   "value": 367.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 367.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 367.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 7,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 367.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1970-01-01",
+   "value": 25569.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1970-01-01 00:00:00",
+   "value": 25569.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 25569.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 3,
+   "type": "VALUE",
+   "string": "613656:00:00",
+   "value": 25569.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1970-01-01 00:00:00.000",
+   "value": 25569.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 5,
+   "type": "VALUE",
+   "string": "25569",
+   "value": 25569.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 6,
+   "type": "VALUE",
+   "string": "01/01/1970",
+   "value": 25569.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1-Jan-70",
+   "value": 25569.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1/1/1970",
+   "value": 25569.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 25569.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 25569.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 8,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 25569.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2000-01-01",
+   "value": 36526.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 1,
+   "type": "VALUE",
+   "string": "2000-01-01 00:00:00",
+   "value": 36526.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 36526.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 3,
+   "type": "VALUE",
+   "string": "876624:00:00",
+   "value": 36526.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 4,
+   "type": "VALUE",
+   "string": "2000-01-01 00:00:00.000",
+   "value": 36526.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 5,
+   "type": "VALUE",
+   "string": "36526",
+   "value": 36526.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 6,
+   "type": "VALUE",
+   "string": "01/01/2000",
+   "value": 36526.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1-Jan-00",
+   "value": 36526.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1/1/2000",
+   "value": 36526.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 36526.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 36526.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 9,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 36526.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2023-01-01",
+   "value": 44927.5,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 1,
+   "type": "VALUE",
+   "string": "2023-01-01 12:00:00",
+   "value": 44927.5,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 2,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": 44927.5,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1078260:00:00",
+   "value": 44927.5,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 4,
+   "type": "VALUE",
+   "string": "2023-01-01 12:00:00.000",
+   "value": 44927.5,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 5,
+   "type": "VALUE",
+   "string": "44927.5",
+   "value": 44927.5,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 6,
+   "type": "VALUE",
+   "string": "01/01/2023",
+   "value": 44927.5,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1-Jan-23",
+   "value": 44927.5,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1/1/2023",
+   "value": 44927.5,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 PM",
+   "value": 44927.5,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 44927.5,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 10,
+   "col": 11,
+   "type": "VALUE",
+   "string": "12:00:00.00",
+   "value": 44927.5,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2024-03-15",
+   "value": 45366.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 1,
+   "type": "VALUE",
+   "string": "2024-03-15 00:00:00",
+   "value": 45366.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 45366.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1088784:00:00",
+   "value": 45366.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 4,
+   "type": "VALUE",
+   "string": "2024-03-15 00:00:00.000",
+   "value": 45366.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 5,
+   "type": "VALUE",
+   "string": "45366",
+   "value": 45366.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 6,
+   "type": "VALUE",
+   "string": "15/03/2024",
+   "value": 45366.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 7,
+   "type": "VALUE",
+   "string": "15-Mar-24",
+   "value": 45366.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 8,
+   "type": "VALUE",
+   "string": "3/15/2024",
+   "value": 45366.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 45366.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 45366.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 11,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 45366.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2024-03-15",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 1,
+   "type": "VALUE",
+   "string": "2024-03-15 10:30:00",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 2,
+   "type": "VALUE",
+   "string": "10:30:00",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1088794:30:00",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 4,
+   "type": "VALUE",
+   "string": "2024-03-15 10:30:00.000",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 5,
+   "type": "VALUE",
+   "string": "45366.4375",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 6,
+   "type": "VALUE",
+   "string": "15/03/2024",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 7,
+   "type": "VALUE",
+   "string": "15-Mar-24",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 8,
+   "type": "VALUE",
+   "string": "3/15/2024",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 9,
+   "type": "VALUE",
+   "string": "10:30 AM",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 10,
+   "type": "VALUE",
+   "string": "30:00",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 12,
+   "col": 11,
+   "type": "VALUE",
+   "string": "10:30:00.00",
+   "value": 45366.4375,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2024-03-15",
+   "value": 45366.99999900001,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 1,
+   "type": "VALUE",
+   "string": "2024-03-15 23:59:59",
+   "value": 45366.99999900001,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 2,
+   "type": "VALUE",
+   "string": "23:59:59",
+   "value": 45366.999999,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1088808:00:00",
+   "value": 45366.999999,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 4,
+   "type": "VALUE",
+   "string": "2024-03-15 23:59:59.914",
+   "value": 45366.99999900001,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 5,
+   "type": "VALUE",
+   "string": "45366.999999",
+   "value": 45366.999999,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 6,
+   "type": "VALUE",
+   "string": "15/03/2024",
+   "value": 45366.99999900001,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 7,
+   "type": "VALUE",
+   "string": "15-Mar-24",
+   "value": 45366.99999900001,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 8,
+   "type": "VALUE",
+   "string": "3/15/2024",
+   "value": 45366.99999900001,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 9,
+   "type": "VALUE",
+   "string": "11:59 PM",
+   "value": 45366.999999,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 10,
+   "type": "VALUE",
+   "string": "59:59",
+   "value": 45366.999999,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 13,
+   "col": 11,
+   "type": "VALUE",
+   "string": "23:59:59.91",
+   "value": 45366.999999,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2024-03-15",
+   "value": 45366.999999990054,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 1,
+   "type": "VALUE",
+   "string": "2024-03-15 23:59:59",
+   "value": 45366.999999990054,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 2,
+   "type": "VALUE",
+   "string": "23:59:59",
+   "value": 45366.99999999,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1088808:00:00",
+   "value": 45366.99999999,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 4,
+   "type": "VALUE",
+   "string": "2024-03-15 23:59:59.999",
+   "value": 45366.999999990054,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 5,
+   "type": "VALUE",
+   "string": "45366.99999999",
+   "value": 45366.99999999,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 6,
+   "type": "VALUE",
+   "string": "15/03/2024",
+   "value": 45366.999999990054,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 7,
+   "type": "VALUE",
+   "string": "15-Mar-24",
+   "value": 45366.999999990054,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 8,
+   "type": "VALUE",
+   "string": "3/15/2024",
+   "value": 45366.999999990054,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 9,
+   "type": "VALUE",
+   "string": "11:59 PM",
+   "value": 45366.99999999,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 10,
+   "type": "VALUE",
+   "string": "59:59",
+   "value": 45366.99999999,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 14,
+   "col": 11,
+   "type": "VALUE",
+   "string": "23:59:59.99",
+   "value": 45366.99999999,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2024-03-15",
+   "value": 45366.5000058,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 1,
+   "type": "VALUE",
+   "string": "2024-03-15 12:00:00",
+   "value": 45366.5000058,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 2,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": 45366.50000580001,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1088796:00:01",
+   "value": 45366.50000580001,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 4,
+   "type": "VALUE",
+   "string": "2024-03-15 12:00:00.501",
+   "value": 45366.5000058,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 5,
+   "type": "VALUE",
+   "string": "45366.5000058",
+   "value": 45366.5000058,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 6,
+   "type": "VALUE",
+   "string": "15/03/2024",
+   "value": 45366.5000058,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 7,
+   "type": "VALUE",
+   "string": "15-Mar-24",
+   "value": 45366.5000058,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 8,
+   "type": "VALUE",
+   "string": "3/15/2024",
+   "value": 45366.5000058,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 PM",
+   "value": 45366.50000580001,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 45366.50000580001,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 15,
+   "col": 11,
+   "type": "VALUE",
+   "string": "12:00:00.50",
+   "value": 45366.50000580001,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2024-03-15",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 1,
+   "type": "VALUE",
+   "string": "2024-03-15 00:00:00",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 3,
+   "type": "VALUE",
+   "string": "1088784:00:01",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 4,
+   "type": "VALUE",
+   "string": "2024-03-15 00:00:00.994",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 5,
+   "type": "VALUE",
+   "string": "45366.0000115",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 6,
+   "type": "VALUE",
+   "string": "15/03/2024",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 7,
+   "type": "VALUE",
+   "string": "15-Mar-24",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 8,
+   "type": "VALUE",
+   "string": "3/15/2024",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 16,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.99",
+   "value": 45366.0000115,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-30",
+   "value": 0.5,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1899-12-30 12:00:00",
+   "value": 0.5,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 2,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": 0.5,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 3,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": 0.5,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1899-12-30 12:00:00.000",
+   "value": 0.5,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 5,
+   "type": "VALUE",
+   "string": "0.5",
+   "value": 0.5,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 6,
+   "type": "VALUE",
+   "string": "30/12/1899",
+   "value": 0.5,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 7,
+   "type": "VALUE",
+   "string": "30-Dec-99",
+   "value": 0.5,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/30/1899",
+   "value": 0.5,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 PM",
+   "value": 0.5,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 0.5,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 17,
+   "col": 11,
+   "type": "VALUE",
+   "string": "12:00:00.00",
+   "value": 0.5,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-30",
+   "value": 0.75,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1899-12-30 18:00:00",
+   "value": 0.75,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 2,
+   "type": "VALUE",
+   "string": "18:00:00",
+   "value": 0.75,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 3,
+   "type": "VALUE",
+   "string": "18:00:00",
+   "value": 0.75,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1899-12-30 18:00:00.000",
+   "value": 0.75,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 5,
+   "type": "VALUE",
+   "string": "0.75",
+   "value": 0.75,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 6,
+   "type": "VALUE",
+   "string": "30/12/1899",
+   "value": 0.75,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 7,
+   "type": "VALUE",
+   "string": "30-Dec-99",
+   "value": 0.75,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/30/1899",
+   "value": 0.75,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 9,
+   "type": "VALUE",
+   "string": "6:00 PM",
+   "value": 0.75,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 0.75,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 18,
+   "col": 11,
+   "type": "VALUE",
+   "string": "18:00:00.00",
+   "value": 0.75,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-30",
+   "value": 0.9999990000000001,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1899-12-30 23:59:59",
+   "value": 0.9999990000000001,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 2,
+   "type": "VALUE",
+   "string": "23:59:59",
+   "value": 0.999999,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 3,
+   "type": "VALUE",
+   "string": "24:00:00",
+   "value": 0.999999,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1899-12-30 23:59:59.914",
+   "value": 0.9999990000000001,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 5,
+   "type": "VALUE",
+   "string": "0.999999",
+   "value": 0.999999,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 6,
+   "type": "VALUE",
+   "string": "30/12/1899",
+   "value": 0.9999990000000001,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 7,
+   "type": "VALUE",
+   "string": "30-Dec-99",
+   "value": 0.9999990000000001,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/30/1899",
+   "value": 0.9999990000000001,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 9,
+   "type": "VALUE",
+   "string": "11:59 PM",
+   "value": 0.999999,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 10,
+   "type": "VALUE",
+   "string": "59:59",
+   "value": 0.999999,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 19,
+   "col": 11,
+   "type": "VALUE",
+   "string": "23:59:59.91",
+   "value": 0.999999,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-31",
+   "value": 1.5,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1899-12-31 12:00:00",
+   "value": 1.5,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 2,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": 1.5,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 3,
+   "type": "VALUE",
+   "string": "36:00:00",
+   "value": 1.5,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1899-12-31 12:00:00.000",
+   "value": 1.5,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 5,
+   "type": "VALUE",
+   "string": "1.5",
+   "value": 1.5,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 6,
+   "type": "VALUE",
+   "string": "31/12/1899",
+   "value": 1.5,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 7,
+   "type": "VALUE",
+   "string": "31-Dec-99",
+   "value": 1.5,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/31/1899",
+   "value": 1.5,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 PM",
+   "value": 1.5,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 1.5,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 20,
+   "col": 11,
+   "type": "VALUE",
+   "string": "12:00:00.00",
+   "value": 1.5,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-30",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1899-12-30 00:00:00",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 3,
+   "type": "VALUE",
+   "string": "00:00:01",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1899-12-30 00:00:00.999",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 5,
+   "type": "VALUE",
+   "string": "0.000011574",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 6,
+   "type": "VALUE",
+   "string": "30/12/1899",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 7,
+   "type": "VALUE",
+   "string": "30-Dec-99",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/30/1899",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 21,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.99",
+   "value": 1.1574e-05,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-29",
+   "value": -1.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1899-12-29 00:00:00",
+   "value": -1.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": -1.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 3,
+   "type": "VALUE",
+   "string": "-24:00:00",
+   "value": -1.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1899-12-29 00:00:00.000",
+   "value": -1.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 5,
+   "type": "VALUE",
+   "string": "-1",
+   "value": -1.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 6,
+   "type": "VALUE",
+   "string": "29/12/1899",
+   "value": -1.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 7,
+   "type": "VALUE",
+   "string": "29-Dec-99",
+   "value": -1.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/29/1899",
+   "value": -1.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": -1.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": -1.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 22,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": -1.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-29",
+   "value": -0.25,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1899-12-29 18:00:00",
+   "value": -0.25,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 2,
+   "type": "VALUE",
+   "string": "18:00:00",
+   "value": -0.25,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 3,
+   "type": "VALUE",
+   "string": "-06:00:00",
+   "value": -0.25,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1899-12-29 18:00:00.000",
+   "value": -0.25,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 5,
+   "type": "VALUE",
+   "string": "-0.25",
+   "value": -0.25,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 6,
+   "type": "VALUE",
+   "string": "29/12/1899",
+   "value": -0.25,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 7,
+   "type": "VALUE",
+   "string": "29-Dec-99",
+   "value": -0.25,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/29/1899",
+   "value": -0.25,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 9,
+   "type": "VALUE",
+   "string": "6:00 PM",
+   "value": -0.25,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": -0.25,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 23,
+   "col": 11,
+   "type": "VALUE",
+   "string": "18:00:00.00",
+   "value": -0.25,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1898-12-29",
+   "value": -365.5,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 1,
+   "type": "VALUE",
+   "string": "1898-12-29 12:00:00",
+   "value": -365.5,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 2,
+   "type": "VALUE",
+   "string": "12:00:00",
+   "value": -365.5,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 3,
+   "type": "VALUE",
+   "string": "-8772:00:00",
+   "value": -365.5,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 4,
+   "type": "VALUE",
+   "string": "1898-12-29 12:00:00.000",
+   "value": -365.5,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 5,
+   "type": "VALUE",
+   "string": "-365.5",
+   "value": -365.5,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 6,
+   "type": "VALUE",
+   "string": "29/12/1898",
+   "value": -365.5,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 7,
+   "type": "VALUE",
+   "string": "29-Dec-98",
+   "value": -365.5,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/29/1898",
+   "value": -365.5,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 PM",
+   "value": -365.5,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": -365.5,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 24,
+   "col": 11,
+   "type": "VALUE",
+   "string": "12:00:00.00",
+   "value": -365.5,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 0,
+   "type": "VALUE",
+   "string": "0001-01-03",
+   "value": -693593.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 1,
+   "type": "VALUE",
+   "string": "0001-01-03 00:00:00",
+   "value": -693593.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": -693593.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 3,
+   "type": "VALUE",
+   "string": "#FMT",
+   "value": -693593.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 4,
+   "type": "VALUE",
+   "string": "0001-01-03 00:00:00.000",
+   "value": -693593.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 5,
+   "type": "VALUE",
+   "string": "-693593",
+   "value": -693593.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 6,
+   "type": "VALUE",
+   "string": "03/01/0001",
+   "value": -693593.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 7,
+   "type": "VALUE",
+   "string": "3-Jan-1",
+   "value": -693593.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1/3/0001",
+   "value": -693593.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": -693593.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": -693593.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 25,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": -693593.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 0,
+   "type": "VALUE",
+   "string": "0001-01-02",
+   "value": -693594.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 1,
+   "type": "VALUE",
+   "string": "0001-01-02 00:00:00",
+   "value": -693594.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": -693594.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 3,
+   "type": "VALUE",
+   "string": "#FMT",
+   "value": -693594.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 4,
+   "type": "VALUE",
+   "string": "0001-01-02 00:00:00.000",
+   "value": -693594.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 5,
+   "type": "VALUE",
+   "string": "-693594",
+   "value": -693594.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 6,
+   "type": "VALUE",
+   "string": "02/01/0001",
+   "value": -693594.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 7,
+   "type": "VALUE",
+   "string": "2-Jan-1",
+   "value": -693594.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1/2/0001",
+   "value": -693594.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": -693594.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": -693594.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 26,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": -693594.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 0,
+   "type": "VALUE",
+   "string": "9999-12-31",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 1,
+   "type": "VALUE",
+   "string": "9999-12-31 00:00:00",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 3,
+   "type": "VALUE",
+   "string": "#FMT",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 4,
+   "type": "VALUE",
+   "string": "9999-12-31 00:00:00.000",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 5,
+   "type": "VALUE",
+   "string": "2958465",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 6,
+   "type": "VALUE",
+   "string": "31/12/9999",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 7,
+   "type": "VALUE",
+   "string": "31-Dec-99",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/31/9999",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 27,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 2958465.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 0,
+   "type": "VALUE",
+   "string": "10000-01-01",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 1,
+   "type": "VALUE",
+   "string": "10000-01-01 00:00:00",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 3,
+   "type": "VALUE",
+   "string": "#FMT",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 4,
+   "type": "VALUE",
+   "string": "10000-01-01 00:00:00.000",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 5,
+   "type": "VALUE",
+   "string": "2958466",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 6,
+   "type": "VALUE",
+   "string": "01/01/10000",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 7,
+   "type": "VALUE",
+   "string": "1-Jan-00",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 8,
+   "type": "VALUE",
+   "string": "1/1/10000",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 28,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 2958466.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 0,
+   "type": "VALUE",
+   "string": "10113-09-19",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 1,
+   "type": "VALUE",
+   "string": "10113-09-19 00:00:00",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 3,
+   "type": "VALUE",
+   "string": "#FMT",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 4,
+   "type": "VALUE",
+   "string": "10113-09-19 00:00:00.000",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 5,
+   "type": "VALUE",
+   "string": "3000000",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 6,
+   "type": "VALUE",
+   "string": "19/09/10113",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 7,
+   "type": "VALUE",
+   "string": "19-Sep-13",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 8,
+   "type": "VALUE",
+   "string": "9/19/10113",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 29,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 3000000.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 0,
+   "type": "VALUE",
+   "string": "32767-12-31",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 1,
+   "type": "VALUE",
+   "string": "32767-12-31 00:00:00",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 11967899.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 3,
+   "type": "VALUE",
+   "string": "#FMT",
+   "value": 11967899.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 4,
+   "type": "VALUE",
+   "string": "32767-12-31 00:00:00.000",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 5,
+   "type": "VALUE",
+   "string": "11967899",
+   "value": 11967899.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 6,
+   "type": "VALUE",
+   "string": "31/12/32767",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 7,
+   "type": "VALUE",
+   "string": "31-Dec-67",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/31/32767",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 11967899.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 11967899.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 30,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 11967899.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 0,
+   "type": "VALUE",
+   "string": "32767-12-31",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 1,
+   "type": "VALUE",
+   "string": "32767-12-31 00:00:00",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 11967900.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 3,
+   "type": "VALUE",
+   "string": "#FMT",
+   "value": 11967900.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 4,
+   "type": "VALUE",
+   "string": "32767-12-31 00:00:00.000",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 5,
+   "type": "VALUE",
+   "string": "11967900",
+   "value": 11967900.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 6,
+   "type": "VALUE",
+   "string": "31/12/32767",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 7,
+   "type": "VALUE",
+   "string": "31-Dec-67",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/31/32767",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 11967900.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 11967900.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 31,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 11967900.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 0,
+   "type": "VALUE",
+   "string": "32767-12-31",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 1,
+   "type": "VALUE",
+   "string": "32767-12-31 00:00:00",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 2,
+   "type": "VALUE",
+   "string": "00:00:00",
+   "value": 12000000.0,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 3,
+   "type": "VALUE",
+   "string": "#FMT",
+   "value": 12000000.0,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 4,
+   "type": "VALUE",
+   "string": "32767-12-31 00:00:00.000",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS.000"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 5,
+   "type": "VALUE",
+   "string": "12000000",
+   "value": 12000000.0,
+   "error": 0,
+   "format": "General"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 6,
+   "type": "VALUE",
+   "string": "31/12/32767",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "DD/MM/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 7,
+   "type": "VALUE",
+   "string": "31-Dec-67",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "D-MMM-YY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 8,
+   "type": "VALUE",
+   "string": "12/31/32767",
+   "value": 11274306.0,
+   "error": 0,
+   "format": "M/D/YYYY"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 9,
+   "type": "VALUE",
+   "string": "12:00 AM",
+   "value": 12000000.0,
+   "error": 0,
+   "format": "H:MM AM/PM"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 10,
+   "type": "VALUE",
+   "string": "00:00",
+   "value": 12000000.0,
+   "error": 0,
+   "format": "MM:SS"
+  },
+  {
+   "sheet": "Dates",
+   "row": 32,
+   "col": 11,
+   "type": "VALUE",
+   "string": "00:00:00.00",
+   "value": 12000000.0,
+   "error": 0,
+   "format": "HH:MM:SS.00"
+  }
+ ],
+ "notes": []
+}

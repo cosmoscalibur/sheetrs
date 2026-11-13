@@ -2,8 +2,8 @@
 //! reads: the answers must be those of the program held whole.
 
 use serde_json::{Value as Json, json};
-use sheetrs_compiler::compile::QueryLevel;
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, Value, compile};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile};
+use sheetrs_engine::{Overrides, Value};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -29,6 +29,7 @@ fn big_model(rows: u32) -> Model {
 
 fn ask(exe: &std::path::Path, request: &Json) -> Json {
     let mut child = Command::new(exe)
+        .args(["--request", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -54,7 +55,9 @@ fn constants_kept_apart_answer_as_the_whole_program() {
     let m = big_model(20_000);
     let spec = Spec {
         inputs: vec![BindingSpec::named("factor", "Data!E1")],
-        query: QueryLevel::Any,
+        // The constants are outputs only when they are declared as such (nothing declared gives the
+        // formula cells): the answers below read them.
+        outputs: vec![BindingSpec::named("area", "Data!A1:G20000")],
         fold: true,
         ..Spec::default()
     };
@@ -81,7 +84,7 @@ fn constants_kept_apart_answer_as_the_whole_program() {
         json!({"ranges": ["Data!E1"], "inputs": {"factor": {"error": "#N/A"}}}),
     ];
     for r in &requests {
-        let expected = whole.handle(r, &Overrides::default()).unwrap();
+        let expected = whole.handle(r, &Overrides::default()).unwrap().to_json();
         assert_eq!(ask(&exe, r), expected, "{r}");
     }
     let (code, info) = {

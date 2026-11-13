@@ -1,12 +1,13 @@
 //! Text pattern matching under the document's search settings.
 //!
-//! Matching is always case-insensitive: LibreOffice's "case sensitive" setting
+//! Matching is always case-insensitive: `LibreOffice`'s "case sensitive" setting
 //! governs the comparison operators only, not search criteria or lookups
 //! (observed: `COUNTIF(r,"APPLE")` counts `apple` with the setting on).
 
 use crate::options::{Search, SearchMode};
 use fancy_regex::Regex;
 
+#[derive(Debug)]
 pub enum Matcher {
     /// No special characters: compare directly.
     Plain {
@@ -43,9 +44,10 @@ fn wildcard_to_regex(p: &str) -> String {
 
 use crate::casemap::fold;
 
-/// Whether LibreOffice reads the text as a regular expression when the document's search mode is
+/// Whether `LibreOffice` reads the text as a regular expression when the document's search mode is
 /// one (`MayBeRegExp`): one character other than `.` is text, and `{` and `}` alone do not make
 /// an expression.
+#[must_use]
 pub fn may_be_regex(pattern: &str) -> bool {
     (pattern.chars().count() > 1 || pattern == ".")
         && pattern.contains(|c: char| "?*+.[]^$\\<>()|".contains(c))
@@ -72,18 +74,17 @@ impl Matcher {
                 crate::notes::note(crate::notes::REGEX_FOLD);
                 return Self::Never;
             }
-            return match crate::regex_subset::translate(pattern) {
-                Ok(body) => Regex::new(&format!("(?i){body}")).map_or_else(
+            return if let Ok(body) = crate::regex_subset::translate(pattern) {
+                Regex::new(&format!("(?i){body}")).map_or_else(
                     |_| {
                         crate::notes::note(crate::notes::REGEX);
                         Self::Never
                     },
                     |re| Self::Icu(re, whole),
-                ),
-                Err(_) => {
-                    crate::notes::note(crate::notes::REGEX);
-                    Self::Never
-                }
+                )
+            } else {
+                crate::notes::note(crate::notes::REGEX);
+                Self::Never
             };
         }
         let body = wildcard_to_regex(pattern);
@@ -93,6 +94,7 @@ impl Matcher {
 
     /// The lowercased text when the pattern is plain and covers the whole cell: the
     /// match is then an equality that a hash index can answer.
+    #[must_use]
     pub fn plain_whole(&self) -> Option<&str> {
         match self {
             Self::Plain {
@@ -102,6 +104,7 @@ impl Matcher {
         }
     }
 
+    #[must_use]
     pub fn is_match(&self, text: &str) -> bool {
         self.find(text).is_some()
     }
@@ -166,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn wildcards() {
+    fn wildcards_match_with_star_question_mark_and_tilde_escape_and_the_dot_is_literal() {
         let m = Matcher::new("a*n?", &s(SearchMode::Wildcards, true, false), true);
         assert!(m.is_match("anx"));
         assert!(Matcher::new("a~*", &s(SearchMode::Wildcards, true, false), true).is_match("a*"));

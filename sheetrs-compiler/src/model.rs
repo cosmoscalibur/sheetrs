@@ -2,10 +2,10 @@
 //! the compiler consumes. Formulas stay as text until compilation, once all
 //! sheet and defined names are known.
 
-use crate::addr::{self, CellRef};
 use crate::cellstore::CellStore;
-use crate::options::{DateSystem, Iteration, Search};
-use crate::value::Value;
+use sheetrs_engine::addr::{self, CellRef};
+use sheetrs_engine::options::{DateSystem, Iteration, Search};
+use sheetrs_engine::value::Value;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,7 +27,7 @@ pub struct ModelSettings {
     pub search: Option<Search>,
     pub two_digit_year_start: Option<u16>,
     /// `INDIRECT` reads `Sheet!A1` (Excel A1, what an XLSX import sets) and not `Sheet.A1`
-    /// (Calc A1, a document created in LibreOffice). `None`: Excel's.
+    /// (Calc A1, a document created in `LibreOffice`). `None`: Excel's.
     pub string_ref_excel: Option<bool>,
     /// The document is in manual calculation mode (it calculates only on request).
     pub manual_calc: bool,
@@ -46,7 +46,7 @@ pub struct Model {
     /// Built by a file loader: the document defines date system, iteration,
     /// search settings and reference syntax, and a `Spec` may not override them.
     pub from_file: bool,
-    /// The formulas come from an XLSX (LibreOffice reads a bare `#REF!` in one as an
+    /// The formulas come from an XLSX (`LibreOffice` reads a bare `#REF!` in one as an
     /// unknown name).
     pub from_xlsx: bool,
     /// The file name of the workbook, with its extension (`CELL("filename")`).
@@ -71,13 +71,14 @@ impl Default for Model {
 }
 
 impl Model {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sheets: Vec::new(),
             cells: CellStore::default(),
             names: HashMap::new(),
             // LibreOffice numbers dates from 1899-12-30 on the real calendar.
-            date_system: DateSystem::NULL_1899,
+            date_system: DateSystem::Null1899,
             settings: ModelSettings::default(),
             from_file: false,
             from_xlsx: false,
@@ -96,14 +97,14 @@ impl Model {
         (self.sheets.len() - 1) as u16
     }
 
-    fn at(&self, sheet: u16, a1: &str) -> CellRef {
+    fn at(sheet: u16, a1: &str) -> CellRef {
         let area = addr::parse_area(a1).unwrap_or_else(|| panic!("bad address `{a1}`"));
         CellRef::new(sheet, area.r0, area.c0)
     }
 
     /// Set a constant, addressing the cell in A1 notation.
     pub fn set(&mut self, sheet: u16, a1: &str, value: Value) -> &mut Self {
-        let at = self.at(sheet, a1);
+        let at = Self::at(sheet, a1);
         self.cells.insert(
             at,
             ModelCell {
@@ -116,7 +117,7 @@ impl Model {
     }
 
     pub fn set_formula(&mut self, sheet: u16, a1: &str, formula: &str) -> &mut Self {
-        let at = self.at(sheet, a1);
+        let at = Self::at(sheet, a1);
         let formula = formula.strip_prefix('=').unwrap_or(formula).to_string();
         self.cells.insert(
             at,
@@ -129,10 +130,11 @@ impl Model {
         self
     }
 
+    #[must_use]
     pub fn sheet_id(&self, name: &str) -> Option<u16> {
         self.sheets
             .iter()
-            .position(|s| crate::addr::same_name(s, name))
+            .position(|s| sheetrs_engine::addr::same_name(s, name))
             .map(|i| i as u16)
     }
 }

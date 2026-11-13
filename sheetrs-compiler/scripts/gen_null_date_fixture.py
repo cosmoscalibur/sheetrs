@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Generate tests/assets/null_date_{1900,1904,1950}.ods: documents created in LibreOffice with
-another null date (the date of serial 0; LibreOffice stores any date per document).
+"""Generate tests/assets/null_date_{1900,1904}.ods: documents created in LibreOffice with the null dates
+that are not its default (the date of serial 0): 1900-01-01 (StarCalc 1.0) and 1904-01-01. The third date
+system of LibreOffice, 1899-12-30, is the default and `semantics.ods` has it. SheetRS supports these three
+and no other (a document with another null date is an error: see `other_null_date.ods` in
+`sheetrs-io/tests/assets`).
 
 Each has a `Calc` sheet with a formula in column A and its text in column B, recalculated and
 saved by LibreOffice, which tests/semantics/oracle.rs requires the engine to reproduce.
@@ -9,12 +12,16 @@ Run with LibreOffice's Python:  SOFFICE=soffice26 .../program/python scripts/gen
 """
 import os
 import subprocess
+import sys
 import tempfile
 import time
 
 import uno
 from com.sun.star.beans import PropertyValue
 from com.sun.star.util import Date
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scripts"))
+import fixture_determinism  # noqa: E402  (the same bytes on every run, see its docstring)
 
 SOFFICE = os.environ.get("SOFFICE", "soffice")
 ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "assets")
@@ -27,7 +34,7 @@ FORMULAS = [
     "EOMONTH(DATE(2024;1;31);0)", "DAYS(DATE(2024;3;1);DATE(2024;2;1))", "DATEDIF(DATE(2020;1;1);DATE(2024;1;1);\"Y\")",
     "WEEKNUM(DATE(2024;1;1))", "NETWORKDAYS(DATE(2024;1;1);DATE(2024;1;31))",
 ]
-SYSTEMS = {"1900": (1900, 1, 1), "1904": (1904, 1, 1), "1950": (1950, 6, 15)}
+SYSTEMS = {"1900": (1900, 1, 1), "1904": (1904, 1, 1)}
 
 
 def pv(n, v):
@@ -60,6 +67,7 @@ def main():
         doc.calculateAll()
         out = os.path.join(ASSETS, f"null_date_{name}.ods")
         doc.storeToURL(uno.systemPathToFileUrl(os.path.abspath(out)), (pv("FilterName", "calc8"),))
+        fixture_determinism.normalize(out)
         doc.close(True)
     try:
         desktop.terminate()

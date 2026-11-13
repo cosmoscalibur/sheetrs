@@ -1,5 +1,5 @@
 //! `OPT_BARRIER`, `OPT_TOUCH`, `OPT_PROB_HIT` and `OPT_PROB_INMONEY`, the pricing add-in of
-//! LibreOffice (`scaddins/source/pricing`): barrier and touch options in the Black-Scholes model
+//! `LibreOffice` (`scaddins/source/pricing`): barrier and touch options in the Black-Scholes model
 //! with their greeks, as its `black_scholes.cxx` computes them. The results are checked against
 //! the oracle (`tests/assets/semantics.*`).
 

@@ -1,13 +1,14 @@
 //! Print where the engine and the LibreOffice-computed probe workbook differ.
 use serde_json::Value as Json;
-use sheetrs_compiler::addr::CellRef;
-use sheetrs_compiler::{BindingSpec, Overrides, Spec, Value, compile, loader};
+use sheetrs_compiler::{BindingSpec, Spec, compile, loader};
+use sheetrs_engine::addr::CellRef;
+use sheetrs_engine::{Overrides, Value};
 
 fn main() {
     let file = std::env::args()
         .nth(1)
         .unwrap_or("tests/assets/probe.ods".into());
-    let m = loader::load(std::path::Path::new(&file)).unwrap();
+    let m = loader::load(&sheetrs_io::Book::from_file(&file).unwrap()).unwrap();
     let calc = m.sheet_id("Calc").unwrap();
     let n = m
         .cells
@@ -20,7 +21,7 @@ fn main() {
         ..Spec::default()
     };
     let (p, _) = compile(&m, &spec).unwrap();
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p.calculate(&Json::Null, &Overrides::default()).unwrap();
     let col = out[&p.outputs[0].name].as_array().unwrap();
     for r in 0..n {
         let label = match &m.cells[&CellRef::new(calc, r, 1)].value {

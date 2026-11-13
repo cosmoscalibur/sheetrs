@@ -1,4 +1,4 @@
-//! `COLOR`, `CURRENT`, `STYLE` and `EUROCONVERT`, the functions of LibreOffice that need no spreadsheet
+//! `COLOR`, `CURRENT`, `STYLE` and `EUROCONVERT`, the functions of `LibreOffice` that need no spreadsheet
 //! semantics. The results are checked against the oracle (`tests/assets/semantics.*`).
 
 use super::{Reg, num, round_decimal};
@@ -7,7 +7,7 @@ use crate::value::{ErrorKind, Value};
 
 const DOMAIN: ErrorKind = ErrorKind::Domain;
 
-/// Currency, units per euro, decimals (the table of LibreOffice's `lclConvertMoney`).
+/// Currency, units per euro, decimals (the table of `LibreOffice`'s `lclConvertMoney`).
 const CURRENCIES: [(&str, f64, i32); 22] = [
     ("EUR", 1.0, 2),
     ("ATS", 13.7603, 2),
@@ -16,18 +16,18 @@ const CURRENCIES: [(&str, f64, i32); 22] = [
     ("ESP", 166.386, 0),
     ("FIM", 5.94573, 2),
     ("FRF", 6.55957, 2),
-    ("IEP", 0.787564, 2),
+    ("IEP", 0.787_564, 2),
     ("ITL", 1936.27, 0),
     ("LUF", 40.3399, 0),
     ("NLG", 2.20371, 2),
     ("PTE", 200.482, 2),
     ("GRD", 340.750, 2),
     ("SIT", 239.640, 2),
-    ("MTL", 0.429300, 2),
-    ("CYP", 0.585274, 2),
+    ("MTL", 0.429_300, 2),
+    ("CYP", 0.585_274, 2),
     ("SKK", 30.1260, 2),
     ("EEK", 15.6466, 2),
-    ("LVL", 0.702804, 2),
+    ("LVL", 0.702_804, 2),
     ("LTL", 3.45280, 2),
     ("HRK", 7.53450, 2),
     ("BGN", 1.95583, 2),

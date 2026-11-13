@@ -30,14 +30,17 @@ impl<T> Default for Grid<T> {
 }
 
 impl<T> Grid<T> {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -80,6 +83,7 @@ impl<T> Grid<T> {
         }
     }
 
+    #[must_use]
     pub fn get(&self, at: &(u32, u32)) -> Option<&T> {
         self.locate(at.0, at.1).ok().map(|i| &self.items[i])
     }
@@ -88,12 +92,17 @@ impl<T> Grid<T> {
         self.locate(at.0, at.1).ok().map(|i| &mut self.items[i])
     }
 
+    #[must_use]
     pub fn contains_key(&self, at: &(u32, u32)) -> bool {
         self.get(at).is_some()
     }
 
     /// Set an item; one already there is replaced and returned. Appending in row order, as a
     /// reader does, is constant time; any other position moves the items after it.
+    ///
+    /// # Panics
+    ///
+    /// When the grid would hold more than 2^32 cells.
     pub fn insert(&mut self, at: (u32, u32), item: T) -> Option<T> {
         let (row, col) = (at.0 as usize, at.1);
         // After every item stored: a new row, or a later column of the last row. No search, no

@@ -13,3 +13,8 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
+      - id: fixtures-deterministic
+        name: fixtures do not depend on the time they were generated
+        entry: python3 scripts/fixture_determinism.py --check
+        language: system
+        files: \.(xlsx|xlsm|ods)$

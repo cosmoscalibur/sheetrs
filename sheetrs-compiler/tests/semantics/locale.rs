@@ -1,8 +1,9 @@
 //! Locale-dependent behavior: alphabet order, text dates, number text.
 
 use serde_json::{Value as Json, json};
-use sheetrs_compiler::options::Locale;
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, compile};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile};
+use sheetrs_engine::Overrides;
+use sheetrs_engine::options::Locale;
 
 fn eval(locale: Locale, formula: &str) -> Json {
     let mut m = Model::new();
@@ -14,7 +15,7 @@ fn eval(locale: Locale, formula: &str) -> Json {
         ..Spec::default()
     };
     let (p, _) = compile(&m, &spec).unwrap();
-    p.execute(&Json::Null, &Overrides::default()).unwrap()["S!A1"].clone()
+    p.calculate(&Json::Null, &Overrides::default()).unwrap()["S!A1"].clone()
 }
 
 #[test]
@@ -47,7 +48,10 @@ fn char_and_code_as_libreoffice_on_linux() {
     assert_eq!(eval(en.clone(), "CHAR(65)"), json!("A"));
     assert_eq!(eval(en.clone(), "CHAR(128)"), json!("\u{fffd}"));
     assert_eq!(eval(en.clone(), "CHAR(255)"), json!("\u{fffd}"));
-    assert_eq!(eval(en.clone(), "CHAR(256)"), json!({"error": "#VALUE!"}));
+    assert_eq!(
+        eval(en.clone(), "CHAR(256)"),
+        json!({"error": "#VALUE!", "code": "Err:502"})
+    );
     assert_eq!(eval(en.clone(), "CODE(\"€\")"), json!(226));
     assert_eq!(eval(en.clone(), "CODE(\"ñ\")"), json!(195));
     assert_eq!(eval(en.clone(), "CODE(\"漢\")"), json!(230));
@@ -68,7 +72,7 @@ fn text_dates_and_numbers_by_locale() {
     // LibreOffice (es-CO) rejects the "de" form.
     assert_eq!(
         eval(Locale::es_es(), "DATEVALUE(\"1 de marzo de 2024\")"),
-        json!({"error": "#VALUE!"})
+        json!({"error": "#VALUE!", "code": "Err:502"})
     );
     assert_eq!(eval(Locale::es_es(), "VALUE(\"1.234,5\")"), json!(1234.5));
     assert_eq!(

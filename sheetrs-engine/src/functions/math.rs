@@ -6,11 +6,17 @@ use crate::ir::Ns;
 use crate::value::{ErrorKind, Value};
 
 pub(super) fn register(r: &mut Reg) {
-    r.eager("SUM", 1, VAR, |e, a| num(e.numbers(a)?.iter().sum()));
-    r.eager("PRODUCT", 1, VAR, |e, a| {
-        num(e.numbers(a)?.iter().product())
+    r.eager("SUM", 0, VAR, |e, a| num(e.numbers(a)?.iter().sum()));
+    r.eager("PRODUCT", 0, VAR, |e, a| {
+        // No number at all (no argument, an empty range) is 0, not the empty product 1.
+        let v = e.numbers(a)?;
+        num(if v.is_empty() {
+            0.0
+        } else {
+            v.iter().product()
+        })
     });
-    r.eager("SUMSQ", 1, VAR, |e, a| {
+    r.eager("SUMSQ", 0, VAR, |e, a| {
         num(e.numbers(a)?.iter().map(|x| x * x).sum())
     });
     r.eager("ABS", 1, 1, |e, a| num(e.num(&a[0])?.abs()));
@@ -90,14 +96,19 @@ pub(super) fn register(r: &mut Reg) {
     r.eager("RADIANS", 1, 1, |e, a| num(e.num(&a[0])?.to_radians()));
     r.eager("FACT", 1, 1, |e, a| {
         let x = e.num(&a[0])?.trunc();
-        if !(0.0..=170.0).contains(&x) {
+        if x > 170.0 {
+            // Past the largest factorial that fits: the plain `#VALUE!` of `LibreOffice`.
+            return Err(ErrorKind::Value);
+        }
+        if x < 0.0 {
             return Err(ErrorKind::Domain);
         }
         num((1..=x as u32).map(f64::from).product())
     });
-    r.eager("ROUND", 2, 2, |e, a| round_fn(e, a, Mode::Nearest));
-    r.eager("ROUNDUP", 2, 2, |e, a| round_fn(e, a, Mode::Away));
-    r.eager("ROUNDDOWN", 2, 2, |e, a| round_fn(e, a, Mode::Down));
+    // The digits can be left out: 0.
+    r.eager("ROUND", 1, 2, |e, a| round_fn(e, a, Mode::Nearest));
+    r.eager("ROUNDUP", 1, 2, |e, a| round_fn(e, a, Mode::Away));
+    r.eager("ROUNDDOWN", 1, 2, |e, a| round_fn(e, a, Mode::Down));
     r.eager("TRUNC", 1, 2, |e, a| {
         let d = opt_num(e, a, 1, 0.0)?;
         num(round_dec(e.num(&a[0])?, d as i32, Mode::Down))
@@ -149,23 +160,63 @@ fn randbetween(e: &mut Engine, a: &[Value]) -> Res<Value> {
     num((e.rand() * (hi - lo + 1.0) + lo).floor())
 }
 
-fn sumproduct(e: &mut Engine, a: &[Value]) -> Res<Value> {
-    let arrays: Vec<_> = a.iter().map(|v| e.array_of(v.clone())).collect();
-    let (rows, cols) = (arrays[0].rows, arrays[0].cols);
-    if arrays.iter().any(|m| m.rows != rows || m.cols != cols) {
-        return Err(ErrorKind::Value);
-    }
-    let mut total = 0.0;
-    for i in 0..arrays[0].data.len() {
-        let mut p = 1.0;
-        for m in &arrays {
-            match &m.data[i] {
-                Value::Number(n) => p *= n,
-                Value::Error(e) => return Err(*e),
-                _ => p = 0.0,
-            }
+/// The product of one position of every array. A text in it makes the product 0 whatever the other elements are, an
+/// error element among them included (`SUMPRODUCT("a",{1}/0)` is 0 in `LibreOffice`); without a text, the error of the
+/// last array that has one is the answer (`SUMPRODUCT(#NAME?,#NUM!)` is `#NUM!`).
+fn product<'a>(elements: impl Iterator<Item = &'a Value>) -> Res<f64> {
+    let (mut p, mut text, mut error) = (1.0, false, None);
+    for v in elements {
+        match v {
+            Value::Number(n) => p *= n,
+            // `LibreOffice` has no boolean type in an array: `TRUE` is the number 1.
+            Value::Bool(b) => p *= f64::from(u8::from(*b)),
+            Value::Error(e) => error = Some(*e),
+            Value::Text(_) => text = true,
+            _ => p = 0.0,
         }
-        total += p;
+    }
+    match (text, error) {
+        (true, _) => Ok(0.0),
+        (false, Some(e)) => Err(e),
+        (false, None) => Ok(p),
+    }
+}
+
+fn sumproduct(e: &mut Engine, a: &[Value]) -> Res<Value> {
+    // The rows past the data of an operator's array (see `Ghost`) are counted, not read.
+    let arrays: Vec<_> = a.iter().map(|v| e.array_keep(v.clone())).collect();
+    let (rows, cols) = (arrays[0].rows, arrays[0].cols);
+    let logical = arrays[0].logical_rows();
+    // Arrays of different sizes are a plain `#VALUE!`, not the `Err:502` of the other errors.
+    if arrays
+        .iter()
+        .any(|m| m.logical_rows() != logical || m.cols != cols)
+    {
+        return Ok(Value::Error(ErrorKind::Value));
+    }
+    let stored = arrays.iter().map(|m| m.rows).max().unwrap_or(rows);
+    let mut total = 0.0;
+    for r in 0..stored {
+        for c in 0..cols {
+            // A row after the stored ones of an array is the value its ghost holds.
+            total += product(arrays.iter().map(|m| {
+                if r < m.rows {
+                    m.get(r, c)
+                } else {
+                    m.ghost.as_ref().map_or(&Value::Empty, |g| &g.value)
+                }
+            }))?;
+        }
+    }
+    // The rows after the stored ones are all the same product.
+    let extra = logical - u64::from(stored);
+    if extra > 0 {
+        let p = product(
+            &mut arrays
+                .iter()
+                .map(|m| m.ghost.as_ref().map_or(&Value::Empty, |g| &g.value)),
+        )?;
+        total += p * extra as f64 * f64::from(cols);
     }
     num(total)
 }
@@ -178,7 +229,8 @@ pub(crate) enum Mode {
 }
 
 fn round_fn(e: &mut Engine, a: &[Value], mode: Mode) -> Res<Value> {
-    let (x, d) = (e.num(&a[0])?, e.num(&a[1])?);
+    let x = e.num(&a[0])?;
+    let d = super::opt_num(e, a, 1, 0.0)?;
     num(round_dec(x, d.trunc() as i32, mode))
 }
 
@@ -263,7 +315,7 @@ fn multiple(e: &mut Engine, a: &[Value], f: fn(f64) -> f64) -> Res<Value> {
     num(f(x / m) * m)
 }
 
-/// LibreOffice's `CEILING(x; multiple; mode)` and `FLOOR`: a zero number or multiple gives 0,
+/// `LibreOffice`'s `CEILING(x; multiple; mode)` and `FLOOR`: a zero number or multiple gives 0,
 /// the number and the multiple must have the same sign, and for negative numbers `mode` 0
 /// rounds toward +∞ (CEILING) or −∞ (FLOOR) and any other mode away from / toward zero.
 fn native_multiple(e: &mut Engine, a: &[Value], ceiling: bool) -> Res<Value> {

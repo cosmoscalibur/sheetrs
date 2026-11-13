@@ -111,6 +111,9 @@ distinguish them from relative references. The regex skips false matches
 on function names (e.g., `LOG10`) and sheet qualifiers (e.g., `SHEET1!`)
 by checking surrounding context.
 
+That is an internal pattern to compare formulas, not the R1C1 notation: SheetRS reads and writes
+the A1 notation only (see `docs/approved-differences.md`).
+
 ### Argument Separator Normalization
 
 ODS uses `;` as the function argument separator while XLSX uses `,`. The ODS
@@ -202,10 +205,10 @@ parsers and rules:
   cell (REF309), and a classification of every cell with a copy of its formula pattern, three
   times over (INT401–403): +590 MB on a 6.6 M-cell workbook. Repeated text (formula patterns) is
   interned and kept as an id.
-- Output is written as it is produced (`sheetlint --format json` serializes each violation):
+- Output is written as it is produced (`sheetrs lint --format json` and `--format sarif` serialize each violation):
   building a tree of the whole document costs about 4 KB a violation.
 - Memory is measured as the peak of the run (`measure_perf.py` does it for `sheetc`; for the
-  linter, `wait4`'s `ru_maxrss` or `/usr/bin/time -v`), with the human and the JSON output, and a
+  linter, `wait4`'s `ru_maxrss` or `/usr/bin/time -v`), with the human and the SARIF output, and a
   change must leave the output byte-identical (compare the MD5).
 
 ## CLI Conventions
@@ -213,20 +216,64 @@ parsers and rules:
 ### Exit Codes
 
 - `0` — success (no violations, or operation completed)
-- `1` — violations found (sheetlint) or operation failed
+- `1` — violations found (sheetrs lint) or operation failed
 - `2` — configuration or argument error
 
 ### Output Streams
 
 - `stdout` — primary output (violations, stats, results)
-- `stderr` — progress messages, warnings, errors
+- `stderr` — what a run reports besides its result, as `sheetrs_protocol::Diagnostic` records written by
+  the `Logger` (`--log-format human|json`, `-q`, `-v`): errors and warnings by default, what the run did
+  with `-v`, the detail with `-vv`
 
 ### Output Formats
 
-Support `--format text` (default, human-readable) and `--format json`
-(machine-readable, CI integration).
+Support `--format human` (default) and machine-readable formats. The linter writes its own `json`
+(flexible, for an interface of your own) and, when asked, [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
+(`--format sarif`) for the tools that read the standard. Every format is a library function
+(`sheetrs_linter::output`) that the CLI and the bindings call, not CLI code.
 
 ## Library Conventions
+
+### Names
+
+The name of an action or of an interface (a subcommand, a flag, a public function or method, a
+binding, a WASM export) comes from the language of the LibreOffice Calc interface; if LibreOffice has
+none, from xlwings, then openpyxl, then similar tools outside spreadsheets (for the compiler and the
+linter, tools of their area). The name is chosen from what SheetRS exposes, never the other way
+round. One concept has one verb (`delete` for sheets, names, rows and columns). The Rust API stays
+idiomatic Rust where that differs (`write` and not Save, `io::Write` sinks, constructors, errors).
+
+### Rust idioms
+
+- **Conversions are traits.** A text becomes a type with `FromStr` (`"T!A3".parse::<Reference>()`,
+  `"1904".parse::<DateSystem>()`), a total conversion is `From` (`Scope::from("Data!A1:C9")`), a fallible
+  one `TryFrom`; there is no `parse_*` or `from_*` function that a trait says. A constructor that opens
+  something is `open` or `from_*` (`Book::from_file`, `Book::from_bytes`).
+- **Getters have no `get_`** (`Workbook::sheet`, `Sheet::cell`); a bare name for what is read, `set_` only
+  where a setter is meant.
+- **A parameter that is a mode is an enum, not a `bool`** where its meaning is not clear at the call site
+  (`loader::from_workbook(wb, Format::Ods)`); options of a search that mirror the protocol keep their
+  field names.
+- **Construction is by value, plan operations are by `&mut self`.** Configuration of a value that is then
+  used (`TextContext::new(..).with_date_system(..)`) consumes `self`; the verbs that accumulate in a
+  `Book` take `&mut self` and return it.
+- **`#[non_exhaustive]`** on a public enum that the library produces and that callers match on, when it
+  may grow (errors, `Format`, `Level`, `LogFormat`, `DateValue`, the output formats, the rule
+  categories, `FromCalcError`, `ExcelError`, `EntryFormat`). Not on a protocol enum that callers construct
+  and that every tool of the workspace must handle in full (`Property`, `Scope`, `Mode`, `SearchIn`,
+  `Operation`, `Typed`), nor on the closed sets that a formatter or a rule maps one by one (`SheetState`,
+  `NameScope`, `Severity`, `ViolationScope`, `MajorDimension`, `DateSystem`): adding a variant there is a
+  change that every consumer has to implement, so the compiler should say where, and a wildcard arm
+  would ignore the new one in silence.
+- **The surface is what is documented.** A module that no other crate uses is private (`mod`), not
+  `pub mod`; what must be reachable is re-exported at the crate root. The public types are `Send + Sync`
+  (a test per crate: `tests/send_sync.rs`) and the entry points have a documented example
+  (`no_run` where it needs a file).
+- **The clock is an input.** The engine reads `NOW()`, `TODAY()` and the seed from the options of the
+  run (`now`, `seed`) and, when they are absent, from `clock::unix_now`, a system clock that a host
+  without one (WebAssembly) replaces once with `clock::set_wall_clock`; nothing else in the workspace reads
+  the time.
 
 ### Versioning
 
@@ -236,17 +283,50 @@ The workspace uses [semantic versioning](https://semver.org/):
 - **Minor**: new features, new rules, backward-compatible changes
 - **Patch**: bug fixes, performance improvements
 
+These are the rules for when the API stops being experimental; while it is experimental (see API
+stability) a minor or a patch version may also change it.
+
 ### Public API Surface
 
-The `sheetrs-core` library crate exports:
+Every tool is a library plus an executable; the bindings are adapters
+over those libraries. Where code lives follows who uses it (see `ARCHITECTURE.md`, *Layering*):
 
-- `reader` module — `Workbook` trait, format parsers
-- `rules` module — rule registry and `WalkerRule` trait
-- `config` module — TOML configuration loading
-- `writer` module — workbook modification utilities
-- `violation` module — violation types and formatting
+- `sheetrs-io` (shared kernel): `reader` (the `Workbook` model, `Grid`, `CellSink`, `ExcelError`,
+  the XLSX/ODS parsers, and `Format`) and `Book` (`sheetrs_io::Book`: the one reference to a workbook that every tool takes, with the operations pending on it). Add to it only what two tools need and has no meaning outside the
+  workbook model; code used by one tool belongs to that tool's crate.
+- `sheetrs-linter`: `rules` (`WalkerRule`, the registry and the catalog), `config`, `violation`,
+  `report` (`group_by_scope`, `ViolationRecord`), the output formats (`human`, `json`, `sarif`, and
+  `output::write_report` over an `OutputFormat`), `Linter`.
+- `sheetrs-stats`: `BookStats::stats` and its result `WorkbookStats`.
+- `sheetrs-edit`: `BookEdit` (a trait for `Book`; every change is written against the workbook as it is and the order they are pushed in changes nothing: the planner, a set of functions that take the `Book`'s operations, runs them in a canonical order; `write(path)`, `write_in_place()` and `write_to(out)` plan them into the fewest passes over the file and `explain` says how; work step by step with a `write` between steps), `RowRange`, `ColumnRange`, `ValueScope`. `calculate(Calculation)` is an operation of the plan run by the engine of `sheetrs-compiler` (the editor depends on it; nothing is injected, and the same engine calculates again the results a conversion of formulas to values reads after a change that leaves them stale): the workbook is written with fresh results and without the mark to recalculate on open (also for what a deletion or a replacement leaves stale: the planner ends the run with the engine calculating it again), or, only where the engine cannot calculate it, marked and with a `Warning` in the `Report` the write returns, which also holds the value ranges (`Calculation::answer`, `Report::value_ranges`, `Report::write_json`). The planner is private: `BookEdit` is the one way in. The writers are `sheetrs_io::write` (feature `write`, with their own error `sheetrs_io::write::Error`): a crate that only reads never enables it, and a new writer capability goes there, not in `sheetrs-edit`. `sheetrs-answer`: `fill_template*` (the answer of a program written into its workbook).
+- `sheetrs-engine` and `sheetrs-compiler`: each has its own `Error` (typed, `thiserror`). The compiler builds a `Model` from a `Book` (`loader::load`; `BookCompile` has `compile`, `calculate`, `inspect`, `verify`) and does not re-export the engine: what is the engine's is imported from `sheetrs_engine`.
 
-### Backward Compatibility
+**Interface convention (every crate and binding).** There is one interface, the workbook: `Book`
+(`sheetrs_io::Book`; no `Source`, no `Editor`, no other type in front of it). It holds where the workbook is,
+its format and the operations pending on it, and what it does itself is reading the workbook
+(`workbook`, `workbook_into`, `analysis_into`, `selection_into`, `date_system`, `defined_names`). Each tool
+adds its verbs in its own crate as an extension trait of `Book` (`BookQuery::query`, `BookEdit::delete_rows`
+and `write`, `BookCompile::calculate`, `BookLint::lint`, `BookStats::stats`), which the caller imports with
+`use`; the core cannot depend on the tools, so this is how a tool adds to the `Book` without the core
+knowing it. An operation that is pending lives in the `Book` (`push`, `operations`), is written against
+the workbook as it is, and is ordered by the planner of the tool, not by the caller. Python has one
+object, `Book`, a lazy reference to a workbook whose operations accumulate until `save` (the tools are its
+methods); there is no facade crate, since each tool has its own executable and use. A new tool follows the
+rule instead of choosing a shape of its own.
 
-Avoid breaking changes to the public API. When deprecating, add
-`#[deprecated]` with a migration note and remove in the next major version.
+Keep logic in the libraries and out of the executables and the bindings (`sheetrs-wasm`,
+`sheetrs-py`): an adapter converts arguments and results and nothing else, and what two adapters
+both present (a grouping, a flat record) goes in the library. The API of a binding is organized by
+tool (the rules are part of the linter, so they sit next to `lint`). A change to a binding's API
+updates its README (and the type stubs of `sheetrs-py`), and a new capability is exposed in both
+bindings.
+
+Path dependencies between publishable crates carry a `version`
+(`sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }`) so that they can be published;
+`cargo set-version --workspace <version>` (cargo-edit) updates them with the workspace version.
+
+### API stability
+
+The API is **experimental and unstable in every layer** (command line, Rust, Python, WebAssembly) and
+may change without notice: a rename or a removal needs no deprecation period. The stubs must say what
+the extension has.

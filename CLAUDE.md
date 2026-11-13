@@ -12,7 +12,7 @@ Read these before planning or implementing any change:
 
 - `docs/coding-patterns.md` — SoC, WalkerRule pattern, formula normalization,
   rule config parameters, shared helpers, CLI/library conventions.
-- `CONTRIBUTING.md` — testing (ODS/XLSX parity, TDD), documentation maintenance,
+- `CONTRIBUTING.md` — testing (capability parity, fidelity to LibreOffice, TDD), documentation maintenance,
   changelog fragments, PR process.
 
 Load on demand:
@@ -24,9 +24,8 @@ Load on demand:
 
 ## Benchmarks
 
-- `tests/production/` is git-ignored, so a git worktree lacks it. Symlink it
-  from the main checkout before benchmarking:
-  `ln -s <main-checkout>/tests/production tests/production`.
-- Read `scripts/README.md` before benchmarking. A benchmarked change updates
-  its Comparisons entry, and `sheetrs-linter/docs/PROFILING.md` when it targets the
+- Benchmarks run on generated workbooks, so any checkout reproduces them:
+  `scripts/bench.py fixtures DIR` then `scripts/bench.py run DIR`.
+- Read `docs/performance.md` before benchmarking. A benchmarked change updates
+  the results table of that document, and `sheetrs-linter/docs/PROFILING.md` when it targets the
   cost of a rule or phase.

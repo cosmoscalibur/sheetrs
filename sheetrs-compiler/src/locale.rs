@@ -1,15 +1,16 @@
 //! Locales: the user's regional settings, resolved at build time.
 //!
-//! The locales LibreOffice offers are a table of the engine (`locale_data.rs`, generated from
-//! LibreOffice by `scripts/gen_locale_table.py`): separators, names, the patterns of a date typed as
+//! The locales `LibreOffice` offers are a table of the engine (`locale_data.rs`, generated from
+//! `LibreOffice` by `scripts/gen_locale_table.py`): separators, names, the patterns of a date typed as
 //! text, the currency format. A tag the table has (`es-CO`, or a bare language such as `es`)
 //! needs nothing else. Any other region or language is stated in the `[locale]` table of the
-//! build configuration rather than guessed: what Excel and LibreOffice take from the operating
+//! build configuration rather than guessed: what Excel and `LibreOffice` take from the operating
 //! system's regional settings cannot be derived from a tag with certainty, and a wrong decimal
 //! separator changes every number read from text.
 
-use crate::options::{DateOrder, Locale};
+use crate::error::{Error, Result};
 use serde::Deserialize;
+use sheetrs_engine::options::{DateOrder, Locale};
 
 /// The `[locale]` table. Everything but `tag` overrides what the tag gives; for
 /// a language that is not built in, it provides it.
@@ -53,8 +54,8 @@ struct Tag {
     region: Option<String>,
 }
 
-fn parse_tag(tag: &str) -> Result<Tag, String> {
-    let bad = || format!("`{tag}` is not a locale tag (like `en`, `es-CO`)");
+fn parse_tag(tag: &str) -> Result<Tag> {
+    let bad = || Error::Locale(format!("`{tag}` is not a locale tag (like `en`, `es-CO`)"));
     let mut parts = tag.split(['-', '_']);
     let language = parts
         .next()
@@ -70,18 +71,20 @@ fn parse_tag(tag: &str) -> Result<Tag, String> {
     Ok(Tag { language, region })
 }
 
-fn order(s: &str) -> Result<DateOrder, String> {
+fn order(s: &str) -> Result<DateOrder> {
     match s.to_ascii_lowercase().as_str() {
         "mdy" => Ok(DateOrder::Mdy),
         "dmy" => Ok(DateOrder::Dmy),
         "ymd" => Ok(DateOrder::Ymd),
-        _ => Err(format!("date_order must be mdy, dmy or ymd, got `{s}`")),
+        _ => Err(Error::Locale(format!(
+            "date_order must be mdy, dmy or ymd, got `{s}`"
+        ))),
     }
 }
 
-fn fixed<const N: usize>(what: &str, v: &[String]) -> Result<[String; N], String> {
+fn fixed<const N: usize>(what: &str, v: &[String]) -> Result<[String; N]> {
     <[String; N]>::try_from(v.to_vec())
-        .map_err(|_| format!("{what} needs {N} names, got {}", v.len()))
+        .map_err(|_| Error::Locale(format!("{what} needs {N} names, got {}", v.len())))
 }
 
 /// The locale whose date conventions a stated `date_order` takes over.
@@ -95,7 +98,11 @@ fn reference(order: DateOrder) -> Option<&'static str> {
 
 /// Resolve `tag` and the overrides into a locale. The second element lists what
 /// was inherited from the language of a region the table does not have.
-pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>), String> {
+///
+/// # Errors
+///
+/// When `tag` is not a locale tag, or an override is not valid.
+pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>)> {
     let t = parse_tag(tag)?;
     let mut notes = Vec::new();
     let mut missing: Vec<&str> = Vec::new();
@@ -113,12 +120,12 @@ pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>
             }
         }
         if !missing.is_empty() {
-            return Err(format!(
+            return Err(Error::Locale(format!(
                 "locale {tag}: the table has no region {} for `{}` (see `locale_data.rs`); set {} in [locale]",
                 t.region.as_deref().unwrap_or("?"),
                 t.language,
                 missing.join(", ")
-            ));
+            )));
         }
         notes.push(format!(
             "locale {tag}: month and day names, boolean text and currency are those of `{}`; the table [locale] can change them",
@@ -141,11 +148,11 @@ pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>
             }
         }
         if !missing.is_empty() {
-            return Err(format!(
+            return Err(Error::Locale(format!(
                 "locale {tag}: the language `{}` is not in the table of locales; define this locale in [locale] (missing: {})",
                 t.language,
                 missing.join(", ")
-            ));
+            )));
         }
         Locale::en_us()
     };
@@ -192,16 +199,13 @@ pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>
         let o = order(o)?;
         if o != loc.date_order {
             // The patterns and the reading of a month name of that order.
-            match reference(o).and_then(Locale::row).map(Locale::from_row) {
-                Some(r) => {
-                    loc.date_patterns = r.date_patterns;
-                    loc.named = r.named;
-                    loc.date_sep = r.date_sep;
-                }
-                None => {
-                    loc.date_patterns = Vec::new();
-                    loc.named = String::new();
-                }
+            if let Some(r) = reference(o).and_then(Locale::row).map(Locale::from_row) {
+                loc.date_patterns = r.date_patterns;
+                loc.named = r.named;
+                loc.date_sep = r.date_sep;
+            } else {
+                loc.date_patterns = Vec::new();
+                loc.named = String::new();
             }
             loc.date_order = o;
         }
@@ -224,10 +228,10 @@ pub fn from_tag(tag: &str, over: &LocaleOverride) -> Result<(Locale, Vec<String>
         loc.days_abbr = fixed("days_abbr", d)?;
     }
     if loc.decimal == loc.group {
-        return Err(format!(
+        return Err(Error::Locale(format!(
             "locale {tag}: decimal and group separators are both `{}`",
             loc.decimal
-        ));
+        )));
     }
     Ok((loc, notes))
 }
@@ -237,7 +241,9 @@ mod tests {
     use super::*;
 
     fn get(tag: &str) -> Result<Locale, String> {
-        from_tag(tag, &LocaleOverride::default()).map(|l| l.0)
+        from_tag(tag, &LocaleOverride::default())
+            .map(|l| l.0)
+            .map_err(|e| e.to_string())
     }
 
     #[test]
@@ -338,7 +344,7 @@ mod tests {
         let bad = |f: fn(&mut LocaleOverride)| {
             let mut o = LocaleOverride::default();
             f(&mut o);
-            from_tag("en", &o).unwrap_err()
+            from_tag("en", &o).unwrap_err().to_string()
         };
         assert!(bad(|o| o.date_order = Some("xyz".into())).contains("mdy, dmy or ymd"));
         assert!(bad(|o| o.months = Some(vec!["a".into()])).contains("12 names"));

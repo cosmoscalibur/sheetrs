@@ -6,7 +6,16 @@ use crate::ast::{CellAddr, Expr, RefArea, Reference, UnOp};
 use std::fmt::{self, Display, Write};
 
 /// A sheet name as it appears before `!`: quoted when needed.
+#[must_use]
 pub fn sheet_text(name: &str) -> String {
+    // `T:V` is the span of sheets from `T` to `V` (a sheet name has no `:`): written without quotes
+    // when neither end needs them, as a whole in quotes otherwise (`'My Sheet:Other'`).
+    if let Some((a, b)) = name.split_once(':')
+        && !needs_quotes(a)
+        && !needs_quotes(b)
+    {
+        return name.to_string();
+    }
     if needs_quotes(name) {
         format!("'{}'", name.replace('\'', "''"))
     } else {
