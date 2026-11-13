@@ -116,7 +116,7 @@ and not repeated); the others are the minimum and the maximum of 3 runs.
 |---|---|---|
 | `--delete-sheets Lookup` | 22.48-22.60 s, 1839-1840 MB | 49.05-49.98 s, 1893 MB † |
 | `--delete-names base_rate` | 16.3 s, 1646 MB * | 25.3 s, 1656 MB * |
-| `--formula-to-value Calc` | 24.25-25.65 s, 1646 MB † | 7.64-7.89 s, 19 MB † |
+| `--formula-to-value Calc` | 24.25-25.65 s, 1646 MB † | 5.89-5.98 s, 14 MB ‡ |
 | `--formula-to-value Calc!B:D Calc!1:1000` | 25.99-26.44 s, 1646 MB † | 8.29-8.57 s, 19 MB † |
 | delete sheet + name, convert `Calc` (one command) | 23.4 s, 1646 MB * | 12.4 s, 297 MB * |
 | `--delete-rows Data!10:20` | 25.39-25.57 s, 1646 MB | 51.59-52.54 s, 1745 MB † |
@@ -131,6 +131,12 @@ and not repeated); the others are the minimum and the maximum of 3 runs.
 alone, and a defined name that points to cells no deleted row or column touches no longer sends the plan to the
 whole-workbook path): a conversion alone does not use the analysis; the ODS rows are those of
 [#107](https://github.com/cosmoscalibur/sheetrs/issues/107) and were left out of the last round.
+
+‡ Measured after the writers stopped allocating per cell (3 runs, same session as the binary before the change: 6.96-7.02 s, 14 MB,
+the same output byte for byte). The writers alone, without the analysis or the engine, on `formulas.xlsx` / `formulas.ods`
+(`WorkbookModifications` through `modify_workbook`, 14 MB peak in every case): conversion of `Calc` 3.97 → 3.07 s / 5.37 → 4.24 s,
+`--delete-rows Data!10:20` 7.98 → 6.28 s / 11.55 → 9.84 s, `--delete-columns Data!B:D` 7.03 → 5.54 s / 10.67 → 8.95 s. The 136-139 s
+of the ODS column deletion are not the writer: end to end it took 143 s and 2416 MB, so the rest is the analysis and the engine.
 
 A conversion alone streams (the ODS rows: 19 to 298 MB); what needs the engine (a deletion that leaves a formula
 stale, or an XLSX whose results are not stored) holds the formulas of the workbook in memory, about 1.6-2.2 GB for

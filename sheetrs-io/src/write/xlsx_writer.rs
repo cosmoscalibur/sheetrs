@@ -10,7 +10,7 @@ use super::xlsx_structure::{
 };
 use super::{
     CachedResult, CellEdit, SheetEdits, ValueScope, WorkbookModifications, attribute,
-    formats::StyleBook, read_element_body, write_element,
+    formats::StyleBook, read_element_body, read_element_body_into, write_element,
 };
 use crate::reader::parser_utils::{
     attr_value, column_letters, parse_cell_range, parse_cell_ref, push_general_ref,
@@ -921,8 +921,8 @@ struct CellCursor {
 
 impl CellCursor {
     fn start_row(&mut self, row: &BytesStart) -> Result<()> {
-        self.row = match attribute(row, "r")? {
-            Some(r) => r.parse::<u32>()?.saturating_sub(1),
+        self.row = match row.try_get_attribute("r")? {
+            Some(r) => attr_value(&r)?.parse::<u32>()?.saturating_sub(1),
             None => self.next_row,
         };
         self.next_row = self.row + 1;
@@ -931,7 +931,10 @@ impl CellCursor {
     }
 
     fn next_cell(&mut self, cell: &BytesStart) -> Result<(u32, u32)> {
-        let (row, col) = attribute(cell, "r")?
+        let (row, col) = cell
+            .try_get_attribute("r")?
+            .map(|r| attr_value(&r))
+            .transpose()?
             .and_then(|r| parse_cell_ref(&r))
             .unwrap_or((self.row, self.next_col));
         self.next_col = col + 1;
@@ -1083,6 +1086,9 @@ fn transform_sheet<R: BufRead, W: Write>(
     // Inside `rowBreaks` (true) or `colBreaks` (false).
     let mut break_rows: Option<bool> = None;
     let mut buf = Vec::new();
+    // The content of the cell being read and the buffer it is read through, kept between cells.
+    let mut body: Vec<Event<'static>> = Vec::new();
+    let mut body_buf = Vec::new();
 
     loop {
         buf.clear();
@@ -1111,7 +1117,7 @@ fn transform_sheet<R: BufRead, W: Write>(
             }
             Event::Start(e) if e.name().as_ref() == "c" => {
                 let (row, col) = cursor.next_cell(&e)?;
-                let body = read_element_body(&mut reader, "c")?;
+                read_element_body_into(&mut reader, "c", &mut body_buf, &mut body)?;
                 let (formula, has_value) = inspect_cell(&e, &body)?;
                 // The cells of a group read their formula from the first one, even when it goes.
                 if let Some(f) = &formula
@@ -1496,11 +1502,15 @@ fn renumbered_row(row: &BytesStart, new_row: u32) -> Result<BytesStart<'static>>
 
 /// A cell element at `at` (`(row, col)`, 0-based) when it moves, without the type of a result that
 /// is no longer there when `drop_type`.
-fn relocated_cell(
-    cell: &BytesStart,
+fn relocated_cell<'a>(
+    cell: &'a BytesStart<'_>,
     at: Option<(u32, u32)>,
     drop_type: bool,
-) -> Result<BytesStart<'static>> {
+) -> Result<BytesStart<'a>> {
+    // A cell that stays as it is, with attributes that need no escaping, is copied as it is.
+    if at.is_none() && !drop_type && !cell.as_ref().bytes().any(|b| b == b'&' || b == b'\'') {
+        return Ok(cell.borrow());
+    }
     map_attributes(cell, |key, _| {
         Ok(match (key, at) {
             ("r", Some((row, col))) => Some(Some(format!("{}{}", column_letters(col), row + 1))),
