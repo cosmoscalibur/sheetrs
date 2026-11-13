@@ -30,7 +30,10 @@ colored = "3.1"
 
 # XML parsing
 quick-xml = "0.42.0"
-zip = { version = "9.0", default-features = false, features = ["deflate"] }
+# Below 9.1: from 9.1 `zip` depends on `getrandom` with `wasm_js` on wasm32 whatever its features, which
+# makes the WebAssembly modules of `sheetc` import `wasm-bindgen` glue from the host (they have no imports) and
+# builds `wasm-bindgen` without `std`, which fails in release on Rust 1.99 (`core::arch::wasm::unreachable`).
+zip = { version = ">=9.0, <9.1", default-features = false, features = ["deflate"] }
 
 # HTTP client for link validation
 reqwest = { version = "0.13.5", features = ["blocking"] }

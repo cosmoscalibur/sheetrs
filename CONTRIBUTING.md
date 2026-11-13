@@ -89,6 +89,12 @@ turns every regeneration into a diff of binary files that changed no cell.
 - Use file paths for integration tests.
 - Create both positive (expected behavior) and negative (error handling, edge
   cases) test cases.
+- **Name** a test for the behavior it checks, in a few words (`locale_flag_is_refused_at_run_time`), not
+  for how the code reaches it.
+- **Test behavior, not design.** A test fails when what a user or a caller observes changes (a result, an
+  error, an output). It does not pin that something does not exist or how it is built; a decision of
+  design is recorded in the docs.
+- **One behavior per test.** A test that checks several unrelated things is split.
 - A fixture for code that decides by looking for a name in text (a shortcut that skips a
   formula that does not mention a sheet) uses names that cannot occur in the text around them:
   `Zeta`, not `T` or `U`, which any function name contains.
