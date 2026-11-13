@@ -22,15 +22,15 @@ doctest = false
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
-sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }
-sheetrs-linter = { path = "../sheetrs-linter", version = "0.4.0" }
-sheetrs-edit = { path = "../sheetrs-edit", version = "0.4.0" }
-sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.0" }
-sheetrs-query = { path = "../sheetrs-query", version = "0.4.0" }
-sheetrs-compiler = { path = "../sheetrs-compiler", version = "0.4.0" }
-sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.0" }
-sheetrs-stats = { path = "../sheetrs-stats", version = "0.4.0" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.1" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.1" }
+sheetrs-linter = { path = "../sheetrs-linter", version = "0.4.1" }
+sheetrs-edit = { path = "../sheetrs-edit", version = "0.4.1" }
+sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.1" }
+sheetrs-query = { path = "../sheetrs-query", version = "0.4.1" }
+sheetrs-compiler = { path = "../sheetrs-compiler", version = "0.4.1" }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.1" }
+sheetrs-stats = { path = "../sheetrs-stats", version = "0.4.1" }
 pyo3 = { version = "0.30", features = ["abi3-py313"] }
 serde_json.workspace = true
 tempfile.workspace = true

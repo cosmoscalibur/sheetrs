@@ -20,7 +20,7 @@ path = "src/lib.rs"
 cli = ["dep:clap", "dep:anyhow", "dep:serde_json"]
 
 [dependencies]
-sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.1" }
 clap = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
 serde.workspace = true

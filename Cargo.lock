@@ -2244,7 +2244,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-answer"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde_json",
  "sheetrs-engine",
@@ -2254,7 +2254,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-cli"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2271,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-compiler"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "pprof",
  "serde",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-edit"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2314,7 +2314,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-engine"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "fancy-regex 0.19.2",
  "icu_casemap",
@@ -2330,7 +2330,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-formula"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde",
  "sheetrs-io",
@@ -2338,7 +2338,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-io"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2357,7 +2357,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-linter"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2379,7 +2379,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-protocol"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clap",
  "serde",
@@ -2390,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-py"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "pyo3",
  "serde_json",
@@ -2409,7 +2409,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-query"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-rt-wasm"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde_json",
  "sheetrs-answer",
@@ -2437,7 +2437,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-stats"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2449,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-wasm"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.2.17",

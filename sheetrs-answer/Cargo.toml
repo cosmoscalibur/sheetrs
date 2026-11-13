@@ -12,8 +12,8 @@ categories.workspace = true
 description = "The answer of a compiled SheetRS program written into the workbook it was made from (the workbook as its own template)"
 
 [dependencies]
-sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.0" }
-sheetrs-io = { path = "../sheetrs-io", version = "0.4.0", features = ["write"] }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.1" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.1", features = ["write"] }
 serde_json.workspace = true
 thiserror.workspace = true
 
