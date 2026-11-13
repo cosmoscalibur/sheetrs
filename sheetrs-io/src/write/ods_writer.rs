@@ -14,6 +14,8 @@ use super::{
     CachedResult, CellEdit, SheetEdits, ValueScope, ValueTarget, WorkbookModifications, attribute,
     ods_formats, read_element_body, write_element,
 };
+use crate::reader::parser_utils::attr_value;
+use quick_xml::events::attributes::Attribute;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 use std::collections::{HashMap, HashSet};
@@ -99,7 +101,7 @@ fn apply_ods<R: Read + Seek, W: Write + Seek>(
     // The variants of the styles that break the page, for the first row or column that is left.
     extra_styles.push_str(&no_break.xml);
     for i in 0..archive.len() {
-        if archive.by_index_raw(i)?.name() != CONTENT_PART {
+        if archive.by_index_raw(i)?.name()? != CONTENT_PART {
             // Raw copies keep `mimetype` first and stored uncompressed, as
             // ODF requires.
             zip_writer.raw_copy_file(archive.by_index_raw(i)?)?;
@@ -133,10 +135,63 @@ fn is_named_range(name: &str) -> bool {
 }
 
 fn repeat_count(element: &BytesStart, key: &str) -> Result<u32> {
-    Ok(attribute(element, key)?
+    Ok(element
+        .try_get_attribute(key)?
+        .map(|attr| attr_value(&attr))
+        .transpose()?
         .and_then(|n| n.parse::<u32>().ok())
         .unwrap_or(1)
         .max(1))
+}
+
+/// What `write_cells` reads of the attributes of a cell, taken in one pass over them (each
+/// lookup by name scans them all, and a cell is written for each of the millions in a sheet).
+struct CellAttributes {
+    formula: Option<String>,
+    has_value_type: bool,
+    is_error: bool,
+    matrix_columns: u32,
+    matrix_rows: u32,
+}
+
+impl CellAttributes {
+    /// The first attribute of each name counts, as it does for `attribute`.
+    fn of(cell: &BytesStart) -> Result<Self> {
+        let mut found = Self {
+            formula: None,
+            has_value_type: false,
+            is_error: false,
+            matrix_columns: 1,
+            matrix_rows: 1,
+        };
+        let (mut error_seen, mut columns_seen, mut rows_seen) = (false, false, false);
+        for attr in cell.attributes().with_checks(false) {
+            let attr = attr?;
+            let count = |attr: &Attribute| -> Result<u32> {
+                Ok(attr_value(attr)?.parse::<u32>().ok().unwrap_or(1).max(1))
+            };
+            match attr.key.as_ref() {
+                FORMULA if found.formula.is_none() => {
+                    found.formula = Some(attr_value(&attr)?.into_owned());
+                }
+                "office:value-type" => found.has_value_type = true,
+                "calcext:value-type" if !error_seen => {
+                    error_seen = true;
+                    found.is_error = attr_value(&attr)? == "error";
+                }
+                MATRIX_COLUMNS if !columns_seen => {
+                    columns_seen = true;
+                    found.matrix_columns = count(&attr)?;
+                }
+                MATRIX_ROWS if !rows_seen => {
+                    rows_seen = true;
+                    found.matrix_rows = count(&attr)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(found)
+    }
 }
 
 /// Apply the modifications to `content.xml`: drop deleted sheets and named
@@ -1421,12 +1476,17 @@ fn write_cells<W: Write>(
         collects,
     } = *run;
     let layout = ctx.structure.filter(|s| s.changes_layout());
-    let formula = attribute(start, FORMULA)?;
+    let CellAttributes {
+        formula,
+        has_value_type,
+        is_error,
+        matrix_columns: matrix_cols,
+        matrix_rows,
+    } = CellAttributes::of(start)?;
     // LibreOffice stores an empty text result as a paragraph without a value
     // type. A formula with neither has no cached value to convert to.
-    let value_type = attribute(start, "office:value-type")?;
     let has_paragraph = content.is_some_and(|events| has_cell_text(events));
-    let convertible = formula.is_some() && (value_type.is_some() || has_paragraph);
+    let convertible = formula.is_some() && (has_value_type || has_paragraph);
     // The formula the plan leaves in the cell, and whether the result the cell cached is gone with
     // it: it is not when the formula reads the same cells in other places.
     let (new_formula, drops_result) = match (ctx.structure, formula.as_deref()) {
@@ -1444,9 +1504,6 @@ fn write_cells<W: Write>(
         return Ok(repeated);
     }
 
-    let is_error = attribute(start, "calcext:value-type")?.as_deref() == Some("error");
-    let matrix_cols = repeat_count(start, MATRIX_COLUMNS)?;
-    let matrix_rows = repeat_count(start, MATRIX_ROWS)?;
     let column_bands: Vec<(u32, u32)> = if convertible {
         ctx.scopes
             .iter()
@@ -1496,7 +1553,7 @@ fn write_cells<W: Write>(
                     // Error results show their text, such as `#DIV/0!`.
                     || (is_error && key == "office:string-value")
             })?;
-            if value_type.is_none() {
+            if !has_value_type {
                 cell.push_attribute(("office:value-type", "string"));
                 cell.push_attribute(("calcext:value-type", "string"));
             }

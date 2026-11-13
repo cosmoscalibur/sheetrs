@@ -267,6 +267,9 @@ pub struct Inference<'a> {
     /// The cells read for the references that lie outside them.
     extra: BTreeMap<Key, Cell>,
     loaded: Vec<(u16, u32, u32, u32, u32)>,
+    /// The windows read so far for each sheet, and the sheets read whole.
+    windows: HashMap<u16, usize>,
+    whole: HashSet<u16>,
     ods: bool,
     formats: HashMap<Key, Code>,
     recalculated: HashMap<Key, bool>,
@@ -277,15 +280,30 @@ pub struct Inference<'a> {
     names_busy: HashSet<String>,
 }
 
-struct Gather<'a>(&'a mut BTreeMap<Key, Cell>);
+/// Collects the cells of a read that the search has not kept (`known` are in order): `extra` and
+/// the cells of the search never hold the same position.
+struct Gather<'a> {
+    out: &'a mut BTreeMap<Key, Cell>,
+    known: &'a [(u16, u32, u32, Cell)],
+}
 
 impl CellSink for Gather<'_> {
     fn cell(&mut self, sheet: u16, at: (u32, u32), cell: Cell) {
-        if !matches!(cell.value, CellValue::Empty) || cell.formula.is_some() {
-            self.0.insert((sheet, at.0, at.1), cell);
+        let key = (sheet, at.0, at.1);
+        if (!matches!(cell.value, CellValue::Empty) || cell.formula.is_some())
+            && self
+                .known
+                .binary_search_by_key(&key, |(s, r, c, _)| (*s, *r, *c))
+                .is_err()
+        {
+            self.out.insert(key, cell);
         }
     }
 }
+
+/// The windows read for a sheet before it is read whole: every window is a pass over the file, so
+/// a workbook whose formulas refer to many different ranges would read it once per range.
+const WINDOWS_BEFORE_WHOLE: usize = 8;
 
 const VOLATILE: [&str; 8] = [
     "RAND",
@@ -328,6 +346,8 @@ impl<'a> Inference<'a> {
             cells,
             extra: BTreeMap::new(),
             loaded: Vec::new(),
+            windows: HashMap::new(),
+            whole: HashSet::new(),
             ods: source.format() == Format::Ods,
             formats: HashMap::new(),
             recalculated: HashMap::new(),
@@ -411,13 +431,22 @@ impl<'a> Inference<'a> {
 
     /// Makes sure the cells of a rectangle are known (they are read once, with their formulas).
     fn ensure(&mut self, sheet: u16, r0: u32, c0: u32, r1: u32, c1: u32) {
-        if self
-            .loaded
-            .iter()
-            .any(|&(s, a, b, c, d)| s == sheet && a <= r0 && b <= c0 && c >= r1 && d >= c1)
+        if self.whole.contains(&sheet)
+            || self
+                .loaded
+                .iter()
+                .any(|&(s, a, b, c, d)| s == sheet && a <= r0 && b <= c0 && c >= r1 && d >= c1)
         {
             return;
         }
+        let count = self.windows.entry(sheet).or_insert(0);
+        *count += 1;
+        let (r0, c0, r1, c1) = if *count > WINDOWS_BEFORE_WHOLE {
+            self.whole.insert(sheet);
+            (0, 0, u32::MAX, u32::MAX)
+        } else {
+            (r0, c0, r1, c1)
+        };
         let name = self.sheet_name(sheet).to_string();
         let selection = Selection::new(Properties {
             value: true,
@@ -429,7 +458,13 @@ impl<'a> Inference<'a> {
         let mut gathered = BTreeMap::new();
         if self
             .source
-            .selection_into(&selection, &mut Gather(&mut gathered))
+            .selection_into(
+                &selection,
+                &mut Gather {
+                    out: &mut gathered,
+                    known: self.cells,
+                },
+            )
             .is_ok()
         {
             self.extra.extend(gathered);
@@ -453,11 +488,7 @@ impl<'a> Inference<'a> {
             }
         }
         for (&(s, r, c), cell) in self.extra.range((sheet, r0, 0)..=(sheet, r1, u32::MAX)) {
-            if s == sheet
-                && (c0..=c1).contains(&c)
-                && is_number(cell)
-                && !found.contains(&(s, r, c))
-            {
+            if s == sheet && (c0..=c1).contains(&c) && is_number(cell) {
                 found.push((s, r, c));
             }
         }
@@ -692,10 +723,13 @@ impl<'a> Inference<'a> {
     fn numbers_of(&mut self, rect: (u16, u32, u32, u32, u32)) -> Vec<f64> {
         let (s, r0, c0, r1, c1) = rect;
         self.ensure(s, r0, c0, r1, c1);
-        let mut keys: Vec<Key> = self
+        let from = self
             .cells
+            .partition_point(|(cs, r, _, _)| (*cs, *r) < (s, r0));
+        let mut keys: Vec<Key> = self.cells[from..]
             .iter()
-            .filter(|(cs, r, c, _)| *cs == s && (r0..=r1).contains(r) && (c0..=c1).contains(c))
+            .take_while(|(cs, r, _, _)| *cs == s && *r <= r1)
+            .filter(|(_, _, c, _)| (c0..=c1).contains(c))
             .map(|(cs, r, c, _)| (*cs, *r, *c))
             .collect();
         keys.extend(

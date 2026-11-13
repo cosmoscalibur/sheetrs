@@ -27,7 +27,7 @@ fn with_part(ext: &str, part: &str, dir: &Path, change: impl Fn(String) -> Strin
     let mut writer = zip::ZipWriter::new(std::fs::File::create(&out).unwrap());
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).unwrap();
-        let name = file.name().to_string();
+        let name = file.name().unwrap().into_owned();
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes).unwrap();
         if name == part {

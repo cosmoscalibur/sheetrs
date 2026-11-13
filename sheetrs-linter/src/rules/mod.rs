@@ -107,8 +107,138 @@ use sheetrs_io::reader::ExcelError;
 use sheetrs_io::reader::{Cell, Sheet, Workbook};
 use std::collections::{HashMap, HashSet};
 
-/// Type alias for cell dependency graph: (`SheetIndex`, Row, Col) -> Vec<(`SheetIndex`, Row, Col)>
+/// Type alias for a map of cell locations to cell locations: (`SheetIndex`, Row, Col) ->
+/// Vec<(`SheetIndex`, Row, Col)>. The dependency graph of the workbook is [`CellDependencies`].
 pub type CellDependencyMap = HashMap<(u16, u32, u32), Vec<(u16, u32, u32)>>;
+
+/// A cell location: (`SheetIndex`, Row, Col).
+pub type CellLoc = (u16, u32, u32);
+
+/// The cells that each formula cell reads, in a flat arena instead of a map of vectors.
+///
+/// A workbook of millions of formulas kept a `Vec` and a hash entry for each of them (about
+/// 100 bytes plus the allocation); here a formula costs its location, one offset and the
+/// references themselves (16 bytes plus 12 for each). The formula cells are kept sorted by
+/// location, which is the order of the walk, so a lookup is a binary search and an insertion in
+/// walk order is an append; an insertion out of order (tests) shifts what follows.
+#[derive(Debug, Default, Clone)]
+pub struct CellDependencies {
+    /// Formula cells, sorted.
+    cells: Vec<CellLoc>,
+    /// `ends[i]`: where the references of `cells[i]` end in `refs`; they begin where those of
+    /// `cells[i - 1]` end.
+    ends: Vec<u32>,
+    /// The references of every formula, one run for each cell, in the order of the formula.
+    refs: Vec<CellLoc>,
+}
+
+impl CellDependencies {
+    /// An empty graph.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Number of formula cells.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.cells.len()
+    }
+
+    /// Whether no formula cell has been recorded.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.cells.is_empty()
+    }
+
+    fn end_of(refs: usize) -> u32 {
+        u32::try_from(refs).expect("fewer than 2^32 references in a workbook")
+    }
+
+    fn start(&self, index: usize) -> usize {
+        index.checked_sub(1).map_or(0, |i| self.ends[i] as usize)
+    }
+
+    /// Record the cells that the formula of `loc` reads, replacing an earlier record of it.
+    pub fn insert(&mut self, loc: CellLoc, deps: impl IntoIterator<Item = CellLoc>) {
+        if self.cells.last().is_none_or(|last| *last < loc) {
+            self.cells.push(loc);
+            self.refs.extend(deps);
+            self.ends.push(Self::end_of(self.refs.len()));
+            return;
+        }
+        let deps: Vec<CellLoc> = deps.into_iter().collect();
+        let (index, replaces) = match self.cells.binary_search(&loc) {
+            Ok(i) => (i, true),
+            Err(i) => (i, false),
+        };
+        let start = self.start(index);
+        let old_end = if replaces {
+            self.ends[index] as usize
+        } else {
+            start
+        };
+        let new_end = start + deps.len();
+        self.refs.splice(start..old_end, deps);
+        if replaces {
+            self.ends[index] = Self::end_of(new_end);
+        } else {
+            self.cells.insert(index, loc);
+            self.ends.insert(index, Self::end_of(new_end));
+        }
+        for end in &mut self.ends[index + 1..] {
+            *end = Self::end_of(*end as usize + new_end - old_end);
+        }
+    }
+
+    /// The position of a formula cell among the sorted ones.
+    #[must_use]
+    pub fn index_of(&self, loc: &CellLoc) -> Option<usize> {
+        self.cells.binary_search(loc).ok()
+    }
+
+    /// The formula cell at a position (see [`Self::index_of`]).
+    #[must_use]
+    pub fn cell(&self, index: usize) -> CellLoc {
+        self.cells[index]
+    }
+
+    /// The cells read by the formula at a position.
+    #[must_use]
+    pub fn references_at(&self, index: usize) -> &[CellLoc] {
+        &self.refs[self.start(index)..self.ends[index] as usize]
+    }
+
+    /// The cells read by the formula of `loc`; `None` when it has no formula in the graph.
+    #[must_use]
+    pub fn get(&self, loc: &CellLoc) -> Option<&[CellLoc]> {
+        self.index_of(loc).map(|i| self.references_at(i))
+    }
+
+    /// Every formula cell with the cells it reads, in order of location.
+    pub fn iter(&self) -> impl Iterator<Item = (&CellLoc, &[CellLoc])> {
+        let mut start = 0usize;
+        self.cells.iter().zip(&self.ends).map(move |(cell, &end)| {
+            let refs = &self.refs[start..end as usize];
+            start = end as usize;
+            (cell, refs)
+        })
+    }
+
+    /// Every formula cell, in order of location.
+    pub fn keys(&self) -> impl Iterator<Item = &CellLoc> {
+        self.cells.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a CellDependencies {
+    type Item = (&'a CellLoc, &'a [CellLoc]);
+    type IntoIter = Box<dyn Iterator<Item = (&'a CellLoc, &'a [CellLoc])> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.iter())
+    }
+}
 
 /// Shared context for walker rules during single-pass execution
 #[derive(Debug, Default)]
@@ -123,7 +253,7 @@ pub struct LinterContext {
     /// calc202; ref306 resolves them to the sheets their definitions name).
     pub name_uses: HashSet<(u16, String)>,
     /// Cell dependency graph for circular reference detection
-    pub cell_dependencies: CellDependencyMap,
+    pub cell_dependencies: CellDependencies,
     /// Error cells found during walk: location → error type (populated by err102).
     pub error_cells: HashMap<(u16, u32, u32), ExcelError>,
     /// Cells on a circular reference path (populated by calc202 `on_workbook_end`).
@@ -374,5 +504,56 @@ mod documentation {
             "rule modules without documentation:\n{}",
             missing.join("\n")
         );
+    }
+}
+
+#[cfg(test)]
+mod dependency_graph_tests {
+    use super::{CellDependencies, CellLoc};
+
+    fn all(graph: &CellDependencies) -> Vec<(CellLoc, Vec<CellLoc>)> {
+        graph.iter().map(|(c, d)| (*c, d.to_vec())).collect()
+    }
+
+    #[test]
+    fn insertions_in_walk_order_are_appended() {
+        let mut graph = CellDependencies::new();
+        graph.insert((0, 0, 0), vec![(0, 1, 0), (0, 2, 0)]);
+        graph.insert((0, 0, 1), vec![]);
+        graph.insert((1, 5, 5), vec![(0, 0, 0)]);
+        assert_eq!(graph.len(), 3);
+        assert_eq!(graph.get(&(0, 0, 0)), Some(&[(0, 1, 0), (0, 2, 0)][..]));
+        assert_eq!(graph.get(&(0, 0, 1)), Some(&[][..]));
+        assert_eq!(graph.get(&(1, 5, 5)), Some(&[(0, 0, 0)][..]));
+        assert_eq!(graph.get(&(0, 9, 9)), None);
+    }
+
+    #[test]
+    fn insertions_out_of_order_and_replacements_keep_every_run() {
+        let mut graph = CellDependencies::new();
+        graph.insert((0, 3, 0), vec![(0, 0, 0)]);
+        graph.insert((0, 1, 0), vec![(0, 5, 5), (0, 6, 6)]);
+        graph.insert((0, 2, 0), vec![(0, 7, 7)]);
+        // Replaces the first run with a longer one, and the second with an empty one.
+        graph.insert((0, 1, 0), vec![(0, 1, 1), (0, 2, 2), (0, 3, 3)]);
+        graph.insert((0, 2, 0), vec![]);
+        assert_eq!(
+            all(&graph),
+            vec![
+                ((0, 1, 0), vec![(0, 1, 1), (0, 2, 2), (0, 3, 3)]),
+                ((0, 2, 0), vec![]),
+                ((0, 3, 0), vec![(0, 0, 0)]),
+            ]
+        );
+        assert_eq!(graph.index_of(&(0, 3, 0)), Some(2));
+        assert_eq!(graph.keys().count(), 3);
+    }
+
+    #[test]
+    fn an_empty_graph_has_nothing() {
+        let graph = CellDependencies::new();
+        assert!(graph.is_empty());
+        assert_eq!(graph.iter().count(), 0);
+        assert_eq!(graph.get(&(0, 0, 0)), None);
     }
 }

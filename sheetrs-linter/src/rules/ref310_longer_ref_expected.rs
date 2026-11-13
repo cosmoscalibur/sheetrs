@@ -271,6 +271,10 @@ fn extract_range_refs(
     current_sheet_index: u16,
     name_to_index: &HashMap<String, u16>,
 ) -> Vec<RangeRef> {
+    // A range reference has a colon: most formulas have none and skip the scan.
+    if !formula.contains(':') {
+        return Vec::new();
+    }
     let mut ranges = Vec::new();
 
     for cap in CELL_REF_PATTERN.captures_iter(formula) {
@@ -385,10 +389,9 @@ impl WalkerRule for LongerRefExpectedRule {
             else {
                 continue;
             };
-            let formula = formula.to_string();
 
             // Extract range references from this formula
-            let range_refs = extract_range_refs(&formula, formula_sheet_idx, &ctx.name_to_index);
+            let range_refs = extract_range_refs(formula, formula_sheet_idx, &ctx.name_to_index);
 
             for range_ref in &range_refs {
                 let Some(target_sheet) = sheets_by_index.get(&range_ref.sheet_index) else {

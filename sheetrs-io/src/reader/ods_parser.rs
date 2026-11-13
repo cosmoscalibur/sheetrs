@@ -61,7 +61,7 @@ fn has_macro_libraries(
     // 1. Libraries present in the archive.
     for i in 0..archive.len() {
         if let Ok(file) = archive.by_index(i)
-            && is_library(file.name())
+            && file.name().is_ok_and(|name| is_library(&name))
         {
             return Ok(true);
         }

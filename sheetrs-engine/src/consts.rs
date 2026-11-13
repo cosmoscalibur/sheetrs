@@ -122,7 +122,7 @@ pub fn split(program: &mut Program, min: usize) -> crate::Result<(ConstIndex, Ve
             .iter()
             .map(|(at, v)| (at.row, at.col, v))
             .collect();
-        let encoded = bincode::serialize(&block)?;
+        let encoded = postcard::to_allocvec(&block)?;
         sh.blocks.push(BlockRef {
             row0: consts[i].0.row,
             offset: bytes.len() as u64,
@@ -199,7 +199,7 @@ impl StoredConsts {
                 f.seek(SeekFrom::Start(self.start + b.offset))
                     .and_then(|_| f.read_exact(&mut buf))
                     .unwrap_or_else(|e| damaged(&e));
-                bincode::deserialize(&buf)
+                postcard::from_bytes(&buf)
                     .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))
             }
             Backing::Memory(memory) => {
@@ -207,7 +207,7 @@ impl StoredConsts {
                     .checked_add(b.len as usize)
                     .and_then(|to| memory.get(from..to))
                     .unwrap_or_else(|| damaged(&"a block is out of the memory"));
-                bincode::deserialize(bytes)
+                postcard::from_bytes(bytes)
                     .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))
             }
         }

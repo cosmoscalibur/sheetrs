@@ -110,12 +110,12 @@ pub(super) fn map_attributes(
     let mut rebuilt = BytesStart::new(element.name().as_ref().to_string());
     for attr in element.attributes() {
         let attr = attr?;
-        let key = attr.key.as_ref().to_string();
-        let value = attr_value(&attr)?.into_owned();
-        match map(&key, &value)? {
-            None => rebuilt.push_attribute((key.as_str(), value.as_str())),
+        let key = attr.key.as_ref();
+        let value = attr_value(&attr)?;
+        match map(key, &value)? {
+            None => rebuilt.push_attribute((key, &*value)),
             Some(None) => {}
-            Some(Some(new)) => rebuilt.push_attribute((key.as_str(), new.as_str())),
+            Some(Some(new)) => rebuilt.push_attribute((key, new.as_str())),
         }
     }
     Ok(rebuilt)

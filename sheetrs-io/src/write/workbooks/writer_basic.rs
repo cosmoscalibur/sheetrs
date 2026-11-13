@@ -734,7 +734,7 @@ fn test_formula_to_value_ods_keeps_mimetype_first_and_stored() -> anyhow::Result
 
     let mut zip = zip::ZipArchive::new(File::open(&output_path)?)?;
     let mimetype = zip.by_index(0)?;
-    assert_eq!(mimetype.name(), "mimetype");
+    assert_eq!(mimetype.name()?, "mimetype");
     assert_eq!(mimetype.compression(), zip::CompressionMethod::Stored);
     Ok(())
 }
