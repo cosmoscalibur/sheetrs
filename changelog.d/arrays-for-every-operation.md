@@ -1,5 +1,0 @@
-### Changed
-
-- Every edit operation takes the array of its targets, because the tool is for sweeps (Rust, `sheetrs edit`, WebAssembly and Python): Python's `delete_sheets`, `delete_names`, `formula_to_value`, `delete_rows` and `delete_columns` take a `str` or an iterable of `str` (no varargs; an empty one does nothing; another type in it is a `TypeError`); `Editor::replace(scopes, replaces)` takes a sequence of `Replace` specs; `sheetrs edit` takes repeated `--replace`/`--with` pairs (paired by position, counts must match); `edit_workbook` operations take arrays (`{delete_rows: [...]}`, `{replace: {pairs: [[text, with], ...]}}`), and a single text where a list is expected.
-- A sweep of replacements is one operation of the plan per pair, in order, each seeing what the previous one left, as if each were its own call; the options and the scope are shared. Python: `replace({"a": "b", "b": "c"})` or a list of `(text, replacement)` pairs.
-- `find` keeps taking one text: its answer is one ordered list of matches, and a regular expression covers a sweep of searches.

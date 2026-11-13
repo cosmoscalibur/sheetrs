@@ -1,5 +1,0 @@
-### Fixed
-
-- An error written in a formula (`#NAME?`, `#NUM!`, `#DIV/0!`, `#N/A`, `#NULL!`, `#VALUE!`) where a function wants a reference or an array is the refusal LibreOffice gives (`OFFSET(#NAME?,0,0)` and 46 more functions are `Err:504`, `CORREL(#NAME?,range)` is `Err:502`), not the error propagated; an error a calculation gave wins over a written one and is the answer before the other arguments are checked (`SUM(#NAME?,NA())`, `SUMIF(NA(),1)` and 481 functions are `#N/A`). Probed with `sheetrs-compiler/scripts/probe_literal_error.py` (tables in `sheetrs-engine/src/functions/`); 526 rows in the oracle.
-- `ERROR.TYPE` of an error only LibreOffice has is `#N/A`; `AGGREGATE` with an error as its function or option is `Err:502`; `XLOOKUP` with an error as its lookup or result array is `Err:504` and as its match mode returns what is given for nothing found; `SWITCH` with no match and no default is the error of the last value to match when it is one.
-- An ODS cell with a bare `#REF!` whose cached error is `Err:504` keeps it.
