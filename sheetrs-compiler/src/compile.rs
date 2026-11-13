@@ -1315,8 +1315,8 @@ pub fn compile(model: &Model, spec: &Spec) -> Result<(Program, Report)> {
                         _ => Some(String::new()),
                     },
                 },
-                Expr::Binary(sheetrs_engine::ir::BinOp::Concat, a, b) => {
-                    Some(code_text(a, model, lookup)? + &code_text(b, model, lookup)?)
+                Expr::Binary(sheetrs_engine::ir::BinOp::Concat, ab) => {
+                    Some(code_text(&ab[0], model, lookup)? + &code_text(&ab[1], model, lookup)?)
                 }
                 _ => None,
             }

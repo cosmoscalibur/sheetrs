@@ -178,15 +178,15 @@ stages come from `SHEETC_TRACE`; median of 3):
 | `data_declared.xlsx` (inputs and outputs declared) | build total (executable 9.00 MB) | 4.52 | 724 |
 | | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 3.40 / 0.16 / 0.21 / 0.67 / 0.00 / 0.01 | |
 | | engine start-up / execute a request | 0.003 / 0.002 | 14 / 14 |
-| `formulas.xlsx` (28.98 MB) | build total (executable 93.54 MB) | 6.83 | 1355 |
-| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 2.16 / 0.86 / 0.82 / 1.14 / 0.98 / 0.65 | |
-| | engine start-up / execute a request | 0.780 / 2.527 | 455 / 530 |
+| `formulas.xlsx` (28.98 MB) | build total (executable 93.54 MB) | 6.85 | 1309 |
+| | read workbook / lower formulas / dependency graph / fold / assemble / write executable | 2.29 / 0.83 / 0.76 / 1.13 / 1.06 / 0.61 | |
+| | engine start-up / execute a request | 0.722 / 1.994 | 423 / 496 |
 
 The stage rows are parts of the build total of their workbook (the peak memory is that of the process). The build keeps one
 copy of the graph (built straight into its compressed rows, and freed once the order and the taint are known), finds a
 graph node by the row of its cell in the sorted node list instead of in a hash table, and does not keep the references
 that lie inside an output (with nothing declared, almost every one): against the build before this, in the same
-session, `formulas.xlsx` took 8.33 s and 1598 MB, `data.xlsx` 9.08 s and 1942 MB and `data_declared.xlsx` 4.81 s and
+session, `formulas.xlsx` took 8.33 s and 1598 MB (1355 MB before the operands of a binary operator went in one allocation), `data.xlsx` 9.08 s and 1942 MB and `data_declared.xlsx` 4.81 s and
 760 MB. The executables are byte-identical. The rows of the other flows that compile in memory (`sheetc calculate`
 above, the recalculation of `sheetrs edit`, Python `calculate`, and the model use below) share these stages and
 should take less memory and time; they were not measured again, nor were the start-up and request rows of the
