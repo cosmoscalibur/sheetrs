@@ -109,68 +109,41 @@ its content part to know where the sheets are.
 
 ### `sheetrs edit`
 
-The engine calculates what a deletion or a replacement leaves stale; the workbook is marked to be recalculated
-only if the engine cannot. A deletion of rows, columns or sheets (with conversions) finds the formulas it leaves
-stale first: none, no recalculation pass; only the error `#REF!`, written without the engine; otherwise the engine
-(see the README of `sheetrs-edit`). `formulas.xlsx` stores `0` as every cached result and says so (`fullCalcOnLoad`),
-so no result of it can be trusted: every plan on it calculates the whole workbook, and the conversions calculate
-first. In `formulas.ods` the results are stored. A cell with `*` is one run (the rows were measured one at a time
-and not repeated); the others are the minimum and the maximum of 3 runs.
+A plan that deletes rows, columns, sheets or names (or replaces text) ends with the engine calculating every
+formula again; the workbook is marked to be recalculated only if the engine cannot (see the README of
+`sheetrs-edit`). A conversion alone streams and calculates nothing, unless the workbook says its results are
+stale. `formulas.xlsx` stores `0` as every cached result and says so (`fullCalcOnLoad`); in `formulas.ods` the
+results are stored. The table is the minimum and the maximum of 3 runs (`scripts/bench.py run DIR edit`); a row
+that deletes calculates the 2.4 M formulas.
 
 | Scenario (flags) | `formulas.xlsx` | `formulas.ods` |
 |---|---|---|
-| `--delete-sheets Lookup` | 22.48-22.60 s, 1839-1840 MB | 49.05-49.98 s, 1893 MB † |
-| `--delete-names base_rate` | 16.3 s, 1646 MB * | 25.3 s, 1656 MB * |
-| `--formula-to-value Calc` | 24.25-25.65 s, 1646 MB † | 5.89-5.98 s, 14 MB ‡ |
-| `--formula-to-value Calc!B:D Calc!1:1000` | 25.99-26.44 s, 1646 MB † | 8.29-8.57 s, 19 MB † |
-| delete sheet + name, convert `Calc` (one command) | 23.4 s, 1646 MB * | 12.4 s, 297 MB * |
-| `--delete-rows Data!10:20` | 25.39-25.57 s, 1646 MB | 51.59-52.54 s, 1745 MB † |
-| `--delete-rows Data!10:20 --formula-to-value Calc` | 24.9 s, 1646 MB * | 30.7 s, 1656 MB * |
-| `--delete-rows Calc!3:10` | 23.3 s, 1646 MB * | not measured |
-| `--delete-rows Calc!3:10 --formula-to-value Summary` | 41.0 s, 1890 MB * | not measured |
-| `--delete-columns Data!B:D` | 21.59-22.07 s, 2195-2196 MB | 135.98-139.21 s, 2218 MB † |
-| rows and columns together | 23.93-24.25 s, 2196 MB | 136.55-137.26 s, 2214 MB † |
-| sheet, name, rows and columns (one command) | 24.81-26.28 s, 2200 MB † | 134.74-138.87 s, 2218 MB † |
+| `--delete-sheets Lookup` | 20.58-21.22 s, 1799 MB | 33.35-35.20 s, 1882 MB |
+| `--delete-names base_rate` | 17.05-18.40 s, 1580 MB | 29.02-29.79 s, 1586 MB |
+| `--formula-to-value Calc` | 23.02-25.04 s, 1592 MB | 6.09-6.20 s, 17 MB |
+| `--formula-to-value Calc!B:D Calc!1:1000` | 23.13-23.53 s, 1582-1593 MB | 6.55-6.91 s, 17 MB |
+| delete sheet and name, convert `Calc` (one command) | 25.46-25.66 s, 1583-1592 MB | 12.42-12.78 s, 299 MB |
+| `--delete-rows Data!10:20` | 24.76-25.45 s, 1600 MB | 36.95-37.48 s, 1604 MB |
+| `--delete-rows Data!10:20 --formula-to-value Calc` | 26.76-27.22 s, 1583 MB | 16.17-16.87 s, 299 MB |
+| `--delete-rows Calc!3:10 --formula-to-value Summary` | 43.43-43.89 s, 1658-1660 MB | 38.05-39.77 s, 1603-1604 MB |
+| `--delete-columns Data!B:D` | 22.17-23.10 s, 2152 MB | 30.83-31.75 s, 2166-2167 MB |
+| rows and columns together | 23.07-24.03 s, 2152 MB | 31.50-32.34 s, 2167 MB |
+| sheet, name, rows and columns (one command) | 23.10-23.86 s, 2150 MB | 31.86-33.28 s, 2164-2165 MB |
 
-† Not measured again after the last change of the analysis (it reads the cached results of the cells the plan leaves
-alone, and a defined name that points to cells no deleted row or column touches no longer sends the plan to the
-whole-workbook path): a conversion alone does not use the analysis; the ODS rows are those of
-[#107](https://github.com/cosmoscalibur/sheetrs/issues/107) and were left out of the last round.
+A conversion of an ODS streams (17 to 299 MB); what needs the engine holds the formulas of the workbook in memory,
+about 1.6-2.2 GB for 2.4 M formulas. The ODS rows that delete cost about 10 s more than the XLSX ones because
+the ODS is read and compiled (6-9 s of reading) and the output of the deleting pass is read again by the engine.
+`--delete-columns` on an ODS took 136-160 s before the empty run that closes each row was kept up to the last
+column ([#107](https://github.com/cosmoscalibur/sheetrs/issues/107)): a reader that finds that run short of the
+edge takes it for formatted cells. LibreOffice was not run on this input, so there is no contrast for these
+rows; the contrast of the edit flows is in [Against LibreOffice](#against-libreoffice).
 
-‡ Measured after the writers stopped allocating per cell (3 runs, same session as the binary before the change: 6.96-7.02 s, 14 MB,
-the same output byte for byte). The writers alone, without the analysis or the engine, on `formulas.xlsx` / `formulas.ods`
-(`WorkbookModifications` through `modify_workbook`, 14 MB peak in every case): conversion of `Calc` 3.97 → 3.07 s / 5.37 → 4.24 s,
-`--delete-rows Data!10:20` 7.98 → 6.28 s / 11.55 → 9.84 s, `--delete-columns Data!B:D` 7.03 → 5.54 s / 10.67 → 8.95 s. The 136-139 s
-of the ODS column deletion are not the writer: end to end it took 143 s and 2416 MB, so the rest is the analysis and the engine.
-
-A conversion alone streams (the ODS rows: 19 to 298 MB); what needs the engine (a deletion that leaves a formula
-stale, or an XLSX whose results are not stored) holds the formulas of the workbook in memory, about 1.6-2.2 GB for
-2.4 M formulas: the engine still compiles and evaluates the whole workbook when it runs, and only writes the formulas
-that are stale.
-
-`formulas_cached.xlsx`, where the cached results are the true ones, so the formulas a deletion leaves stale are found
-(one run of each; `sheetrs edit --dry-run` says what the plan does):
-
-| Scenario (flags) | Wall time | Peak memory | What the plan does |
-|---|---|---|---|
-| `--delete-sheets Lookup` * | 41.32 s | 1825 MB | the engine calculates 1 500 004 formulas that read the sheet (`VLOOKUP` is not in the list of functions that pass the error on) |
-| `--delete-names base_rate` * | 19.73 s | 1656 MB | the whole workbook is calculated (a name is not analyzed) |
-| `--delete-rows Data!10:20` * | 42.40 s | 1797 MB | the engine calculates 300 052 formulas and 22 are given `#REF!`; the list is longer than 20 000, so the whole program runs and only those cells are written |
-| `--delete-rows Data!10:20 --formula-to-value Calc` * | 22.59 s | 1655 MB | the engine calculates 1 formula |
-| `--delete-rows Calc!3:10 --formula-to-value Summary` * | 31.43 s | 1655 MB | 299 991 formulas are given `#REF!`, no engine |
-| delete sheet + name, convert `Calc` (one command) * | 9.71 s | 297 MB | the whole workbook is calculated (the plan has a name), after the conversion has taken the formulas of `Calc` |
-
-The analysis reads the workbook once more (compiling its formulas, and the cached values of the cells that are not
-numbers): on this workbook the dry run of a deletion takes 8-13 s, about what the engine costs, so a plan that ends
-with no engine or with a few formulas is not much faster than one that calculates them all: the saving shows where
-the workbook is read once and the engine would have evaluated what nothing reads. LibreOffice was not run on this
-input, so there is no contrast for these rows; the contrast of the edit flows is in [Against LibreOffice](#against-libreoffice).
-
-On `loan.xlsx` (1 462 formulas): `--delete-rows 'Loan!2'` gives `#REF!` to 1 083 formulas without the engine (the
-chain from the payment, and the 360-row schedule that reads the rate, whose other operands are known not to be errors
-from the cached results) and leaves 2 to the engine: `B8`, which reads by `INDIRECT`, and `B372`, a `SUM` over the
-range that holds the formulas given the error; the rest (377) keep their result. `--delete-rows 'Loan!2'
---formula-to-value Loan` is one pass and no recalculation, with the values the workbook had.
+The plan did decide which formulas a deletion leaves stale, and calculated only those, while it existed (see the
+history of #102). Measured on this workbook (one run per cell, ODS / XLSX with real cached results) it cost 15-16 s
+(ODS) and 7-8 s (XLSX) for the reading and compiling it needs, and spared the engine nothing where most formulas read
+what changes (`--delete-columns`: 49.4 s with it, 30.2 s without; `--delete-sheets`: 49.0 and 32.3 s), while it won
+where nothing was stale (`--delete-columns Data!E:G`: 25.9 s with it, 34.7 s without; XLSX 16.7 and 27.7 s). Since the
+result a file cached is not a goal (`docs/approved-differences.md`), it was removed.
 
 ### `sheetc calculate` and `sheetc build`
 
@@ -360,16 +333,11 @@ a running total.
 
 Measured at this state; none is being worked on here.
 
-- **What the planner cannot tell is calculated whole.** A replacement, a deleted name, an input that says its
-  results are stale (the `formulas.xlsx` of this document), a workbook with cycles, formulas the compiler keeps as the
-  values the file cached, or a defined name that points into what is deleted or is not a plain reference: the engine
-  calculates the whole workbook
-  (`--delete-names base_rate` takes 16-25 s here, as much as the recalculation, although no formula reads the name).
+- **Every deletion, replacement or name removal calculates the whole workbook.** The engine calculates every formula
+  again (`--delete-names base_rate` takes 17-18 s of an XLSX and 29-30 s of an ODS here, as much as the recalculation,
+  although no formula reads the name).
   Operations that could be applied in a batch before one recalculation are not yet
   ([#102](https://github.com/cosmoscalibur/sheetrs/issues/102)).
-- **Finding the stale formulas reads the workbook once more.** On `formulas.ods` the dry run of a deletion, which only
-  does that, takes about 17 s; a plan that ends with the engine calculating most formulas pays it for nothing, and the
-  rows of the ODS deletions above include it.
 - **Memory of the editor with the engine**: 1.6-2.2 GB for 2.4 M formulas, against 19 MB of an editor that only
   streams (the conversions of an ODS). Intermediate parts of a plan of several passes are stored uncompressed
   ([#86](https://github.com/cosmoscalibur/sheetrs/issues/86)).

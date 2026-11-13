@@ -424,7 +424,7 @@ impl PyValueRanges {
 
 // ---- Stats and Sheet -------------------------------------------------------------------------
 
-/// A sheet of the workbook, with what the read at open found out about it.
+/// A sheet of the workbook, with what the description of the workbook found out about it.
 #[pyclass(name = "Sheet", frozen, module = "sheetrs")]
 #[derive(Clone)]
 pub struct PySheet {
@@ -584,8 +584,8 @@ impl PySheets {
     }
 }
 
-/// The statistics of the workbook: the eleven totals and the `sheets`, as `sheetrs stats` reports
-/// them. `to_dict()` is its `--format json`.
+/// The statistics of the workbook: the eleven totals, the `sheets`, `has_macros` and `defined_names`, as
+/// `sheetrs stats` reports them (the last two are not in `to_dict()`). `to_dict()` is its `--format json`.
 #[pyclass(name = "Stats", frozen, module = "sheetrs")]
 #[derive(Clone)]
 pub struct PyStats {
@@ -660,6 +660,23 @@ impl PyStats {
     #[getter]
     fn sheets(&self) -> PySheets {
         PySheets::of(&self.inner)
+    }
+
+    /// Whether the workbook carries macros (found, never run).
+    #[getter]
+    fn has_macros(&self) -> bool {
+        self.inner.has_macros
+    }
+
+    /// The defined names and what each refers to, as the file writes it (`{"Rate": "Data!$B$2"}`),
+    /// ordered by name.
+    #[getter]
+    fn defined_names<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        for (name, refers_to) in &self.inner.defined_names {
+            dict.set_item(name, refers_to)?;
+        }
+        Ok(dict)
     }
 
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

@@ -23,13 +23,13 @@ def test_a_book_is_made_from_bytes_a_bytearray_or_a_stream(extension):
     data = _bytes(extension)
     for source in (data, bytearray(data), io.BytesIO(data)):
         book = sheetrs.Book(source)
-        assert book.format == extension and book.sheet_names == ["T", "U", "V", "F"]
+        assert book.format == extension and book.stats().sheets.names() == ["T", "U", "V", "F"]
 
 
 def test_a_stream_is_read_from_its_start_even_when_it_is_at_the_end(extension):
     stream = io.BytesIO()
     stream.write(_bytes(extension))
-    assert sheetrs.Book(stream).sheet_names == ["T", "U", "V", "F"]
+    assert sheetrs.Book(stream).stats().sheets.names() == ["T", "U", "V", "F"]
 
 
 def test_a_stream_that_gives_text_is_refused_with_the_way_to_open_it(extension, tmp_path):
@@ -47,27 +47,27 @@ def test_save_to_a_stream_writes_the_workbook_the_path_would_get(extension, tmp_
     out = tmp_path / f"out.{extension}"
     book.save(out)
     assert stream.getvalue() == out.read_bytes()
-    assert saved.format == extension and saved.sheets["T"].used_cells == sheetrs.Book(out).sheets["T"].used_cells
+    assert saved.format == extension and saved.stats().sheets["T"].used_cells == sheetrs.Book(out).stats().sheets["T"].used_cells
     # The Book that save returns is made on the stream: its own save() rewrites it.
     saved.delete_rows("T!2").save()
-    assert sheetrs.Book(stream.getvalue()).sheets["T"].used_cells < sheetrs.Book(out).sheets["T"].used_cells
+    assert sheetrs.Book(stream.getvalue()).stats().sheets["T"].used_cells < sheetrs.Book(out).stats().sheets["T"].used_cells
 
 
 def test_save_with_no_destination_rewrites_the_stream_the_book_came_from(extension):
     stream = io.BytesIO(_bytes(extension))
     book = sheetrs.Book(stream)
-    before = book.sheets["T"].used_cells
+    before = book.stats().sheets["T"].used_cells
     returned = book.delete_rows("T!2").save()
     assert returned is book
-    assert sheetrs.Book(stream.getvalue()).sheets["T"].used_cells < before
-    assert book.sheets["T"].used_cells < before
+    assert sheetrs.Book(stream.getvalue()).stats().sheets["T"].used_cells < before
+    assert book.stats().sheets["T"].used_cells < before
     assert "pending" not in repr(book)
 
 
 def test_a_stream_that_gets_shorter_is_cut_where_the_workbook_ends(extension):
     stream = io.BytesIO(_bytes(extension))
     sheetrs.Book(stream).delete_sheets(["U", "V"]).save()
-    assert sheetrs.Book(stream.getvalue()).sheet_names == ["T", "F"]
+    assert sheetrs.Book(stream.getvalue()).stats().sheets.names() == ["T", "F"]
     assert len(stream.getvalue()) < len(_bytes(extension))
 
 

@@ -301,10 +301,7 @@ libraries stay free of clap when the feature is off (`sheetrs-wasm` and `sheetrs
     engine calculates again the results a conversion of formulas to values reads after a change that
     leaves them stale. Rows and columns are typed (`RowRange`,
     `ColumnRange`, with `FromStr`/`Display`), so a deletion with the wrong kind of range cannot
-    be built. What a deletion leaves stale is found from the formulas (`stale_set`: the program of the engine
-    for the workbook, the formulas that read what changes and the ones that read those): the ones whose
-    value is `#REF!` by a deleted reference are written with it as the last pass, the engine calculates
-    the others, and no pass is made when none is stale; the output is marked to be recalculated when
+    be built. What a deletion leaves stale is calculated again by the engine as the last pass (every formula; no analysis decides which); the output is marked to be recalculated when
     opened only if the engine cannot calculate the workbook (the mark is never decided before the engine
     has run, and there is no option to ask for it or avoid it).
   - `plan` (private): the planner behind `BookEdit`, a set of functions that take the operations of

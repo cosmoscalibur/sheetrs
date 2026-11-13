@@ -20,11 +20,11 @@ def parts(path):
 def whole(book):
     """What a workbook says: the cells of every sheet with value and formula, and the names."""
     out = {}
-    for name in book.sheet_names:
+    for name in book.stats().sheets.names():
         key = f"{name}!A1:H20"
         block = book.range(key, properties=("value", "formula"))[key]
         out[name] = (block.values, block.formulas)
-    return out, book.defined_names
+    return out, book.stats().defined_names
 
 
 # ---- they accumulate; nothing runs until save --------------------------------------------------
@@ -115,7 +115,7 @@ def test_the_destination_cannot_be_the_file_being_edited(structure):
 
 def test_a_path_like_destination_is_accepted(structure, tmp_path):
     saved = sheetrs.Book(structure).delete_rows("T!2").save(tmp_path / f"p{structure.suffix}")
-    assert saved.sheet_names == ["T", "U", "V", "F"]
+    assert saved.stats().sheets.names() == ["T", "U", "V", "F"]
 
 
 # ---- what each operation does ----------------------------------------------------------------
@@ -123,7 +123,7 @@ def test_a_path_like_destination_is_accepted(structure, tmp_path):
 
 def test_delete_sheets(structure, tmp_path):
     saved = sheetrs.Book(structure).delete_sheets(["U", "V"]).save(tmp_path / f"s{structure.suffix}")
-    assert saved.sheet_names == ["T", "F"]
+    assert saved.stats().sheets.names() == ["T", "F"]
 
 
 def test_delete_names(structure, tmp_path):
@@ -132,7 +132,7 @@ def test_delete_names(structure, tmp_path):
         .delete_names(["Gone", "NameOne"])
         .save(tmp_path / f"n{structure.suffix}")
     )
-    assert set(saved.defined_names) == {"NameTwo", "NameThree"}
+    assert set(saved.stats().defined_names) == {"NameTwo", "NameThree"}
 
 
 def test_delete_rows_moves_the_rest_up_and_the_references_to_them_are_an_error(structure, tmp_path):
@@ -430,9 +430,9 @@ QUERIES = {
     "range": lambda b: b.range("T!A1"),
     "find": lambda b: b.find("1"),
     "lint": lambda b: b.lint(),
-    "stats": lambda b: b.stats,
-    "sheet_names": lambda b: b.sheet_names,
-    "defined_names": lambda b: b.defined_names,
+    "stats": lambda b: b.stats(),
+    "sheet_names": lambda b: b.stats().sheets.names(),
+    "defined_names": lambda b: b.stats().defined_names,
 }
 
 
@@ -490,7 +490,7 @@ def test_an_array_of_targets_is_the_sweep_and_one_str_is_one_target(structure, t
         .save(tmp_path / f"chained{suffix}")
     )
     assert whole(swept) == whole(chained)
-    assert swept.sheet_names == ["T", "F"]
+    assert swept.stats().sheets.names() == ["T", "F"]
 
 
 def test_any_iterable_of_str_is_an_array(structure, tmp_path):
@@ -651,8 +651,8 @@ def test_a_book_made_from_bytes_gives_the_edited_workbook_as_bytes_and_leaves_th
     data = structure.read_bytes()
     book = sheetrs.Book(data).delete_sheets("V")
     out = sheetrs.Book(book.to_bytes())
-    assert "V" not in out.sheet_names
-    assert "V" in sheetrs.Book(data).sheet_names
+    assert "V" not in out.stats().sheets.names()
+    assert "V" in sheetrs.Book(data).stats().sheets.names()
 
 
 def test_to_bytes_with_no_operations_is_the_workbook_as_it_is(structure):

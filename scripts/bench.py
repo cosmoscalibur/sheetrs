@@ -159,7 +159,7 @@ EDIT_SCENARIOS = [
 
 
 def group_edit(a):
-    table("`sheetrs edit` (the formulas a deletion leaves stale are found, and only they are calculated)", "Workbook and scenario")
+    table("`sheetrs edit` (a deletion ends with the engine calculating every formula)", "Workbook and scenario")
     wanted = set(a.scenarios.split(",")) if a.scenarios else None
     with tempfile.TemporaryDirectory() as work:
         for f in a.workbooks.split(","):

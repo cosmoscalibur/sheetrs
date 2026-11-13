@@ -56,6 +56,8 @@ Two requirements, and a rule about how to test them:
   behavior is documented. A difference nobody approved is a bug, even if it is convenient, hard to
   fix or unlikely to matter; one that cannot be fixed yet is reported to the maintainer for a
   decision, not shipped as if it were settled.
+- **The cache is not a fidelity criterion.** What a file caches in a formula cell is not a behavior to
+  preserve; it is recorded, with its reason, in [docs/approved-differences.md](docs/approved-differences.md).
 - **How it is tested.** A file is tested against what LibreOffice reports for that file: the
   fixtures are made by LibreOffice and `sheetrs-io/tests/assets/oracle/make_oracle.py` records what it
   says of each cell (see `sheetrs-query/tests/libreoffice_oracle.rs`). A capability is tested on both

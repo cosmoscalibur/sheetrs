@@ -1,8 +1,7 @@
 //! WebAssembly bindings of the `SheetRS` suite, for a browser or Node (`--target web`).
 //!
 //! The package has one object, `Book`: a workbook made from its bytes, whose format is
-//! the one of the content. Its shortcut properties (`format`, `sheetNames`, `sheets`, `definedNames`,
-//! `dateSystem`, `hasMacros`, the `total*`) come from one read when it is made; `lint`, `query`,
+//! the one of the content. It reads nothing when it is made; `format` comes from the content, and `stats`, `lint`, `query`,
 //! `range`, `find` and `inspect` read what they need; the operations (`deleteSheets`, `deleteNames`,
 //! `formulaToValue`, `deleteRows`, `deleteColumns`, `replace`, `calculate`) accumulate until `save`
 //! runs them in the order the planner chooses; `compile` makes a WebAssembly module of the

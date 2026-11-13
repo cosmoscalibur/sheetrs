@@ -64,8 +64,8 @@ aligned and the table that maps each operation to its form in every layer.
 | Cells of ranges | `sheetrs query --range R`, `--sheet S`, `--workbook`, `-p PROP` | `BookQuery::range(ranges, &RangeOptions)` | `book.range(ranges, properties, major=, dates=)` | `book.range(ranges, options?)` |
 | Find | `sheetrs query --find TEXT` (`--regex`, `--wildcards`, `--match-case`, `--entire-cells`, `--in`, `--formatted`, `--filtered`, `--include-formulas`) | `BookQuery::find(&Find, &FindOptions)` | `book.find(text, regex=, wildcards=, match_case=, entire_cells=, search_in=, formatted=, filtered=, scope=...)` | `book.find(text, options?)` |
 | The whole query | `sheetrs query --query JSON` | `BookQuery::query(&Query)` | `book.range`, `book.find` | `book.query(query?)` |
-| Sheets and names | `sheetrs query --list-sheets`, `--list-names` | `Book::sheet_names()`, `Book::defined_names()` (read on demand) | `book.sheet_names`, `book.defined_names` | `book.sheetNames`, `book.definedNames` |
-| Statistics | `sheetrs stats [--format json]` | `BookStats::stats()` | `book.stats`, `book.total_*` | `book.stats`, `book.total*` |
+| Sheets and names | `sheetrs query --list-sheets`, `--list-names` | `Book::sheet_names()`, `Book::defined_names()` (read on demand) | `book.stats().sheets.names()`, `book.stats().defined_names` | `book.stats().toJSON().sheets`, `book.stats().definedNames` |
+| Statistics | `sheetrs stats [--format json]` | `BookStats::stats()` | `book.stats()` (`Stats`: `total_*`, `sheets`, `has_macros`, `defined_names`) | `book.stats()` (`Stats`: `toJSON()`, `hasMacros`, `definedNames`) |
 | Lint | `sheetrs lint [-c CONFIG] [-f human\|json\|sarif] [-e]` | `BookLint::lint(&Linter)` | `book.lint(config_path)` | `book.lint(configToml?)` |
 | Delete sheets | `sheetrs edit --delete-sheets S...` | `BookEdit::delete_sheets(names)` | `book.delete_sheets(names)` | `book.deleteSheets(names)` |
 | Delete defined names | `--delete-names N...` | `delete_names(names)` | `book.delete_names(names)` | `book.deleteNames(names)` |
