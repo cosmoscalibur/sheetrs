@@ -53,10 +53,18 @@ pub fn load(source: &Book) -> Result<Model> {
 /// SHA-256 of the workbook, in hexadecimal.
 fn sha256_of(source: &Book) -> Result<String> {
     use sha2::{Digest, Sha256};
+    use std::io::Read;
     let mut hasher = Sha256::new();
     if let Some(path) = source.path() {
         let mut file = std::fs::File::open(path).map_err(|e| Error::io(path, e))?;
-        std::io::copy(&mut file, &mut hasher).map_err(|e| Error::io(path, e))?;
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf).map_err(|e| Error::io(path, e))?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
     } else if let Some(data) = source.bytes() {
         hasher.update(data);
     }

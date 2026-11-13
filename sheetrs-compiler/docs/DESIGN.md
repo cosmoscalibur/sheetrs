@@ -342,8 +342,12 @@ localized because files always store the canonical ones.
 
 `sheetc build` copies a runtime stub — `sheetrs-rt` (engine only; its size is in
 [docs/performance.md](../../docs/performance.md#sizes)) or the full binary — and appends the program in
-`bincode`, the blocks of constants and a 24-byte trailer (`SHEETRS1`, size of the program, size of
-the blocks). The program is `bincode`, not JSON: it is decoded at every start.
+an [`rkyv`](https://docs.rs/rkyv) archive, the blocks of constants and a 24-byte trailer (`SHEETRS1`,
+size of the program, size of the blocks). The program is an archive, not JSON: it is decoded at every start.
+The archive is validated (`bytecheck`) before it is read, and it is copied into aligned memory first, since
+the payload holds it at any offset. A function is archived by its qualified name (`core::SUM`), as in JSON, so
+that the registry can grow. `bincode` was used before: it is unmaintained and its last release is a
+tombstone.
 
 A program with `consts::MIN_STORED` constants or more (a workbook whose formulas read many constants)
 does not carry them in the program: `consts::split` moves them, sorted by sheet, row and column,

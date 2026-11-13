@@ -23,7 +23,17 @@ pub const BLOCK_CELLS: usize = 4096;
 pub const MIN_STORED: usize = 50_000;
 
 /// Where the blocks of a program are and what they span.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct ConstIndex {
     sheets: Vec<SheetConsts>,
     cells: u64,
@@ -37,7 +47,17 @@ impl ConstIndex {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 struct SheetConsts {
     /// Rows and columns spanned by the constants.
     extent: (u32, u32),
@@ -45,7 +65,16 @@ struct SheetConsts {
     blocks: Vec<BlockRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 struct BlockRef {
     row0: u32,
     /// Position of the encoded block among the blocks, and its size.
@@ -118,11 +147,11 @@ pub fn split(program: &mut Program, min: usize) -> crate::Result<(ConstIndex, Ve
             .sheets
             .get_mut(sheet as usize)
             .ok_or(crate::Error::ConstantOnUnknownSheet)?;
-        let block: Vec<(u32, u32, &Value)> = consts[i..j]
+        let block: Block = consts[i..j]
             .iter()
-            .map(|(at, v)| (at.row, at.col, v))
+            .map(|(at, v)| (at.row, at.col, v.clone()))
             .collect();
-        let encoded = bincode::serialize(&block)?;
+        let encoded = crate::archive::encode(&block)?;
         sh.blocks.push(BlockRef {
             row0: consts[i].0.row,
             offset: bytes.len() as u64,
@@ -199,7 +228,7 @@ impl StoredConsts {
                 f.seek(SeekFrom::Start(self.start + b.offset))
                     .and_then(|_| f.read_exact(&mut buf))
                     .unwrap_or_else(|e| damaged(&e));
-                bincode::deserialize(&buf)
+                crate::archive::decode(&buf)
                     .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))
             }
             Backing::Memory(memory) => {
@@ -207,7 +236,7 @@ impl StoredConsts {
                     .checked_add(b.len as usize)
                     .and_then(|to| memory.get(from..to))
                     .unwrap_or_else(|| damaged(&"a block is out of the memory"));
-                bincode::deserialize(bytes)
+                crate::archive::decode(bytes)
                     .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))
             }
         }

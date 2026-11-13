@@ -101,14 +101,36 @@ impl<'de> Deserialize<'de> for FuncId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub enum UnOp {
     Neg,
     Plus,
     Percent,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub enum BinOp {
     Add,
     Sub,
@@ -124,17 +146,47 @@ pub enum BinOp {
     Ge,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator + rkyv::ser::Sharing,
+        <__S as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source,
+    ),
+    deserialize_bounds(
+        __D: rkyv::de::Pooling,
+        <__D as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source,
+    ),
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext + rkyv::validation::SharedContext,
+        <__C as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source,
+    ))
+)]
 pub enum Expr {
     Const(Value),
     Cell(CellRef),
     Range(Rect),
-    Unary(UnOp, Box<Expr>),
-    Binary(BinOp, Box<Expr>, Box<Expr>),
-    Call(FuncId, Vec<Expr>),
+    Unary(UnOp, #[rkyv(omit_bounds)] Box<Expr>),
+    Binary(
+        BinOp,
+        #[rkyv(omit_bounds)] Box<Expr>,
+        #[rkyv(omit_bounds)] Box<Expr>,
+    ),
+    Call(
+        #[rkyv(with = crate::archive::Qualified)] FuncId,
+        #[rkyv(omit_bounds)] Vec<Expr>,
+    ),
     /// Call to a function missing from the registry, by name and arguments: evaluates to
     /// `#NAME?`. Boxed because it is rare and would otherwise set the size of every node.
-    Unknown(Box<(Box<str>, Vec<Expr>)>),
+    Unknown(#[rkyv(omit_bounds)] Box<(Box<str>, Vec<Expr>)>),
     /// Omitted argument (`IF(A1,,2)`).
     Missing,
 }
@@ -170,7 +222,16 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub enum CellKind {
     Const(Value),
     Formula(Expr),
@@ -178,14 +239,32 @@ pub enum CellKind {
     Input(Value),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct CellDef {
     pub at: CellRef,
     pub kind: CellKind,
 }
 
 /// A named group of cells exchanged with the outside world as JSON.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Binding {
     pub name: String,
     pub rect: Rect,
@@ -194,7 +273,16 @@ pub struct Binding {
 /// The compiled artifact. `cells` is in evaluation order: dependencies first.
 /// Slots listed in `cycles` (half-open ranges) form strongly connected
 /// components that need iterative calculation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Program {
     pub sheets: Vec<String>,
     pub options: EngineOptions,
@@ -235,7 +323,18 @@ pub struct Program {
 }
 
 /// A run of consecutive cells of one row: `first..=last` columns of `row` in `sheet` (0-based).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct CellRun {
     pub sheet: u16,
     pub row: u32,
@@ -270,7 +369,17 @@ impl CellRun {
 }
 
 /// How and from what a program was built, listed by `--info`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct BuildInfo {
     /// The compiler, with its version (`sheetrs-compiler 0.3.2`).
     pub compiler: String,
@@ -283,7 +392,17 @@ pub struct BuildInfo {
 }
 
 /// The build options that shape the program.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct BuildOptions {
     /// `declared` (the outputs were declared) or `deduced` (the formula cells, as the rectangles that hold them).
     pub outputs: String,
@@ -299,7 +418,17 @@ pub struct BuildOptions {
 }
 
 /// The workbook a program was built from.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct SourceInfo {
     /// The file name, with its extension.
     pub file: String,
@@ -312,13 +441,35 @@ pub struct SourceInfo {
 /// The names a request may use besides the bindings: the defined names and tables of the
 /// workbook that point inside what the program exposes. A name inside the outputs is an alias of
 /// that output; a name inside the inputs is an alias of those inputs.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Queryable {
     pub names: Vec<Binding>,
 }
 
 /// What the program is for.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub enum Mode {
     /// Values in, values out: the inputs and outputs of `Program::inputs` and `Program::outputs`.
     #[default]
@@ -369,10 +520,20 @@ mod json_text {
 }
 
 /// One row of the settings sheet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Meta {
     pub key: String,
     #[serde(with = "json_text")]
+    #[rkyv(with = crate::archive::JsonText)]
     pub value: serde_json::Value,
     pub description: String,
     /// `input`, `output` or a custom type.
@@ -404,7 +565,7 @@ mod tests {
             r#"{"Unknown":["NOPE",[{"Const":{"Number":1.0}},"Missing"]]}"#
         );
         assert_eq!(serde_json::from_str::<Expr>(&json).unwrap(), call);
-        let bytes = bincode::serialize(&call).unwrap();
-        assert_eq!(bincode::deserialize::<Expr>(&bytes).unwrap(), call);
+        let bytes = crate::archive::encode(&call).unwrap();
+        assert_eq!(crate::archive::decode::<Expr>(&bytes).unwrap(), call);
     }
 }

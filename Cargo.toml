@@ -30,7 +30,7 @@ colored = "3.1"
 
 # XML parsing
 quick-xml = "0.42.0"
-zip = { version = "8.3", default-features = false, features = ["deflate"] }
+zip = { version = "9.0", default-features = false, features = ["deflate"] }
 
 # HTTP client for link validation
 reqwest = { version = "0.13.5", features = ["blocking"] }
@@ -39,7 +39,7 @@ fancy-regex = "0.19"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 tempfile = "3.27"
 aho-corasick = "1.1.4"
-sha2 = "0.10"
+sha2 = "0.11"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

@@ -184,7 +184,7 @@ fn raw_counts(path: &Path) -> (usize, usize) {
     let mut validations = 0;
     for i in 0..zip.len() {
         let mut file = zip.by_index(i).unwrap();
-        let name = file.name().to_string();
+        let name = file.name().unwrap().into_owned();
         if !(name.starts_with("xl/worksheets/sheet")
             && std::path::Path::new(&name)
                 .extension()

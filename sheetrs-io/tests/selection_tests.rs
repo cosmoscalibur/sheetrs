@@ -298,11 +298,11 @@ fn an_xlsx_sheet_that_is_not_selected_is_not_opened() {
         let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
         for i in 0..archive.len() {
             let mut file = archive.by_index(i).unwrap();
-            if file.name() == "xl/worksheets/sheet2.xml" {
+            if file.name().unwrap() == "xl/worksheets/sheet2.xml" {
                 continue;
             }
             out.start_file(
-                file.name().to_string(),
+                file.name().unwrap().into_owned(),
                 zip::write::SimpleFileOptions::default(),
             )
             .unwrap();
