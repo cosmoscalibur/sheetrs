@@ -213,8 +213,9 @@ pub fn extract_tables_from_xlsx(
 
     // Find all table files
     for i in 0..archive.len() {
-        if let Ok(file) = archive.by_index(i) {
-            let name = file.name().to_string();
+        if let Ok(file) = archive.by_index(i)
+            && let Ok(name) = file.name().map(std::borrow::Cow::into_owned)
+        {
             // Part names of the package are lowercase by the OPC convention and compared as such.
             #[allow(clippy::case_sensitive_file_extension_comparisons)]
             let is_table = name.starts_with("xl/tables/") && name.ends_with(".xml");
@@ -569,7 +570,9 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'_, R> {
         // Check for macrosheets
         for i in 0..self.archive.len() {
             if let Ok(file) = self.archive.by_index(i)
-                && file.name().starts_with("xl/macrosheets/")
+                && file
+                    .name()
+                    .is_ok_and(|name| name.starts_with("xl/macrosheets/"))
             {
                 return Ok(true);
             }

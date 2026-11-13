@@ -224,7 +224,7 @@ fn apply_xlsx<R: Read + Seek, W: Write + Seek>(
     };
 
     for i in 0..archive.len() {
-        let name = archive.by_index_raw(i)?.name().to_string();
+        let name = archive.by_index_raw(i)?.name()?.into_owned();
         if removes_part(&name) || (name == STYLES_PART && styles.is_some()) {
             continue;
         }
@@ -726,7 +726,7 @@ pub(super) fn replace_names(text: &str, names: &HashSet<String>) -> String {
 /// Refuse the parts that hold references the command would leave out of date.
 fn refuse_what_is_not_adjusted<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<()> {
     for i in 0..archive.len() {
-        let name = archive.by_index_raw(i)?.name().to_string();
+        let name = archive.by_index_raw(i)?.name()?.into_owned();
         if name.starts_with("xl/pivotTables/") || name.starts_with("xl/pivotCache/") {
             return Err(Error::not_adjusted(
                 "the workbook has pivot tables, whose sources are not adjusted yet",

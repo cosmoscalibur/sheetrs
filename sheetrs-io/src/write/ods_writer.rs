@@ -99,7 +99,7 @@ fn apply_ods<R: Read + Seek, W: Write + Seek>(
     // The variants of the styles that break the page, for the first row or column that is left.
     extra_styles.push_str(&no_break.xml);
     for i in 0..archive.len() {
-        if archive.by_index_raw(i)?.name() != CONTENT_PART {
+        if archive.by_index_raw(i)?.name()? != CONTENT_PART {
             // Raw copies keep `mimetype` first and stored uncompressed, as
             // ODF requires.
             zip_writer.raw_copy_file(archive.by_index_raw(i)?)?;

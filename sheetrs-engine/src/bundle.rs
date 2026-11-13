@@ -2,7 +2,7 @@
 //! payload plus a trailer (`magic`, lengths). No toolchain is needed to
 //! "compile" and the artifact is a single file.
 //!
-//! Layout of the payload: the program in `bincode` with its index of constants, the blocks of
+//! Layout of the payload: the program in `postcard` with its index of constants, the blocks of
 //! constants (see [`crate::consts`]), then the trailer: magic, size of the program, size of the
 //! blocks. An executable that carries the workbook it was made from, to be used as the template of
 //! the answer, adds the workbook after the blocks (its extension in eight bytes, then its bytes) and
@@ -86,7 +86,7 @@ pub fn write_executable_with_template(
 /// When the program cannot be encoded, or the extension does not fit its eight bytes.
 pub fn payload(program: &mut Program, template: Option<(&str, &[u8])>) -> crate::Result<Vec<u8>> {
     let (index, blocks) = consts::split(program, consts::MIN_STORED)?;
-    let skeleton = bincode::serialize(&PackedRef {
+    let skeleton = postcard::to_allocvec(&PackedRef {
         program,
         consts: &index,
     })?;
@@ -202,7 +202,7 @@ pub fn read_embedded() -> Option<Embedded> {
     f.seek(SeekFrom::Start(start)).ok()?;
     let mut buf = vec![0u8; usize::try_from(skeleton).ok()?];
     f.read_exact(&mut buf).ok()?;
-    let packed: Packed = bincode::deserialize(&buf).ok()?;
+    let packed: Packed = postcard::from_bytes(&buf).ok()?;
     let template = if template_len >= EXTENSION_BYTES as u64 {
         f.seek(SeekFrom::Start(start + skeleton + blocks)).ok()?;
         let mut blob = vec![0u8; usize::try_from(template_len).ok()?];
@@ -254,7 +254,7 @@ pub fn read_payload(bytes: &'static [u8]) -> Option<Embedded> {
         .checked_add(trailer)?;
     let start = usize::try_from(u64::try_from(n).ok()?.checked_sub(total)?).ok()?;
     let skeleton_end = start.checked_add(usize::try_from(skeleton).ok()?)?;
-    let packed: Packed = bincode::deserialize(bytes.get(start..skeleton_end)?).ok()?;
+    let packed: Packed = postcard::from_bytes(bytes.get(start..skeleton_end)?).ok()?;
     let blocks_end = skeleton_end.checked_add(usize::try_from(blocks).ok()?)?;
     let template = if template_len >= EXTENSION_BYTES as u64 {
         let blob =

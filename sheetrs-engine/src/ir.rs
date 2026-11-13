@@ -404,7 +404,7 @@ mod tests {
             r#"{"Unknown":["NOPE",[{"Const":{"Number":1.0}},"Missing"]]}"#
         );
         assert_eq!(serde_json::from_str::<Expr>(&json).unwrap(), call);
-        let bytes = bincode::serialize(&call).unwrap();
-        assert_eq!(bincode::deserialize::<Expr>(&bytes).unwrap(), call);
+        let bytes = postcard::to_allocvec(&call).unwrap();
+        assert_eq!(postcard::from_bytes::<Expr>(&bytes).unwrap(), call);
     }
 }

@@ -31,7 +31,7 @@ pub enum Error {
     Stdin(#[source] io::Error),
     /// A program that cannot be encoded into the payload of an executable.
     #[error("cannot encode the program: {0}")]
-    Encode(#[from] bincode::Error),
+    Encode(#[from] postcard::Error),
     /// A block of constants that does not fit the payload format.
     #[error("a block of constants is too big")]
     BlockTooBig,
