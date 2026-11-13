@@ -72,12 +72,14 @@ With `scripts/benchmark.toml`: every default-active rule, thresholds fixed so th
 
 | Workbook | Wall time | Peak memory |
 |---|---|---|
-| `formulas.xlsx` | 30.85-31.65 s | 1087 MB |
-| `formulas.ods` | 35.70-35.84 s | 1122-1124 MB |
+| `formulas.xlsx` | 16.36-16.80 s | 658-661 MB |
+| `formulas.ods` | 21.52-21.69 s | 693-701 MB |
 
-Where the time goes (XLSX): reading the workbook 7 %, rule execution 88 %, writing the report 4 %; the rules
-that cost most are `CALC202` (27 %) and `REF310` (11 %): the table is in
-[PROFILING.md](../sheetrs-linter/docs/PROFILING.md).
+Where the time goes (XLSX): reading the workbook 15 %, rule execution 79 %, writing the report 5 %; the rules
+that cost most are `INT401-403` (16 %) and `CALC202` (14 %): the table is in
+[PROFILING.md](../sheetrs-linter/docs/PROFILING.md). The peak of the run is the floor of the workbook read
+(329 MB) plus what the rules keep: the dependency graph of `CALC202` (about 110 MB) and the 1.2 M violations of
+`CALC201` that this configuration produces.
 
 ### `sheetrs stats`
 
@@ -208,9 +210,12 @@ opens the `Book` first (the statistics are read at open), so the peak of a step 
 | `Book(path)` (reads the workbook once, for the statistics) | 1.97-2.05 s | 1.99-2.06 s | 17 MB |
 | `range(["Calc!A1:H1000"])` | 0.01 s | 1.92-1.94 s | 21 MB |
 | `find("K00")` | 2.34-2.39 s | 4.26-4.40 s | 24 MB |
-| `lint()` | 26.72-27.67 s | 28.79-29.85 s | 1021-1023 MB |
+| `lint()` ‡ | 26.72-27.67 s | 28.79-29.85 s | 1021-1023 MB |
 | `delete_rows("Calc!3:10").save(out)` (with the recalculation) | 24.83-25.46 s | 26.87-27.56 s | 1655 MB |
 | `calculate({"rate": 0.07}, ["Summary!A1", "Summary!A3", "Summary!A4"]).value_ranges()` | 10.83-11.34 s | 12.86-13.38 s | 1698-1699 MB |
+
+‡ Measured before the linter used less time and memory (see [`sheetrs lint`](#sheetrs-lint), which is about half
+of it now); not measured again, as the wheel is not built here.
 
 ### WebAssembly
 

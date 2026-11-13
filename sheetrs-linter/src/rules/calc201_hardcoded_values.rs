@@ -70,6 +70,16 @@ static NUMBER_RE: LazyLock<Regex> =
 #[derive(Debug)]
 pub struct HardcodedValuesInFormulasRule {
     config: LinterConfig,
+    /// Parameters of the sheet being walked, read from the configuration once per sheet.
+    sheet_params: Option<(u16, SheetParams)>,
+}
+
+/// The parameters of the rule for one sheet.
+#[derive(Debug)]
+struct SheetParams {
+    ignored_values: Vec<f64>,
+    ignore_ints: bool,
+    ignore_pow10: bool,
 }
 
 impl HardcodedValuesInFormulasRule {
@@ -78,6 +88,32 @@ impl HardcodedValuesInFormulasRule {
     pub fn new(config: &LinterConfig) -> Self {
         Self {
             config: config.clone(),
+            sheet_params: None,
+        }
+    }
+
+    fn read_params(&self, sheet: &Sheet) -> SheetParams {
+        let ignored_values = self
+            .config
+            .param_float_array("ignore_hardcoded_num_values", Some(&sheet.name))
+            .unwrap_or_else(|| {
+                vec![
+                    0.0, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 12.0, 24.0, 30.0, 31.0,
+                    52.0, 53.0, 60.0, 365.0, 366.0, 3600.0,
+                ]
+            });
+        let ignore_ints = self
+            .config
+            .param_bool("ignore_hardcoded_int_values", Some(&sheet.name))
+            .unwrap_or(false);
+        let ignore_pow10 = self
+            .config
+            .param_bool("ignore_hardcoded_power_of_ten", Some(&sheet.name))
+            .unwrap_or(true);
+        SheetParams {
+            ignored_values,
+            ignore_ints,
+            ignore_pow10,
         }
     }
 
@@ -121,30 +157,32 @@ impl HardcodedValuesInFormulasRule {
         let formula_no_strings = STRING_RE.replace_all(formula, "");
 
         // Collect positions of external workbook references to exclude
-        let excluded_ranges: Vec<(usize, usize)> = EXTERNAL_REF_RE
-            .captures_iter(&formula_no_strings)
-            .filter_map(|cap| cap.get(0).map(|m| (m.start(), m.end())))
-            .collect();
+        let excluded_ranges: Vec<(usize, usize)> = if formula_no_strings.contains('[') {
+            EXTERNAL_REF_RE
+                .find_iter(&formula_no_strings)
+                .map(|m| (m.start(), m.end()))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let mut values = Vec::new();
 
-        for cap in NUMBER_RE.captures_iter(&formula_no_strings) {
-            if let Some(match_str) = cap.get(1) {
-                let match_start = match_str.start();
-                let match_end = match_str.end();
+        for match_str in NUMBER_RE.find_iter(&formula_no_strings) {
+            let match_start = match_str.start();
+            let match_end = match_str.end();
 
-                // Skip numbers inside external reference brackets
-                let is_external_ref = excluded_ranges
-                    .iter()
-                    .any(|(start, end)| match_start >= *start && match_end <= *end);
+            // Skip numbers inside external reference brackets
+            let is_external_ref = excluded_ranges
+                .iter()
+                .any(|(start, end)| match_start >= *start && match_end <= *end);
 
-                if !is_external_ref
-                    && let Ok(val) = match_str.as_str().parse::<f64>()
-                    && !Self::is_ignored(val, ignored_values, ignore_ints, ignore_pow10)
-                    && !values.contains(&val)
-                {
-                    values.push(val);
-                }
+            if !is_external_ref
+                && let Ok(val) = match_str.as_str().parse::<f64>()
+                && !Self::is_ignored(val, ignored_values, ignore_ints, ignore_pow10)
+                && !values.contains(&val)
+            {
+                values.push(val);
             }
         }
 
@@ -199,28 +237,23 @@ impl WalkerRule for HardcodedValuesInFormulasRule {
         out: &mut Vec<Violation>,
     ) {
         if let Some(formula) = cell.as_formula() {
-            let ignored_values = self
-                .config
-                .param_float_array("ignore_hardcoded_num_values", Some(&sheet.name))
-                .unwrap_or_else(|| {
-                    vec![
-                        0.0, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 12.0, 24.0, 30.0, 31.0,
-                        52.0, 53.0, 60.0, 365.0, 366.0, 3600.0,
-                    ]
-                });
+            if self
+                .sheet_params
+                .as_ref()
+                .is_none_or(|(index, _)| *index != sheet.sheet_index)
+            {
+                self.sheet_params = Some((sheet.sheet_index, self.read_params(sheet)));
+            }
+            let Some((_, params)) = &self.sheet_params else {
+                return;
+            };
 
-            let ignore_ints = self
-                .config
-                .param_bool("ignore_hardcoded_int_values", Some(&sheet.name))
-                .unwrap_or(false);
-
-            let ignore_pow10 = self
-                .config
-                .param_bool("ignore_hardcoded_power_of_ten", Some(&sheet.name))
-                .unwrap_or(true);
-
-            let values =
-                Self::extract_hardcoded_values(formula, &ignored_values, ignore_ints, ignore_pow10);
+            let values = Self::extract_hardcoded_values(
+                formula,
+                &params.ignored_values,
+                params.ignore_ints,
+                params.ignore_pow10,
+            );
 
             if !values.is_empty() {
                 out.push(Violation::with_data(
