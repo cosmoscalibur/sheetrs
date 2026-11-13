@@ -85,10 +85,13 @@ that cost most are `INT401-403` (16 %) and `CALC202` (14 %): the table is in
 
 | Workbook | Wall time | Peak memory |
 |---|---|---|
-| `formulas.xlsx` | 2.05-2.10 s | 19 MB |
-| `formulas.ods` | 6.17-6.32 s | 19 MB |
+| `formulas.xlsx` | 1.73-1.77 s | 14 MB |
+| `formulas.ods` | 2.90-2.95 s | 14 MB |
 
-The counts are taken while the reader goes: the workbook is never built.
+The counts are taken while the reader goes: the workbook is never built, and the formulas of an ODS are
+not converted to Excel's notation (the counts do not read them). The peak is the floor of the harness; what
+is left of the time is the archive and the XML: in the XLSX about 75 % is inflating, the CRC and tokenizing
+(quick-xml), and the profile of the ODS has the same shape.
 
 ### `sheetrs query`
 
@@ -284,9 +287,9 @@ the contrast script in the same rounds as LibreOffice's.
 | Load, calculate every formula, write the workbook | `sheetc calculate -o`: 10.8-11.1 s, 1598 MB | load, `calculateAll()`, store: 37.5-38.0 s, 2193 MB |
 | Delete rows `Calc!3:10`, calculate, write | `sheetrs edit --delete-rows`: 23.3 s, 1646 MB *; Python `Book.delete_rows(...).save(out)`: 24.83-25.46 s (the process 26.87-27.56 s), 1655 MB | load, `Rows.removeByIndex`, `calculateAll()`, store: 47.7-48.9 s, 3286-3288 MB |
 | The same plus formulas to values of `Summary` | `sheetrs edit --delete-rows … --formula-to-value Summary`: 41.0 s, 1890 MB * | the same steps with `.uno:ConvertFormulaToValue`: 47.7-49.5 s, 3293-3295 MB |
-| Read the whole workbook (XLSX) | `sheetrs stats`: 2.05-2.10 s, 19 MB; Python `Book(path)`: 1.97-2.05 s, 17 MB | load: 10.2-10.6 s, 1348-1350 MB |
+| Read the whole workbook (XLSX) | `sheetrs stats`: 1.73-1.77 s, 14 MB; Python `Book(path)`: 1.97-2.05 s, 17 MB | load: 10.2-10.6 s, 1348-1350 MB |
 | Find a text in every sheet (XLSX; 14 930 cells in both) | `sheetrs query --find K00`: 2.32-2.38 s, 17-18 MB; Python `find`: 2.34-2.39 s after the open, 24 MB | load and `findAll`: 11.8-12.6 s, 1348-1349 MB (the search alone 2.0-2.1 s) |
-| Read the whole workbook (ODS) | `sheetrs stats`: 6.17-6.32 s, 19 MB | load: 28.3-29.2 s, 1187 MB |
+| Read the whole workbook (ODS) | `sheetrs stats`: 2.90-2.95 s, 14 MB | load: 28.3-29.2 s, 1187 MB |
 
 Phases of LibreOffice (range of the rounds), XLSX: load 10.7-11.2 s, deleting the rows 8.2-12.0 s, `calculateAll()`
 7.0-8.0 s, conversion under 0.5 s, store 17.8-19.7 s. With the same work in the same order, SheetRS takes 0.29
