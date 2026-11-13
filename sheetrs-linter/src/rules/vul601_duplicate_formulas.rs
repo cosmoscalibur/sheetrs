@@ -30,16 +30,9 @@ use super::{LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
-use sheetrs_io::reader::Sheet;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
-
-/// Where a formula text is found in a sheet. Most formulas are found once: that one is kept in
-/// place, with no list.
-enum Positions {
-    One((u32, u32)),
-    Many(Vec<(u32, u32)>),
-}
+use sheetrs_io::reader::{Cell, Sheet};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 /// Rule that detects duplicate formulas in non-adjacent cells
 #[derive(Debug)]
@@ -108,36 +101,41 @@ impl WalkerRule for DuplicateFormulasRule {
     }
 
     fn on_sheet_end(&mut self, sheet: &Sheet, _ctx: &mut LinterContext, out: &mut Vec<Violation>) {
-        // The formulas are the sheet's own text, borrowed for the grouping: nothing is copied
-        // but the few that are reported.
-        let mut formula_cells: HashMap<&str, Positions> = HashMap::new();
+        // A map of every formula text held a hash entry for each (a sheet of millions of formulas
+        // that are nearly all different cost ~250 MB). Each formula is kept as the hash of its
+        // text and its position, 16 bytes; sorted, the equal hashes are adjacent, and only
+        // those runs are compared as text (a collision cannot join different formulas).
+        let mut hashed: Vec<(u64, u32, u32)> = Vec::with_capacity(sheet.cells.len());
         for ((row, col), cell) in sheet.cells.iter() {
-            let Some(formula) = cell.as_formula() else {
-                continue;
-            };
-            match formula_cells.entry(formula.trim()) {
-                Entry::Vacant(e) => {
-                    e.insert(Positions::One((row, col)));
-                }
-                Entry::Occupied(mut e) => match e.get_mut() {
-                    Positions::Many(cells) => cells.push((row, col)),
-                    one @ Positions::One(_) => {
-                        let Positions::One(first) = *one else {
-                            unreachable!()
-                        };
-                        *one = Positions::Many(vec![first, (row, col)]);
-                    }
-                },
+            if let Some(formula) = cell.as_formula() {
+                let mut hasher = DefaultHasher::new();
+                formula.trim().hash(&mut hasher);
+                hashed.push((hasher.finish(), row, col));
             }
         }
+        hashed.sort_unstable();
 
-        let mut duplicates: Vec<(&str, Vec<(u32, u32)>)> = formula_cells
-            .into_iter()
-            .filter_map(|(formula, positions)| match positions {
-                Positions::Many(cells) => Some((formula, cells)),
-                Positions::One(_) => None,
-            })
-            .collect();
+        // The formulas are the sheet's own text, borrowed: nothing is copied but the few that
+        // are reported.
+        let mut duplicates: Vec<(&str, Vec<(u32, u32)>)> = Vec::new();
+        for run in hashed.chunk_by(|a, b| a.0 == b.0) {
+            if run.len() < 2 {
+                continue;
+            }
+            let mut texts: Vec<(&str, Vec<(u32, u32)>)> = Vec::new();
+            for &(_, row, col) in run {
+                let Some(formula) = sheet.cell(row, col).and_then(Cell::as_formula) else {
+                    continue;
+                };
+                let formula = formula.trim();
+                match texts.iter_mut().find(|(text, _)| *text == formula) {
+                    Some((_, cells)) => cells.push((row, col)),
+                    None => texts.push((formula, vec![(row, col)])),
+                }
+            }
+            duplicates.extend(texts.into_iter().filter(|(_, cells)| cells.len() > 1));
+        }
+        drop(hashed);
         duplicates.sort_unstable_by_key(|(formula, _)| *formula);
 
         for (formula, mut cells) in duplicates {

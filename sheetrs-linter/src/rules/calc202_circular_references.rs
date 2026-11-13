@@ -38,7 +38,7 @@
 //! potential loop.
 
 use super::helpers::{CELL_REF_PATTERN, parse_cell_coords};
-use super::{LinterContext, RuleCategory, WalkerRule};
+use super::{CellDependencies, LinterContext, RuleCategory, WalkerRule};
 use crate::violation::{
     CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
 };
@@ -64,6 +64,8 @@ pub struct CircularReferenceRule {
     /// Formula cells whose saved value is an error: how a spreadsheet stores a circular
     /// result, so a loop through one of them is active.
     errored: HashSet<(u16, u32, u32)>,
+    /// References of the formula being read, reused by every cell.
+    scratch: Vec<Node>,
 }
 
 impl CircularReferenceRule {
@@ -71,6 +73,7 @@ impl CircularReferenceRule {
     pub fn new() -> Self {
         Self {
             errored: HashSet::new(),
+            scratch: Vec::new(),
         }
     }
 }
@@ -147,41 +150,33 @@ impl WalkerRule for CircularReferenceRule {
             if cell.value.is_error() {
                 self.errored.insert(here);
             }
-            let refs = match dependencies_of(formula, sheet.sheet_index, &ctx.name_to_index) {
-                Some(found) => found,
+            self.scratch.clear();
+            // One parse gives the references (the cells the formula reads) and the links of
+            // the sheet with other sheets, for REF306 (whole columns and rows and defined names
+            // included, which the cell dependencies do not hold).
+            if !read_formula(
+                formula,
+                sheet.sheet_index,
+                &ctx.name_to_index,
+                &mut self.scratch,
+                &mut ctx.sheet_links,
+                &mut ctx.name_uses,
+            ) {
                 // A formula the parser does not read: every reference counts.
-                None => extract_cell_references(
+                self.scratch.extend(extract_cell_references(
                     formula,
                     &CELL_REF_PATTERN,
                     sheet.sheet_index,
                     &ctx.name_to_index,
-                ),
-            };
-
-            // The links of the sheet with other sheets, for REF306 (whole columns and rows and
-            // defined names included, which the cell dependencies do not hold).
-            match super::helpers::formula_links(formula, sheet.sheet_index, &ctx.name_to_index) {
-                Some(links) => {
-                    for to in links.sheets {
-                        if to != sheet.sheet_index {
-                            ctx.sheet_links.insert((sheet.sheet_index, to));
-                        }
-                    }
-                    for name in links.names {
-                        ctx.name_uses.insert((sheet.sheet_index, name));
-                    }
-                }
-                None => {
-                    for (to, _, _) in &refs {
-                        if *to != sheet.sheet_index {
-                            ctx.sheet_links.insert((sheet.sheet_index, *to));
-                        }
+                ));
+                for (to, _, _) in &self.scratch {
+                    if *to != sheet.sheet_index {
+                        ctx.sheet_links.insert((sheet.sheet_index, *to));
                     }
                 }
             }
 
-            ctx.cell_dependencies
-                .insert((sheet.sheet_index, at.0, at.1), refs);
+            ctx.cell_dependencies.insert(here, self.scratch.drain(..));
         }
     }
 
@@ -230,63 +225,87 @@ impl WalkerRule for CircularReferenceRule {
     }
 }
 
-/// References of a formula as nodes (ranges by their corners, as the rule always did).
-/// `None` when the formula cannot be parsed.
-fn dependencies_of(
+/// Read a formula once: push the cells it reads into `refs` (ranges by their corners, as the rule
+/// always did) and record its links with other sheets and the defined names it uses. `false`
+/// when the formula cannot be parsed (nothing is recorded then).
+fn read_formula(
     formula: &str,
     sheet_index: u16,
     name_to_index: &HashMap<String, u16>,
-) -> Option<Vec<(u16, u32, u32)>> {
+    refs: &mut Vec<Node>,
+    sheet_links: &mut HashSet<(u16, u16)>,
+    name_uses: &mut HashSet<(u16, String)>,
+) -> bool {
     use sheetrs_formula::ast::{Expr, RefArea};
-    fn walk(
-        e: &Expr,
+    struct Walk<'a> {
         sheet_index: u16,
-        names: &HashMap<String, u16>,
-        out: &mut Vec<(u16, u32, u32)>,
-    ) {
+        names: &'a HashMap<String, u16>,
+        refs: &'a mut Vec<Node>,
+        links: &'a mut HashSet<(u16, u16)>,
+        name_uses: &'a mut HashSet<(u16, String)>,
+        /// The sheet last linked, so a formula that names it again does not hash it again.
+        last_link: Option<u16>,
+    }
+    fn walk(e: &Expr, w: &mut Walk<'_>) {
         match e {
             Expr::Ref(r) => {
                 let sheet = match &r.sheet {
-                    None => sheet_index,
-                    Some(n) => match names.get(n.as_str()).copied() {
+                    None => w.sheet_index,
+                    Some(n) => match w.names.get(n.as_str()).copied() {
                         Some(i) => i,
                         None => return,
                     },
                 };
+                if sheet != w.sheet_index && w.last_link != Some(sheet) {
+                    w.last_link = Some(sheet);
+                    w.links.insert((w.sheet_index, sheet));
+                }
                 match r.area {
-                    RefArea::Cell(c) => out.push((sheet, c.row, c.col)),
+                    RefArea::Cell(c) => w.refs.push((sheet, c.row, c.col)),
                     RefArea::Range(a, b) => {
-                        out.push((sheet, a.row, a.col));
-                        out.push((sheet, b.row, b.col));
+                        w.refs.push((sheet, a.row, a.col));
+                        w.refs.push((sheet, b.row, b.col));
                     }
                     // Whole columns and rows are not tracked (REF307 flags them).
                     RefArea::Cols(..) | RefArea::Rows(..) => {}
                 }
             }
+            Expr::Name(n) => {
+                w.name_uses.insert((w.sheet_index, n.to_uppercase()));
+            }
             Expr::Call(c) => {
                 for a in c.args.iter().flatten() {
-                    walk(a, sheet_index, names, out);
+                    walk(a, w);
                 }
             }
             Expr::Array(rows) => {
                 for x in rows.iter().flatten() {
-                    walk(x, sheet_index, names, out);
+                    walk(x, w);
                 }
             }
-            Expr::Unary(_, x) | Expr::Percent(x) | Expr::Paren(x) => {
-                walk(x, sheet_index, names, out);
-            }
+            Expr::Unary(_, x) | Expr::Percent(x) | Expr::Paren(x) => walk(x, w),
             Expr::Binary(_, a, b) => {
-                walk(a, sheet_index, names, out);
-                walk(b, sheet_index, names, out);
+                walk(a, w);
+                walk(b, w);
             }
-            Expr::Number(_) | Expr::Text(_) | Expr::Bool(_) | Expr::Error(_) | Expr::Name(_) => {}
+            Expr::Number(_) | Expr::Text(_) | Expr::Bool(_) | Expr::Error(_) => {}
         }
     }
-    let ast = sheetrs_formula::parse(formula.strip_prefix('=').unwrap_or(formula)).ok()?;
-    let mut out = Vec::new();
-    walk(&ast, sheet_index, name_to_index, &mut out);
-    Some(out)
+    let Ok(ast) = sheetrs_formula::parse(formula.strip_prefix('=').unwrap_or(formula)) else {
+        return false;
+    };
+    walk(
+        &ast,
+        &mut Walk {
+            sheet_index,
+            names: name_to_index,
+            refs,
+            links: sheet_links,
+            name_uses,
+            last_link: None,
+        },
+    );
+    true
 }
 
 /// Extract cell references from a formula, resolving sheet names to indices.
@@ -357,72 +376,54 @@ enum VisitState {
 // Node type for global graph: (SheetIndex, Row, Col)
 type Node = (u16, u32, u32);
 
-/// Find all unique elementary cycles in the graph
-fn find_cycles(dependencies: &HashMap<Node, Vec<Node>>) -> Vec<Vec<Node>> {
+/// Find all unique elementary cycles in the graph.
+///
+/// The search runs over the position of each formula cell among the sorted ones, with its state in
+/// a vector: only a formula can be on a loop, so a reference to a cell without one is not
+/// followed. The order of the search (formula cells by location, references in the order of the
+/// formula) is that of the search over every referenced cell, so the loops found are the same.
+fn find_cycles(graph: &CellDependencies) -> Vec<Vec<Node>> {
     let mut cycles = Vec::new();
-    let mut state = HashMap::new();
+    let mut state = vec![VisitState::Unvisited; graph.len()];
+    // (position of the cell, index of the next reference to follow)
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    let mut path: Vec<usize> = Vec::new();
 
-    // Initialize all nodes as unvisited
-    for cell in dependencies.keys() {
-        state.insert(*cell, VisitState::Unvisited);
-    }
-    for deps in dependencies.values() {
-        for dep in deps {
-            if !state.contains_key(dep) {
-                state.insert(*dep, VisitState::Unvisited);
-            }
+    for start in 0..graph.len() {
+        if state[start] != VisitState::Unvisited {
+            continue;
         }
-    }
+        stack.push((start, 0));
 
-    // Sort keys for deterministic output
-    let mut keys: Vec<Node> = state.keys().copied().collect();
-    keys.sort_unstable();
-
-    for start_node in keys {
-        if state.get(&start_node) == Some(&VisitState::Unvisited) {
-            // Iterative DFS
-            let mut stack = vec![(start_node, 0)]; // (node, next_dep_idx)
-            let mut path = Vec::new();
-            let mut in_path = HashSet::new();
-
-            while let Some((u, dep_idx)) = stack.pop() {
-                if dep_idx == 0 {
-                    // First time visiting this node in this path
-                    if in_path.contains(&u) {
+        while let Some((u, dep_idx)) = stack.pop() {
+            if dep_idx == 0 {
+                // First time visiting this node in this path
+                match state[u] {
+                    VisitState::Visiting => {
                         // Cycle detected!
-                        if let Some(pos) = path.iter().position(|x| x == &u) {
-                            let cycle = path[pos..].to_vec();
-                            cycles.push(cycle);
+                        if let Some(pos) = path.iter().position(|&x| x == u) {
+                            cycles.push(path[pos..].iter().map(|&i| graph.cell(i)).collect());
                         }
                         continue;
                     }
-                    if state.get(&u) == Some(&VisitState::Visited) {
-                        continue;
-                    }
-
-                    state.insert(u, VisitState::Visiting);
-                    in_path.insert(u);
-                    path.push(u);
+                    VisitState::Visited => continue,
+                    VisitState::Unvisited => {}
                 }
+                state[u] = VisitState::Visiting;
+                path.push(u);
+            }
 
-                if let Some(deps) = dependencies.get(&u) {
-                    if dep_idx < deps.len() {
-                        // Push current node back with next index
-                        stack.push((u, dep_idx + 1));
-                        // Push neighbor to visit
-                        stack.push((deps[dep_idx], 0));
-                    } else {
-                        // Finished visiting all neighbors
-                        state.insert(u, VisitState::Visited);
-                        in_path.remove(&u);
-                        path.pop();
-                    }
-                } else {
-                    // No dependencies
-                    state.insert(u, VisitState::Visited);
-                    in_path.remove(&u);
-                    path.pop();
+            if let Some(dep) = graph.references_at(u).get(dep_idx) {
+                // Push current node back with next index
+                stack.push((u, dep_idx + 1));
+                // Push neighbor to visit, if it is a formula
+                if let Some(next) = graph.index_of(dep) {
+                    stack.push((next, 0));
                 }
+            } else {
+                // Finished visiting all neighbors
+                state[u] = VisitState::Visited;
+                path.pop();
             }
         }
     }
@@ -573,6 +574,56 @@ mod tests {
 
         // Cycle: A1 -> A3 -> A1
         assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    fn every_loop_is_found_once_in_the_order_of_the_search() {
+        // Two separate loops (A1 <-> B1, D1 -> E1 -> F1 -> D1), a formula that reads the loop
+        // without being on it (H1), and references to cells with no formula (Z9).
+        let cells = [
+            (0, 0, "=B1+Z9"),
+            (0, 1, "=A1"),
+            (0, 3, "=E1"),
+            (0, 4, "=F1"),
+            (0, 5, "=D1+Z9"),
+            (0, 7, "=A1+D1"),
+        ];
+        let v = run_cells_with(CircularReferenceRule::new(), &cells, &[]);
+        assert_eq!(v.len(), 2);
+        let first = v[0].data::<CircularReferenceData>().expect("data");
+        let second = v[1].data::<CircularReferenceData>().expect("data");
+        assert_eq!(first.cycle, vec![(0, 0, 0), (0, 0, 1)]);
+        assert_eq!(second.cycle, vec![(0, 0, 3), (0, 0, 4), (0, 0, 5)]);
+    }
+
+    #[test]
+    fn a_formula_is_read_once_for_references_and_links() {
+        let names: HashMap<String, u16> = [("Data".to_string(), 1), ("Here".to_string(), 0)].into();
+        let mut refs = Vec::new();
+        let mut links = HashSet::new();
+        let mut uses = HashSet::new();
+        assert!(read_formula(
+            "=SUM(Data!A1:B2)+C3+Rate+Gone!D4+Data!E5+Here!F6+A:A",
+            0,
+            &names,
+            &mut refs,
+            &mut links,
+            &mut uses,
+        ));
+        // Ranges by their corners; an unknown sheet and a whole column hold no cell.
+        assert_eq!(
+            refs,
+            vec![(1, 0, 0), (1, 1, 1), (0, 2, 2), (1, 4, 4), (0, 5, 5)]
+        );
+        // Only the other sheet is a link (a whole column of the sheet itself is not one).
+        assert_eq!(links, HashSet::from([(0, 1)]));
+        assert_eq!(uses, HashSet::from([(0, "RATE".to_string())]));
+        // A formula the parser does not read records nothing.
+        let mut refs = Vec::new();
+        assert!(!read_formula(
+            "=((", 0, &names, &mut refs, &mut links, &mut uses
+        ));
+        assert!(refs.is_empty());
     }
 
     fn formula_cell(row: u32, col: u32, f: &str) -> ((u32, u32), Cell) {
