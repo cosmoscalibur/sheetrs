@@ -2244,7 +2244,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-answer"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde_json",
  "sheetrs-engine",
@@ -2254,7 +2254,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-cli"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2271,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-compiler"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "pprof",
  "serde",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-edit"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2314,7 +2314,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-engine"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "fancy-regex 0.19.2",
  "icu_casemap",
@@ -2330,7 +2330,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-formula"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde",
  "sheetrs-io",
@@ -2338,7 +2338,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-io"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2357,7 +2357,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-linter"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2379,7 +2379,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-protocol"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clap",
  "serde",
@@ -2390,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-py"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "pyo3",
  "serde_json",
@@ -2409,7 +2409,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-query"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-rt-wasm"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde_json",
  "sheetrs-answer",
@@ -2437,7 +2437,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-stats"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2449,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "sheetrs-wasm"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.2.17",
@@ -2882,9 +2882,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "typed-path"
-version = "0.13.0"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
+checksum = "54ec2755506471f54baf5e4bb5499d8e510cc1caf271270e778a736bd2d7336c"
 
 [[package]]
 name = "typenum"
@@ -3638,19 +3638,16 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "9.4.1"
+version = "9.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23f17fbc870bfac28c6228aed7d6e6df352e26bf7015c4313727e16a7a01ce5e"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
 dependencies = [
  "crc32fast",
  "flate2",
- "getrandom 0.4.2",
  "indexmap",
- "libc",
  "memchr",
  "nix 0.31.3",
  "typed-path",
- "windows-sys 0.61.2",
  "zopfli",
 ]
 

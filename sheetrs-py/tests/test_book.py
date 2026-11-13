@@ -18,7 +18,7 @@ def test_a_book_is_made_from_a_path_a_pathlike_or_bytes(lint_book):
     by_str = sheetrs.Book(str(lint_book))
     by_path = sheetrs.Book(lint_book)
     by_bytes = sheetrs.Book(lint_book.read_bytes())
-    assert by_str.sheet_names == by_path.sheet_names == by_bytes.sheet_names
+    assert by_str.stats().sheets.names() == by_path.stats().sheets.names() == by_bytes.stats().sheets.names()
     assert by_str.format == by_path.format == by_bytes.format == lint_book.suffix[1:]
 
 
@@ -27,7 +27,7 @@ def test_a_path_like_object_is_a_path(lint_book):
         def __fspath__(self):
             return str(lint_book)
 
-    assert sheetrs.Book(Wrapper()).sheet_names == sheetrs.Book(lint_book).sheet_names
+    assert sheetrs.Book(Wrapper()).stats().sheets.names() == sheetrs.Book(lint_book).stats().sheets.names()
 
 
 def test_the_format_is_the_one_of_the_content():
@@ -74,7 +74,7 @@ def test_a_workbook_that_cannot_be_parsed_is_an_error(tmp_path):
     broken = tmp_path / "broken.xlsx"
     broken.write_bytes(b"PK this is not a zip")
     with pytest.raises(sheetrs.Error):
-        sheetrs.Book(broken).sheet_names
+        sheetrs.Book(broken).stats().sheets.names()
 
 
 def test_the_hierarchy_of_the_exceptions():
@@ -99,8 +99,8 @@ def test_the_book_says_what_it_is_without_reading_it(structure):
 
 def test_the_sheets_and_the_names(structure):
     book = sheetrs.Book(structure)
-    assert book.sheet_names == ["T", "U", "V", "F"]
-    names = book.defined_names
+    assert book.stats().sheets.names() == ["T", "U", "V", "F"]
+    names = book.stats().defined_names
     assert set(names) == {"Gone", "NameOne", "NameTwo", "NameThree"}
     assert names["NameTwo"].replace("$", "") == "T!A1:A10"
 
@@ -115,5 +115,5 @@ def test_a_book_from_bytes_reads_what_a_file_does(structure):
 
 def test_a_workbook_written_by_hand_is_read(tmp_path):
     path = make_xlsx(tmp_path / "mini.xlsx", {"S": {"A1": 1}, "R": {"A1": 2}})
-    assert sheetrs.Book(path).sheet_names == ["S", "R"]
+    assert sheetrs.Book(path).stats().sheets.names() == ["S", "R"]
     assert isinstance(Path(path).read_bytes(), bytes)

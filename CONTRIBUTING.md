@@ -56,6 +56,8 @@ Two requirements, and a rule about how to test them:
   behavior is documented. A difference nobody approved is a bug, even if it is convenient, hard to
   fix or unlikely to matter; one that cannot be fixed yet is reported to the maintainer for a
   decision, not shipped as if it were settled.
+- **The cache is not a fidelity criterion.** What a file caches in a formula cell is not a behavior to
+  preserve; it is recorded, with its reason, in [docs/approved-differences.md](docs/approved-differences.md).
 - **How it is tested.** A file is tested against what LibreOffice reports for that file: the
   fixtures are made by LibreOffice and `sheetrs-io/tests/assets/oracle/make_oracle.py` records what it
   says of each cell (see `sheetrs-query/tests/libreoffice_oracle.rs`). A capability is tested on both
@@ -87,6 +89,12 @@ turns every regeneration into a diff of binary files that changed no cell.
 - Use file paths for integration tests.
 - Create both positive (expected behavior) and negative (error handling, edge
   cases) test cases.
+- **Name** a test for the behavior it checks, in a few words (`locale_flag_is_refused_at_run_time`), not
+  for how the code reaches it.
+- **Test behavior, not design.** A test fails when what a user or a caller observes changes (a result, an
+  error, an output). It does not pin that something does not exist or how it is built; a decision of
+  design is recorded in the docs.
+- **One behavior per test.** A test that checks several unrelated things is split.
 - A fixture for code that decides by looking for a name in text (a shortcut that skips a
   formula that does not mention a sheet) uses names that cannot occur in the text around them:
   `Zeta`, not `T` or `U`, which any function name contains.
@@ -168,9 +176,9 @@ What CI does and what stays manual:
 | ---- | --- | --- |
 | Version | you | `cargo set-version --workspace X.Y.Z` (cargo-edit; it also updates the `version` of the path dependencies). It is the only place: the Python wheel and the npm package take the version of the workspace. |
 | Changelog | you | merge the fragments of `changelog.d/` into a `## [X.Y.Z]` section of `CHANGELOG.md` and delete them: that section is the first part of the release notes (GitHub adds the generated list of pull requests) |
-| Check the path | you | Actions > Release > Run workflow on the branch: a dry run that builds the executables, wheels, sdist and npm tarball, smoke-tests them (the executables run, the wheel imports in a clean environment, the npm tarball opens a workbook in Node) and keeps them as workflow artifacts; it creates no release |
-| Tag | you | `vX.Y.Z` on `main`, pushed |
-| Build and release | CI (`.github/workflows/release.yml`) | the tag must match the workspace version; builds for Linux x86_64 and aarch64 the executables (`sheetrs`, `sheetc`, `sheetrs-rt` and the two base modules of the WebAssembly target, with `.sha256`), the `abi3` wheels (tested in clean environments of Python 3.13, 3.14 and 3.15), the sdist and the npm tarball; attaches them to a draft release, smoke-tests them and publishes the release |
+| Check the path | optional | Actions > Release > Run workflow on the branch is a dry run (builds and smoke-tests every artifact, creates no release). The jobs of `ci.yml` already build the executables, the wheels and the npm package of every PR, and the release created by a tag stays a draft until its smoke tests pass, so run it only when the change touches `release.yml` itself |
+| Tag | CI | when the workspace version reaches `main` and has no `vX.Y.Z` tag, the job `plan` of `release.yml` creates the tag on that commit; a tag pushed by hand also works, and must match the workspace version |
+| Build and release | CI (`.github/workflows/release.yml`) | the tag must match the workspace version; builds for Linux x86_64 and aarch64 the executables (`sheetrs`, `sheetc`, `sheetrs-rt` and the two base modules of the WebAssembly target, with `.sha256`), the `abi3` wheels (tested in clean environments of Python 3.13, 3.14 and 3.15), the sdist and the npm tarball; attaches them to a draft release, smoke-tests them and publishes the release. If a job fails, the release stays a draft: delete the draft and the tag, fix, and re-run the workflow of the push to `main` (it creates the tag again) |
 | crates.io, PyPI, npm | you, until [#108](https://github.com/cosmoscalibur/sheetrs/issues/108) | needs the credentials of the maintainer: crates.io in dependency order (`sheetrs-formula`, `sheetrs-io`, `sheetrs-protocol`, `sheetrs-engine`, `sheetrs-query`, `sheetrs-stats`, `sheetrs-linter`, `sheetrs-answer`, `sheetrs-compiler`, `sheetrs-edit`; `sheetrs-wasm`, `sheetrs-rt-wasm` and `sheetrs-py` have `publish = false`), PyPI with `twine upload` of the wheels and sdist of the release (or trusted publishing), npm with `npm publish` of the tarball |
 
 macOS and Windows artifacts are out of scope for now: [#99](https://github.com/cosmoscalibur/sheetrs/issues/99).

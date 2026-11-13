@@ -212,6 +212,7 @@ parsers and rules:
   each text and the position (16 bytes), sorts them and compares the texts of the equal hashes only,
   not a map of the texts. Read a formula once for what a rule needs from it (CALC202 gets references
   and links from one parse), and read a parameter of the configuration once per sheet, not per cell.
+- `compiler::compile` takes the model as `&Model` (the caller keeps it) or as `Model`, which it owns and from which it frees the text of every formula once all are lowered (`ModelCell::release_formula`: `formula` stays `Some("")`, so `is_some()` still says the cell is a formula). Pass the model by value when nothing reads it afterwards (`sheetc build`/`calculate`, `BookCompile`): `formulas.xlsx` peaks at 1152 MB instead of 1309 MB. Code after the lowering must not read the text of a formula.
 - Output is written as it is produced (`sheetrs lint --format json` and `--format sarif` serialize each violation):
   building a tree of the whole document costs about 4 KB a violation.
 - Memory is measured as the peak of the run (`measure_perf.py` does it for `sheetc`; for the
@@ -329,7 +330,7 @@ updates its README (and the type stubs of `sheetrs-py`), and a new capability is
 bindings.
 
 Path dependencies between publishable crates carry a `version`
-(`sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }`) so that they can be published;
+(`sheetrs-io = { path = "../sheetrs-io", version = "0.4.1" }`) so that they can be published;
 `cargo set-version --workspace <version>` (cargo-edit) updates them with the workspace version.
 
 ### API stability

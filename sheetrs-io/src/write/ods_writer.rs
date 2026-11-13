@@ -134,6 +134,9 @@ fn is_named_range(name: &str) -> bool {
     )
 }
 
+/// The number of columns of a sheet.
+const MAX_COLUMNS: u32 = 16384;
+
 fn repeat_count(element: &BytesStart, key: &str) -> Result<u32> {
     Ok(element
         .try_get_attribute(key)?
@@ -1529,6 +1532,19 @@ fn write_cells<W: Write>(
             continue;
         }
         let new_col = layout.map_or(col, |s| s.cols.shifted(col));
+        // An empty run that reached the last column of the sheet (the filler a row ends with) still
+        // reaches it once columns are gone: shortened, it would stop `deleted` columns short of the
+        // edge and a reader would take it for formatted cells to keep, one per column.
+        let run = if layout.is_some()
+            && formula.is_none()
+            && !has_value_type
+            && !has_paragraph
+            && col.saturating_add(count) >= MAX_COLUMNS
+        {
+            MAX_COLUMNS.saturating_sub(new_col).max(kept)
+        } else {
+            kept
+        };
         if let Some(s) = layout
             && (matrix_cols > 1 || matrix_rows > 1)
             && (s.cols.kept_in(col, matrix_cols) != matrix_cols
@@ -1548,7 +1564,7 @@ fn write_cells<W: Write>(
                 .iter()
                 .any(|scope| scope.contains_range((row, col), last));
         let mut cell = if converts {
-            let mut cell = rebuild_start(start, COLUMNS_REPEATED, kept, |key| {
+            let mut cell = rebuild_start(start, COLUMNS_REPEATED, run, |key| {
                 matches!(key, FORMULA | MATRIX_COLUMNS | MATRIX_ROWS)
                     // Error results show their text, such as `#DIV/0!`.
                     || (is_error && key == "office:string-value")
@@ -1566,7 +1582,7 @@ fn write_cells<W: Write>(
             }
             cell
         } else {
-            rebuild_start(start, COLUMNS_REPEATED, kept, |_| false)?
+            rebuild_start(start, COLUMNS_REPEATED, run, |_| false)?
         };
         let mut shown: Option<Vec<Event>> = None;
         if converts && is_error {
@@ -1624,7 +1640,7 @@ fn write_cells<W: Write>(
             }
             (body, _) => body,
         };
-        write_cell_run(writer, cell, body, (new_row, new_col), kept, ctx.orphans)?;
+        write_cell_run(writer, cell, body, (new_row, new_col), run, ctx.orphans)?;
         written += kept;
     }
     Ok(written)
@@ -2063,6 +2079,29 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("<text:p>b</text:p>"), "{out}");
+    }
+
+    #[test]
+    fn the_filler_of_a_row_keeps_reaching_the_last_column_when_columns_go() {
+        // Two cells and the styled empty run that fills the row up to column 16384 (XFD).
+        let xml = doc(
+            r#"<table:table table:name="S"><table:table-column table:number-columns-repeated="16384"/><table:table-row><table:table-cell><text:p>a</text:p></table:table-cell><table:table-cell><text:p>b</text:p></table:table-cell><table:table-cell table:style-name="Default" table:number-columns-repeated="16382"/></table:table-row></table:table>"#,
+        );
+        // Column B (1) goes: the run is not left one column short of the edge.
+        let out = structure(&xml, &[], &["S!B"]).unwrap();
+        assert!(
+            out.contains(r#"table:style-name="Default" table:number-columns-repeated="16383""#),
+            "{out}"
+        );
+        // A run that does not reach the edge is only shortened by what it loses.
+        let inner = doc(
+            r#"<table:table table:name="S"><table:table-column table:number-columns-repeated="8"/><table:table-row><table:table-cell><text:p>a</text:p></table:table-cell><table:table-cell><text:p>b</text:p></table:table-cell><table:table-cell table:style-name="Default" table:number-columns-repeated="6"/></table:table-row></table:table>"#,
+        );
+        let out = structure(&inner, &[], &["S!B"]).unwrap();
+        assert!(
+            out.contains(r#"table:style-name="Default" table:number-columns-repeated="6""#),
+            "{out}"
+        );
     }
 
     #[test]

@@ -69,7 +69,7 @@ body:
     attributes:
       label: Version
       description: Output of `sheetrs lint --version` or `cargo pkgid sheetrs-io`
-      placeholder: "0.4.0"
+      placeholder: "0.4.1"
     validations:
       required: false
   - type: input

@@ -147,9 +147,13 @@ impl<T> Grid<T> {
         self.iter().map(|(at, _)| at)
     }
 
-    /// The items in order of row and column.
     pub fn values(&self) -> impl Iterator<Item = &T> {
         self.items.iter()
+    }
+
+    /// The items in order of row and column, to change in place.
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.items.iter_mut()
     }
 }
 

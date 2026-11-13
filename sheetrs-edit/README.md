@@ -228,33 +228,11 @@ so the order of the specs matters. The options of a spec are its own (a replacem
 other options is another element); one replacement is `[spec]`.
 
 **Recalculation is the planner's, with no option for it, and the mark is never decided beforehand.**
-Deleting rows, columns or sheets leaves the cached result of a formula out of date only when the
-formula reads something the deletion changes: a deleted cell, a range that loses cells, a deleted
-sheet, a formula whose result is out of date for one of those reasons, or a function that depends on
-where things are (`ROW`, `INDIRECT`...). The planner finds those formulas from the formulas (the
-program of the engine for the workbook, in the rows of the input) and not from the type of the
-operation, and does as little as that needs:
-
-- **No formula is stale** (a sheet that nothing reads, rows nothing reads, or every formula that read
-  them converted to values in the same command): no recalculation pass. The writer keeps the result
-  that a formula cached when the plan only moved what it reads (`B5` that becomes `B4` and reads the
-  same cell), and drops it when the formula reads a deleted cell or a range that shrinks.
-- **Only the reference error follows**: a formula that reads a deleted cell is `#REF!` whatever the rest
-  of the workbook holds, and so is a formula that reads such a formula, when everything between them
-  passes the error on (arithmetic and the functions `PMT`, `SUM`, `ABS`, `ROUND`, `LEFT`, `TEXT`...
-  that give the error of the first argument that has one). What a cell the plan leaves alone gives is
-  known from the file: its cached result is valid, so a number, a boolean or an empty cell is never
-  an error, and a formula that mixes one with a deleted reference (`D10*$B$2/12` with `B2` deleted)
-  is `#REF!`; a cell that caches a text or an error, and an array formula, are not told apart. The
-  last pass writes `#REF!` into them, with no engine when nothing else is stale.
-- **Anything else** (a range that shrinks, `IFERROR`, `IF`, `CHOOSE`, `COUNT`..., which trap the error
-  or choose by it, a function that reads positions, an unknown function, a defined name that points
-  into what is deleted, a workbook with cycles or with formulas the compiler keeps as the values the
-  file cached): the engine (the semantics of LibreOffice) calculates, and only the stale formulas are
-  written with their new result (they and the ones given `#REF!` are the outputs of the program the
-  engine runs, and the compiler keeps only what they read: up to 20 000 cells; with more, the whole
-  program is run and only those cells are written); the others keep the one the file holds.
-  Whatever cannot be told is left to the engine.
+A plan that deletes rows, columns, sheets or names, or replaces text, ends with a pass in which the engine
+(the semantics of LibreOffice) calculates every formula again. The result a file cached is not a goal
+(see [approved differences](../docs/approved-differences.md)): what a cell holds is the value its formula
+gives now, whatever the workbook cached, so no analysis decides which formulas are stale and the plan is
+the same for every workbook.
 
 The workbook is written with fresh results and no mark. Only when the engine cannot calculate it (a
 function it does not have, a reference it does not read) is the workbook marked to be recalculated
@@ -263,10 +241,8 @@ formulas are dropped) and the run says why (a `Diagnostic` with the code `RECALC
 written by the command line to the standard error): the spreadsheet program that opens it does the recalculation then. Nothing
 assigns the mark before the engine has run, and nothing takes it off except the engine having
 calculated a workbook that came with it. A run that only converts formulas to values changes no other
-result and has nothing to calculate. The mark cannot be asked for or avoided, in the command line
-(`--recalculate-on-open` was removed) or in the library. What the engine costs is in
-[`docs/performance.md`](../docs/performance.md#sheetrs-edit). `--dry-run` reads the workbook to say
-which formulas are given `#REF!` and how many the engine calculates.
+result and has nothing to calculate. The mark cannot be asked for or avoided, in the command line or in the library. What the engine costs is in
+[`docs/performance.md`](../docs/performance.md#sheetrs-edit). `--dry-run` says the passes and the calculation that ends them.
 
 **`calculate` is an operation, and `sheetrs edit` has no flag for it.** In the library,
 `BookEdit::calculate(Calculation { inputs, ranges, major, answer })` writes the inputs and calculates every

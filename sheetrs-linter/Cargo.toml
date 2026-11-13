@@ -24,8 +24,8 @@ link-validation = ["dep:reqwest"]
 cli = ["dep:clap", "dep:anyhow"]
 
 [dependencies]
-sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }
-sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.1" }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.1" }
 clap = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
 thiserror.workspace = true

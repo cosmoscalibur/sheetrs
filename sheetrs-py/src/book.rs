@@ -2,37 +2,26 @@
 
 use crate::cells::{Block, Grids, Match};
 use crate::convert::{json_to_py, py_to_json};
-use crate::errors::{classified, format_error, invalid_range, pending, raise, to_py_err};
+use crate::errors::{format_error, invalid_range, pending, raise, to_py_err};
 use crate::lint::{self, PyLintReport};
 use crate::plan::{self, PlanError, Step, Target};
-use crate::results::{PyInspection, PyReport, PySheets, PyStats, PyValueRanges, emit};
+use crate::results::{PyInspection, PyReport, PyStats, PyValueRanges, emit};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 use serde_json::{Map, Value};
 use sheetrs_compiler::memory::{self, BookCompile, Options};
 use sheetrs_edit::{ColumnRange, RowRange, ValueScope};
-use sheetrs_formula::DateSystem;
 use sheetrs_io::Book;
 use sheetrs_protocol::{Find, MajorDimension, Property, Replace, Scope, SearchIn};
 use sheetrs_query::{BookQuery, FindOptions, Major, RangeOptions};
-use sheetrs_stats::{BookStats, WorkbookStats};
+use sheetrs_stats::BookStats;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-
-/// What the read that happens when a `Book` is opened found out: the statistics (which hold the
-/// sheets, their states, the macros and the defined names) and the date system, or why the date
-/// system cannot be told.
-struct Opened {
-    stats: Arc<WorkbookStats>,
-    date_system: Result<DateSystem, String>,
-}
+use std::sync::Arc;
 
 /// A workbook: a file, its bytes or a binary stream, with the operations to make to it.
 ///
-/// A `Book` is a reference: it reads the workbook once when it is opened, in a single streaming pass
-/// that counts what it holds (the sheets, the used cells, the formulas, the names, the macros), and it
-/// keeps only those numbers. The queries (`range`, `find`, `lint`) read what they need, and
+/// A `Book` is a reference: it reads nothing when it is made, and keeps nothing of the workbook. The queries (`range`, `find`, `lint`) read what they need, and
 /// the operations (`delete_sheets`, `delete_names`, `formula_to_value`, `delete_rows`,
 /// `delete_columns`, `replace`, `calculate`) only accumulate: every one is added to the same
 /// `Book`, which it returns so the calls chain, and each is written against the workbook as it is:
@@ -49,9 +38,6 @@ pub struct PyBook {
     report: Option<PyReport>,
     /// The binary stream the workbook was read from or written to: `save()` rewrites it.
     stream: Option<Py<PyAny>>,
-    /// What the read at open found out; `None` until it is made (a `Book` that `save` returns reads
-    /// the file it wrote the first time it is asked).
-    opened: Mutex<Option<Arc<Opened>>>,
 }
 
 /// A query that cannot be answered: a range or sheet that is not valid is an `InvalidRangeError`, a
@@ -279,41 +265,6 @@ impl PyBook {
             steps: Vec::new(),
             report: None,
             stream: None,
-            opened: Mutex::new(None),
-        }
-    }
-
-    /// What the read at open found out, made now if it was not. The lock is not held while the
-    /// workbook is read: two threads that ask at once both read it, and the first answer stays.
-    fn opened(&self, py: Python<'_>) -> PyResult<Arc<Opened>> {
-        let poisoned = || raise("Error", "the Book is poisoned");
-        if let Some(opened) = self.opened.lock().map_err(|_| poisoned())?.as_ref() {
-            return Ok(Arc::clone(opened));
-        }
-        let source = &self.source;
-        let read = py.detach(|| -> PyResult<Arc<Opened>> {
-            let stats = source.stats().map_err(to_py_err)?;
-            let date_system = source.date_system().map_err(|e| format!("{e:#}"));
-            Ok(Arc::new(Opened {
-                stats: Arc::new(stats),
-                date_system,
-            }))
-        })?;
-        let mut slot = self.opened.lock().map_err(|_| poisoned())?;
-        Ok(Arc::clone(slot.get_or_insert(read)))
-    }
-
-    /// What the read at open found out, for a query: it is about the workbook as the file has it,
-    /// so it cannot be asked while operations are pending.
-    fn described(&self, py: Python<'_>) -> PyResult<Arc<Opened>> {
-        self.queryable()?;
-        self.opened(py)
-    }
-
-    /// Forgets what the read at open found out: the workbook changed under this `Book`.
-    fn forget_opened(&self) {
-        if let Ok(mut slot) = self.opened.lock() {
-            *slot = None;
         }
     }
 
@@ -343,14 +294,15 @@ impl PyBook {
     /// a binary stream that reads and seeks (`io.BytesIO`, a file opened with `"rb"`). The format (XLSX,
     /// XLSM or ODS) is the one of the content, whatever the extension says.
     ///
-    /// The workbook is read once, here, to count what it holds (see the properties); a file is never
+    /// The workbook is not read here: the properties that describe it read it when they are first asked
+    /// (once), and the queries read what they need. A file is never
     /// modified except by `save()` without a destination, which also rewrites a stream the `Book` was
     /// made from.
     ///
     /// Raises `FileNotFoundError` for a path that is not a file and `FormatError` for a workbook
     /// that is not an XLSX, XLSM or ODS one.
     #[new]
-    fn new(py: Python<'_>, source: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn new(source: &Bound<'_, PyAny>) -> PyResult<Self> {
         let mut book = if let Ok(bytes) = source.cast::<PyBytes>() {
             Self::from_source(Book::from_bytes(bytes.as_bytes().to_vec()).map_err(format_error)?)
         } else if let Ok(bytes) = source.cast::<PyByteArray>() {
@@ -375,7 +327,6 @@ impl PyBook {
             })?;
             Self::from_source(opened)
         };
-        book.opened(py)?;
         book.report = None;
         Ok(book)
     }
@@ -386,120 +337,15 @@ impl PyBook {
         self.source.format().extension()
     }
 
-    /// The date of serial 0, as a `datetime.date`: `1899-12-30` (the default of `LibreOffice` and of an
-    /// XLSX), `1900-01-01` or `1904-01-01`. A workbook whose date system is none of the three raises
-    /// `UnsupportedDateSystemError`.
-    #[getter]
-    fn date_system<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let opened = self.described(py)?;
-        match &opened.date_system {
-            Ok(system) => {
-                let (year, month, day) = system.null_date();
-                py.import("datetime")?
-                    .getattr("date")?
-                    .call1((year, month, day))
-            }
-            Err(message) => Err(classified(message.clone())),
-        }
-    }
-
-    /// Whether the workbook carries macros (found, never run).
-    #[getter]
-    fn has_macros(&self, py: Python<'_>) -> PyResult<bool> {
-        Ok(self.described(py)?.stats.has_macros)
-    }
-
-    /// The names of the sheets, in order. Raises `PendingOperationsError` with operations pending.
-    #[getter]
-    fn sheet_names(&self, py: Python<'_>) -> PyResult<Vec<String>> {
-        Ok(self
-            .described(py)?
-            .stats
-            .sheets
-            .iter()
-            .map(|sheet| sheet.name.clone())
-            .collect())
-    }
-
-    /// The sheets, by name (`book.sheets["Data"]`) or by position, each with its `name`, `used_range`,
-    /// `state` and counts.
-    #[getter]
-    fn sheets(&self, py: Python<'_>) -> PyResult<PySheets> {
-        Ok(PySheets::of(&self.described(py)?.stats))
-    }
-
-    /// The defined names and what each refers to, as the file writes it (`{"Rate": "Data!$B$2"}`),
-    /// ordered by name.
-    #[getter]
-    fn defined_names<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let dict = PyDict::new(py);
-        for (name, refers_to) in &self.described(py)?.stats.defined_names {
-            dict.set_item(name, refers_to)?;
-        }
-        Ok(dict)
-    }
-
-    /// The statistics of the workbook, as `sheetrs stats` reports them: the totals (also on the
-    /// `Book`, as `total_*`) and the sheets.
-    #[getter]
+    /// The statistics of the workbook, as `sheetrs stats` reports them: the totals, the sheets, the
+    /// macros and the defined names. It reads the workbook, in a single streaming pass, each time it is
+    /// called; nothing else of the `Book` holds what it found. Raises `PendingOperationsError` with
+    /// operations pending.
     fn stats(&self, py: Python<'_>) -> PyResult<PyStats> {
-        Ok(PyStats::of(Arc::clone(&self.described(py)?.stats)))
-    }
-
-    #[getter]
-    fn total_sheets(&self, py: Python<'_>) -> PyResult<usize> {
-        Ok(self.described(py)?.stats.total_sheets)
-    }
-
-    #[getter]
-    fn total_named_ranges(&self, py: Python<'_>) -> PyResult<usize> {
-        Ok(self.described(py)?.stats.total_named_ranges)
-    }
-
-    /// The size of the file in bytes; 0 for a workbook given as bytes or as a stream.
-    #[getter]
-    fn total_file_size(&self, py: Python<'_>) -> PyResult<u64> {
-        Ok(self.described(py)?.stats.total_file_size)
-    }
-
-    #[getter]
-    fn total_used_cells(&self, py: Python<'_>) -> PyResult<u64> {
-        Ok(self.described(py)?.stats.total_used_cells)
-    }
-
-    #[getter]
-    fn total_formulas(&self, py: Python<'_>) -> PyResult<u64> {
-        Ok(self.described(py)?.stats.total_formulas)
-    }
-
-    #[getter]
-    fn total_errors(&self, py: Python<'_>) -> PyResult<u64> {
-        Ok(self.described(py)?.stats.total_errors)
-    }
-
-    #[getter]
-    fn total_empty_cells(&self, py: Python<'_>) -> PyResult<u64> {
-        Ok(self.described(py)?.stats.total_empty_cells)
-    }
-
-    #[getter]
-    fn total_comments(&self, py: Python<'_>) -> PyResult<u64> {
-        Ok(self.described(py)?.stats.total_comments)
-    }
-
-    #[getter]
-    fn total_charts(&self, py: Python<'_>) -> PyResult<u64> {
-        Ok(self.described(py)?.stats.total_charts)
-    }
-
-    #[getter]
-    fn total_tables(&self, py: Python<'_>) -> PyResult<u64> {
-        Ok(self.described(py)?.stats.total_tables)
-    }
-
-    #[getter]
-    fn total_xml_size(&self, py: Python<'_>) -> PyResult<u64> {
-        Ok(self.described(py)?.stats.total_xml_size)
+        self.queryable()?;
+        let source = &self.source;
+        let stats = py.detach(|| source.stats().map_err(to_py_err))?;
+        Ok(PyStats::of(Arc::new(stats)))
     }
 
     /// What the last `save` or `to_bytes` did besides writing the workbook, as a `Report` (the cells a
@@ -829,7 +675,6 @@ impl PyBook {
             }
             slf.steps.clear();
             slf.report = Some(report);
-            slf.forget_opened();
             slf.into_pyobject(py)?.into_any()
         };
         emit(py, &diagnostics)?;

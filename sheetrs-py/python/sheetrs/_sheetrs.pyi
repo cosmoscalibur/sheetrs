@@ -153,7 +153,7 @@ class ValueRanges:
         """The JSON answer of `sheetc calculate` (`{"valueRanges": [...]}`), as text."""
 
 class Sheet:
-    """A sheet of the workbook and what the read at open found out about it."""
+    """A sheet of the workbook and what the description of the workbook found out about it."""
 
     @property
     def name(self) -> str: ...
@@ -192,8 +192,8 @@ class Sheets:
     def names(self) -> list[str]: ...
 
 class Stats:
-    """The statistics of the workbook: the eleven totals and the sheets, as `sheetrs stats` reports
-    them (`to_dict()` is its `--format json`)."""
+    """The statistics of the workbook: the eleven totals, the sheets, `has_macros` and `defined_names`, as
+    `sheetrs stats` reports them (`to_dict()` is its `--format json`; it holds the totals and the sheets)."""
 
     @property
     def total_sheets(self) -> int: ...
@@ -219,6 +219,12 @@ class Stats:
     def total_xml_size(self) -> int: ...
     @property
     def sheets(self) -> Sheets: ...
+    @property
+    def has_macros(self) -> bool:
+        """Whether the workbook carries macros (found, never run)."""
+    @property
+    def defined_names(self) -> dict[str, str]:
+        """Name to what it refers to, as the file writes it, ordered by name."""
     def to_dict(self) -> dict[str, Any]: ...
     def to_json(self) -> str: ...
 
@@ -278,56 +284,20 @@ class Inspection:
 class Book:
     """A workbook: a file, its bytes or a binary stream, with the operations to make to it.
 
-    It reads the workbook once when it is made, to count what it holds (the properties below), and
-    keeps only the numbers. The operations (`delete_sheets`, `delete_names`, `formula_to_value`,
-    `delete_rows`, `delete_columns`, `replace`, `calculate`) accumulate on the same `Book` and return
+    It reads nothing when it is made and keeps nothing of the workbook. The operations
+    (`delete_sheets`, `delete_names`, `formula_to_value`, `delete_rows`, `delete_columns`, `replace`, `calculate`) accumulate on the same `Book` and return
     it, so the calls chain; each is written against the workbook as it is, the order they are given
     in changes nothing, and nothing runs until `save`, the cut. The queries (`range`, `find`, `lint`,
-    `inspect`) and the properties that describe the contents raise `PendingOperationsError` while
-    operations are pending.
+    `inspect`, `stats`) raise `PendingOperationsError` while operations are pending.
     """
 
     def __init__(self, source: Source) -> None: ...
     @property
     def format(self) -> Literal["xlsx", "xlsm", "ods"]: ...
-    @property
-    def date_system(self) -> datetime.date:
-        """The date of serial 0: 1899-12-30, 1900-01-01 or 1904-01-01. Another raises
-        `UnsupportedDateSystemError`."""
-    @property
-    def has_macros(self) -> bool: ...
-    @property
-    def sheet_names(self) -> list[str]: ...
-    @property
-    def sheets(self) -> Sheets:
-        """The sheets by name (`book.sheets["Data"]`) or position, in order."""
-    @property
-    def defined_names(self) -> dict[str, str]:
-        """Name to what it refers to, as the file writes it, ordered by name."""
-    @property
-    def stats(self) -> Stats: ...
-    @property
-    def total_sheets(self) -> int: ...
-    @property
-    def total_named_ranges(self) -> int: ...
-    @property
-    def total_file_size(self) -> int: ...
-    @property
-    def total_used_cells(self) -> int: ...
-    @property
-    def total_formulas(self) -> int: ...
-    @property
-    def total_errors(self) -> int: ...
-    @property
-    def total_empty_cells(self) -> int: ...
-    @property
-    def total_comments(self) -> int: ...
-    @property
-    def total_charts(self) -> int: ...
-    @property
-    def total_tables(self) -> int: ...
-    @property
-    def total_xml_size(self) -> int: ...
+    def stats(self) -> Stats:
+        """The statistics of the workbook, as `sheetrs stats` reports them: the totals, the sheets, the
+        macros and the defined names. It reads the workbook each time it is called; the `Book` keeps
+        nothing of what it found. Raises `PendingOperationsError` with operations pending."""
     @property
     def report(self) -> Report | None:
         """What the last `save` or `to_bytes` did besides writing the workbook; `None` for a `Book`

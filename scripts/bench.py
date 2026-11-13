@@ -41,6 +41,17 @@ import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _workspace_version():
+    """The version of the workspace (`Cargo.toml`), which names the npm tarball."""
+    with open(os.path.join(ROOT, "Cargo.toml")) as f:
+        for line in f:
+            if line.startswith("version = "):
+                return line.split('"')[1]
+
+
+VERSION = _workspace_version()
 SOFFICE = shutil.which("soffice") or "/opt/libreoffice26.8/program/soffice"
 
 
@@ -159,7 +170,7 @@ EDIT_SCENARIOS = [
 
 
 def group_edit(a):
-    table("`sheetrs edit` (the formulas a deletion leaves stale are found, and only they are calculated)", "Workbook and scenario")
+    table("`sheetrs edit` (a deletion ends with the engine calculating every formula)", "Workbook and scenario")
     wanted = set(a.scenarios.split(",")) if a.scenarios else None
     with tempfile.TemporaryDirectory() as work:
         for f in a.workbooks.split(","):
@@ -242,7 +253,7 @@ def group_wasm(a):
     """The WebAssembly package (sizes, the time of a call against the command) and the module of a compiled workbook."""
     npm = os.path.join(ROOT, "target", "npm")
     print("\n### The WebAssembly package (`scripts/package-wasm.sh`)\n\n| File | Bytes | gzip |\n|---|---:|---:|")
-    for f in ("sheetrs_wasm_bg.wasm", "sheetrs-wasm-0.4.0.tgz"):
+    for f in ("sheetrs_wasm_bg.wasm", f"sheetrs-wasm-{VERSION}.tgz"):
         path = os.path.join(npm, f)
         gz = len(subprocess.run(["gzip", "-c", path], capture_output=True, check=True).stdout)
         print(f"| {f} | {os.path.getsize(path):,} | {gz:,} |")
