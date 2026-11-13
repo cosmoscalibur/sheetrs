@@ -10,6 +10,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use crate::reader::ExcelError;
+use crate::reader::UsedArea;
 
 /// Represents an external workbook reference
 #[derive(Debug, Clone)]
@@ -195,8 +196,15 @@ pub struct Sheet {
     pub sheet_index: u16,
     /// Map of cell coordinates (row, col) to Cell data. 0-based indexing.
     pub cells: Grid<Cell>,
-    /// The used range of the sheet: (`max_row`, `max_col`) inclusive. 0-based.
-    pub used_range: Option<(u32, u32)>, // (rows, cols)
+    /// The rectangle of the used cells (value or formula), the same in an XLSX and in an ODS and
+    /// for every consumer; `None` for a sheet without them. See [`UsedArea`].
+    pub used_area: Option<UsedArea>,
+    /// The rectangle of every cell the file keeps for the sheet, with a value, a formula or only a
+    /// style, up to the last hidden row and column: what lies in the sheet beyond its content
+    /// (formatting, cleared cells). It holds [`used_area`](Self::used_area), is found by the same
+    /// accumulator (the `<dimension>` is not read), and is the extent the checks of the blank rows and
+    /// columns (REF305) and of a used range larger than the data (REF304) are about.
+    pub kept_area: Option<UsedArea>,
     /// Hidden column ranges: (`start_col`, `end_col`), 0-based, inclusive.
     /// Ranges are in source order and may be adjacent or overlap.
     pub hidden_columns: Vec<(u32, u32)>,
@@ -236,7 +244,8 @@ impl Sheet {
             name,
             sheet_index,
             cells: Grid::new(),
-            used_range: None,
+            used_area: None,
+            kept_area: None,
             hidden_columns: Vec::new(),
             hidden_rows: Vec::new(),
             merged_cells: Vec::new(),
@@ -250,6 +259,13 @@ impl Sheet {
             conditional_formatting_ranges: Vec::new(),
             state: SheetState::Visible,
         }
+    }
+
+    /// The extent from `A1` of what the file keeps for the sheet, as `(rows, columns)`, derived from
+    /// [`kept_area`](Self::kept_area) (rows `0..=last_row`, columns `0..=last_col`).
+    #[must_use]
+    pub fn kept_extent(&self) -> Option<(u32, u32)> {
+        self.kept_area.map(|area| area.extent_from_a1())
     }
 
     /// The cell at the given position (0-based row and column).

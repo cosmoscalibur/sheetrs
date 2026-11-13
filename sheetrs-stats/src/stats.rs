@@ -4,7 +4,7 @@ use serde::Serialize;
 use sheetrs_io::Book;
 use sheetrs_io::Result;
 use sheetrs_io::reader::parser_utils::column_letters;
-use sheetrs_io::reader::{Cell, CellSink, Sheet, SheetState, Workbook};
+use sheetrs_io::reader::{Cell, CellSink, Sheet, SheetState, Workbook, is_used};
 use std::collections::BTreeMap;
 
 /// Statistics for the whole workbook.
@@ -45,11 +45,13 @@ pub struct SheetStats {
     pub formulas: u64,
     /// Cells whose value (cached result for formulas) is an error.
     pub errors: u64,
-    /// Cells without value or formula inside the used range.
+    /// Cells without value or formula inside the area from `A1` to the last used cell (the
+    /// rectangle of the used range does not decide it: a sheet whose first used cell is `D10` has
+    /// the cells of `A1:C9` empty).
     pub empty_cells: u64,
     /// Rectangle of the used cells (`D10:E11`), from the first used row and column to the last,
     /// as the used area of `LibreOffice`; `None` for a sheet without used cells. A single used cell
-    /// gives `D10:D10`.
+    /// gives `D10:D10`. It is [`Sheet::used_area`] of the model, the one the reader finds.
     pub used_range: Option<String>,
     /// Bottom right corner of the used area (`GV5439`), `None` for a sheet without used cells.
     pub end_of_sheet: Option<String>,
@@ -62,14 +64,13 @@ pub struct SheetStats {
     pub xml_size: u64,
 }
 
-/// What is counted of the cells of one sheet as they are read.
+/// What is counted of the cells of one sheet as they are read. The used area is not here: it is the
+/// reader's ([`Sheet::used_area`]), the one the linter works on.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct Tally {
     used_cells: u64,
     formulas: u64,
     errors: u64,
-    /// Rectangle of the used cells, `(first_row, first_col, last_row, last_col)` 0-based.
-    used_area: Option<(u32, u32, u32, u32)>,
 }
 
 /// Counts the cells of each sheet as the reader hands them over, so the workbook's cells are never
@@ -80,7 +81,7 @@ pub(crate) struct StatsSink {
 }
 
 impl CellSink for StatsSink {
-    fn cell(&mut self, sheet: u16, (row, col): (u32, u32), cell: Cell) {
+    fn cell(&mut self, sheet: u16, _at: (u32, u32), cell: Cell) {
         if !is_used(&cell) {
             return;
         }
@@ -92,15 +93,6 @@ impl CellSink for StatsSink {
         tally.used_cells += 1;
         tally.formulas += u64::from(cell.is_formula());
         tally.errors += u64::from(cell.value.is_error());
-        tally.used_area = Some(match tally.used_area {
-            Some((min_row, min_col, max_row, max_col)) => (
-                min_row.min(row),
-                min_col.min(col),
-                max_row.max(row),
-                max_col.max(col),
-            ),
-            None => (row, col, row, col),
-        });
     }
 }
 
@@ -184,12 +176,9 @@ impl SheetStats {
             used_cells,
             formulas,
             errors,
-            used_area,
         }: Tally,
     ) -> Self {
-        let area = used_area.map_or(0, |(min_row, min_col, max_row, max_col)| {
-            (u64::from(max_row - min_row) + 1) * (u64::from(max_col - min_col) + 1)
-        });
+        let used_area = sheet.used_area;
         let corner = |row: u32, col: u32| format!("{}{}", column_letters(col), row + 1);
 
         Self {
@@ -198,23 +187,21 @@ impl SheetStats {
             used_cells,
             formulas,
             errors,
-            empty_cells: area - used_cells,
-            used_range: used_area.map(|(min_row, min_col, max_row, max_col)| {
-                format!("{}:{}", corner(min_row, min_col), corner(max_row, max_col))
+            empty_cells: used_area.map_or(0, |area| area.cells_from_a1() - used_cells),
+            used_range: used_area.map(|area| {
+                format!(
+                    "{}:{}",
+                    corner(area.first_row, area.first_col),
+                    corner(area.last_row, area.last_col)
+                )
             }),
-            end_of_sheet: used_area.map(|(_, _, max_row, max_col)| corner(max_row, max_col)),
+            end_of_sheet: used_area.map(|area| corner(area.last_row, area.last_col)),
             comments: sheet.comments as u64,
             charts: sheet.charts as u64,
             tables: sheet.tables as u64,
             xml_size: sheet.xml_size_bytes,
         }
     }
-}
-
-/// A cell counts as used when it holds a value or a formula; cells kept only
-/// for their style do not.
-fn is_used(cell: &Cell) -> bool {
-    cell.is_formula() || !cell.value.is_empty()
 }
 
 /// Share of `part` in `total`, as a percentage (0 when `total` is 0).
@@ -230,8 +217,8 @@ pub fn percentage(part: u64, total: u64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_io::reader::CellValue;
     use sheetrs_io::reader::ExcelError;
+    use sheetrs_io::reader::{AreaSink, CellValue, UsedArea};
     use std::sync::Arc;
 
     const TEST_XLSX: &[u8] = include_bytes!("../../tests/lint_book.xlsx");
@@ -253,12 +240,16 @@ mod tests {
         stats_of_sheet(&Sheet::new("Data".to_string(), 0), cells)
     }
 
+    /// The cells go through the reader's accumulator of the used area, as they do when a file is read.
     fn stats_of_sheet(sheet: &Sheet, cells: Vec<((u32, u32), Cell)>) -> SheetStats {
         let mut sink = StatsSink::default();
+        let mut areas = AreaSink::new(&mut sink);
         for (at, cell) in cells {
-            sink.cell(0, at, cell);
+            areas.cell(0, at, cell);
         }
-        SheetStats::from_sheet(sheet, sink.tally(0))
+        let mut sheet = sheet.clone();
+        sheet.used_area = areas.into_areas().first().and_then(|a| a.used);
+        SheetStats::from_sheet(&sheet, sink.tally(0))
     }
 
     fn stats_for(bytes: &[u8]) -> WorkbookStats {
@@ -293,7 +284,8 @@ mod tests {
         assert_eq!(stats.used_range.as_deref(), Some("D10:E11"));
         assert_eq!(stats.end_of_sheet.as_deref(), Some("E11"));
         assert_eq!(stats.used_cells, 2);
-        assert_eq!(stats.empty_cells, 2);
+        // Counted from A1: A1:E11 is 55 cells, 2 of them used.
+        assert_eq!(stats.empty_cells, 53);
         assert_eq!(stats_of(vec![]).used_range, None);
     }
 
@@ -349,8 +341,118 @@ mod tests {
             let sheet = &stats.sheets[0];
             assert_eq!(sheet.used_range.as_deref(), Some("D10:E11"), "{ext}");
             assert_eq!(sheet.used_cells, 2, "{ext}");
-            assert_eq!(sheet.empty_cells, 2, "{ext}");
+            assert_eq!(sheet.empty_cells, 53, "{ext}");
         }
+    }
+
+    /// An XLSX with one sheet `Sheet1` whose `sheetData` is `rows` (and a `dimension` that lies).
+    fn xlsx_with(rows: &str) -> Vec<u8> {
+        use std::io::Write;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        let sheet = format!(
+            r#"<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:ZZ500"/><sheetData>{rows}</sheetData></worksheet>"#
+        );
+        for (name, body) in [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            ("xl/worksheets/sheet1.xml", sheet.as_str()),
+        ] {
+            zip.start_file(name, opts).unwrap();
+            zip.write_all(body.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    /// An ODS with one sheet `Sheet1` whose table holds `rows`.
+    fn ods_with(rows: &str) -> Vec<u8> {
+        use std::io::Write;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let stored = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("mimetype", stored).unwrap();
+        zip.write_all(b"application/vnd.oasis.opendocument.spreadsheet")
+            .unwrap();
+        zip.start_file("content.xml", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        let content = format!(
+            r#"<?xml version="1.0"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" office:version="1.2"><office:automatic-styles><style:style style:name="ce1" style:family="table-cell"/></office:automatic-styles><office:body><office:spreadsheet><table:table table:name="Sheet1">{rows}</table:table></office:spreadsheet></office:body></office:document-content>"#
+        );
+        zip.write_all(content.as_bytes()).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    /// The used area is one: the model (what the linter walks) and the statistics (one streaming
+    /// pass) give the same bounds for the same file, in both formats, and neither is moved by a cell
+    /// kept only for its style, by a hidden row or column, or by the `dimension` of an XLSX.
+    ///
+    /// The sheet: values at AA5 and AC7 (the first used column is far to the right), a cell that is
+    /// only styled (near `A1` and at AF9), and a hidden row 20.
+    #[test]
+    fn the_model_and_the_statistics_give_the_same_used_area() {
+        let xlsx = xlsx_with(
+            r#"<row r="2"><c r="B2" s="1"/></row><row r="5"><c r="AA5" t="inlineStr"><is><t>x</t></is></c></row><row r="7"><c r="AC7"><f>1+1</f><v>2</v></c></row><row r="9"><c r="AF9" s="1"/></row><row r="20" hidden="1"/>"#,
+        );
+        // The same, with a styled B1 for the first one.
+        let ods = ods_with(
+            r#"<table:table-column table:number-columns-repeated="60"/><table:table-row><table:table-cell table:number-columns-repeated="1"/><table:table-cell table:style-name="ce1"/></table:table-row><table:table-row table:number-rows-repeated="3"><table:table-cell/></table:table-row><table:table-row><table:table-cell table:number-columns-repeated="26"/><table:table-cell office:value-type="string"><text:p>x</text:p></table:table-cell></table:table-row><table:table-row><table:table-cell/></table:table-row><table:table-row><table:table-cell table:number-columns-repeated="28"/><table:table-cell table:formula="of:=1+1" office:value-type="float" office:value="2"/></table:table-row><table:table-row><table:table-cell/></table:table-row><table:table-row><table:table-cell table:number-columns-repeated="31"/><table:table-cell table:style-name="ce1"/></table:table-row><table:table-row table:number-rows-repeated="10"><table:table-cell/></table:table-row><table:table-row table:visibility="collapse"><table:table-cell/></table:table-row>"#,
+        );
+        for (bytes, ext) in [(xlsx, "xlsx"), (ods, "ods")] {
+            let book = Book::from_bytes(bytes).unwrap();
+            let expected = UsedArea {
+                first_row: 4,
+                first_col: 26,
+                last_row: 6,
+                last_col: 28,
+            };
+            // The model, as the linter reads it, with the cells in memory.
+            let model = book.workbook().unwrap();
+            assert_eq!(model.sheets[0].used_area, Some(expected), "{ext} model");
+            // The A1 extent of the linter comes from the same bounds.
+            // What the file keeps beyond the content (the styled AF9, the hidden row 20) is the other
+            // rectangle, found by the same accumulator: the linter's blank rows and columns work on it.
+            assert_eq!(
+                model.sheets[0].kept_extent(),
+                Some((20, 32)),
+                "{ext} extent"
+            );
+            // The streaming pass, which keeps no cells.
+            let stats = book.stats().unwrap();
+            let sheet = &stats.sheets[0];
+            assert_eq!(sheet.used_range.as_deref(), Some("AA5:AC7"), "{ext} stats");
+            assert_eq!(sheet.end_of_sheet.as_deref(), Some("AC7"), "{ext}");
+            assert_eq!(sheet.used_cells, 2, "{ext}");
+            // From A1: 7 rows by 29 columns, 2 of them used.
+            assert_eq!(sheet.empty_cells, 7 * 29 - 2, "{ext}");
+            // The same file through the analysis form (the linter's).
+            let analysis = book.analysis_into(&mut NoCells).unwrap();
+            assert_eq!(
+                analysis.sheets[0].used_area,
+                Some(expected),
+                "{ext} analysis"
+            );
+        }
+    }
+
+    /// A sink that drops the cells: the area must come out all the same.
+    struct NoCells;
+
+    impl CellSink for NoCells {
+        fn cell(&mut self, _sheet: u16, _at: (u32, u32), _cell: Cell) {}
     }
 
     #[test]

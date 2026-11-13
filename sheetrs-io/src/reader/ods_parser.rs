@@ -6,8 +6,8 @@ use super::workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, Sheet,
 };
 use super::{
-    CellSink, NameConflict, NameScope, NumFmt, Properties, Selection, SheetInfo, SheetState,
-    WorkbookReader,
+    AreaSink, CellSink, NameConflict, NameScope, NumFmt, Properties, Selection, SheetInfo,
+    SheetState, WorkbookReader, used_area,
 };
 use crate::error::{Error, Result};
 use crate::reader::ExcelError;
@@ -1057,7 +1057,10 @@ impl<'a, R: std::io::Read + std::io::Seek> OdsReader<'a, R> {
 
 impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
     fn read_sheets_into(&mut self, sink: &mut dyn CellSink) -> Result<Vec<Sheet>> {
-        self.read_sheets_inner(sink, None)
+        let mut sink = AreaSink::new(sink);
+        let mut sheets = self.read_sheets_inner(&mut sink, None)?;
+        used_area::assign(&mut sheets, &sink.into_areas());
+        Ok(sheets)
     }
 
     fn read_selection_into(
@@ -1229,8 +1232,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
         // Events inside a cell, kept between cells.
         let mut text_buf: Vec<u8> = Vec::new();
         let mut object_hrefs: Vec<(String, String)> = Vec::new();
-        // Largest row and column (0-based) of the cells of the current sheet.
-        let mut cells_max: Option<(u32, u32)> = None;
 
         // ============================================================
         // PARSE styles.xml FIRST to populate date_styles
@@ -1394,7 +1395,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         current_row = 0;
                         current_col = 0; // Reset column tracking for new sheet
                         skip_current_sheet = false; // Reset skip flag for new sheet
-                        cells_max = None;
                         in_table = !empty_tag;
                         if let Some(selection) = selection {
                             wanted = current_sheet
@@ -2028,10 +2028,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                     && (props.formula || selection.is_none())),
                                             num_fmt: num_fmt.clone(),
                                         };
-                                        cells_max =
-                                            Some(cells_max.map_or(at, |(mr, mc)| {
-                                                (mr.max(at.0), mc.max(at.1))
-                                            }));
                                         if !skip_current_sheet {
                                             if let Some((dr, dc)) = array_offset {
                                                 sink.array_member(
@@ -2041,18 +2037,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                 );
                                             }
                                             sink.cell(sheets.len() as u16, at, cell);
-                                        }
-
-                                        // Update used_range for any inserted cell (value, formula, or style)
-                                        let row_pos = current_row + r;
-                                        let col_pos = current_col + c;
-                                        if let Some((max_row, max_col)) = sheet.used_range {
-                                            sheet.used_range = Some((
-                                                max_row.max(row_pos + 1),
-                                                max_col.max(col_pos + 1),
-                                            ));
-                                        } else {
-                                            sheet.used_range = Some((row_pos + 1, col_pos + 1));
                                         }
                                     }
                                 }
@@ -2179,24 +2163,8 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                 && (props.formula || selection.is_none()),
                                             num_fmt: num_fmt.clone(),
                                         };
-                                        cells_max =
-                                            Some(cells_max.map_or(at, |(mr, mc)| {
-                                                (mr.max(at.0), mc.max(at.1))
-                                            }));
                                         if !skip_current_sheet {
                                             sink.cell(sheets.len() as u16, at, cell);
-                                        }
-
-                                        // Update used_range for any inserted cell (formula or style)
-                                        let row_pos = current_row + r;
-                                        let col_pos = current_col + c;
-                                        if let Some((max_row, max_col)) = sheet.used_range {
-                                            sheet.used_range = Some((
-                                                max_row.max(row_pos + 1),
-                                                max_col.max(col_pos + 1),
-                                            ));
-                                        } else {
-                                            sheet.used_range = Some((row_pos + 1, col_pos + 1));
                                         }
                                     }
                                 }
@@ -2288,38 +2256,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         if wanted.take().is_some() {
                             remaining = remaining.saturating_sub(1);
                             finished = remaining == 0;
-                        }
-
-                        // Calculate used range for the sheet before finalizing
-                        // This must happen here (not at sheet finalization) because it needs to run
-                        // for ALL sheets, whether they have conditional formatting or not
-                        let cells_range = cells_max;
-
-                        // Merge styled cell tracking with value cells
-                        // Both are already in count format (0-indexed position + 1)
-                        sheet.used_range = match (sheet.used_range, cells_range) {
-                            (Some((s_row, s_col)), Some((c_row, c_col))) => {
-                                Some((s_row.max(c_row), s_col.max(c_col)))
-                            }
-                            (Some(s), None) => Some(s),
-                            (None, Some(c)) => Some(c),
-                            (None, None) => None,
-                        };
-
-                        // Include hidden rows/columns in used_range for format parity
-                        // Both ODS and XLSX should report ALL empty rows/columns (visible or hidden)
-                        if let Some((mut rows, mut cols)) = sheet.used_range {
-                            if let Some(max_hidden_row) =
-                                sheet.hidden_rows.iter().map(|&(_, end)| end).max()
-                            {
-                                rows = rows.max(max_hidden_row + 1);
-                            }
-                            if let Some(max_hidden_col) =
-                                sheet.hidden_columns.iter().map(|&(_, end)| end).max()
-                            {
-                                cols = cols.max(max_hidden_col + 1);
-                            }
-                            sheet.used_range = Some((rows, cols));
                         }
                     }
 
@@ -3567,7 +3503,8 @@ mod tests {
         let sheet = &sheets[0];
         assert_eq!(sheet.hidden_columns, vec![(0, 2)]);
         assert_eq!(sheet.hidden_rows, vec![(1, 2), (3, 1_048_575)]);
-        assert_eq!(sheet.used_range, Some((1_048_576, 3)));
+        // Hidden rows and columns do not make the used area: only the value at A1 does.
+        assert_eq!(sheet.used_area, Some(crate::reader::UsedArea::at(0, 0)));
     }
 
     #[test]

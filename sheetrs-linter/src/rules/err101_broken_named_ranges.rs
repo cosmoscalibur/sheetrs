@@ -120,7 +120,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: sheetrs_io::reader::Grid::default(),
-            used_range: None,
+            kept_area: None,
             ..Default::default()
         };
 

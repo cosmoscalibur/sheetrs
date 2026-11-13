@@ -15,6 +15,17 @@ parser handles the "dirt" of the file format.
 - Common general logic belongs in `parser_utils.rs`, `workbook.rs`, or a new
   file (requires approval).
 
+### One used area
+
+The bounds of a sheet's cells are found once, in `sheetrs-io` (`reader/used_area.rs`): the readers
+put an `AreaSink` in front of whatever `CellSink` they are given, so the loaded model and every
+streaming consumer get the same numbers, in an XLSX and in an ODS. `Sheet::used_area` is the
+rectangle of the **used cells** (a value or a formula), 0-based, which is what `sheetrs stats` shows
+(`used_range`); `Sheet::kept_area` also holds the cells kept only for their style and the hidden rows
+and columns, which is what REF304 and REF305 measure (`Sheet::kept_extent`, rows `0..=last_row` and
+columns `0..=last_col`). The `<dimension>` element is not read. A tool needing the area never
+tallies its own.
+
 ### Format-Agnostic Design
 
 Rules and logic operate on abstract `Cell` and `Workbook` models, not on

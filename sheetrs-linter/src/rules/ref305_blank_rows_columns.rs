@@ -11,13 +11,14 @@
 //!
 //! - blank rows before the first data row, when there are more than 2 of them;
 //! - blank columns before the first data column, when there are more than 2 of them;
-//! - blank rows from the first data row to the last row of the declared used range, counting only
+//! - blank rows from the first data row to the last row of the used range, counting only
 //!   runs of more than 2 consecutive blank rows;
 //! - the same for columns.
 //!
 //! A row or column is blank when no cell in it has a non-empty value. A formula whose saved value
 //! is empty and a text cell holding only spaces are judged by that value: the former is blank, the
-//! latter is not. The used range comes from the sheet metadata, so blank rows or columns at its
+//! latter is not. The used range is the one of REF304 (`Sheet::kept_area`, derived from the same
+//! accumulator as `Sheet::used_area`), so blank rows or columns at its
 //! end (after the last data) are reported when the run is longer than 2.
 //!
 //! # Does not report
@@ -182,7 +183,7 @@ impl WalkerRule for BlankRowsColumnsRule {
             return; // No non-empty cells → skip
         };
 
-        let (max_row, max_col) = match sheet.used_range {
+        let (max_row, max_col) = match sheet.kept_extent() {
             Some((ur, uc)) => (ur.saturating_sub(1), uc.saturating_sub(1)),
             None => return,
         };
@@ -413,7 +414,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((5, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(4, 1)),
             ..Default::default()
         };
 
@@ -479,7 +480,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((2, 5)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 4)),
             ..Default::default()
         };
 
@@ -542,7 +543,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((2, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 1)),
             ..Default::default()
         };
 
@@ -601,7 +602,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((3, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(2, 1)),
             ..Default::default()
         };
 
@@ -660,7 +661,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((4, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(3, 1)),
             ..Default::default()
         };
 
@@ -720,7 +721,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((2, 3)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 2)),
             ..Default::default()
         };
 
@@ -779,7 +780,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((2, 4)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 3)),
             ..Default::default()
         };
 
@@ -822,7 +823,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((5, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(4, 1)),
             merged_cells: vec![(1, 1, 3, 1)], // B2:B4 merged
             ..Default::default()
         };
@@ -844,7 +845,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: sheetrs_io::reader::Grid::default(),
-            used_range: Some((100, 100)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(99, 99)),
             ..Default::default()
         };
 

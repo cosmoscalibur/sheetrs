@@ -54,7 +54,11 @@ def test_a_sheet_without_cells_has_no_used_range(tmp_path):
 
 def test_the_used_range_starts_at_the_first_used_cell(tmp_path):
     path = make_xlsx(tmp_path / "d.xlsx", {"Sheet1": {"D10": "x", "E11": "y"}})
-    assert sheetrs.Book(path).stats().sheets["Sheet1"].used_range == "D10:E11"
+    sheet = sheetrs.Book(path).stats().sheets["Sheet1"]
+    assert sheet.used_range == "D10:E11"
+    # The empty cells are counted from A1: 11 rows by 5 columns, 2 of them used.
+    assert sheet.used_cells == 2
+    assert sheet.empty_cells == 53
 
 
 def test_a_hidden_sheet_says_its_state(tmp_path):

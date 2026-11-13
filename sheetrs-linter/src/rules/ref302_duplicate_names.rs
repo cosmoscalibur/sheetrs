@@ -129,21 +129,21 @@ mod tests {
                 name: "Data".to_string(),
                 sheet_index: 0,
                 cells: sheetrs_io::reader::Grid::default(),
-                used_range: None,
+                kept_area: None,
                 ..Default::default()
             },
             Sheet {
                 name: "data".to_string(),
                 sheet_index: 1,
                 cells: sheetrs_io::reader::Grid::default(),
-                used_range: None,
+                kept_area: None,
                 ..Default::default()
             },
             Sheet {
                 name: "Summary".to_string(),
                 sheet_index: 2,
                 cells: sheetrs_io::reader::Grid::default(),
-                used_range: None,
+                kept_area: None,
                 ..Default::default()
             },
         ];
@@ -169,35 +169,35 @@ mod tests {
                 name: "Sheet1".to_string(),
                 sheet_index: 0,
                 cells: sheetrs_io::reader::Grid::default(),
-                used_range: None,
+                kept_area: None,
                 ..Default::default()
             },
             Sheet {
                 name: "sheet 1".to_string(),
                 sheet_index: 1,
                 cells: sheetrs_io::reader::Grid::default(),
-                used_range: None,
+                kept_area: None,
                 ..Default::default()
             },
             Sheet {
                 name: "Sheet-1".to_string(),
                 sheet_index: 2,
                 cells: sheetrs_io::reader::Grid::default(),
-                used_range: None,
+                kept_area: None,
                 ..Default::default()
             },
             Sheet {
                 name: "Data_2024".to_string(),
                 sheet_index: 3,
                 cells: sheetrs_io::reader::Grid::default(),
-                used_range: None,
+                kept_area: None,
                 ..Default::default()
             },
             Sheet {
                 name: "data2024".to_string(),
                 sheet_index: 4,
                 cells: sheetrs_io::reader::Grid::default(),
-                used_range: None,
+                kept_area: None,
                 ..Default::default()
             },
         ];

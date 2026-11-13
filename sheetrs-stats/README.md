@@ -55,12 +55,12 @@ the workbook total):
 | Used cells | Cells holding a value or a formula. Cells kept only for their style are not counted. |
 | Formulas | Used cells with a formula. |
 | Errors | Used cells whose value, or cached formula result, is an error (`#DIV/0!`, `#REF!`, ...). |
-| Used range | Rectangle of the used cells (`D10:E11`), from the first row and column that hold a used cell to the last, as the used area of LibreOffice (not anchored at `A1`; the `<dimension>` element is not read). Absent in a sheet without used cells. |
+| Used range | Rectangle of the used cells (`D10:E11`), from the first row and column that hold a used cell to the last, as the used area of LibreOffice (not anchored at `A1`; the `<dimension>` element is not read). The bounds are those the reader finds for the sheet (`Sheet::used_area` of `sheetrs-io`, the same in an XLSX and an ODS, and the ones the linter works on); the statistics keep no area of their own. Absent in a sheet without used cells. |
 | End of sheet | Bottom right corner of the used range (`GV5439`). Absent in a sheet without used cells. |
 | Comments | Notes of the cells: the comments of an XLSX (the threaded ones when the sheet has no others) and the annotations of an ODS. |
 | Charts | Charts the sheet shows: the chart parts its drawing relates to in an XLSX, the embedded objects of an ODS. |
 | Tables | Table objects of an XLSX; named database ranges of an ODS (the one of an autofilter is not a table). |
-| Empty cells | Cells without value or formula inside the used range. |
+| Empty cells | Cells without value or formula in the area from `A1` to the last used cell (the cells of `A1:C9` count when the used range is `D10:E11`). |
 | XML size | Uncompressed size of the XML describing the sheet: the worksheet part in XLSX, the `<table:table>` element of `content.xml` in ODS. |
 
 XML size depends on each format's markup, so it compares sheets within a

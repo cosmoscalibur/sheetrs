@@ -1,13 +1,14 @@
 //! REF304: Large used range
 //!
-//! A sheet whose used range (the dimension the file declares for the sheet) reaches well past its
-//! last real content. Stray formatting or cleared cells inflate the range, which makes the file
+//! A sheet whose used range (the rectangle of the cells the file keeps for the sheet: with a value, a
+//! formula or only a style, up to its last hidden row and column; `Sheet::kept_area`, the same in an
+//! XLSX and an ODS, the `<dimension>` is not read) reaches well past its last real content. Stray formatting or cleared cells inflate the range, which makes the file
 //! larger, slows loading, and makes "go to the last cell", printing and whole-range operations
 //! land far from the data.
 //!
 //! # Reports
 //!
-//! One violation per sheet (the unit is the sheet) when the declared used range has more than 2
+//! One violation per sheet (the unit is the sheet) when the used range has more than 2
 //! rows beyond the last row with data, or more than 2 columns beyond the last column with data.
 //! The last row and the last column are taken independently (the maximum over all data cells), so
 //! the "last data cell" in the message is that corner, not necessarily an existing cell. A cell
@@ -144,7 +145,7 @@ impl WalkerRule for LargeUsedRangeRule {
             return; // No data cells → skip
         };
 
-        let Some((used_rows, used_cols)) = sheet.used_range else {
+        let Some((used_rows, used_cols)) = sheet.kept_extent() else {
             return;
         };
 
@@ -198,7 +199,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((50, 30)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(49, 29)),
             ..Default::default()
         };
 
@@ -230,7 +231,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((2, 2)), // Only 1 row/col beyond data
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 1)), // Only 1 row/col beyond data
             ..Default::default()
         };
 
@@ -250,7 +251,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: sheetrs_io::reader::Grid::default(),
-            used_range: Some((100, 100)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(99, 99)),
             ..Default::default()
         };
 

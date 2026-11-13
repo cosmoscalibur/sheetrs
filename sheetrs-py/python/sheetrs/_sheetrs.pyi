@@ -170,7 +170,8 @@ class Sheet:
     @property
     def errors(self) -> int: ...
     @property
-    def empty_cells(self) -> int: ...
+    def empty_cells(self) -> int:
+        """The cells without value or formula in the area from `A1` to the last used cell."""
     @property
     def comments(self) -> int: ...
     @property

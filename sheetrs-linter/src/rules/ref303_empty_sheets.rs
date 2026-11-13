@@ -102,7 +102,7 @@ mod tests {
             name: "Empty".to_string(),
             sheet_index: 2,
             cells: sheetrs_io::reader::Grid::default(),
-            used_range: None,
+            kept_area: None,
             ..Default::default()
         };
 
@@ -131,7 +131,7 @@ mod tests {
             name: "Main".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((1, 1)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(0, 0)),
             ..Default::default()
         };
 
