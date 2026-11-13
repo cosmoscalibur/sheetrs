@@ -1,0 +1,40 @@
+[package]
+name = "sheetrs-py"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Python bindings (PyO3) of the SheetRS suite: the Book, which lints, reads, edits, calculates and inspects workbooks"
+publish = false
+
+[lib]
+name = "_sheetrs"
+crate-type = ["cdylib"]
+# The Rust side holds no logic worth a native test harness (which would need to link libpython);
+# `sheetrs-py/tests` exercises the built extension with pytest.
+test = false
+doctest = false
+
+[features]
+# Enabled by maturin (see `pyproject.toml`): the extension must not link libpython.
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.0" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }
+sheetrs-linter = { path = "../sheetrs-linter", version = "0.4.0" }
+sheetrs-edit = { path = "../sheetrs-edit", version = "0.4.0" }
+sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.0" }
+sheetrs-query = { path = "../sheetrs-query", version = "0.4.0" }
+sheetrs-compiler = { path = "../sheetrs-compiler", version = "0.4.0" }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.0" }
+sheetrs-stats = { path = "../sheetrs-stats", version = "0.4.0" }
+pyo3 = { version = "0.30", features = ["abi3-py313"] }
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

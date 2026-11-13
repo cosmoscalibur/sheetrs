@@ -1,0 +1,214 @@
+name: Release
+
+# A `vX.Y.Z` tag builds every distribution and attaches it to a GitHub release:
+#   - executables (sheetrs, sheetc, sheetrs-rt) for Linux x86_64 and aarch64, with the base
+#     modules of the WebAssembly target (sheetrs-rt.wasm, sheetrs-rt-template.wasm),
+#   - Python wheels (abi3, Python 3.13 to 3.15: linux x86_64 and aarch64) and the sdist,
+#   - the npm package tarball of the WASM build.
+# Linux and WebAssembly are the priority: macOS and Windows are issue #99.
+#
+# A manual run (Actions > Release > Run workflow) is a dry run: it builds and smoke-tests every
+# artifact and keeps them as workflow artifacts, and creates or touches no GitHub release, so the
+# whole path can be checked without a tag.
+#
+# Publishing to crates.io and PyPI is a manual step (issue #108, CONTRIBUTING.md): it needs the
+# maintainer's registry credentials.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  GH_TOKEN: ${{ github.token }}
+  # Only a tag touches a release.
+  RELEASE: ${{ github.ref_type == 'tag' }}
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: The tag matches the workspace version
+        if: env.RELEASE == 'true'
+        run: |
+          version="$(awk -F'"' '/^version = / {print $2; exit}' Cargo.toml)"
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != workspace version $version" >&2; exit 1; }
+      # The notes: the section of the version in CHANGELOG.md (the merged fragments), then what GitHub
+      # generates from the pull requests.
+      - name: Create the draft release
+        if: env.RELEASE == 'true'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            /^## \[/ { if (found) exit; if (index($0, "## [" v "]") == 1) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then
+            gh release create "$GITHUB_REF_NAME" --draft --generate-notes --notes-file notes.md --title "$GITHUB_REF_NAME"
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --generate-notes --title "$GITHUB_REF_NAME"
+          fi
+
+  binaries:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-24.04-arm }
+          # macOS and Windows executables are out of scope for now (Linux and WebAssembly are the
+          # priority): issue #99 has what is needed to put them back.
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --profile dist --locked -p sheetrs-cli -p sheetrs-compiler -p sheetrs-engine
+      # The two base modules of `sheetc build --target wasm`, next to `sheetc` where it looks for them.
+      - run: scripts/build-wasm-rt.sh
+      - name: Package
+        run: |
+          name="sheetrs-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir "$name"
+          for bin in sheetrs sheetc sheetrs-rt; do
+            cp "target/dist/$bin" "$name/"
+          done
+          cp target/dist/sheetrs-rt.wasm target/dist/sheetrs-rt-template.wasm "$name/"
+          cp LICENSE README.md "$name/"
+          tar czf "$name.tar.gz" "$name"
+          openssl dgst -sha256 -r "$name.tar.gz" > "$name.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: executables-${{ matrix.target }}
+          path: sheetrs-*.tar.gz*
+      - name: Attach to the release
+        if: env.RELEASE == 'true'
+        run: gh release upload "$GITHUB_REF_NAME" sheetrs-*.tar.gz sheetrs-*.tar.gz.sha256 --clobber
+
+  wheels:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, maturin: "--compatibility manylinux_2_28 --zig" }
+          - { os: ubuntu-24.04-arm, maturin: "--compatibility manylinux_2_28 --zig" }
+          # macOS and Windows wheels are out of scope for now: issue #99.
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The wheel is abi3 (3.13 and later): built once, tested in a clean environment of each
+      # supported version (SPEC 0: 3.13 to 3.15), which uv downloads and creates.
+      - uses: astral-sh/setup-uv@v7
+      - run: uvx --python 3.13 --from "maturin[zig]" maturin build --profile dist --locked --out dist -m sheetrs-py/Cargo.toml ${{ matrix.maturin }}
+      # The same wheel, installed in a clean environment of each version, passes the tests: it carries every tool.
+      - run: |
+          for version in 3.13 3.14 3.15; do
+            uv run --no-project --python "$version" --with pytest --with "$(ls dist/*.whl)" pytest sheetrs-py/tests
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}
+          path: dist/*.whl
+      - name: Attach to the release
+        if: env.RELEASE == 'true'
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.whl --clobber
+
+  sdist:
+    needs: draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: astral-sh/setup-uv@v7
+      - run: uvx maturin sdist --out dist -m sheetrs-py/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+      - name: Attach to the release
+        if: env.RELEASE == 'true'
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --clobber
+
+  wasm:
+    needs: draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install wasm-bindgen-cli --version "$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, ""); print; exit}' Cargo.lock)" --locked
+      - run: scripts/package-wasm.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm-package
+          path: target/npm/*.tgz
+      - name: Attach to the release
+        if: env.RELEASE == 'true'
+        run: gh release upload "$GITHUB_REF_NAME" target/npm/*.tgz --clobber
+
+  # What was built is what a user installs: the executables run, the wheel imports in a clean
+  # environment and the npm tarball loads in Node (Linux x86_64).
+  smoke:
+    needs: [binaries, wheels, wasm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          path: built
+      - name: The executables
+        run: |
+          tar xzf built/executables-x86_64-unknown-linux-gnu/sheetrs-*.tar.gz -C "$RUNNER_TEMP"
+          dir="$(echo "$RUNNER_TEMP"/sheetrs-*-x86_64-unknown-linux-gnu)"
+          book=sheetrs-compiler/tests/assets/loan.xlsx
+          "$dir/sheetrs" --help > /dev/null
+          "$dir/sheetc" --help > /dev/null
+          "$dir/sheetrs" stats -i "$book" --format json > /dev/null
+          "$dir/sheetrs" query -i "$book" --range 'Loan!A1:B3' > /dev/null
+          "$dir/sheetc" calculate -i "$book" > /dev/null
+          "$dir/sheetc" inspect -i "$book" > /dev/null
+          "$dir/sheetc" verify -i "$book"
+      - uses: astral-sh/setup-uv@v7
+      - name: The wheel
+        run: |
+          for version in 3.13 3.14 3.15; do
+            uv run --no-project --python "$version" --with "$(ls built/wheel-ubuntu-latest/*.whl)" python -c "
+          import sheetrs
+          book = sheetrs.Book('sheetrs-compiler/tests/assets/loan.xlsx')
+          assert book.format == 'xlsx' and 'Loan' in book.sheet_names
+          assert book.range(['Loan!A1:B3'])
+          "
+          done
+      - name: The npm package
+        run: |
+          mkdir "$RUNNER_TEMP/npm-smoke" && cd "$RUNNER_TEMP/npm-smoke"
+          npm init -y > /dev/null
+          npm install "$GITHUB_WORKSPACE"/built/wasm-package/*.tgz
+          cat > check.mjs <<'JS'
+          import { readFileSync } from "node:fs";
+          import * as wasm from "sheetrs-wasm";
+          wasm.initSync({ module: readFileSync("node_modules/sheetrs-wasm/sheetrs_wasm_bg.wasm") });
+          const book = new wasm.Book(new Uint8Array(readFileSync(process.env.BOOK)));
+          if (book.format !== "xlsx" || !book.sheetNames.includes("Loan")) throw new Error("the package does not open the workbook");
+          book.free();
+          JS
+          BOOK="$GITHUB_WORKSPACE/sheetrs-compiler/tests/assets/loan.xlsx" node check.mjs
+
+  publish:
+    needs: [smoke, sdist]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"

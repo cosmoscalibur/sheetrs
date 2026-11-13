@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 30
+      semver-major-days: 45
+      semver-minor-days: 30
+      semver-patch-days: 15
+    groups:
+      # Patch and minor updates in one PR. Dependabot counts a 0.x bump such
+      # as 0.39 -> 0.42 as minor although Cargo treats it as breaking, so
+      # quick-xml, whose 0.x bumps have broken the build, gets its own PR.
+      # Major updates are never grouped.
+      compatible:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "quick-xml"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    # Workflows pin actions to major tags, so updates are major bumps.
+    cooldown:
+      default-days: 45

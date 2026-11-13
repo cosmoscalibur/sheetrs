@@ -1,0 +1,249 @@
+name: CI
+
+# Nothing runs by default: a push that does not ask for it costs no build, test or lint. Ask with
+#   - `[ci]` in the message of the last commit (a push) or in the title of the pull request,
+#   - the label `ci` on the pull request, or
+#   - a manual run (Actions > CI > Run workflow).
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, edited]
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gate:
+    name: should CI run
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+          TITLE: ${{ github.event.pull_request.title }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          run=false
+          if [ "$EVENT" = workflow_dispatch ]; then run=true; fi
+          case "$MESSAGE" in *"[ci]"*) run=true ;; esac
+          case "$TITLE" in *"[ci]"*) run=true ;; esac
+          case ",$LABELS," in *,ci,*) run=true ;; esac
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  fmt:
+    name: fmt
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the channel, components and targets from rust-toolchain.toml.
+      - run: rustup toolchain install
+      - run: cargo fmt --all -- --check
+
+  fixtures:
+    name: fixtures are deterministic
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # What depends on the moment of a run (zip dates, document properties) is a constant in every tracked workbook.
+      - run: python3 scripts/fixture_determinism.py --check
+
+  clippy:
+    name: clippy
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  doc:
+    name: doc
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The documentation is generated from the code; a broken link or item fails the build.
+      - run: cargo doc --workspace --exclude sheetrs-py --no-deps --document-private-items
+
+  test:
+    name: test
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --exclude sheetrs-py
+      # The base module of the WebAssembly target that also writes workbooks: its tests need the feature.
+      - run: cargo test -p sheetrs-rt-wasm --features template
+
+  check:
+    name: check (wasm, no default features)
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p sheetrs-wasm --target wasm32-unknown-unknown
+      # What the module contains is chosen by features: each one builds on its own.
+      - run: cargo check -p sheetrs-wasm --target wasm32-unknown-unknown --no-default-features
+      - run: cargo check -p sheetrs-wasm --target wasm32-unknown-unknown --no-default-features --features query
+      - run: cargo check -p sheetrs-wasm --target wasm32-unknown-unknown --no-default-features --features edit
+      - run: cargo check -p sheetrs-wasm --target wasm32-unknown-unknown --no-default-features --features calculate
+      # The two base modules of the WebAssembly target, built for WebAssembly.
+      - run: cargo check -p sheetrs-rt-wasm --target wasm32-unknown-unknown
+      - run: cargo check -p sheetrs-rt-wasm --target wasm32-unknown-unknown --features template
+      # Build the linter without link-validation (reqwest), which is a default feature.
+      - run: cargo check -p sheetrs-linter --no-default-features
+      # The writers of the kernel are a feature: the kernel builds without them and with them (also for
+      # WebAssembly).
+      - run: cargo check -p sheetrs-io
+      - run: cargo check -p sheetrs-io --features write
+      - run: cargo check -p sheetrs-io --features write --target wasm32-unknown-unknown
+
+  engine-only:
+    name: engine and compiler without the file loader
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p sheetrs-engine
+      - run: cargo build -p sheetrs-compiler --no-default-features --lib
+
+  binaries:
+    name: executables (sheetrs, sheetc)
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The two executables, built as a user installs them (`--locked`), run on a real workbook.
+      - run: cargo build --locked -p sheetrs-cli -p sheetrs-compiler
+      - run: |
+          book=sheetrs-compiler/tests/assets/loan.xlsx
+          target/debug/sheetrs --help > /dev/null
+          target/debug/sheetc --help > /dev/null
+          target/debug/sheetrs stats -i "$book" --format json > /dev/null
+          target/debug/sheetrs query -i "$book" --range 'Loan!A1:B3' > /dev/null
+          target/debug/sheetrs lint -i "$book" --format sarif > /dev/null
+          target/debug/sheetc calculate -i "$book" > /dev/null
+          target/debug/sheetc inspect -i "$book" > /dev/null
+          target/debug/sheetc verify -i "$book"
+
+  wasm-package:
+    name: wasm npm package
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The CLI must match the `wasm-bindgen` crate pinned by Cargo.lock (the script checks it).
+      - run: cargo install wasm-bindgen-cli --version "$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, ""); print; exit}' Cargo.lock)" --locked
+      # The package (docs/pkg is the copy the web demo reads).
+      - run: scripts/package-wasm.sh --demo
+      # Every tool, in a WebAssembly runtime, against the command-line tool on real workbooks.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo build -p sheetrs-cli -p sheetrs-compiler
+      - run: node sheetrs-wasm/tests/smoke.mjs
+      # The web demo, in a browser: every tool on real workbooks, with screenshots.
+      - run: npm install --prefix "$RUNNER_TEMP/pw" playwright && npx --prefix "$RUNNER_TEMP/pw" playwright install --with-deps chromium
+      - run: node sheetrs-wasm/tests/demo.mjs
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-screenshots
+          path: target/demo-screenshots
+
+  python:
+    name: python (pytest, ${{ matrix.python }})
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # SPEC 0: the supported Python versions, 3.13 to 3.15.
+        python: ["3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python }}
+      # The wheel is built (abi3, with every tool) and the tests run against it in an environment of
+      # the version of the matrix that uv creates.
+      - run: uvx maturin build --out dist -m sheetrs-py/Cargo.toml
+      - run: uv run --no-project --python "${{ matrix.python }}" --with pytest --with "$(ls dist/*.whl)" pytest sheetrs-py/tests
+
+  wheels:
+    name: python wheel (${{ matrix.name }})
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux x86_64, os: ubuntu-latest, maturin: "--compatibility manylinux_2_28 --zig" }
+          - { name: linux aarch64, os: ubuntu-24.04-arm, maturin: "--compatibility manylinux_2_28 --zig" }
+          # macOS and Windows wheels are out of scope for now (Linux and WebAssembly are the priority):
+          # issue #99 has what is needed to put them back.
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The wheel is abi3 (3.13 and later): built once and tested in a clean environment of each
+      # supported version (SPEC 0: 3.13 to 3.15), which uv downloads and creates.
+      - uses: astral-sh/setup-uv@v7
+      # The wheel the release would carry: abi3, one per platform, with every tool inside.
+      - run: uvx --python 3.13 --from "maturin[zig]" maturin build --profile dist --locked --out dist -m sheetrs-py/Cargo.toml ${{ matrix.maturin }}
+      # The same wheel, installed in a clean environment of each version, passes the tests.
+      - run: |
+          for version in 3.13 3.14 3.15; do
+            uv run --no-project --python "$version" --with pytest --with "$(ls dist/*.whl)" pytest sheetrs-py/tests
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}
+          path: dist/*.whl

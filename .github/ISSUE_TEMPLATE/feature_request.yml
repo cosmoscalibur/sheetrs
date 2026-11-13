@@ -1,0 +1,76 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature. Please describe your idea below.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: What problem does this feature solve?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this to work?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you have considered.
+    validations:
+      required: false
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Affected Tool
+      options:
+        - sheetrs lint
+        - sheetrs stats
+        - sheetrs edit
+        - sheetc
+        - Rust libraries (sheetrs-io, sheetrs-linter, sheetrs-stats, sheetrs-edit)
+        - sheetrs-py (Python)
+        - sheetrs-wasm
+        - Multiple / All
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Rule Category (if applicable)
+      description: Select if this relates to a linting rule.
+      options:
+        - N/A
+        - ERR (Excel Errors)
+        - CALC (Unreliable Calculations)
+        - REF (Reference Issues)
+        - INT (Formula Interruptions)
+        - CPX (Complexity)
+        - VUL (Vulnerable Formulas)
+        - DATA (Data Issues)
+        - EXT (External References)
+        - HID (Hidden Information)
+        - FILE (Files & Settings)
+        - VBA (VBA Issues)
+    validations:
+      required: false
+  - type: dropdown
+    id: format
+    attributes:
+      label: Affected Format
+      options:
+        - XLSX
+        - ODS
+        - Both
+        - N/A
+    validations:
+      required: false

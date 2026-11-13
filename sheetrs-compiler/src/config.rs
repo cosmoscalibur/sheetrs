@@ -1,0 +1,311 @@
+//! Build configuration file (`sheetc.toml`), in the manner of rustc's: every
+//! key has a command-line counterpart that takes precedence.
+//!
+//! ```toml
+//! settings = "settings"   # sheet that declares inputs, outputs and metadata
+//! settings_file = "model.json"   # the same declarations as JSON, for a workbook with no such
+//!                                # sheet (or one that must not change); path relative to this file
+//! fold = true
+//! enable_features = ["LONGTEXT"]   # compatibility features, all off unless listed
+//! strict = true           # refuse workbooks with macros (false: warn)
+//!
+//! [locale]                # the user's regional settings, fixed at build time
+//! tag = "es-CO"
+//! decimal = ","
+//! group = "."
+//! date_order = "dmy"
+//! two_digit_year_start = 1930
+//! ```
+//!
+//! The file only holds what the workbook cannot say itself. Whatever the document does not
+//! specify (how `TRUE()` is stored, what an error of a function's domain is, text
+//! collation, ...) is `LibreOffice`'s behavior. The date system, iteration and search
+//! settings come from the document.
+
+use crate::compile::{BindingSpec, Features, Spec};
+use crate::error::{Error, Result};
+use crate::locale::{self, LocaleOverride};
+use crate::model::Model;
+use crate::settings;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
+
+pub const FILE_NAME: &str = "sheetc.toml";
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Config {
+    /// Name of the settings sheet (default `settings`, optional when absent).
+    pub settings: Option<String>,
+    /// A JSON file with the declarations of the settings sheet (see [`settings::read_json`]), for
+    /// a workbook that has none: it compiles and calculates as it is, inputs included. A path in
+    /// a configuration file is relative to the file; it replaces the settings sheet, and naming
+    /// both is an error.
+    #[serde(alias = "settings-file")]
+    pub settings_file: Option<PathBuf>,
+    /// Evaluate input-independent formulas at build time (default true).
+    pub fold: Option<bool>,
+    /// Refuse what the compiler cannot reproduce (macros); default true. When
+    /// false they are reported and the build goes on.
+    pub strict: Option<bool>,
+    /// Fixed value of `NOW()`, as a serial number.
+    /// Engine whose behavior is reproduced: `libreoffice` (default) or `excel`.
+    pub now: Option<f64>,
+    pub seed: Option<u64>,
+    /// What `INFO` (`system`, `osversion`, `release`) and `CELL("filename")` (`directory`,
+    /// `filename`) say; absent, the machine the program runs on.
+    pub host: Option<sheetrs_engine::options::Host>,
+    /// Compatibility features on, by name (`LONGTEXT`). Every feature is off unless listed.
+    #[serde(alias = "enable-features")]
+    pub enable_features: Option<Vec<String>>,
+    pub locale: Option<LocaleOverride>,
+}
+
+impl LocaleOverride {
+    /// Fields set on `self` win over `base`.
+    fn over(self, base: Self) -> Self {
+        Self {
+            tag: self.tag.or(base.tag),
+            decimal: self.decimal.or(base.decimal),
+            group: self.group.or(base.group),
+            true_text: self.true_text.or(base.true_text),
+            false_text: self.false_text.or(base.false_text),
+            am: self.am.or(base.am),
+            pm: self.pm.or(base.pm),
+            currency: self.currency.or(base.currency),
+            currency_after: self.currency_after.or(base.currency_after),
+            currency_parens: self.currency_parens.or(base.currency_parens),
+            two_digit_year_start: self.two_digit_year_start.or(base.two_digit_year_start),
+            date_order: self.date_order.or(base.date_order),
+            date_patterns: self.date_patterns.or(base.date_patterns),
+            months: self.months.or(base.months),
+            months_abbr: self.months_abbr.or(base.months_abbr),
+            days: self.days.or(base.days),
+            days_abbr: self.days_abbr.or(base.days_abbr),
+        }
+    }
+}
+
+impl Config {
+    /// Settings of `self` (typically the command line) take precedence over
+    /// `base` (the file).
+    #[must_use]
+    pub fn over(self, base: Self) -> Self {
+        Self {
+            settings: self.settings.or(base.settings),
+            settings_file: self.settings_file.or(base.settings_file),
+            fold: self.fold.or(base.fold),
+            strict: self.strict.or(base.strict),
+            now: self.now.or(base.now),
+            seed: self.seed.or(base.seed),
+            host: match (self.host, base.host) {
+                (Some(a), Some(b)) => Some(a.over(b)),
+                (a, b) => a.or(b),
+            },
+            enable_features: self.enable_features.or(base.enable_features),
+            locale: match (self.locale, base.locale) {
+                (Some(a), Some(b)) => Some(a.over(b)),
+                (a, b) => a.or(b),
+            },
+        }
+    }
+
+    /// The compiler's [`Spec`] for `model`: the settings sheet supplies inputs,
+    /// outputs and metadata; this configuration the rest.
+    ///
+    /// # Errors
+    ///
+    /// When a target of the configuration cannot be resolved against `model`.
+    pub fn spec(&self, model: &Model) -> Result<Spec> {
+        let from_file = match &self.settings_file {
+            Some(path) => {
+                if self.settings.is_some() {
+                    return Err(Error::Config(
+                        "`settings` (a sheet) and `settings_file` (a JSON file) both declare the inputs and outputs: name one"
+                            .into(),
+                    ));
+                }
+                let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
+                Some(settings::read_json(
+                    model,
+                    &text,
+                    &path.display().to_string(),
+                )?)
+            }
+            None => None,
+        };
+        self.spec_with(model, from_file)
+    }
+
+    /// [`spec`](Self::spec) with the declarations of inputs and outputs given as the JSON text of a
+    /// `settings_file` (see [`settings::read_json`]), for a caller that has no file: it replaces the
+    /// settings sheet, and giving `settings` as well is an error.
+    ///
+    /// # Errors
+    ///
+    /// When the text is not valid declarations for `model`, `settings` is also set, or a target of
+    /// the configuration cannot be resolved against `model`.
+    pub fn spec_with_declarations(&self, model: &Model, declarations: &str) -> Result<Spec> {
+        if self.settings.is_some() {
+            return Err(Error::Config(
+                "`settings` (a sheet) and the declarations (JSON) both declare the inputs and outputs: name one"
+                    .into(),
+            ));
+        }
+        let declared = settings::read_json(model, declarations, "the declarations")?;
+        self.spec_with(model, Some(declared))
+    }
+
+    fn spec_with(&self, model: &Model, from_file: Option<settings::SheetSettings>) -> Result<Spec> {
+        let mut spec = self.base_spec(model)?;
+        let name = self.settings.as_deref().unwrap_or(settings::DEFAULT_SHEET);
+        let found = match from_file {
+            Some(s) => Some(s),
+            None => settings::read(model, name, self.settings.is_some())?,
+        };
+        if let Some(s) = found {
+            spec.inputs_declared = s.inputs_declared || !s.inputs.is_empty();
+            spec.inputs = s
+                .inputs
+                .iter()
+                .map(|(n, t)| BindingSpec::declared(n.as_deref(), t))
+                .collect();
+            spec.outputs = s
+                .outputs
+                .iter()
+                .map(|(n, t)| BindingSpec::declared(n.as_deref(), t))
+                .collect();
+            spec.meta = s.meta;
+            spec.skip_sheet = s.sheet;
+        }
+        Ok(spec)
+    }
+
+    /// Everything of the spec that does not come from the settings sheet: the
+    /// level, folding, clock, seed, locale and the macro policy.
+    ///
+    /// # Errors
+    ///
+    /// When a target of the configuration cannot be resolved against `model`.
+    pub fn base_spec(&self, model: &Model) -> Result<Spec> {
+        let mut spec = Spec {
+            fold: self.fold.unwrap_or(true),
+            now: self.now,
+            rand_seed: self.seed,
+            host: self.host.clone().unwrap_or_default(),
+            features: match &self.enable_features {
+                None => Features::default(),
+                Some(names) => Features::parse(names)?,
+            },
+            ..Spec::default()
+        };
+        let loc = self.locale.clone().unwrap_or_default();
+        let (l, notes) = locale::from_tag(loc.tag.as_deref().unwrap_or("en"), &loc)?;
+        spec.locale = Some(l);
+        spec.notes = notes;
+        if model.macros {
+            if self.strict.unwrap_or(true) {
+                return Err(Error::Config(
+                    "the workbook contains macros, which are never run, so what depends on them would differ; \
+                     build with --no-strict (strict = false) to compile anyway"
+                        .into(),
+                ));
+            }
+            spec.notes.push(
+                "warning: the workbook contains macros; they are ignored (strict mode is off)"
+                    .into(),
+            );
+        }
+
+        Ok(spec)
+    }
+}
+
+/// # Errors
+///
+/// When `text` is not a valid configuration; the message names `origin`.
+pub fn parse(text: &str, origin: &str) -> Result<Config> {
+    toml::from_str(text).map_err(|source| Error::Toml {
+        origin: origin.to_string(),
+        source,
+    })
+}
+
+/// # Errors
+///
+/// When the file cannot be read or is not a valid configuration.
+pub fn load(path: &Path) -> Result<Config> {
+    let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
+    let mut config = parse(&text, &path.display().to_string())?;
+    // A path in the file is relative to the file, not to where the build starts.
+    if let Some(file) = &config.settings_file
+        && file.is_relative()
+        && let Some(dir) = path.parent()
+    {
+        config.settings_file = Some(dir.join(file));
+    }
+    Ok(config)
+}
+
+/// The configuration next to the workbook, when there is one. Only that
+/// directory is searched, so a build does not depend on where it is started.
+#[must_use]
+pub fn discover(workbook: &Path) -> Option<PathBuf> {
+    let dir = workbook
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let p = dir.join(FILE_NAME);
+    p.is_file().then_some(p)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_configuration_with_every_section_is_read_and_unknown_keys_are_rejected() {
+        let c = parse("settings = \"cfg\"\nouts = 1\n", "t");
+        assert!(c.is_err(), "unknown keys are rejected");
+        let c = parse(
+            "settings = \"cfg\"\nfold = false\n[locale]\ntag = \"es-CO\"\ndecimal = \",\"\n",
+            "t",
+        )
+        .unwrap();
+        assert_eq!(c.settings.as_deref(), Some("cfg"));
+        assert!(
+            parse("outputs = \"any\"\n", "t").is_err(),
+            "no level of outputs any more"
+        );
+        let l = c.locale.unwrap();
+        assert_eq!((l.tag.as_deref(), l.decimal), (Some("es-CO"), Some(',')));
+        assert!(parse("[locale]\nbogus = 1\n", "t").is_err());
+    }
+}
+
+#[cfg(test)]
+mod feature_tests {
+    use super::*;
+
+    #[test]
+    fn enable_features_are_off_unless_listed() {
+        let model = Model::default();
+        let spec = |toml: &str| parse(toml, "t").unwrap().base_spec(&model);
+        assert!(!spec("").unwrap().features.longtext);
+        assert!(
+            spec("enable_features = [\"longtext\"]")
+                .unwrap()
+                .features
+                .longtext
+        );
+        assert!(
+            spec("enable-features = [\"LONGTEXT\"]")
+                .unwrap()
+                .features
+                .longtext
+        );
+        assert!(!spec("enable_features = []").unwrap().features.longtext);
+        let err = spec("enable_features = [\"NOPE\"]").unwrap_err();
+        assert!(err.to_string().contains("unknown feature `NOPE`"), "{err}");
+    }
+}

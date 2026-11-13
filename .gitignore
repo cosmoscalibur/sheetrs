@@ -1,4 +1,11 @@
 # Rust
 target/
 content.xml
-tests/production
+
+# Tooling caches
+.rumdl_cache/
+__pycache__/
+.venv/
+*.so
+*.whl
+docs/pkg/

@@ -1,0 +1,27 @@
+{
+  "name": "sheetrs-wasm",
+  "version": "0.0.0",
+  "description": "WebAssembly build of the SheetRS spreadsheet tools (XLSX, ODS): lint, statistics, query, edit, calculate and compile a workbook to a WebAssembly module",
+  "license": "MIT",
+  "author": "Edward Villegas <cosmoscalibur@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cosmoscalibur/sheetrs.git"
+  },
+  "keywords": ["spreadsheet", "xlsx", "ods", "linter", "wasm", "formulas", "calculation"],
+  "type": "module",
+  "main": "sheetrs_wasm.js",
+  "module": "sheetrs_wasm.js",
+  "types": "sheetrs_wasm.d.ts",
+  "sideEffects": ["./snippets/*"],
+  "files": [
+    "sheetrs_wasm.js",
+    "sheetrs_wasm.d.ts",
+    "sheetrs_wasm_bg.wasm",
+    "sheetrs_wasm_bg.wasm.d.ts",
+    "sheetrs-rt.wasm",
+    "sheetrs-rt-template.wasm",
+    "README.md",
+    "LICENSE"
+  ]
+}

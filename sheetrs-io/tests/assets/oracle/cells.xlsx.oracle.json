@@ -1,0 +1,247 @@
+{
+ "version": "26.8.2.2",
+ "file": "cells.xlsx",
+ "sheets": [
+  "T",
+  "U"
+ ],
+ "cells": [
+  {
+   "sheet": "T",
+   "row": 0,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2023-03-15",
+   "value": 45000.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "T",
+   "row": 1,
+   "col": 0,
+   "type": "VALUE",
+   "string": "2023-03-15 13:45:30",
+   "value": 45000.5732638889,
+   "error": 0,
+   "format": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+   "sheet": "T",
+   "row": 2,
+   "col": 0,
+   "type": "VALUE",
+   "string": "12:30:00",
+   "value": 0.520833333333333,
+   "error": 0,
+   "format": "HH:MM:SS"
+  },
+  {
+   "sheet": "T",
+   "row": 3,
+   "col": 0,
+   "type": "VALUE",
+   "string": "25:30:00",
+   "value": 1.0625,
+   "error": 0,
+   "format": "[HH]:MM:SS"
+  },
+  {
+   "sheet": "T",
+   "row": 4,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1900-01-15",
+   "value": 16.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "T",
+   "row": 5,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1899-12-31",
+   "value": 1.0,
+   "error": 0,
+   "format": "YYYY-MM-DD"
+  },
+  {
+   "sheet": "T",
+   "row": 6,
+   "col": 0,
+   "type": "VALUE",
+   "string": "25.00%",
+   "value": 0.25,
+   "error": 0,
+   "format": "0.00%"
+  },
+  {
+   "sheet": "T",
+   "row": 7,
+   "col": 0,
+   "type": "VALUE",
+   "string": "1,234.50 USD",
+   "value": 1234.5,
+   "error": 0,
+   "format": "#,##0.00 [$USD]"
+  },
+  {
+   "sheet": "T",
+   "row": 8,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "TRUE",
+   "value": 1.0,
+   "error": 0,
+   "format": "BOOLEAN",
+   "formula": "=TRUE()",
+   "result": 1
+  },
+  {
+   "sheet": "T",
+   "row": 9,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#DIV/0!",
+   "value": 0.0,
+   "error": 532,
+   "format": "General",
+   "formula": "=1/0",
+   "result": 4
+  },
+  {
+   "sheet": "T",
+   "row": 10,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#N/A",
+   "value": 0.0,
+   "error": 32767,
+   "format": "General",
+   "formula": "=NA()",
+   "result": 4
+  },
+  {
+   "sheet": "T",
+   "row": 11,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#NAME?",
+   "value": 0.0,
+   "error": 525,
+   "format": "General",
+   "formula": "=foo()",
+   "result": 4
+  },
+  {
+   "sheet": "T",
+   "row": 12,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "#VALUE!",
+   "value": 0.0,
+   "error": 519,
+   "format": "General",
+   "formula": "=\"a\"+1",
+   "result": 4
+  },
+  {
+   "sheet": "T",
+   "row": 13,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "Err:502",
+   "value": 0.0,
+   "error": 502,
+   "format": "General",
+   "formula": "=SQRT(-1)",
+   "result": 4
+  },
+  {
+   "sheet": "T",
+   "row": 14,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "45001",
+   "value": 45001.0,
+   "error": 0,
+   "format": "General",
+   "formula": "=A1+1",
+   "result": 1
+  },
+  {
+   "sheet": "T",
+   "row": 15,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "Err:522",
+   "value": 0.0,
+   "error": 522,
+   "format": "General",
+   "formula": "=A16",
+   "result": 4
+  },
+  {
+   "sheet": "T",
+   "row": 16,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "90000.5732638889",
+   "value": 90000.5732638889,
+   "error": 0,
+   "format": "General",
+   "formula": "=SUM(A1:A2)",
+   "result": 1
+  },
+  {
+   "sheet": "T",
+   "row": 17,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "90000",
+   "value": 90000.0,
+   "error": 0,
+   "format": "General",
+   "formula": "=$T.A1*2",
+   "result": 1
+  },
+  {
+   "sheet": "T",
+   "row": 18,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "2023",
+   "value": 0.0,
+   "error": 0,
+   "format": "General",
+   "formula": "=TEXT(A1,\"YYYY\")",
+   "result": 2
+  },
+  {
+   "sheet": "T",
+   "row": 19,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "2023-03-15",
+   "value": 45000.0,
+   "error": 0,
+   "format": "YYYY-MM-DD",
+   "formula": "=INDIRECT(\"A1\")",
+   "result": 1
+  },
+  {
+   "sheet": "U",
+   "row": 0,
+   "col": 0,
+   "type": "FORMULA",
+   "string": "90001",
+   "value": 90001.0,
+   "error": 0,
+   "format": "General",
+   "formula": "=$T.A1+$T.A15",
+   "result": 1
+  }
+ ],
+ "notes": []
+}

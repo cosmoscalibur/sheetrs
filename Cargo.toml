@@ -1,34 +1,91 @@
 [workspace]
-members = ["sheetrs", "sheetlint", "sheetstats", "sheetcli", "sheetrs-wasm"]
+members = ["sheetrs-rt-wasm", "sheetrs-answer", "sheetrs-io", "sheetrs-formula", "sheetrs-protocol", "sheetrs-query", "sheetrs-engine", "sheetrs-compiler", "sheetrs-linter", "sheetrs-stats", "sheetrs-edit", "sheetrs-cli", "sheetrs-wasm", "sheetrs-py"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.2"
+version = "0.4.0"
 edition = "2024"
+rust-version = "1.99"
 authors = ["Edward Villegas <cosmoscalibur@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/cosmoscalibur/sheetrs"
+keywords = ["spreadsheet", "xlsx", "ods", "linter", "excel"]
+categories = ["parser-implementations", "command-line-utilities"]
 
 
 [workspace.dependencies]
 # Serialization and configuration
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.8"
 
 # Error handling
-anyhow = "1.0"
-thiserror = "1.0"
+anyhow = "1.0.104"
+thiserror = "2.0.21"
 
 # CLI
-clap = { version = "4.5", features = ["derive", "cargo"] }
+clap = { version = "4.6.7", features = ["derive", "cargo"] }
 
 # Colored output
-colored = "2.1"
+colored = "3.1"
 
 # XML parsing
-quick-xml = "0.37"
-zip = { version = "2.2", default-features = false, features = ["deflate"] }
+quick-xml = "0.42.0"
+zip = { version = "8.3", default-features = false, features = ["deflate"] }
 
 # HTTP client for link validation
-reqwest = { version = "0.11", features = ["blocking"] }
-regex = "1.11"
+reqwest = { version = "0.13.5", features = ["blocking"] }
+regex = "1.13.1"
+fancy-regex = "0.19"
+serde_json = { version = "1.0", features = ["preserve_order"] }
+tempfile = "3.27"
+aho-corasick = "1.1.4"
+sha2 = "0.10"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+manual_let_else = "warn"
+uninlined_format_args = "warn"
+collection_is_never_read = "warn"
+significant_drop_tightening = "warn"
+format_push_string = "warn"
+
+# Pedantic lints allowed on purpose, each for a reason that holds across the workspace:
+# - cast_*: cell coordinates are bounded by the format limits (1,048,576 rows, 16,384 columns)
+#   and spreadsheet numbers are `f64` by definition, so index/number conversions are the domain,
+#   not an accident. A checked conversion at every site would hide the few that matter.
+# - float_cmp: Excel compares numbers exactly (`=A1=B1`), and the engine reproduces that.
+# - many_single_char_names, similar_names: the formulas and statistics are written with the
+#   names of their mathematical definitions.
+# - too_many_lines: the function evaluators and the parsers are flat `match`es over a closed
+#   set of cases, which splitting would only scatter.
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+float_cmp = "allow"
+many_single_char_names = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+# - assert_is_empty: wants `assert_eq!(x, [] as [T; 0])` so a failure prints the value; the
+#   element type is ambiguous at every site, so each would need a type spelled out for no gain
+#   in tests where the failing case is already named by the test.
+assert_is_empty = "allow"
+# - items_after_statements: a helper `fn` or `const` that only one block uses sits next to that
+#   block, where it is read, instead of at the top of a function it has nothing to do with.
+items_after_statements = "allow"
+
+# Benchmarks and profiling: fat LTO measures the fully optimized build, at a
+# build cost not paid by everyday release builds.
+[profile.profiling]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+# Distribution build of the compiled-executable runtime (`sheetrs-rt`) and `sheetc`:
+# `cargo build --profile dist -p sheetrs-engine -p sheetrs-compiler`.
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+strip = true

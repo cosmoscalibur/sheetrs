@@ -1,70 +1,36 @@
-# Sheetlint Profiling & Benchmarking
+# Scripts
 
-This directory contains scripts for measuring the performance of `sheetlint`.
+Scripts to prepare a machine, to build the packages and to measure performance. The numbers, the method, the
+machine and the contrast with LibreOffice are in [docs/performance.md](../docs/performance.md); this file lists
+what each script does.
 
-## Scripts
+| Script | What it does |
+| ------ | ------------ |
+| `bench.py` | The benchmarks: `fixtures DIR` generates the workbooks (nothing private is needed), `run DIR [groups]` measures `sheetrs lint`, `stats`, `query`, `edit`, `sheetc calculate` and `build`, the Python `Book`, the WebAssembly package and the LibreOffice flows with dist-profile binaries, and prints Markdown tables (wall time and peak memory, min-max of the runs) |
+| `measure_libreoffice_flow.py` | The same flows in LibreOffice headless through UNO (times per phase, peak RSS) next to `sheetrs` and `sheetc`; run it with the Python of LibreOffice (`/opt/libreoffice26.8/program/python`) on a workbook of `sheetrs-compiler/scripts/gen_large_fixture.py` |
+| `benchmark.toml` | The lint configuration of the benchmarks: thresholds fixed, so every run does the same rule work |
+| `setup-dev-env.sh` | Prepares a Debian or Ubuntu machine: the Rust toolchain of `rust-toolchain.toml`, LibreOffice 26.8, `perf` and `valgrind` ([docs/environment.md](../docs/environment.md)) |
+| `setup-claude-env.sh` | The setup script of the Claude Code environment (pasted whole into the environment settings) |
+| `libreoffice-server.sh` | Starts the LibreOffice (port 2002) that the oracle and fixture generators talk to |
+| `fixture_determinism.py` | Makes a generated workbook byte-identical on every run; `--check` lists the tracked workbooks that still depend on the moment they were made ([CONTRIBUTING.md](../CONTRIBUTING.md#generators-of-fixtures-are-deterministic)) |
+| `package-wasm.sh` | Builds the npm package of `sheetrs-wasm` (`--demo` also puts it in `docs/pkg/`) |
+| `build-wasm-rt.sh` | Builds the two base modules of the WebAssembly target of `sheetc`, next to `sheetc` |
 
-### `benchmark.sh`
-
-The main benchmark script. Uses `/usr/bin/time -v` for comprehensive metrics:
-
-- User time, System time, Elapsed time
-- CPU usage %
-- Peak RAM (Maximum resident set size)
-- Binary size
-
-**Requirements:** `time` package (provides `/usr/bin/time`)
-
-**Usage:**
+## Measuring a change
 
 ```bash
-./scripts/benchmark.sh
+cargo build --profile dist -p sheetrs-cli -p sheetrs-compiler
+python3 scripts/bench.py fixtures DIR        # once; DIR is outside git
+python3 scripts/bench.py run DIR lint,edit   # the groups the change touches
 ```
 
-## Comparisons
+Run nothing else while it measures: a shared machine moves 10-20 % between sessions, and a number is compared with
+the row of the same run, not with another session. When a metric moves beyond the spread of its runs, the change
+updates the table of its flow in [docs/performance.md](../docs/performance.md), and
+[PROFILING.md](../sheetrs-linter/docs/PROFILING.md) when it targets the cost of a rule or a phase. To see where the
+time of a tool goes, sample it (a virtual machine has no hardware counters):
 
-Benchmarks use production files in `tests/production/`.
-
-### Arc+Box+dedup+shrink+ods-no-clone (4172267)
-
-| Metric | XLSX | ODS |
-|--------|------|-----|
-| User time | 29.9s | 26.7s |
-| Peak RAM | 1315 MB | 1329 MB |
-| Binary size | 8.4M | - |
-
-### ViolationData Refactoring (2cbc5fc)
-
-| Metric | XLSX | ODS |
-|--------|------|-----|
-| User time | 27.2s | 23.3s |
-| Peak RAM | 1528 MB | 1631 MB |
-| Binary size | 8.4M | - |
-
-### CALC201 Walker Migration (e9c34b9)
-
-| Metric | XLSX | ODS |
-|--------|------|-----|
-| User time | 35.7s | 28.8s |
-| Peak RAM | 1457 MB | 1594 MB |
-| Binary size | 8.4M | - |
-
-### Walker Integration (56e85b5)
-
-| Metric | XLSX | ODS |
-|--------|------|-----|
-| User time | 30.4s | 25.2s |
-| Peak RAM | 1744 MB | - |
-| Binary size | 8.3M | - |
-
-### Memory dependencies (6db5c17)
-
-- User time: 55s
-- Peak RAM: 1927MB
-- Binary size: 8.6 MB
-
-### Previous
-
-- User time: 58.25s
-- Peak RAM: 3616MB
-- Binary size: 8.9 MB
+```bash
+perf record -F 499 -e cpu-clock --call-graph fp ./target/fp/profiling/sheetrs lint -c scripts/benchmark.toml -i <file> > /dev/null
+perf report --children --sort symbol -g none
+```

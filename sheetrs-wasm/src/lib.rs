@@ -1,245 +1,41 @@
-use serde::Serialize;
-use sheetrs::reader::read_workbook_from_reader;
-use sheetrs::rules::registry;
-use sheetrs::{FormatContext, Linter, LinterConfig, violation::Violation};
-use sheetrs::{Severity, ViolationScope};
-use std::collections::{BTreeMap, HashMap};
-use std::io::Cursor;
+//! WebAssembly bindings of the `SheetRS` suite, for a browser or Node (`--target web`).
+//!
+//! The package has one object, `Book`: a workbook made from its bytes, whose format is
+//! the one of the content. Its shortcut properties (`format`, `sheetNames`, `sheets`, `definedNames`,
+//! `dateSystem`, `hasMacros`, the `total*`) come from one read when it is made; `lint`, `query`,
+//! `range`, `find` and `inspect` read what they need; the operations (`deleteSheets`, `deleteNames`,
+//! `formulaToValue`, `deleteRows`, `deleteColumns`, `replace`, `calculate`) accumulate until `save`
+//! runs them in the order the planner chooses; `compile` makes a WebAssembly module of the
+//! workbook (with the base modules inside the package). The features `query`, `edit` and `calculate`
+//! choose what the module holds. The methods, their options and the exports of a compiled module
+//! are in `sheetrs-wasm/README.md`.
+
+mod book;
+#[cfg(feature = "calculate")]
+mod calculate;
+#[cfg(feature = "bundled-runtime")]
+mod compile;
+#[cfg(feature = "edit")]
+mod edit;
+mod js;
+#[cfg(feature = "query")]
+mod query;
+
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen]
+/// The wall clock of the engine is `Date.now()`: `std::time::SystemTime::now()` panics on
+/// WebAssembly. It runs when the module is instantiated, before any call.
+#[cfg(feature = "calculate")]
+#[wasm_bindgen(start)]
+fn start() {
+    fn now() -> f64 {
+        js_sys::Date::now() / 1000.0
+    }
+    sheetrs_engine::clock::set_wall_clock(now);
+}
+
+/// Makes a panic of the module show its message in the console of the page.
+#[wasm_bindgen(js_name = initPanicHook)]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
-}
-
-#[derive(Serialize)]
-struct RuleInfo {
-    id: String,
-    name: String,
-    category: String,
-    is_default: bool,
-}
-
-#[wasm_bindgen]
-pub fn get_rules_definition() -> Result<JsValue, JsValue> {
-    let config = LinterConfig::default();
-    let metadata = registry::get_all_rule_metadata(&config);
-
-    let rules_info: Vec<RuleInfo> = metadata
-        .iter()
-        .map(|m| RuleInfo {
-            id: m.id.to_string(),
-            name: m.name.clone(),
-            category: m.category.as_str().to_string(),
-            is_default: m.is_default,
-        })
-        .collect();
-
-    serde_wasm_bindgen::to_value(&rules_info)
-        .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
-}
-
-#[wasm_bindgen]
-pub fn lint_workbook(
-    file_data: &[u8],
-    extension: &str,
-    config_toml: &str,
-) -> Result<String, JsValue> {
-    let cursor = Cursor::new(file_data);
-    let workbook = read_workbook_from_reader(cursor, Some(extension))
-        .map_err(|e| JsValue::from_str(&format!("Reader error: {}", e)))?;
-
-    let config = if config_toml.trim().is_empty() {
-        LinterConfig::default()
-    } else {
-        LinterConfig::from_toml(config_toml)
-            .map_err(|e| JsValue::from_str(&format!("Config error: {}", e)))?
-    };
-
-    let linter = Linter::with_config(config.clone());
-    let violations = linter
-        .lint_workbook(&workbook)
-        .map_err(|e| JsValue::from_str(&format!("Linter error: {}", e)))?;
-
-    // Create a map of rule_id -> rule_name for better output
-    let rules = registry::create_all_rules(&config);
-    let rule_names: HashMap<String, String> = rules
-        .iter()
-        .map(|r| (r.id().to_string(), r.name().to_string()))
-        .collect();
-
-    Ok(format_violations_human(&violations, &rule_names, &workbook))
-}
-
-fn format_violations_human(
-    violations: &[Violation],
-    rule_names: &HashMap<String, String>,
-    workbook: &sheetrs::reader::Workbook,
-) -> String {
-    let mut output = String::new();
-
-    if violations.is_empty() {
-        output.push_str("✓ No violations found!\n");
-        return output;
-    }
-
-    // Group violations by scope for hierarchical display
-    let mut book_violations = Vec::new();
-    let mut sheet_violations: BTreeMap<String, Vec<&Violation>> = BTreeMap::new();
-    let mut cell_violations: BTreeMap<String, BTreeMap<String, Vec<&Violation>>> = BTreeMap::new();
-
-    for violation in violations {
-        match &violation.scope {
-            ViolationScope::Book => book_violations.push(violation),
-            ViolationScope::Sheet(sheet_idx) => {
-                // Lookup sheet name from index
-                let sheet_name = workbook
-                    .sheet_name_by_index(*sheet_idx)
-                    .unwrap_or("Unknown Sheet")
-                    .to_string();
-                sheet_violations
-                    .entry(sheet_name)
-                    .or_default()
-                    .push(violation);
-            }
-            ViolationScope::Cell(sheet_idx, cell_ref) => {
-                // Lookup sheet name from index
-                let sheet_name = workbook
-                    .sheet_name_by_index(*sheet_idx)
-                    .unwrap_or("Unknown Sheet")
-                    .to_string();
-                cell_violations
-                    .entry(sheet_name)
-                    .or_default()
-                    .entry(cell_ref.to_string())
-                    .or_default()
-                    .push(violation);
-            }
-        }
-    }
-
-    let ctx = FormatContext { workbook };
-
-    // Print book-level violations
-    if !book_violations.is_empty() {
-        output.push_str("📚 Book-level violations:\n");
-        for violation in book_violations {
-            output.push_str(&format_violation(violation, rule_names, 1, &ctx));
-        }
-        output.push('\n');
-    }
-
-    // Print sheet-level violations
-    for (sheet_name, violations) in &sheet_violations {
-        output.push_str(&format!("📄 Sheet: {}\n", sheet_name));
-        for violation in violations {
-            output.push_str(&format_violation(violation, rule_names, 1, &ctx));
-        }
-        output.push('\n');
-    }
-
-    // Print cell-level violations
-    for (sheet_name, cells) in &cell_violations {
-        output.push_str(&format!("📄 Sheet: {}\n", sheet_name));
-        for (cell_ref, violations) in cells {
-            output.push_str(&format!("  📍 Cell: {}\n", cell_ref));
-            for violation in violations {
-                output.push_str(&format_violation(violation, rule_names, 2, &ctx));
-            }
-        }
-        output.push('\n');
-    }
-
-    // Print summary
-    let error_count = violations
-        .iter()
-        .filter(|v| v.severity == Severity::Error)
-        .count();
-    let warning_count = violations
-        .iter()
-        .filter(|v| v.severity == Severity::Warning)
-        .count();
-    let info_count = violations
-        .iter()
-        .filter(|v| v.severity == Severity::Info)
-        .count();
-
-    output.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-    output.push_str("📊 Summary:\n");
-    if error_count > 0 {
-        output.push_str(&format!("  ❌ Errors: {}\n", error_count));
-    }
-    if warning_count > 0 {
-        output.push_str(&format!("  ⚠️  Warnings: {}\n", warning_count));
-    }
-    if info_count > 0 {
-        output.push_str(&format!("  ℹ️  Info: {}\n", info_count));
-    }
-
-    output
-}
-
-fn format_violation(
-    violation: &Violation,
-    rule_names: &HashMap<String, String>,
-    indent: usize,
-    ctx: &FormatContext<'_>,
-) -> String {
-    let indent_str = "  ".repeat(indent);
-    let severity_icon = match violation.severity {
-        Severity::Error => "❌",
-        Severity::Warning => "⚠️ ",
-        Severity::Info => "ℹ️ ",
-    };
-
-    let rule_id_str = violation.rule_id.as_str();
-    let rule_name = rule_names
-        .get(rule_id_str)
-        .map(|s| s.as_str())
-        .unwrap_or("Unknown rule");
-
-    format!(
-        "{}{} [{}] {} - {}\n",
-        indent_str,
-        severity_icon,
-        rule_id_str,
-        rule_name,
-        violation.format_message(ctx)
-    )
-}
-
-#[wasm_bindgen]
-pub fn get_workbook_stats(file_data: &[u8], extension: &str) -> Result<String, JsValue> {
-    let cursor = Cursor::new(file_data);
-    let workbook = read_workbook_from_reader(cursor, Some(extension))
-        .map_err(|e| JsValue::from_str(&format!("Reader error: {}", e)))?;
-
-    let mut output = String::new();
-
-    output.push_str("📊 Workbook Statistics\n");
-    output.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
-
-    output.push_str(&format!("📄 Total Sheets: {}\n", workbook.sheets.len()));
-    output.push_str("\nSheet Names:\n");
-    for (i, sheet) in workbook.sheets.iter().enumerate() {
-        output.push_str(&format!("  {}. {}\n", i + 1, sheet.name));
-    }
-
-    output.push_str(&format!(
-        "\n🏷️  Named Ranges: {}\n",
-        workbook.defined_names.len()
-    ));
-    if !workbook.defined_names.is_empty() {
-        output.push_str("\nNamed Range List:\n");
-        for (i, (name, _formula)) in workbook.defined_names.iter().enumerate() {
-            output.push_str(&format!("  {}. {}\n", i + 1, name));
-        }
-    }
-
-    output.push_str(&format!(
-        "\n🔧 Contains Macros: {}\n",
-        if workbook.has_macros { "Yes" } else { "No" }
-    ));
-
-    Ok(output)
 }

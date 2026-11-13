@@ -1,0 +1,286 @@
+//! DATA703: Inconsistent date formats
+//!
+//! Dates shown in different layouts within one workbook (`dd-mm-yyyy` next to `mm/dd/yyyy`) are
+//! easy to misread, and `03/04` means two different days depending on the reader. The rule compares
+//! every date-formatted cell with the one format the configuration requires.
+//!
+//! # Reports
+//!
+//! One violation per cell (unit: the cell) that has a number format recognised as a date format and
+//! whose format differs from the required one. Only cells whose value is a number or text and that
+//! carry an explicit number format are examined; a formula cell is judged by its saved value and
+//! format like any other. A format counts as a date format when, lowercased and without `[red]` and
+//! `[blue]`, it contains `d` or `y`, or contains `m` and neither `0` nor `#`, and it does not contain
+//! `general`. This is a letter heuristic: any format with a literal `d` or `y` in it is treated as a
+//! date. The comparison ignores backslashes (`mm\/dd\/yyyy` equals `mm/dd/yyyy`) and the locale marks
+//! a format starts with (`[$-409]mm/dd/yyyy` equals `mm/dd/yyyy`: `LibreOffice` writes the mark of
+//! the language of the cell in every date format of an XLSX, and it does not change the layout); it
+//! is otherwise an exact, case-sensitive string comparison.
+//!
+//! # Does not report
+//!
+//! - Cells without a number format, with `General`, or with a numeric format (`0.00`, `#,##0`).
+//! - Empty, boolean and error cells.
+//! - Dates stored as plain integers or as text under a `General` format: the rule reads formats, not
+//!   values, so it cannot tell that `44000` is a date. Numbers stored as text are DATA702.
+//! - Cells whose date format is an equivalent spelling of the required one (for example `MM/DD/YYYY`):
+//!   the comparison is case-sensitive, so these are reported.
+//!
+//! # Parameters
+//!
+//! - `date_format` (string, default `mm/dd/yyyy`): the required format. It can be set per sheet.
+//!
+//! # Severity
+//!
+//! Always `Warning`.
+
+use super::{LinterContext, RuleCategory, WalkerRule};
+use crate::config::LinterConfig;
+use crate::violation::{
+    CellReference, FormatContext, RuleId, Severity, Violation, ViolationData, ViolationScope,
+};
+use sheetrs_io::reader::{Cell, CellValue, NumFmt, Sheet};
+
+/// A format as the rule compares it: without backslashes and without locale marks (`[$-409]`, a
+/// hexadecimal language code between `[$-` and `]`; a mark with a currency symbol, `[$€-407]`, is
+/// not one and stays).
+fn plain(format: &str) -> String {
+    let mut out = String::with_capacity(format.len());
+    let mut rest = format;
+    while let Some(start) = rest.find("[$-") {
+        let after = &rest[start + 3..];
+        match after.find(']') {
+            Some(end) if end > 0 && after[..end].chars().all(|c| c.is_ascii_hexdigit()) => {
+                out.push_str(&rest[..start]);
+                rest = &after[end + 1..];
+            }
+            _ => {
+                out.push_str(&rest[..start + 3]);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out.replace('\\', "")
+}
+
+/// Rule that detects date-formatted cells whose format differs from the required one.
+#[derive(Debug)]
+pub struct InconsistentDateFormatRule {
+    /// Default date format from config.
+    default_date_format: String,
+    /// Rule configuration.
+    config: LinterConfig,
+}
+
+impl InconsistentDateFormatRule {
+    /// Create a new instance with configuration.
+    #[must_use]
+    pub fn new(config: &LinterConfig) -> Self {
+        let default_date_format = config
+            .param_str("date_format", None)
+            .unwrap_or("mm/dd/yyyy")
+            .to_string();
+
+        Self {
+            default_date_format,
+            config: config.clone(),
+        }
+    }
+
+    /// Check if a format string represents a date.
+    fn is_date_format(fmt: &str) -> bool {
+        let lower = fmt.to_lowercase();
+        let lower_no_color = lower.replace("[red]", "").replace("[blue]", "");
+
+        (lower_no_color.contains('d')
+            || lower_no_color.contains('y')
+            || (lower_no_color.contains('m')
+                && !lower_no_color.contains('0')
+                && !lower_no_color.contains('#')))
+            && !lower_no_color.contains("general")
+    }
+}
+
+/// Incident data for DATA703.
+#[derive(Debug)]
+pub struct DateFormatData {
+    /// The cell's `num_fmt`, shared.
+    pub num_fmt: NumFmt,
+}
+
+impl ViolationData for DateFormatData {
+    fn format_message(&self, _ctx: &FormatContext<'_>) -> String {
+        let normalized = self.num_fmt.replace('\\', "");
+        format!("Date format '{normalized}' does not match required format")
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl WalkerRule for InconsistentDateFormatRule {
+    fn id(&self) -> RuleId {
+        RuleId::Data703
+    }
+
+    fn name(&self) -> &'static str {
+        "Inconsistent Date Format"
+    }
+
+    fn category(&self) -> RuleCategory {
+        RuleCategory::Data
+    }
+
+    fn on_cell(
+        &mut self,
+        sheet: &Sheet,
+        at: (u32, u32),
+        cell: &Cell,
+        _ctx: &mut LinterContext,
+        out: &mut Vec<Violation>,
+    ) {
+        let is_candidate = matches!(cell.value, CellValue::Number(_) | CellValue::Text(_));
+
+        if is_candidate && let Some(fmt) = &cell.num_fmt {
+            let normalized_fmt = plain(fmt);
+            let required_format = self
+                .config
+                .param_str("date_format", Some(&sheet.name))
+                .unwrap_or(&self.default_date_format);
+
+            if Self::is_date_format(&normalized_fmt) && normalized_fmt != plain(required_format) {
+                out.push(Violation::with_data(
+                    RuleId::Data703,
+                    ViolationScope::Cell(
+                        sheet.sheet_index,
+                        CellReference {
+                            row: at.0,
+                            col: at.1,
+                        },
+                    ),
+                    DateFormatData {
+                        num_fmt: fmt.clone(),
+                    },
+                    Severity::Warning,
+                ));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sheetrs_io::reader::Sheet;
+
+    #[test]
+    fn locale_marks_and_backslashes_are_not_part_of_the_layout() {
+        assert_eq!(plain("[$-409]mm/dd/yyyy"), "mm/dd/yyyy");
+        assert_eq!(plain("[$-40C]mm\\/dd\\/yyyy"), "mm/dd/yyyy");
+        assert_eq!(plain("[$-F800]dddd"), "dddd");
+        // Not a locale mark: a currency symbol with a language code, an unclosed one, an empty one.
+        assert_eq!(plain("[$€-407]#,##0.00"), "[$€-407]#,##0.00");
+        assert_eq!(plain("[$-409mm/dd"), "[$-409mm/dd");
+        assert_eq!(plain("[$-]yyyy"), "[$-]yyyy");
+    }
+
+    fn violations(format: &str, required: Option<&str>) -> usize {
+        let mut cells = HashMap::new();
+        cells.insert(
+            (0, 0),
+            Cell {
+                formula: None,
+                is_array: false,
+                num_fmt: Some(format.into()),
+                value: CellValue::Number(44000.0),
+            },
+        );
+        let sheet = Sheet {
+            name: "Sheet1".to_string(),
+            sheet_index: 0,
+            cells: cells.into(),
+            ..Default::default()
+        };
+        let mut config = LinterConfig::default();
+        if let Some(required) = required {
+            config = LinterConfig::from_toml(&format!("[global]\ndate_format = \"{required}\"\n"))
+                .unwrap();
+        }
+        let mut rule = InconsistentDateFormatRule::new(&config);
+        let mut out = Vec::new();
+        for (at, cell) in sheet.cells.iter() {
+            rule.on_cell(&sheet, at, cell, &mut LinterContext::default(), &mut out);
+        }
+        out.len()
+    }
+
+    #[test]
+    fn the_required_format_with_a_locale_mark_is_accepted() {
+        assert_eq!(violations("[$-409]mm/dd/yyyy", None), 0);
+        assert_eq!(violations("mm/dd/yyyy", None), 0);
+        // Another layout is still reported, with or without the mark.
+        assert_eq!(violations("[$-409]yyyy-mm-dd", None), 1);
+        assert_eq!(violations("yyyy-mm-dd", None), 1);
+        // A configured format is compared the same way, and it can carry the mark too.
+        assert_eq!(violations("[$-409]yyyy-mm-dd", Some("yyyy-mm-dd")), 0);
+        assert_eq!(violations("yyyy-mm-dd", Some("[$-409]yyyy-mm-dd")), 0);
+        assert_eq!(violations("mm/dd/yyyy", Some("yyyy-mm-dd")), 1);
+    }
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_date_format_check() {
+        let mut cells = HashMap::new();
+        // Correct format
+        cells.insert(
+            (0, 0),
+            Cell {
+                formula: None,
+                is_array: false,
+                num_fmt: Some("mm/dd/yyyy".into()),
+                value: CellValue::Number(44000.0),
+            },
+        );
+        // Incorrect format (d-m-y)
+        cells.insert(
+            (0, 1),
+            Cell {
+                formula: None,
+                is_array: false,
+                num_fmt: Some("dd-mm-yyyy".into()),
+                value: CellValue::Number(44000.0),
+            },
+        );
+        // Not a date (General)
+        cells.insert(
+            (0, 2),
+            Cell {
+                formula: None,
+                is_array: false,
+                num_fmt: Some("General".into()),
+                value: CellValue::Number(123.0),
+            },
+        );
+
+        let sheet = Sheet {
+            name: "Sheet1".to_string(),
+            sheet_index: 0,
+            cells: cells.into(),
+            ..Default::default()
+        };
+
+        let config = LinterConfig::default();
+        let mut rule = InconsistentDateFormatRule::new(&config);
+        let mut ctx = LinterContext::default();
+
+        let mut violations = Vec::new();
+        for (at, cell) in sheet.cells.iter() {
+            rule.on_cell(&sheet, at, cell, &mut ctx, &mut violations);
+        }
+
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].rule_id, RuleId::Data703);
+    }
+}

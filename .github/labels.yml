@@ -1,0 +1,70 @@
+# Labels for sheetrs repository
+# Sync with: https://github.com/marketplace/actions/github-labeler
+
+# Type labels
+- name: bug
+  color: "d73a4a"
+  description: Something isn't working
+- name: feature
+  color: "a2eeef"
+  description: New feature or request
+- name: enhancement
+  color: "84b6eb"
+  description: Improvement to existing functionality
+- name: documentation
+  color: "0075ca"
+  description: Documentation improvements
+- name: breaking-change
+  color: "e11d48"
+  description: Introduces a breaking change
+
+# Rule category labels
+- name: "rule:ERR"
+  color: "b60205"
+  description: Excel Errors (ERR1xx)
+- name: "rule:CALC"
+  color: "d93f0b"
+  description: Unreliable Calculations (CALC2xx)
+- name: "rule:REF"
+  color: "e99695"
+  description: Reference Issues (REF3xx)
+- name: "rule:INT"
+  color: "f9d0c4"
+  description: Formula Interruptions (INT4xx)
+- name: "rule:CPX"
+  color: "fbca04"
+  description: Complexity (CPX5xx)
+- name: "rule:VUL"
+  color: "c5def5"
+  description: Vulnerable Formulas (VUL6xx)
+- name: "rule:DATA"
+  color: "bfd4f2"
+  description: Data Issues (DATA7xx)
+- name: "rule:EXT"
+  color: "d4c5f9"
+  description: External References (EXT8xx)
+- name: "rule:HID"
+  color: "ededed"
+  description: Hidden Information (HID9xx)
+- name: "rule:FILE"
+  color: "c2e0c6"
+  description: Files & Settings (FILE10xx)
+- name: "rule:VBA"
+  color: "fef2c0"
+  description: VBA Issues (VBA11xx)
+
+# Format labels
+- name: "format:xlsx"
+  color: "1d76db"
+  description: Affects XLSX format
+- name: "format:ods"
+  color: "0e8a16"
+  description: Affects ODS format
+
+# Status labels
+- name: ready-for-review
+  color: "0e8a16"
+  description: Ready for code review
+- name: needs-tests
+  color: "fbca04"
+  description: Tests are missing or incomplete

@@ -1,0 +1,127 @@
+[
+ {
+  "name": "delete_rows",
+  "delete_rows": [
+   "Data!10:11"
+  ]
+ },
+ {
+  "name": "delete_rows_over_the_chart",
+  "delete_rows": [
+   "Data!15:30"
+  ]
+ },
+ {
+  "name": "delete_rows_hidden_row",
+  "delete_rows": [
+   "Data!8"
+  ]
+ },
+ {
+  "name": "delete_columns",
+  "delete_columns": [
+   "Data!B"
+  ]
+ },
+ {
+  "name": "delete_columns_hidden",
+  "delete_columns": [
+   "Data!F:G"
+  ]
+ },
+ {
+  "name": "delete_sheet_data",
+  "delete_sheets": [
+   "Data"
+  ]
+ },
+ {
+  "name": "delete_sheet_hidden",
+  "delete_sheets": [
+   "Hidden"
+  ]
+ },
+ {
+  "name": "delete_name",
+  "delete_names": [
+   "Total"
+  ]
+ },
+ {
+  "name": "formula_to_value_sheet",
+  "formula_to_value": [
+   "Data"
+  ]
+ },
+ {
+  "name": "formula_to_value_columns_rows",
+  "formula_to_value": [
+   "Data!D:E",
+   "Data!5:8"
+  ]
+ },
+ {
+  "name": "formula_to_value_every_sheet",
+  "formula_to_value": [
+   "Summary",
+   "Data",
+   "Rates",
+   "Text",
+   "Hidden",
+   "Empty"
+  ]
+ },
+ {
+  "name": "plan_delete_and_formula_to_value",
+  "delete_sheets": [
+   "Summary",
+   "Empty"
+  ],
+  "formula_to_value": [
+   "Data!D:E"
+  ]
+ },
+ {
+  "name": "replace_value",
+  "replace": {
+   "text": "repeat",
+   "with_": "again"
+  }
+ },
+ {
+  "name": "replace_rich_text",
+  "replace": {
+   "text": "plain",
+   "with_": "simple"
+  }
+ },
+ {
+  "name": "replace_name_in_formula",
+  "replace": {
+   "text": "Total",
+   "with_": "UnitPrice",
+   "search_in": "formula"
+  }
+ },
+ {
+  "name": "replace_formula_sheet_ref",
+  "replace": {
+   "text": "Data",
+   "with_": "Rates",
+   "search_in": "formula"
+  }
+ },
+ {
+  "name": "replace_hidden_sheet",
+  "replace": {
+   "text": "$Data",
+   "with_": "$Rates",
+   "search_in": "formula",
+   "scope": [
+    {
+     "sheet": "Hidden"
+    }
+   ]
+  }
+ }
+]
