@@ -2300,7 +2300,6 @@ dependencies = [
  "quick-xml 0.42.0",
  "regex",
  "serde_json",
- "sheetrs-answer",
  "sheetrs-compiler",
  "sheetrs-engine",
  "sheetrs-formula",

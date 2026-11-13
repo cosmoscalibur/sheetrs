@@ -80,7 +80,7 @@ def test_an_error_in_the_values_is_a_cell_error(tmp_path):
 
 def test_what_is_not_an_output_or_an_input_is_an_error(structure):
     # Each case on a Book of its own: a calculation that was asked stays in the plan.
-    with pytest.raises(sheetrs.Error, match="outputs"):
+    with pytest.raises(sheetrs.Error, match="is empty"):
         value_ranges(sheetrs.Book(structure), ranges="F!B1")
     with pytest.raises(sheetrs.Error, match="not an input"):
         value_ranges(sheetrs.Book(structure), inputs={"T!C1": 1}, ranges="F!A1")
@@ -436,3 +436,47 @@ def test_now_must_be_a_number_and_seed_a_non_negative_integer(volatile):
         sheetrs.Book(volatile).calculate(now="today")
     with pytest.raises((TypeError, OverflowError)):
         sheetrs.Book(volatile).calculate(seed=-1)
+
+
+# ---- the ranges of a calculation: the declared outputs, and what lies outside them ---------------
+
+LOANS = [ROOT / "sheetrs-compiler/tests/assets/loan.xlsx", ROOT / "sheetrs-compiler/tests/assets/loan.ods"]
+
+
+@pytest.fixture(params=LOANS, ids=lambda p: p.suffix[1:])
+def loan(request):
+    """The loan declares the outputs `payment` (`Loan!B4`), `interest` (`Loan!B6`) and `balance` (`Loan!B8`);
+    `Loan!B5` is a formula nothing declares and `Loan!B2` a constant."""
+    return request.param
+
+
+def test_declared_and_inside_the_outputs_the_ranges_are_a_selection(loan):
+    answer = sheetrs.Book(loan).calculate(ranges=["Loan!B6", "payment"]).value_ranges()
+    assert [block.range for block in answer.values()] == ["Loan!B6", "Loan!B4"]
+    assert answer["payment"].values[0][0] == pytest.approx(1073.6432460242795)
+
+
+def test_declared_and_outside_the_outputs_the_range_is_read_from_the_written_workbook(loan):
+    # Embedded: the workbook is its own template, so a range that is not an output is answered from
+    # the workbook as written (the input is in it), in the order asked.
+    answer = (
+        sheetrs.Book(loan)
+        .calculate({"principal": 1000}, ranges=["Loan!B5", "payment", "Loan!B2"])
+        .value_ranges()
+    )
+    assert [block.range for block in answer.values()] == ["Loan!B5", "Loan!B4", "Loan!B2"]
+    payment = answer["payment"].values[0][0]
+    assert payment == pytest.approx(5.368216230121398)
+    assert answer["Loan!B5"].values[0][0] == pytest.approx(payment * 360)
+    assert answer["Loan!B2"].values[0][0] == pytest.approx(0.05)
+
+
+def test_a_range_that_is_not_one_of_the_workbook_is_an_error(loan):
+    with pytest.raises(sheetrs.Error, match="Nowhere!A1"):
+        sheetrs.Book(loan).calculate(ranges="Nowhere!A1").value_ranges()
+
+
+def test_with_none_declared_the_formula_cells_and_the_constants_are_answered(structure):
+    answer = sheetrs.Book(structure).calculate(ranges=["F!A5:A6", "T!A1:A3"]).value_ranges()
+    assert answer["F!A5:A6"].values == [[5], [9]]
+    assert answer["T!A1:A3"].values[0][0] == 1

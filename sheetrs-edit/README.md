@@ -261,7 +261,7 @@ formulas to values reads after a change that leaves them stale.
   program that opens the file later. The command line writes it to the standard error (see
   *Diagnostics* in `sheetrs-protocol`).
 - **The value ranges** (`ranges`: ranges, in the cells of the workbook as it is; the workbook's own outputs
-  when omitted) are kept in the `Report` when the `Calculation` asks for the `answer`: `Report::value_ranges` is
+  when omitted; see *Which ranges* below) are kept in the `Report` when the `Calculation` asks for the `answer`: `Report::value_ranges` is
   the answer of the protocol (`sheetrs_protocol::ValueRanges`, `{"valueRanges": [...]}`) and `Report::write_json(out)` writes it as JSON, the way `write` writes
   the workbook; to read them without writing the workbook anywhere, `write_to(std::io::sink())`. With
   the answer asked for, a workbook the engine cannot calculate is an error (`Error::Calculation`),
@@ -276,6 +276,16 @@ clock gives the same workbook whichever pass calculates. Where a plan has no `ca
 takes the ones given to the book (`Book::with_volatile`, `sheetrs_io::Volatile`; `sheetrs edit --now --seed`
 set it), and a step's own value wins over the book's. The seed is the engine's: an even seed and the odd one
 after it give the same sequence.
+
+**Which ranges.** `calculate` is the embedded mode of the engine (the workbook is its own template: inputs,
+`ranges` or the `answer` need no compiled program). With no output declared (a settings sheet named `settings`
+with `output` rows; the library takes no `settings_file`) the outputs are the formula cells, and with some
+declared they are those; `ranges` is a selection among them when it lies inside, and a range **outside** them is
+not refused as it is in a compiled program (`sheetc calculate` without `-o`, which lists the declared outputs in its
+error): it is answered from the workbook as it was written, with the `inputs` in it, which the engine calculates again
+with that range as the output. A formula the outputs left out has the value its formula gives, a constant the one it
+holds, in the order of the request. A range that is no range or name of the workbook, or whose cells are all empty,
+is an error (`Error::Calculation`). Details and the table of the three cases: [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for).
 
 `sheetrs edit` has no `--calculate` flag: calculating is a step the planner inserts where a conversion needs fresh results (`BookEdit::calculate` is the explicit step in the library). To calculate a file with inputs and ranges, `sheetc calculate -i FILE -o OUT` (with `--request` to give them).
 

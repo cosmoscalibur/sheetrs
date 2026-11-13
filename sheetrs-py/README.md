@@ -118,8 +118,15 @@ content as Python dicts and lists, `to_json()` as JSON text (and, for the lint r
   from the name of each one to a `Block`; `value_ranges().to_dict()` is `{name: list[list]}`; it runs the
   plan with the workbook written nowhere, so it is allowed with operations pending, and raises
   `sheetrs.Error` without a `calculate` step), and `save(dest, json="answer.json")` writes them as JSON
-  (the answer of `sheetc calculate`, `value_ranges().to_json()`) besides the workbook, to a path or a stream. A range that is not an output of the
-  program, or an input that is not one, raises `sheetrs.Error`.
+  (the answer of `sheetc calculate`, `value_ranges().to_json()`) besides the workbook, to a path or a stream. The `calculate` of a `Book` is
+  the embedded mode (the workbook is its own template): `ranges` may be inside the outputs the workbook declares (a
+  selection among them) or outside them, and a range outside is answered from the workbook as it was written
+  (the inputs given are in it), which the engine calculates again with that range as the output, so a formula
+  no output includes has its calculated value and a constant the one it holds; with no output declared the
+  outputs are the formula cells and the rest is read the same way. A range that is no range or name of the
+  workbook, one whose cells are all empty, or an input that is not one, raises `sheetrs.Error`. (The compiled
+  program, which has pruned the workbook to its outputs, refuses a range outside the declared outputs and lists
+  them: see [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for).)
 - **Recalculation on open**, with no option: a workbook whose results the changes leave stale (rows,
   columns, sheets or names deleted) and that no `calculate` calculated again is saved marked so that
   the application that opens it recalculates every formula. When the engine cannot calculate the

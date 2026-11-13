@@ -1,0 +1,4 @@
+### Changed
+
+- A range outside the declared outputs is an error that says which outputs are declared when the program is a compiled one (`sheetc calculate` without `-o`, an executable's JSON answer, `Mode::Values`): the new typed `sheetrs_engine::Error::OutsideOutputs` lists them (issue #106). `ranges` is a selection among the declared outputs there; with none declared the outputs stay the formula cells.
+- In the embedded mode (the workbook is its own template: `sheetc calculate -o OUT --json`, an embedded executable with `--output OUT --json`, and the `calculate` of `sheetrs edit`, Python and WebAssembly) a range outside the declared outputs, or a constant, is no longer refused: it is answered from the workbook as written, calculated again with that range as the output (`sheetrs_compiler::memory::fill_workbook`, which `sheetrs-edit` and `sheetc` share). An empty range or a text that is no range of the workbook is still an error.

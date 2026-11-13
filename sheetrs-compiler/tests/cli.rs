@@ -387,7 +387,11 @@ fn outputs_are_declared_or_the_formula_cells() {
     assert_eq!(values(&ask(&exe, "Loan!B4").1)[0]["range"], "Loan!B4");
     let (code, _, err) = ask(&exe, "Loan!B5");
     assert_eq!(code, 1);
-    assert!(err.contains("not inside the outputs"), "{err}");
+    assert!(
+        err.contains("`Loan!B5` is outside the outputs this program declares")
+            && err.contains("payment (Loan!B4)"),
+        "{err}"
+    );
 
     // No outputs declared: the formula cells are the outputs (as the rectangles that hold them, not
     // the constants), so the default answer is one entry per rectangle, and ranges inside them are

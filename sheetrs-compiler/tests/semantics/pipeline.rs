@@ -435,7 +435,10 @@ fn outputs_are_declared_or_the_formula_cells_and_names_are_aliases() {
     assert_eq!(ask(&p, &none, &["B1"]).unwrap()[0]["values"], json!([[20]]));
     for outside in ["C1", "D1"] {
         let e = ask(&p, &none, &[outside]).unwrap_err().to_string();
-        assert!(e.contains("not inside the outputs"), "{outside}: {e}");
+        assert!(
+            e.contains("outside the outputs this program declares"),
+            "{outside}: {e}"
+        );
     }
     // The name of C1 is an alias of something that is not an output, so it is not a name here.
     let e = ask(&p, &none, &["Total"]).unwrap_err().to_string();

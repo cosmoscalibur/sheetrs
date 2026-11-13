@@ -432,6 +432,29 @@ check("calculate (an input the workbook does not have is an error; the layout of
   assert.deepEqual(rows.valueRanges().toJSON().valueRanges[0].values, [[2], [3]]);
   assert.deepEqual(columns.valueRanges().toJSON().valueRanges[0].values, [[2, 3]]);
 });
+// The loan declares `payment` (Loan!B4), `interest` and `balance`; Loan!B5 is a formula nothing declares and
+// Loan!B2 a constant. The workbook is its own template here: a range outside the declared outputs is
+// answered from the workbook as written, in the order asked.
+for (const file of [loan, loanOds]) {
+  check(`calculate (ranges: the declared outputs are a selection, the rest is read from the written workbook) ${ext(file)}`, () => {
+    const inside = open(file);
+    inside.calculate({ ranges: ["Loan!B6", "payment"] });
+    assert.deepEqual(
+      inside.valueRanges().toJSON().valueRanges.map((r) => r.range),
+      ["Loan!B6", "Loan!B4"],
+    );
+    const outside = open(file);
+    outside.calculate({ inputs: { principal: 1000 }, ranges: ["Loan!B5", "payment", "Loan!B2"] });
+    const [total, payment, rate] = outside.valueRanges().toJSON().valueRanges;
+    assert.deepEqual([total.range, payment.range, rate.range], ["Loan!B5", "Loan!B4", "Loan!B2"]);
+    assert.ok(Math.abs(payment.values[0][0] - 5.368216230121398) < 1e-9);
+    assert.ok(Math.abs(total.values[0][0] - payment.values[0][0] * 360) < 1e-6);
+    assert.equal(rate.values[0][0], 0.05);
+    const nowhere = open(file);
+    nowhere.calculate({ ranges: ["Nowhere!A1"] });
+    assert.throws(() => nowhere.valueRanges(), /Nowhere!A1/);
+  });
+}
 check("calculate (the clock is Date.now(): NOW() is not the epoch)", () => {
   const before = Date.now() / 1000;
   const now = wasm.evaluateFormula("=NOW()", undefined, undefined);

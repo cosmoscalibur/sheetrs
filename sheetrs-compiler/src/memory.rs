@@ -15,7 +15,7 @@
 //! | `sheetc verify -i FILE` (`--reference cache`) | [`BookCompile::verify`] |
 //! | `sheetc evaluate FORMULA` | [`evaluate`] |
 
-use crate::compile::{Report, compile};
+use crate::compile::{BindingSpec, Report, compile};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::loader;
@@ -24,6 +24,7 @@ use crate::verify::{self, Verification};
 use serde::Serialize;
 use serde_json::{Map, Value as Json};
 use sheetrs_engine::calculate::{Overrides, ValueRanges};
+use sheetrs_engine::engine::ConstSource;
 use sheetrs_engine::ir::{Mode, Program};
 use sheetrs_io::Book;
 
@@ -344,39 +345,204 @@ fn calculate(
             "a workbook recalculated as it is gives no JSON".into(),
         ));
     }
-    if with_json {
-        let mut workbook = Vec::new();
+    let mut workbook = Vec::new();
+    let (written, answer) = fill_workbook(
+        source,
+        &program,
+        None,
+        request,
+        &overrides,
+        with_json,
+        &mut workbook,
+    )?;
+    Ok(Calculated {
+        answer,
+        workbook: Some(workbook),
+        written,
+        diagnostics,
+    })
+}
+
+/// For each `ranges` entry of `request`, whether it lies outside the outputs of `program` (and is
+/// therefore not something the program answers), when the program is of the embedded mode; empty
+/// otherwise. See [`fill_workbook`].
+///
+/// # Errors
+///
+/// When an entry is not a range or a name of the workbook.
+pub fn ranges_outside_outputs(
+    program: &Program,
+    base: Option<&dyn ConstSource>,
+    request: &Json,
+) -> Result<Vec<bool>> {
+    let Some(Json::Array(items)) = request.get("ranges") else {
+        return Ok(Vec::new());
+    };
+    if program.mode != Mode::Embedded {
+        return Ok(Vec::new());
+    }
+    items
+        .iter()
+        .filter_map(Json::as_str)
+        .map(|text| Ok(!program.reads(base, text)?))
+        .collect()
+}
+
+/// The workbook of a workbook mode ([`Mode::Embedded`] or [`Mode::Recalculate`]) written to `out`
+/// with the answer of `program` in it, and the value ranges of the request when `with_answer` (the
+/// `ranges` it asks for, or the declared outputs). The number of cells written comes with them.
+///
+/// **Which ranges can be asked for.** A program answers the ranges that lie inside its outputs:
+/// the ones the workbook declares (a settings sheet, or the declarations of the [`Options`]), or, with
+/// none declared, its formula cells. `ranges` is then a selection among them, and a range outside is
+/// an error that lists the declared ones ([`sheetrs_engine::Error::OutsideOutputs`]). That is the
+/// compiled-program mode ([`Mode::Values`]: [`BookCompile::calculate`] with it, an executable).
+///
+/// The embedded mode (the workbook is its own template: [`Mode::Embedded`]) is allowed more: a
+/// range outside the outputs is answered from the workbook as it was written (the inputs given are
+/// in it), which the engine calculates again with that range as the output, so a formula that the
+/// outputs did not include has the value its formula gives and a constant, the one it holds. The
+/// answer keeps the order of the request. The fallback is made from the program's own options (locale,
+/// features) and the clock and seed of `overrides`.
+///
+/// # Errors
+///
+/// When the program is not of a workbook mode, the request is not valid for it, a range is not a
+/// range or a name of the workbook, the run fails or the workbook cannot be written.
+pub fn fill_workbook(
+    source: &Book,
+    program: &Program,
+    base: Option<&dyn ConstSource>,
+    request: &Json,
+    overrides: &Overrides,
+    with_answer: bool,
+    out: &mut Vec<u8>,
+) -> Result<(usize, Option<ValueRanges>)> {
+    let outside = if with_answer {
+        ranges_outside_outputs(program, base, request)?
+    } else {
+        Vec::new()
+    };
+    if !outside.contains(&true) {
+        return if with_answer {
+            let (report, answer) = sheetrs_answer::fill_template_to_with_answer(
+                source, program, base, request, overrides, &mut *out,
+            )?;
+            Ok((report.cells, Some(answer)))
+        } else {
+            let report = sheetrs_answer::fill_template_to(
+                source, program, base, request, overrides, &mut *out,
+            )?;
+            Ok((report.cells, None))
+        };
+    }
+    let asked: Vec<&str> = request["ranges"]
+        .as_array()
+        .map(|items| items.iter().filter_map(Json::as_str).collect())
+        .unwrap_or_default();
+
+    // The ranges the program reads come from its own run; the others from the workbook it wrote.
+    let inside: Vec<Json> = asked
+        .iter()
+        .zip(&outside)
+        .filter(|(_, outside)| !**outside)
+        .map(|(text, _)| Json::from(*text))
+        .collect();
+    let mut inputs = Map::new();
+    if let Some(given) = request.get("inputs") {
+        inputs.insert("inputs".into(), given.clone());
+    }
+    let (written, answered) = if inside.is_empty() {
+        if program.formula_cells.is_empty() && inputs.is_empty() {
+            // Nothing to write: the workbook is as it is.
+            *out = template_of(source)?.1;
+            (0, ValueRanges::default())
+        } else {
+            let report = sheetrs_answer::fill_template_to(
+                source,
+                program,
+                base,
+                &Json::Object(inputs),
+                overrides,
+                &mut *out,
+            )?;
+            (report.cells, ValueRanges::default())
+        }
+    } else {
+        let mut first = request.as_object().cloned().unwrap_or_default();
+        first.insert("ranges".into(), Json::Array(inside));
         let (report, answer) = sheetrs_answer::fill_template_to_with_answer(
             source,
-            &program,
-            None,
-            request,
-            &overrides,
-            &mut workbook,
+            program,
+            base,
+            &Json::Object(first),
+            overrides,
+            &mut *out,
         )?;
-        Ok(Calculated {
-            answer: Some(answer),
-            workbook: Some(workbook),
-            written: report.cells,
-            diagnostics,
-        })
-    } else {
-        let mut workbook = Vec::new();
-        let report = sheetrs_answer::fill_template_to(
-            source,
-            &program,
-            None,
-            request,
-            &overrides,
-            &mut workbook,
-        )?;
-        Ok(Calculated {
-            answer: None,
-            workbook: Some(workbook),
-            written: report.cells,
-            diagnostics,
-        })
+        (report.cells, answer)
+    };
+
+    let mut texts: Vec<&str> = Vec::new();
+    for (text, outside) in asked.iter().zip(&outside) {
+        if *outside && !texts.contains(text) {
+            texts.push(text);
+        }
     }
+    let written_book = Book::from_bytes(out.clone())
+        .map_err(|source| Error::Workbook {
+            what: "the workbook as it was written".into(),
+            source,
+        })?
+        .with_locale_of(source);
+    let spec = crate::compile::Spec {
+        outputs: texts.iter().map(|t| BindingSpec::parse(t)).collect(),
+        mode: Mode::Values,
+        locale: Some(program.options.locale.clone()),
+        now: overrides.now,
+        rand_seed: overrides.rand_seed,
+        host: overrides.host.clone(),
+        features: crate::compile::Features::parse(&program.build.options.features)?,
+        ..crate::compile::Spec::default()
+    };
+    let (second, _) = compile(loader::load(&written_book)?, &spec)?;
+    let mut again = Map::new();
+    again.insert("ranges".into(), Json::from(texts.clone()));
+    if let Some(major) = request.get("majorDimension") {
+        again.insert("majorDimension".into(), major.clone());
+    }
+    let from_workbook = second.handle(&Json::Object(again), overrides)?.value_ranges;
+
+    let mut own = answered.value_ranges.into_iter();
+    let mut merged = Vec::with_capacity(asked.len());
+    for (text, outside) in asked.iter().zip(&outside) {
+        if *outside {
+            let at = texts.iter().position(|t| t == text).unwrap_or(0);
+            let mut entry = from_workbook.get(at).cloned().unwrap_or_else(|| {
+                sheetrs_engine::calculate::ValueRange {
+                    name: None,
+                    range: (*text).to_string(),
+                    values: Vec::new(),
+                }
+            });
+            // Asked by an address, not by a name: the output of the second program is named by it.
+            if entry
+                .name
+                .as_deref()
+                .is_some_and(|n| n.eq_ignore_ascii_case(&entry.range))
+            {
+                entry.name = None;
+            }
+            merged.push(entry);
+        } else if let Some(entry) = own.next() {
+            merged.push(entry);
+        }
+    }
+    Ok((
+        written,
+        Some(ValueRanges {
+            value_ranges: merged,
+        }),
+    ))
 }
 
 /// What `sheetc inspect` says about a workbook.

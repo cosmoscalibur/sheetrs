@@ -387,7 +387,9 @@ class Book:
         sequence: each is written against the workbook as it is, and the planner orders them);
         `save` writes the results and no mark to recalculate unless a deletion after leaves some stale.
         `ranges` are the ranges `value_ranges()` gives and `save(json=...)` writes, listed as `major` says
-        (`"rows"`, the default, or `"columns"`, the `majorDimension` of the request). Where the engine
+        (`"rows"`, the default, or `"columns"`, the `majorDimension` of the request); a range outside the
+        outputs the workbook declares is answered from the workbook as it was written (the workbook is
+        its own template), calculated again with that range as the output. Where the engine
         cannot calculate the workbook it is written marked to be recalculated, with a
         `RecalculationWarning`. `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
         (the seed of `RAND()`) fix the volatile functions, as `--now` and `--seed` of `sheetc` do

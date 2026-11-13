@@ -319,10 +319,23 @@ reads ranges the way the batch read of a spreadsheet API does (`ranges`,
   starting the process for each request. A bad request gets
   `{"error_message": "..."}` and the loop goes on; blank lines are skipped.
 
-What may be asked is decided when the program is built, by what is declared: `ranges` may name an
-output, a defined name that lies inside the outputs, or a range inside them. Without `ranges` the
-answer is the outputs as value ranges (the declared ones, or the formula cells as rectangles). A range outside the
-outputs is an error saying so.
+### Which ranges can be asked for
+
+What may be asked is decided when the program is built, by what is declared. Without `ranges` the
+answer is the outputs as value ranges (the declared ones, or the formula cells as rectangles). With
+`ranges`, which kind of answer it is decides what a range outside the outputs does:
+
+| Declared outputs (settings sheet or `settings_file`) | `ranges` outside them | Where |
+| --- | --- | --- |
+| yes, **compiled program** (JSON answer: `sheetc calculate` without `-o`, an executable run without `--output`, `BookCompile::calculate` with `Mode::Values`, a WebAssembly module from `compile`) | **an error** that lists the declared outputs (`sheetrs_engine::Error::OutsideOutputs`, `declared: Some(["payment (Loan!B4)", ...])`): `ranges` is a selection among the declared outputs (an output's name, a defined name that lies inside them, or a range inside one) | the program has pruned the workbook to what the outputs read, so it cannot answer more |
+| yes, **embedded mode** (the workbook is its own template: `sheetc calculate -o OUT --json`, `--in-place --json`, an embedded executable with `--output OUT --json`, `BookCompile::calculate` with `Mode::Embedded`, and the `calculate` of `sheetrs edit`, Python and WebAssembly, which are all this) | **allowed**: it is answered from the workbook as it was written (the inputs given are in it), which the engine calculates again with that range as its output, so a formula the outputs did not include has the value its formula gives and a constant the one it holds; the answer keeps the order of the request | the workbook is there to read. A range that is no range or name of the workbook, or whose cells are all empty, is still an error |
+| no | the outputs are the formula cells (as the rectangles that hold them): in the compiled program `ranges` must lie inside them and a constant is an error (with no declared outputs there is no list to give); in the embedded mode the rest of the workbook is read as above | |
+
+The fallback of the embedded mode is `sheetrs_compiler::memory::fill_workbook` (the one function that
+`sheetc`, `BookCompile::calculate` and `sheetrs-edit` call), made from the options of the program (locale,
+features) and the clock and seed of the run. It needs the compiler, so the WebAssembly base module that
+writes workbooks (`sheetrs-rt-template.wasm`), which has the engine and not the compiler, answers as a compiled
+program does: a module built with `--embed-template` refuses a range outside the declared outputs.
 
 ### Logs
 

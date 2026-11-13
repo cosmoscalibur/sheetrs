@@ -12,6 +12,17 @@ pub enum Error {
     /// wrong kind, a program that fails. The text is meant to be shown to whoever sent it.
     #[error("{0}")]
     Request(String),
+    /// A range that was asked for and that the program cannot read: it lies outside its outputs.
+    /// When the outputs were declared (a settings sheet or a settings file) `declared` lists them, as
+    /// `name (range)`, and a range can only be one of them or lie inside one; without a declaration
+    /// the outputs are the formula cells of the workbook, and `declared` is `None`.
+    #[error("{}", outside_message(range, declared.as_deref()))]
+    OutsideOutputs {
+        /// The range as it was asked for.
+        range: String,
+        /// The declared outputs, `name (range)` each.
+        declared: Option<Vec<String>>,
+    },
     /// A command line that is wrong: a flag without a value, a value that does not parse, an
     /// option the document defines.
     #[error("{0}")]
@@ -38,6 +49,19 @@ pub enum Error {
     /// A constant of a program that lies on a sheet the program does not list.
     #[error("a constant lies on a sheet the program does not list")]
     ConstantOnUnknownSheet,
+}
+
+/// What a range outside the outputs of a program is told: the declared outputs, when there are some.
+fn outside_message(range: &str, declared: Option<&[String]>) -> String {
+    match declared {
+        Some(outputs) => format!(
+            "`{range}` is outside the outputs this program declares: a range can only be one of them or lie inside one ({}; see --meta)",
+            outputs.join(", ")
+        ),
+        None => format!(
+            "`{range}` cannot be read: it is not inside the outputs of this program, which are the formula cells of the workbook as none were declared (see --meta)"
+        ),
+    }
 }
 
 impl Error {

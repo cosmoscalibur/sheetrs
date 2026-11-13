@@ -2,6 +2,7 @@
 
 use sheetrs_compiler::config::{self, Config};
 use sheetrs_compiler::locale::LocaleOverride;
+use sheetrs_compiler::memory;
 use sheetrs_compiler::{Model, Spec, compile, loader};
 use sheetrs_engine::Program;
 use sheetrs_engine::bundle;
@@ -317,16 +318,28 @@ fn embedded_answer(
         return write_workbook(program, base, template, &request, &o, &out, &named);
     }
     let request = cli::with_ranges(cli::read_request(input.as_deref())?, &ranges)?;
-    let (report, answer) = sheetrs_answer::fill_template_with_answer(
-        template,
-        program,
-        base,
-        &request,
-        &o,
-        Path::new(&out),
-    )
-    .map_err(|e| Fail::Run(format!("{e:#}")))?;
-    log(&wrote_workbook(&named, report.cells));
+    // A range outside the outputs is answered from the workbook as written (`fill_workbook`); the
+    // rest is written straight to the file.
+    let (cells, answer) =
+        if memory::ranges_outside_outputs(program, base, &request)?.contains(&true) {
+            let mut bytes = Vec::new();
+            let (cells, answer) =
+                memory::fill_workbook(template, program, base, &request, &o, true, &mut bytes)?;
+            std::fs::write(&out, bytes).map_err(|e| Fail::Run(format!("{out}: {e}")))?;
+            (cells, answer.unwrap_or_default())
+        } else {
+            let (report, answer) = sheetrs_answer::fill_template_with_answer(
+                template,
+                program,
+                base,
+                &request,
+                &o,
+                Path::new(&out),
+            )
+            .map_err(|e| Fail::Run(format!("{e:#}")))?;
+            (report.cells, answer)
+        };
+    log(&wrote_workbook(&named, cells));
     println!(
         "{}",
         if pretty {
