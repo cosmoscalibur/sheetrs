@@ -50,21 +50,12 @@ const MAX_BLANK_ROW: u32 = 2;
 const MAX_BLANK_COLUMN: u32 = 2;
 
 /// Per-sheet occupied tracking.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct SheetOccupancy {
     /// Rows that contain at least one non-empty cell.
     occupied_rows: HashSet<u32>,
     /// Columns that contain at least one non-empty cell.
     occupied_cols: HashSet<u32>,
-}
-
-impl Default for SheetOccupancy {
-    fn default() -> Self {
-        Self {
-            occupied_rows: HashSet::new(),
-            occupied_cols: HashSet::new(),
-        }
-    }
 }
 
 impl SheetOccupancy {
