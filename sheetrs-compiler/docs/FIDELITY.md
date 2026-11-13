@@ -276,12 +276,6 @@ against Excel; the three rows where the oracle (LibreOffice) differs are listed 
 `ORACLE_GAPS` for `semantics.xlsx`. How the cell looks depends on the number format
 and the "show zeros" option, which the engine never applies.
 
-Consequence for an edit (issue #126): a workbook saved by Excel caches `x` for
-`=IF(B1<>"","x",0)` with `B1` = `=C1` (`C1` empty), and the engine, as LibreOffice, gives
-`0`, so an edit that recalculates every formula replaces the cached `x`. The way to keep
-what Excel cached is `sheetrs edit --no-recalculate` (`Book::set_recalculate(false)`,
-`recalculate=False` in Python, `recalculate = false` in WebAssembly).
-
 ### Dates written with a month name
 
 LibreOffice reads `DATEVALUE("…")` and a date typed into a text-to-number coercion with its own input scanner,

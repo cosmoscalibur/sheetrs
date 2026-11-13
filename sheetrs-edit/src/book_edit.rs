@@ -34,8 +34,7 @@ use std::path::Path;
 /// again by the engine as the last thing the write does, so the workbook is saved with fresh results.
 /// The workbook is marked to be recalculated when it is opened only if the engine cannot calculate it,
 /// and then the [`Report`] says why (a diagnostic with the code [`RECALC_NOT_SUPPORTED`](crate::RECALC_NOT_SUPPORTED)): the mark is never
-/// decided beforehand. To keep the results the file caches instead, with no recalculation and no mark,
-/// call [`Book::set_recalculate`](sheetrs_io::Book::set_recalculate) with `false` before writing.
+/// decided beforehand, and there is nothing to ask for or to avoid.
 ///
 /// ```no_run
 /// use sheetrs_io::Book;

@@ -202,45 +202,6 @@ fn a_workbook_the_engine_cannot_calculate_is_written_marked_and_the_run_warns() 
 }
 
 #[test]
-fn without_recalculation_a_workbook_the_engine_cannot_calculate_is_neither_warned_nor_marked() {
-    // The same deletion as above: the engine is not asked, so it cannot fail, and the workbook is
-    // not marked to be recalculated when it is opened.
-    for extension in EXTENSIONS {
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join(format!("out.{extension}"));
-        let mut editor = editor(&external(extension));
-        editor
-            .set_recalculate(false)
-            .delete_rows(["Data!10:11".parse().unwrap()]);
-        let report = editor.write(&out).unwrap();
-        assert!(
-            report.diagnostics.is_empty(),
-            "{extension}: {:?}",
-            report.diagnostics
-        );
-        if extension == "xlsx" {
-            assert!(!marked(&out), "{extension}");
-        } else {
-            // An ODS has no mark: the cached results of every formula would be gone. The formulas
-            // that the deletion does not rewrite keep theirs (the ones that it rewrites lose it, as
-            // they are stale).
-            let workbook = Book::from_file(&out).unwrap().workbook().unwrap();
-            let formulas: Vec<_> = workbook
-                .sheets
-                .iter()
-                .flat_map(|s| s.cells.iter())
-                .filter(|(_, c)| c.formula.is_some())
-                .collect();
-            let kept = formulas
-                .iter()
-                .filter(|(_, c)| !matches!(c.value, CellValue::Empty))
-                .count();
-            assert!(kept > formulas.len() / 2, "{kept} of {}", formulas.len());
-        }
-    }
-}
-
-#[test]
 fn a_calculation_as_the_only_step_that_cannot_run_still_marks_the_workbook() {
     for extension in EXTENSIONS {
         let dir = tempfile::tempdir().unwrap();

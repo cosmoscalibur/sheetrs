@@ -227,12 +227,12 @@ spec is an operation as if `replace` were called once per spec: it sees what the
 so the order of the specs matters. The options of a spec are its own (a replacement that needs
 other options is another element); one replacement is `[spec]`.
 
-**Recalculation is the planner's, and the mark is never decided beforehand.**
+**Recalculation is the planner's, with no option for it, and the mark is never decided beforehand.**
 A plan that deletes rows, columns, sheets or names, or replaces text, ends with a pass in which the engine
 (the semantics of LibreOffice) calculates every formula again. The result a file cached is not a goal
 (see [approved differences](../docs/approved-differences.md)): what a cell holds is the value its formula
 gives now, whatever the workbook cached, so no analysis decides which formulas are stale and the plan is
-the same for every workbook (the way out is to ask for the cached results, below).
+the same for every workbook.
 
 The workbook is written with fresh results and no mark. Only when the engine cannot calculate it (a
 function it does not have, a reference it does not read) is the workbook marked to be recalculated
@@ -241,34 +241,8 @@ formulas are dropped) and the run says why (a `Diagnostic` with the code `RECALC
 written by the command line to the standard error): the spreadsheet program that opens it does the recalculation then. Nothing
 assigns the mark before the engine has run, and nothing takes it off except the engine having
 calculated a workbook that came with it. A run that only converts formulas to values changes no other
-result and has nothing to calculate. The mark cannot be asked for. What the engine costs is in
+result and has nothing to calculate. The mark cannot be asked for or avoided, in the command line or in the library. What the engine costs is in
 [`docs/performance.md`](../docs/performance.md#sheetrs-edit). `--dry-run` says the passes and the calculation that ends them.
-
-**Keeping the cached results: `--no-recalculate` (library: `Book::set_recalculate(false)`).** The default
-recalculates every formula, so a cell no operation touches can change value if the engine and the
-application that wrote the file differ on its formula (Excel caches `x` for `=IF(B1<>"","x",0)` with `B1`
-referring to an empty cell, and the engine, like LibreOffice 26.8, gives `0`: see `sheetrs-compiler/docs/FIDELITY.md`).
-With the option the planner adds **no** recalculation: not the one that ends the run and not the one before a
-conversion that an earlier operation of the plan made necessary. The cells no operation touches keep the
-value the file cached, the engine is not asked (so there is no `RECALC_NOT_SUPPORTED` and the workbook is **not** marked
-to be recalculated when it is opened, `fullCalcOnLoad` or dropped results), and a conversion converts the
-results the file holds. What changes is only what an operation has to change: a formula it rewrites
-(a reference to a deleted cell, a range that shrinks) is written without a cached result, because it is
-stale, and the application that opens the file calculates it; a formula whose text is the same but whose
-result an operation changes (`SUM(A:A)` after deleting a row) keeps its old result, which is what the option
-asks for. A `calculate` operation runs as ever, and a workbook that says it is stale when the run
-starts (an XLSX marked to recalculate, an ODS with no results) is still calculated before a conversion
-reads it, since there are no results to convert.
-
-**Why the default does not recalculate only what is stale.** The stale set (the formulas that depend,
-transitively, on what the plan deleted or replaced) is not known where it would be needed. The writer streams the file and rewrites a
-formula's text, it does not keep a dependency graph; the engine calculates the workbook as a whole and reads
-a formula it does not rewrite as its formula, not as the value the file caches, so a partial recalculation
-would give the stale formulas results computed from the engine's values of their precedents and not from the
-cached ones, mixing two sources; and a formula whose text does not change while its result does (a
-whole-column range, a name, an `INDIRECT`) would be left with an old result in silence if the analysis
-missed it. The dependency graph of the linter (`CellDependencies`) belongs to a rule walk, not to the
-editor. Whoever wants the cached results asks for them with the option above.
 
 **`calculate` is an operation, and `sheetrs edit` has no flag for it.** In the library,
 `BookEdit::calculate(Calculation { inputs, ranges, major, answer })` writes the inputs and calculates every
@@ -422,7 +396,6 @@ ODS only:
 Preview what operations would be performed (the passes `explain()` gives in the library) without writing to disk.
 
 ```bash
-sheetrs edit -i <FILE> --delete-rows "Data!3" --no-recalculate -o out.xlsx   # keep the results the file caches: no recalculation, no mark
 sheetrs edit -i <FILE> --delete-sheets "Old" --dry-run                      # the passes; no --output or --in-place needed, nothing is written
 sheetrs edit -i <FILE> --delete-sheets "Old" --output out.xlsx --dry-run   # also says where the result would go; still writes nothing
 ```
