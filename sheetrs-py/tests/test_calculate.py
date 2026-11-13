@@ -375,3 +375,64 @@ def test_the_report_of_a_save_is_typed_and_writes_itself(structure, tmp_path):
     assert all(isinstance(s, sheetrs.Skipped) for s in report.skipped)
     assert json.loads(report.to_json()) == report.to_dict()
     assert set(report.to_dict()) == {"replaced", "written", "skipped", "diagnostics"}
+
+
+# ---- now and seed: the volatile functions fixed by a calculation ---------------------------------
+
+NOW = 45366.75  # 2024-03-15 18:00
+
+
+@pytest.fixture(params=["xlsx", "ods"])
+def volatile(request, tmp_path):
+    """A copy of the workbook with `V!A1 =NOW()`, `V!B1 =TODAY()`, `V!C1 =RAND()` and rows to edit."""
+    source = ROOT / "sheetrs-edit/tests/assets/volatile" / f"volatile.{request.param}"
+    copy = tmp_path / source.name
+    shutil.copy(source, copy)
+    return copy
+
+
+def volatile_row(book):
+    return book.value_ranges().to_dict()["V!A1:C1"][0]
+
+
+def test_now_fixes_now_and_today(volatile):
+    now, today, _ = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", now=NOW))
+    assert now == pytest.approx(NOW)
+    assert today == 45366
+
+
+def test_seed_fixes_rand(volatile):
+    def rand(seed):
+        return volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=seed))[2]
+
+    assert 0 <= rand(42) < 1
+    assert rand(42) == rand(42)
+    assert rand(42) != rand(44)  # an odd seed and the even one before it are the same stream
+
+
+def test_without_now_the_clock_is_the_systems(volatile):
+    now = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1"))[0]
+    assert now > 45292 and now != pytest.approx(NOW)
+
+
+def test_the_recalculation_after_a_deletion_runs_with_the_now_and_the_seed_of_the_step(
+    volatile, tmp_path
+):
+    saved = (
+        sheetrs.Book(volatile)
+        .calculate(now=NOW, seed=7)
+        .delete_rows("V!3")
+        .save(tmp_path / f"out{volatile.suffix}")
+    )
+    now, today, rand = saved.range("V!A1:C1")["V!A1:C1"].values[0]
+    assert now == pytest.approx(NOW)
+    assert today == 45366
+    alone = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", now=NOW, seed=7))
+    assert rand == alone[2]
+
+
+def test_now_must_be_a_number_and_seed_a_non_negative_integer(volatile):
+    with pytest.raises(TypeError):
+        sheetrs.Book(volatile).calculate(now="today")
+    with pytest.raises((TypeError, OverflowError)):
+        sheetrs.Book(volatile).calculate(seed=-1)

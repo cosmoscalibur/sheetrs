@@ -44,6 +44,18 @@ enum Origin {
     Bytes(Arc<[u8]>),
 }
 
+/// What the volatile functions give when the engine calculates the workbook: the serial number of
+/// `NOW()` and `TODAY()` and the seed of `RAND()` and its relatives. A field that is `None` is the
+/// system clock (the seed is taken from it). The names are those of `sheetc` (`--now`, `--seed`) and
+/// of a `calculate` step.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Volatile {
+    /// The serial number of `NOW()`; `TODAY()` is its integer part.
+    pub now: Option<f64>,
+    /// The seed of `RAND()`.
+    pub seed: Option<u64>,
+}
+
 /// A workbook: where it comes from, its format, its locale and, with the feature `write`, the
 /// operations pending on it.
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +63,7 @@ pub struct Book {
     origin: Origin,
     format: Format,
     locale: Option<LocaleTag>,
+    volatile: Volatile,
     #[cfg(feature = "write")]
     operations: Vec<crate::write::Operation>,
 }
@@ -105,9 +118,25 @@ impl Book {
             origin,
             format,
             locale: None,
+            volatile: Volatile::default(),
             #[cfg(feature = "write")]
             operations: Vec::new(),
         }
+    }
+
+    /// The same workbook with these values for the volatile functions in the recalculation that an
+    /// edit leaves to do (the one `sheetrs edit --now --seed` fixes). A `calculate` step of the
+    /// plan has its own `now` and `seed`, which win over these for that step.
+    #[must_use]
+    pub fn with_volatile(mut self, volatile: Volatile) -> Self {
+        self.volatile = volatile;
+        self
+    }
+
+    /// What the volatile functions give for this book ([`with_volatile`](Self::with_volatile)).
+    #[must_use]
+    pub fn volatile(&self) -> Volatile {
+        self.volatile
     }
 
     /// The same workbook with this locale: the regional settings that give a text to a number and read

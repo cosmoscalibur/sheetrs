@@ -379,6 +379,8 @@ class Book:
         ranges: Targets | None = None,
         *,
         major: Literal["rows", "columns"] = "rows",
+        now: float | None = None,
+        seed: int | None = None,
     ) -> Self:
         """An operation: the engine writes `inputs` and calculates every formula of the workbook as it
         is, before the conversions and the deletions of the same `save` (the operations are not a
@@ -387,7 +389,10 @@ class Book:
         `ranges` are the ranges `value_ranges()` gives and `save(json=...)` writes, listed as `major` says
         (`"rows"`, the default, or `"columns"`, the `majorDimension` of the request). Where the engine
         cannot calculate the workbook it is written marked to be recalculated, with a
-        `RecalculationWarning`."""
+        `RecalculationWarning`. `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
+        (the seed of `RAND()`) fix the volatile functions, as `--now` and `--seed` of `sheetc` do
+        (without them the engine reads the clock); they also fix the recalculation that the same `save`
+        runs after an edit that leaves results stale."""
     def value_ranges(self) -> ValueRanges:
         """The value ranges of the calculation, in memory: runs the operations and writes the workbook
         nowhere. Raises `Error` without a `calculate` step."""

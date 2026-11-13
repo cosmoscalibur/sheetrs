@@ -329,6 +329,37 @@ for (const extension of ["xlsx", "ods"]) {
     assert.ok(planned.explain().includes("calculate every formula"));
   });
 }
+// `now` and `seed` of a calculation fix NOW(), TODAY() and RAND(), and the recalculation of the same plan.
+const volatileBook = (extension) => join(root, `sheetrs-edit/tests/assets/volatile/volatile.${extension}`);
+for (const extension of ["xlsx", "ods"]) {
+  check(`edit (calculate with now and seed fixes NOW, TODAY and RAND) ${extension}`, () => {
+    const row = (options) => {
+      const edited = open(volatileBook(extension));
+      edited.calculate({ ranges: ["V!A1:C1"] }, options);
+      return edited.valueRanges().toObject()["V!A1:C1"][0];
+    };
+    const [now, today, rand] = row({ now: 45366.75, seed: 42 });
+    assert.equal(now, 45366.75);
+    assert.equal(today, 45366);
+    assert.ok(rand >= 0 && rand < 1);
+    assert.equal(row({ seed: 42 })[2], rand);
+    assert.notEqual(row({ seed: 44 })[2], rand);
+    assert.ok(row(undefined)[0] > 45292, "without options the clock is the system's");
+    assert.throws(() => row({ nowish: 1 }), /unknown key `nowish`/);
+  });
+  check(`edit (the recalculation after a deletion runs with now and seed) ${extension}`, () => {
+    const edited = open(volatileBook(extension));
+    edited.calculate(undefined, { now: 45366.75, seed: 7 });
+    edited.deleteRows("V!3");
+    const saved = edited.save();
+    const cells = new wasm.Book(saved).range("V!A1:C1")[0].values[0];
+    assert.equal(cells[0], 45366.75);
+    assert.equal(cells[1], 45366);
+    const alone = open(volatileBook(extension));
+    alone.calculate({ ranges: ["V!A1:C1"] }, { now: 45366.75, seed: 7 });
+    assert.equal(cells[2], alone.valueRanges().toObject()["V!A1:C1"][0][2]);
+  });
+}
 check("edit (calculate with inputs and the ranges asked for)", () => {
   const edited = open(structure("xlsx"));
   edited.calculate({ inputs: { "T!A1": 100 }, ranges: ["T!C1"] });

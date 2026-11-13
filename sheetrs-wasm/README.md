@@ -51,7 +51,7 @@ statistics, which are a tool like the others: `stats()` reads it.
 | | `range(ranges, options?)` | one block per range: `{range, values, formulas, numberFormats, displays, comments}` (the grids asked for, as lists of rows or of columns) |
 | | `find(text, options?)` | the cells that match: `[{sheet, cell, row, col, value, ...}]` |
 | | `inspect(options?)` | `Inspection`: `toJSON()` is `{sheets, date_system, cells, formulas, circular_groups, run_time_references, unsupported_functions, functions, diagnostics}` (`sheetc inspect`) |
-| **operations** | `deleteSheets(names)`, `deleteNames(names)`, `formulaToValue(scopes)`, `deleteRows(ranges)`, `deleteColumns(ranges)`, `hideRows(ranges)`, `showRows(ranges)`, `hideColumns(ranges)`, `showColumns(ranges)`, `hideSheets(names)`, `showSheets(names)`, `replace(replaces, options?)`, `calculate(request?)` | accumulate in the plan; nothing runs until `save` |
+| **operations** | `deleteSheets(names)`, `deleteNames(names)`, `formulaToValue(scopes)`, `deleteRows(ranges)`, `deleteColumns(ranges)`, `hideRows(ranges)`, `showRows(ranges)`, `hideColumns(ranges)`, `showColumns(ranges)`, `hideSheets(names)`, `showSheets(names)`, `replace(replaces, options?)`, `calculate(request?, options?)` | accumulate in the plan; nothing runs until `save` |
 | | `pending`, `explain()` | how many operations are pending; the passes over the file that `save` will make, one operation per line |
 | **the cut** | `save()` | the workbook the operations make, as a `Uint8Array` in the format of the `Book` (the plan is not consumed: saving again gives the same bytes). With none pending, the bytes as they are |
 | | `valueRanges()` | `ValueRanges` of the calculation (`toJSON()` is the answer of the protocol, `{valueRanges: [{range, name, values}]}`, `toObject()` is `{name: rows}`); runs the operations in memory and writes nothing |
@@ -82,7 +82,7 @@ of its targets (a sweep is one operation); where a list is expected a single tex
 | `formulaToValue` | scopes: `"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"` |
 | `deleteRows`, `deleteColumns`, `hideRows`, `showRows`, `hideColumns`, `showColumns` | `"Sheet!3:10"`, `"Sheet!3"`, `"Sheet!B:D"`, `"Sheet!B"` |
 | `replace(replaces, options?)` | `replaces` is a list of `[text, with]` pairs or an object `{text: with}`; each pair is a replacement of its own, in order, that sees what the one before it left, so their order matters. `options`: `mode` (`literal`, `regex`, `wildcards`), `matchCase`, `entireCells`, `searchIn` (`value`, `formula`, `comment`), `formatted`, `filtered`, `scope` (sheets and ranges, the whole workbook when omitted). It looks inside formulas, as `sheetrs edit --replace` does |
-| `calculate(request?)` | `{inputs, ranges, majorDimension}`, the request of `sheetc calculate`: the engine writes the `inputs` (a cell, a range or a defined name each) and calculates every formula of the workbook as it is, before the conversions and the deletions; `ranges` are the ranges `valueRanges()` answers (the workbook's own outputs when omitted; with them `save` also keeps the answer in `report.valueRanges`); `majorDimension` is `"ROWS"` (the default) or `"COLUMNS"` |
+| `calculate(request?, options?)` | `{inputs, ranges, majorDimension}`, the request of `sheetc calculate`: the engine writes the `inputs` (a cell, a range or a defined name each) and calculates every formula of the workbook as it is, before the conversions and the deletions; `ranges` are the ranges `valueRanges()` answers (the workbook's own outputs when omitted; with them `save` also keeps the answer in `report.valueRanges`); `majorDimension` is `"ROWS"` (the default) or `"COLUMNS"`. `options` is `{now, seed}`: the serial number that `NOW()` and `TODAY()` give and the seed of `RAND()` (the `now` and `seed` of `sheetc`; the clock when absent, so the same workbook gives the same results on every run when both are given); they also fix the recalculation that the same `save` runs after an edit that leaves results stale. Any other key throws |
 
 A `calculate` is a step of the plan: the workbook is written with fresh results and without the mark that
 makes the application that opens it recalculate every formula; so is a workbook whose results a deletion or
@@ -112,7 +112,8 @@ text of the cell); `replace` refuses them.
 
 The clock of `NOW()`, `TODAY()` and `RAND()` is `Date.now()`. The options of a `sheetc.toml` (`strict`, `now`, `seed`, `host`, `locale`, ...) and `declarations` (the JSON of a `settings_file`: the
 inputs and outputs of a workbook with no settings sheet) apply to `inspect(options)`, `compile(options)`
-and `evaluateFormula`; the calculation of a plan takes the request only.
+and `evaluateFormula`. The calculation of a plan takes the request and, as the options of the call, `now`
+and `seed` (see `calculate(request?, options?)` above); `locale` is the one of the `Book`.
 
 ### `compile`
 

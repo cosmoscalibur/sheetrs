@@ -296,7 +296,10 @@ idiomatic Rust where that differs (`write` and not Save, `io::Write` sinks, cons
 - **The clock is an input.** The engine reads `NOW()`, `TODAY()` and the seed from the options of the
   run (`now`, `seed`) and, when they are absent, from `clock::unix_now`, a system clock that a host
   without one (WebAssembly) replaces once with `clock::set_wall_clock`; nothing else in the workspace reads
-  the time.
+  the time. The names are the same in every layer: `now` and `seed` of `sheetc`, of a `Calculation`
+  (Rust), of `Book.calculate(now=, seed=)` (Python) and of the options of `calculate(request, {now, seed})`
+  (WebAssembly), and `--now`/`--seed` of `sheetrs edit` (`Book::with_volatile`) for the recalculation an
+  edit leaves to do.
 
 ### The locale of a `Book`
 

@@ -63,12 +63,12 @@ use crate::calculate::CalculateError;
 use crate::diagnostics::not_calculated;
 use crate::error::{Context, Error, Result};
 use crate::replace::Report;
-use sheetrs_io::Book;
 use sheetrs_io::reader::Format;
 use sheetrs_io::write::{
     self as writer, Bands, Calculation, ColumnRange, Operation, RowRange, ValueScope, ValueTarget,
     VisibilityChange, WorkbookModifications,
 };
+use sheetrs_io::{Book, Volatile};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -88,7 +88,7 @@ pub(crate) type StandIn = fn(&Book) -> std::result::Result<Vec<u8>, String>;
 impl Engine {
     /// Every formula of `workbook` calculated again, by the engine.
     #[cfg_attr(not(test), allow(clippy::unused_self))] // the tests give the engine a stand-in
-    fn recalculate(&self, workbook: &Book, operation: &str) -> Result<Vec<u8>> {
+    fn recalculate(&self, workbook: &Book, operation: &str, volatile: Volatile) -> Result<Vec<u8>> {
         #[cfg(test)]
         if let Some(recalculate) = self.recalculate {
             return recalculate(workbook).map_err(|reason| Error::Recalculation {
@@ -96,7 +96,7 @@ impl Engine {
                 reason,
             });
         }
-        crate::calculate::recalculate(workbook).map_err(|reason| Error::Recalculation {
+        crate::calculate::recalculate(workbook, volatile).map_err(|reason| Error::Recalculation {
             operation: operation.to_string(),
             reason,
         })
@@ -342,6 +342,30 @@ pub(crate) fn explain_book(book: &Book) -> String {
     out
 }
 
+/// What the volatile functions give in every calculation of the plan of `book`: the `now` and the
+/// `seed` of its last `calculate` step that sets them, else the ones given to the book
+/// ([`Book::with_volatile`]). The recalculation the planner adds after what leaves results stale
+/// runs with them too, so that a plan that fixes the clock gives the same workbook whichever pass
+/// calculates.
+fn plan_volatile(book: &Book) -> Volatile {
+    let given = book.volatile();
+    let step = |pick: fn(&Calculation) -> bool| {
+        book.operations()
+            .iter()
+            .rev()
+            .find_map(|operation| match operation {
+                Operation::Calculate(calculation) if pick(calculation) => Some(calculation),
+                _ => None,
+            })
+    };
+    Volatile {
+        now: step(|c| c.now.is_some()).and_then(|c| c.now).or(given.now),
+        seed: step(|c| c.seed.is_some())
+            .and_then(|c| c.seed)
+            .or(given.seed),
+    }
+}
+
 /// Runs the operations of `book` and writes `output`, which must not be the input file. Each pass
 /// reads and writes the file once, as a stream; a run of several passes keeps the file between
 /// them in a temporary folder, and so does a book of bytes (the writer works on files). A failed
@@ -365,6 +389,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
         return Err(writer::Error::OutputIsInput(output.to_path_buf()).into());
     }
     let passes = passes_for(book, operations)?;
+    let volatile = plan_volatile(book);
     let extension = book.format().extension();
     let folder = (passes.len() > 1 || book.path().is_none())
         .then(tempfile::tempdir)
@@ -402,6 +427,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                     last,
                     &first_conversion(operations),
                     engine,
+                    volatile,
                     &mut report,
                 )
                 .with_context(said)?
@@ -410,6 +436,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                 calculate_pass(
                     calculation,
                     &Book::from_file(&current)?.with_locale_of(book),
+                    volatile,
                     &mut report,
                 )
                 .with_context(said)?,
@@ -467,6 +494,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
         return Err(Error::EmptyPlan);
     }
     let passes = passes_for(book, operations)?;
+    let volatile = plan_volatile(book);
     let format = book.format();
     let mut current = if let Some(path) = book.path() {
         Book::from_bytes(std::fs::read(path).context("Cannot read the workbook to edit")?)?
@@ -496,13 +524,14 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
                     last,
                     &first_conversion(operations),
                     engine,
+                    volatile,
                     &mut report,
                 )
                 .with_context(said)?
             }),
-            [Operation::Calculate(calculation)] => {
-                Some(calculate_pass(calculation, &current, &mut report).with_context(said)?)
-            }
+            [Operation::Calculate(calculation)] => Some(
+                calculate_pass(calculation, &current, volatile, &mut report).with_context(said)?,
+            ),
             _ => None,
         };
         let data = std::sync::Arc::clone(
@@ -558,9 +587,10 @@ fn recalculate_pass(
     last: bool,
     operation: &str,
     engine: &Engine,
+    volatile: Volatile,
     report: &mut Report,
 ) -> Result<Option<Vec<u8>>> {
-    match engine.recalculate(workbook, operation) {
+    match engine.recalculate(workbook, operation, volatile) {
         Ok(bytes) => Ok(Some(fresh(bytes, workbook.format())?)),
         Err(Error::Recalculation { reason, .. }) if last => {
             // The recalculation that ends a run is the planner's own; a conversion that asks for it names itself.
@@ -584,8 +614,15 @@ fn recalculate_pass(
 fn calculate_pass(
     calculation: &Calculation,
     workbook: &Book,
+    volatile: Volatile,
     report: &mut Report,
 ) -> Result<Option<Vec<u8>>> {
+    // The step's own clock and seed win; what it leaves open is the plan's.
+    let calculation = &Calculation {
+        now: calculation.now.or(volatile.now),
+        seed: calculation.seed.or(volatile.seed),
+        ..calculation.clone()
+    };
     match crate::calculate::calculate(workbook, calculation) {
         Ok(done) => {
             if calculation.answer {

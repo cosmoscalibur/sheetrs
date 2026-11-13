@@ -198,7 +198,7 @@ second step, which finds its results stale and calculates them again. There is n
 
 Operations on different sheets do not depend on each other, because a reference moves only with the
 rows and columns of the sheet it names. That holds because references across sheets are not
-supported (below). `--dry-run` prints the passes. `--locale TAG` (and `--config FILE`, whose `locale` in `[global]` is its default; `sheetrs.toml` of the current directory when there is one) is the locale of the calculation that an edit leaves to do (`TEXT`, the conversion of a number to text): by default the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none), for an XLSX and an ODS alike. The typed replacement of `--replace` still reads its text in `en-US` (issue #84).
+supported (below). `--dry-run` prints the passes. `--locale TAG` (and `--config FILE`, whose `locale` in `[global]` is its default; `sheetrs.toml` of the current directory when there is one) is the locale of the calculation that an edit leaves to do (`TEXT`, the conversion of a number to text): by default the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none), for an XLSX and an ODS alike. The typed replacement of `--replace` still reads its text in `en-US` (issue #84). `--now SERIAL` and `--seed N` fix `NOW()`/`TODAY()` and `RAND()` in that calculation (the `now` and `seed` of `sheetc`, and of a `calculate` step of the library); without them the engine reads the clock, as a spreadsheet does.
 
 **As a library** (`sheetrs_edit::BookEdit`, a trait for `sheetrs_io::Book`), the changes are collected
 in the `Book` (`Book::from_file(..)?`, `Book::from_bytes(..)?`; its operations are `book.operations()`)
@@ -245,7 +245,7 @@ result and has nothing to calculate. The mark cannot be asked for or avoided, in
 [`docs/performance.md`](../docs/performance.md#sheetrs-edit). `--dry-run` says the passes and the calculation that ends them.
 
 **`calculate` is an operation, and `sheetrs edit` has no flag for it.** In the library,
-`BookEdit::calculate(Calculation { inputs, ranges, major, answer })` writes the inputs and calculates every
+`BookEdit::calculate(Calculation { inputs, ranges, major, answer, now, seed })` writes the inputs and calculates every
 formula of the workbook as it is, before the conversions and the deletions (*Data ▸ Calculate* in
 LibreOffice). The engine is the one of `sheetrs-compiler` (the semantics of LibreOffice), which this
 crate depends on: nothing is handed in, and the same one recalculates the results that a conversion of
@@ -266,6 +266,16 @@ formulas to values reads after a change that leaves them stale.
   the workbook; to read them without writing the workbook anywhere, `write_to(std::io::sink())`. With
   the answer asked for, a workbook the engine cannot calculate is an error (`Error::Calculation`),
   since there is no answer to give; `write_json` of a report that kept none is `Error::NoCalculation`.
+
+**The clock and the seed.** `Calculation::now` (the serial number of `NOW()`, from which `TODAY()` follows) and
+`Calculation::seed` (`RAND()`) are the `now` and `seed` of `sheetc`, and reach the engine as the options of the
+build and of the run it already has; `None` is the system clock. They are the clock of the whole plan, not only
+of the step: the recalculation that the planner adds after what leaves results stale (a deletion, a
+replacement) takes the `now` and `seed` of the last `calculate` step that sets them, so a plan that fixes the
+clock gives the same workbook whichever pass calculates. Where a plan has no `calculate` step the recalculation
+takes the ones given to the book (`Book::with_volatile`, `sheetrs_io::Volatile`; `sheetrs edit --now --seed`
+set it), and a step's own value wins over the book's. The seed is the engine's: an even seed and the odd one
+after it give the same sequence.
 
 `sheetrs edit` has no `--calculate` flag: calculating is a step the planner inserts where a conversion needs fresh results (`BookEdit::calculate` is the explicit step in the library). To calculate a file with inputs and ranges, `sheetc calculate -i FILE -o OUT` (with `--request` to give them).
 

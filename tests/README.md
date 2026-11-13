@@ -80,3 +80,8 @@ breaks and a shape. The tests of rows
 and columns deleted and of sheets and names removed (`sheetrs-edit/tests/structure_*`) start from it,
 and `sheetrs-edit/scripts/compare_structure_with_libreoffice.py` checks `sheetrs edit` against LibreOffice
 itself on the same file.
+
+`sheetrs-edit/tests/assets/volatile/volatile.{xlsx,ods}` (`sheetrs-edit/scripts/gen_volatile_fixtures.py`, the
+standard library only, no application) holds `V!A1 =NOW()`, `V!B1 =TODAY()`, `V!C1 =RAND()` and a few rows
+to delete, with no cached result: the tests of `now` and `seed` of `calculate` (Rust, `sheetrs edit`,
+Python, WebAssembly) read what the engine writes into it.

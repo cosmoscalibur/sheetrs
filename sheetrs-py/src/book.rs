@@ -626,18 +626,25 @@ impl PyBook {
     /// or, with none declared, its formula cells. `major` is `"rows"` (the default) or `"columns"`:
     /// how each range is listed, as the `majorDimension` of the request.
     ///
+    /// `now` (the serial number that `NOW()` and `TODAY()` give) and `seed` (the seed of `RAND()`)
+    /// fix the volatile functions, as `--now` and `--seed` of `sheetc` do; without them the engine
+    /// reads the clock. They also fix the recalculation that the same `save` runs after an edit that
+    /// leaves results stale.
+    ///
     /// Where the engine cannot calculate the workbook (a function it does not have, a reference it
     /// does not read) `save` still writes it, marked to be recalculated when it is opened, and issues
     /// a `RecalculationWarning`: the recalculation that is needed will be done by the spreadsheet
     /// program that opens the file later. With `to_dict()` or `save(json=...)` there is no answer to
     /// give, and it is an error.
-    #[pyo3(signature = (inputs=None, ranges=None, *, major="rows"))]
+    #[pyo3(signature = (inputs=None, ranges=None, *, major="rows", now=None, seed=None))]
     fn calculate<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
         inputs: Option<&Bound<'py, PyDict>>,
         ranges: Option<&Bound<'py, PyAny>>,
         major: &str,
+        now: Option<f64>,
+        seed: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let inputs: Map<String, Value> = match inputs {
             Some(dict) => dict
@@ -660,6 +667,8 @@ impl PyBook {
             inputs,
             ranges,
             major,
+            now,
+            seed,
         });
         Ok(slf.into_pyobject(py)?.into_any())
     }
