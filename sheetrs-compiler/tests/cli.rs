@@ -123,7 +123,7 @@ fn each_format_compiles_to_an_executable_that_answers_the_loan() {
 }
 
 #[test]
-fn executable_is_self_describing_and_strict() {
+fn the_executable_describes_its_inputs_outputs_and_settings_sheet_with_info_and_meta() {
     let dir = tempfile::tempdir().unwrap();
     let exe = build_loan("loan.xlsx", dir.path(), &[]);
     let (code, out, _) = run(&exe, &["--info"], "");
@@ -156,7 +156,12 @@ fn executable_is_self_describing_and_strict() {
         rows[7],
         json!({"key": "version", "value": "1.0", "description": "Model version", "meta_type": "info"})
     );
+}
 
+#[test]
+fn the_executable_refuses_unknown_inputs_unknown_flags_and_invalid_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = build_loan("loan.xlsx", dir.path(), &[]);
     let (code, _, err) = run(&exe, &[], r#"{"inputs": {"bogus": 1}}"#);
     assert_eq!(code, 1);
     assert!(err.contains("unknown input `bogus`"), "{err}");
@@ -196,20 +201,25 @@ fn serve_mode_answers_line_by_line() {
     assert!((b / a - 2.0).abs() < 1e-9);
 }
 
+/// The locale is fixed when the program is built, with or without `--no-fold`, so asking for another at
+/// run time is refused.
 #[test]
-fn run_time_options_are_only_what_a_file_cannot_say() {
+fn the_locale_is_fixed_when_the_program_is_built_and_a_run_time_flag_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    // The locale is fixed when the program is built, with or without --no-fold.
     for extra in [&[][..], &["--no-fold"][..]] {
         let fixed = build_loan("loan.xlsx", dir.path(), extra);
         let (code, _, err) = run(&fixed, &["--locale", "es"], "{}");
         assert_eq!(code, 2, "{err}");
         assert!(err.contains("fixed when the program is built"), "{err}");
     }
-    let open = build_loan("loan.ods", dir.path(), &[]);
+}
 
-    // Date system, iteration and search settings belong to the document: no
-    // flag, at build time or run time.
+/// The date system, the iteration and the search settings belong to the document: there is no flag for
+/// them, at run time or when building.
+#[test]
+fn date_system_iteration_and_search_settings_belong_to_the_document_so_no_flag_sets_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let open = build_loan("loan.ods", dir.path(), &[]);
     for flag in [
         ["--date-system", "1904"],
         ["--iterate", "5"],
@@ -231,10 +241,20 @@ fn run_time_options_are_only_what_a_file_cannot_say() {
         );
         assert_eq!(code, 2, "{flag:?}: {err}");
     }
-    // There is no dialect to choose: the behavior is LibreOffice's.
+}
+
+/// There is no dialect to choose: the behavior is that of `LibreOffice`.
+#[test]
+fn there_is_no_dialect_flag_because_the_behavior_is_the_reference_application() {
+    let dir = tempfile::tempdir().unwrap();
+    let open = build_loan("loan.ods", dir.path(), &[]);
     let (code, _, err) = run(&open, &["--dialect", "excel"], "{}");
     assert_eq!(code, 2, "{err}");
-    // `calc` has no document, so it accepts them.
+}
+
+/// `evaluate` has no document, so it accepts the date system as an option.
+#[test]
+fn evaluate_has_no_document_so_it_accepts_the_date_system() {
     let (code, out, _) = run(
         Path::new(SHEETC),
         &["evaluate", "=DATE(1900,1,1)", "--date-system", "1899"],
@@ -294,7 +314,7 @@ fn evaluate_gives_the_value_of_a_formula_as_json_with_the_locale_asked() {
 }
 
 #[test]
-fn bundle_roundtrip_json_matches() {
+fn the_emitted_ir_calculates_without_the_workbook() {
     let dir = tempfile::tempdir().unwrap();
     let ir = dir.path().join("loan.json");
     let (code, _, err) = run(
@@ -402,7 +422,7 @@ fn outputs_are_declared_or_the_formula_cells() {
 }
 
 #[test]
-fn configuration_file_and_command_line_layering() {
+fn build_reads_sheetc_toml_with_the_command_line_on_top_and_refuses_a_bad_file() {
     let dir = tempfile::tempdir().unwrap();
     let book = dir.path().join("loan.ods");
     std::fs::copy(asset("loan.ods"), &book).unwrap();
