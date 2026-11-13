@@ -34,6 +34,7 @@ pub struct Number {
 }
 
 impl Number {
+    #[must_use]
     pub fn new(value: f64) -> Self {
         Self {
             text: format_number(value),
@@ -85,6 +86,7 @@ pub enum BinOp {
 }
 
 impl BinOp {
+    #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
             Self::Add => "+",
@@ -176,6 +178,7 @@ impl Expr {
     }
 
     /// Every reference in the formula, in source order.
+    #[must_use]
     pub fn references(&self) -> Vec<&Reference> {
         let mut out = Vec::new();
         collect_refs(self, &mut out);

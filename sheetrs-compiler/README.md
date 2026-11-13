@@ -4,22 +4,23 @@ Compile an XLSX or ODS spreadsheet into a standalone executable (or a library
 call) that takes JSON in and returns JSON out.
 
 ```text
-loan.xlsx ──┐                                ┌─ ./loan   (single file, ~4 MB, ~2 ms/run)
+loan.xlsx ──┐                                ┌─ ./loan   (a single file: the runtime and the program)
             ├─▶ IR ──▶ fold · prune · order ─┼─ program.json  (the IR, portable)
-loan.ods  ──┘  (format independent)          └─ Program::execute() (library)
+loan.ods  ──┘  (format independent)          └─ Program::calculate() (library)
 ```
 
 * **One IR, one engine.** Both formats are lowered to the same intermediate
   representation; there is no second execution engine to keep in sync.
-* **Inputs and outputs are declared in the workbook**, in a settings sheet. Cells that do not depend on an input are
-  evaluated at build time and disappear; cells that do not feed an output are
+* **Inputs and outputs are declared in the workbook**, in a settings sheet (or are not declared: then the
+  outputs are the formula cells, as ranges, and the constants the outputs start from are the inputs). Cells that do not depend on a
+  declared input are evaluated at build time and disappear; cells that do not feed an output are
   dropped. What remains is the minimal computation.
 * **Hybrid compile/run-time.** Static references are resolved and ordered at
   build time (topological order, cycles isolated). `INDIRECT`, `OFFSET` and
   similar functions resolve their targets lazily at run time, on the same
   engine.
 * **Faithful to LibreOffice.** The reference of the compiler and of the runtime (and of the
-  modifications of `sheetedit`) is **LibreOffice 26.8 on Linux**. The engine behaves as it does, for an
+  modifications of `sheetrs edit`) is **LibreOffice 26.8 on Linux**. The engine behaves as it does, for an
   XLSX and an ODS alike (booleans as numbers, `0^0`, the 1899-12-30 null date, number
   formatting…); the cases where that differs from Excel are listed and tested in
   [docs/FIDELITY.md](docs/FIDELITY.md).
@@ -43,11 +44,11 @@ cargo build --profile dist -p sheetrs-compiler -p sheetrs-engine   # target/dist
 
 # The workbook declares its inputs and outputs in a `settings` sheet
 # (see below); compiling needs nothing else.
-sheetc build tests/assets/loan.xlsx -o loan
-# cells: 1493 total, 1090 reachable, 1493 kept | formulas: 1086 total ...
+sheetc build -i tests/assets/loan.xlsx -o loan
+# cells: 1500 total, 1090 reachable, 1500 kept | formulas: 1086 total ...
 
-echo '{"inputs": {"principal": 250000, "rate": 0.045, "years": 15}}' | ./loan
-# {"outputs":{"payment":1912.4832220336577,"interest":94246.9799660584,"balance":...}}
+./loan --request '{"inputs": {"principal": 250000, "rate": 0.045, "years": 15}}'
+# {"valueRanges":[{"name":"payment","range":"Loan!B4","values":[[1912.4832220336577]]},{"name":"interest",...},...]}
 
 ./loan --meta                  # document properties, settings sheet rows, exported names
 ./loan --info                  # technical description: shapes, cycles, diagnostics, build
@@ -64,19 +65,20 @@ time, so a build can be repeated exactly. `sheetc --version` prints the version 
 The same works from `.ods`, and without producing a file:
 
 ```bash
-sheetc run tests/assets/loan.ods <<< '{"inputs": {"principal": 1000}}'
-sheetc calc '=TEXT(1234.5,"#,##0.00")' --locale es          # "1.234,50"
-sheetc inspect model.xlsx      # sizes, unsupported functions, cycles, run-time refs (never stops)
+sheetc calculate -i tests/assets/loan.ods --request '{"inputs": {"principal": 1000}}'
+sheetc evaluate '=TEXT(1234.5,"#,##0.00")' --locale es          # "1.234,50"
+sheetc inspect -i model.xlsx      # sizes, unsupported functions, cycles, run-time refs (never stops)
 ```
 
 ### Commands
 
 | Command | Purpose |
 | ------- | ------- |
-| `build FILE [-o OUT]` | Compile to an executable. `--emit-ir PATH` also writes the IR as JSON. |
-| `run FILE\|PROGRAM.json` | Compile in memory (or load an IR file) and run once. |
-| `calc "=FORMULA"` | Evaluate a single formula. |
+| `build FILE [-o OUT]` | Compile to an executable. `--emit-ir PATH` also writes the IR as JSON. `--target wasm` writes a WebAssembly module instead ([below](#webassembly-target)). |
+| `calculate FILE\|PROGRAM.json` | Compile in memory (or load an IR file) and calculate once. |
+| `evaluate "=FORMULA"` | Evaluate a single formula. |
 | `inspect FILE` | Report what the compiler sees. |
+| `verify FILE` | Recompute the formulas against the values the file caches. |
 
 ### The settings sheet
 
@@ -93,7 +95,8 @@ order:
 
 * `meta_type` `input` or `output`: `key` is the name of the field in the JSON
   (an alias, like a named range but defined in this sheet) and `value` the cell
-  or range it stands for. `value` starts with the sheet (`Loan!B1`,
+  or range it stands for; a row with no `key` is only the range, which then names itself
+  (`Loan!B1`). `value` starts with the sheet (`Loan!B1`,
   `'My Sheet'!B2:C9`); a bare sheet name stands for its used range and a
   workbook's defined name is accepted too. An address without a sheet is an
   error: what it points at would depend on which sheet comes first.
@@ -104,18 +107,134 @@ order:
   declares (`meta_type` `document`: `title`, `subject`, `description`, `keywords`,
   `creator`, `last_modified_by`, `created`, `modified`, `generator` and the ones the
   file adds, named alike in an XLSX and an ODS), every row of the settings sheet (for
-  inputs and outputs the value shown is the canonical range) and, only when the
-  build has `outputs = "named"` or `"any"`, the defined names it can read
+  inputs and outputs the value shown is the canonical range), the inputs and outputs that were
+  **not** declared (so that what the program exposes is always listed: `input` and `output`
+  rows, the value is the range) and the defined names that are aliases of what is exposed
   (`meta_type` `name`, the value is the definition).
+* The same declarations can come from a **JSON file**, for a workbook that has no settings sheet
+  (or one that must not change): `settings_file = "model.json"` in `sheetc.toml` (a path relative
+  to the file) or `--settings-file`. It replaces the sheet; naming both is an error, and the
+  checks below are the same. `inputs` and `outputs` are arrays of ranges, or of objects that give
+  a range an alias; the two forms mix:
+
+  ```json
+  {
+    "inputs":  ["Data!A1", { "name": "years", "range": "Data!A2", "description": "term" }],
+    "outputs": [{ "name": "result", "range": "Data!B1:B3" }],
+    "meta":    [ { "key": "version", "value": "1.2", "description": "model", "meta_type": "info" } ]
+  }
+  ```
+
+  A range alone is named by its canonical text (`Data!A1`). `"inputs": []` declares that there are
+  no inputs. An existing workbook compiles and calculates unmodified, with its inputs changed.
+
+### What is an input and what is an output
+
+Each of the two is **declared or not**, independently:
+
+| | Declared | Not declared |
+| - | -------- | ------------ |
+| **Outputs** | exactly those ranges; the program keeps only what feeds them (pruned) | **deduced**: the cells that are calculated (the formulas, not the constants) as the rectangles that hold exactly them, named by their range (`Data!D2:F800`); with too many separate rectangles, the area that holds the formulas of each sheet |
+| **Inputs** | exactly those ranges; what does not read them is evaluated at build time (folded) | **deduced**: after the workbook is pruned to what the outputs read, the constants a path of the dependency graph starts from (read by some formula, or inside a defined name or table) are the inputs, as the fewest rectangles that cover them (named by their range, `Data!A1:B800`); an isolated constant starts no path, so it is not an input (it can be declared as an output); nothing that reads an input is folded. A workbook with `INDIRECT`/`OFFSET` can read any cell, so there every constant counts. The analysis is one pass over the dependency graph (what it costs is in [docs/performance.md](../docs/performance.md#sheetc-calculate-and-sheetc-build)) |
+
+Defined names and tables of the workbook are **aliases** in both modes: a name that lies inside the
+outputs reads that output, and one that lies inside the inputs gives those inputs, so a request
+may use `Total` or `Data!B2:C9` alike. A request's `inputs` key is an input, an alias or a range
+inside the inputs (every cell of it an input; anything else is an error naming the cell).
+`--meta` always lists the inputs and outputs that were exposed, declared or not, and the names that
+are aliases. With nothing declared a workbook needs no adaptation to be compiled with those
+defaults.
+
 * There is no other way to declare inputs and outputs: no command-line list.
   A key names one thing: it cannot repeat in the sheet (not as the same type nor
   as another: an input, an output or a field), and it cannot coincide with a
   sheet, a defined name or a table of the workbook. All of that fails the
   build. The sheet is never part of the computation's outputs or queries.
-* Rows are validated at build time (unknown range, duplicate, missing
-  `key`) and a sheet with no `output` row is an error unless
-  `outputs = "any"`. Without a settings sheet, every formula range is an output
-  (keyed by its range text) and nothing is an input.
+* Rows are validated at build time (unknown range, duplicate, a row that is not an input or an
+  output and has no `key`).
+
+### The workbook as the answer: `--embed-template`, `-o` and `--in-place`
+
+By default a program answers JSON: values in, values out. The other kind of answer is the
+**workbook itself**, which suits whoever needs the file and not the numbers: a date comes out as a
+date, a percentage as a percentage, in the formats the cells already have, and `sheetrs query` reads
+the same values from it if they are needed.
+
+```bash
+sheetc build -i model.xlsx --embed-template -o model                            # the workbook is carried
+./model --output answer.xlsx --request @request.json                            # {"inputs": {"Data!A1": 5}}
+./model --request @request.json                                                 # the same calculation, as JSON
+./model --output answer.xlsx --json --request @request.json                     # the workbook and the JSON, one calculation
+sheetc calculate -i model.xlsx -o answer.xlsx --request @request.json           # in memory
+sheetc calculate -i model.xlsx -o recalculated.xlsx                          # nothing given: every formula again
+sheetc calculate -i model.xlsx --in-place                                    # replaces model.xlsx (atomically)
+```
+
+* The workbook travels inside the executable (it is made from `sheetc` itself, which knows how to
+  write workbooks) and there is no other template: the cells are written by position, so a workbook
+  of another layout could not be checked. An executable built without `--embed-template` is the usual JSON one (default stub `sheetrs-rt`), and does not write workbooks.
+* The executable answers **the workbook, JSON or both**, decided when it runs (supporting JSON adds a
+  negligible amount of code to it and costs no time when it is not used, so it is not a build option):
+  * `--output OUT` writes a copy of the workbook, in its own format, with the results of the
+    outputs that are formulas and the inputs given (`--request`) in their
+    cells, and prints nothing; the request holds only `inputs`.
+  * Without `--output` the answer is JSON, as in any executable (`{"valueRanges": …}`: the
+    declared outputs, or the `--range` or `ranges` asked for; `--pretty`, `--serve`).
+  * `--output OUT --json` gives both from **one calculation**: the workbook in `OUT` and the JSON
+    on the standard output (`--range` and `--pretty` apply to it; `--serve`, which answers many
+    requests, does not write a workbook).
+  * The metadata (`--meta`, `--info`) is answered as in any executable, and says which answers the
+    executable has. Errors are written in the workbook as the format has them (`#CIRC!` is
+    `Err:522` in an ODS; an error LibreOffice gives with its own code, `Err:502`, is written so in
+    an ODS and as `#VALUE!` in an XLSX).
+* **An embedded executable is any executable with the workbook inside**: inputs and outputs are
+  declared or deduced exactly as in the usual one (see above). With nothing declared the outputs are
+  the formula cells (`--meta` lists the rectangles that hold them; with more than 4 096 separate
+  rectangles, the used area of the formulas of each sheet) and the inputs the constants a path
+  starts from; a request's `inputs` key is such a range or a defined name inside them
+  (`{"inputs": {"Data!B2:C3": [[1, 2], [3, 4]], "Rate": 0.05}`). What the settings (sheet or file)
+  declare narrows them as in any executable: the JSON gives the declared outputs (and `--range` is
+  checked against them), only the declared inputs are accepted (what does not depend on them is
+  calculated once, at build time), and `--meta` lists them.
+* **The workbook answer writes what the program computed**: the inputs given in their cells and the
+  outputs that are formulas. The formulas outside the program keep the result the template stored,
+  so with outputs declared the answer refreshes only those; to refresh every formula, declare no
+  outputs.
+* **Recalculating a workbook** is `sheetc calculate -i FILE -o OUT` with nothing declared and
+  nothing given: every formula is calculated again (there is no `--recalculate`). `-o` never
+  overwrites the input; `--in-place` replaces it through a temporary file and a rename, so a failure
+  leaves the original. The executable has `-o` but no `--in-place`.
+* The cells of an array formula other than its first keep what the file cached.
+
+### WebAssembly target
+
+`sheetc build -i FILE --target wasm -o book.wasm` writes a **WebAssembly module** of the workbook instead
+of an executable: the program of the workbook added to a runtime module that holds the engine. The
+module needs no JavaScript glue and no imports, so a browser or Node (the hosts the tests run it in)
+instantiates it and calls its exports (`sheetrs_calculate`, `sheetrs_write`, `sheetrs_meta`…, described in
+[sheetrs-wasm](../sheetrs-wasm/README.md#the-module-of-a-workbook)). It takes the same options as a
+native build, including `--embed-template` (the module then also writes the
+workbook with the answer).
+
+The runtime is a *base module* that `sheetc` completes, the way a native executable is the
+`sheetrs-rt` runtime plus a payload. There are two: `sheetrs-rt.wasm` (the engine, for a module that
+answers JSON) and `sheetrs-rt-template.wasm` (also the readers and writers of XLSX and ODS, for a
+module that writes a workbook). Build them with `scripts/build-wasm-rt.sh`, which puts them next to
+`sheetc`; the release archives carry them. `sheetc` looks for them there, or where `--runtime PATH`
+says, and **never falls back** to another file: a missing base is an error that names it.
+
+```bash
+scripts/build-wasm-rt.sh                                  # target/dist/sheetrs-rt{,-template}.wasm
+sheetc build -i tests/assets/loan.xlsx --target wasm -o loan.wasm
+node -e '…instantiate loan.wasm, call sheetrs_calculate…'
+```
+
+A module cannot read its own bytes, so the base has a slot (a marker, an address and a length) that
+the compiler fills in: the payload goes in as one more data segment at the end of the memory of the
+base, which is enlarged to hold it (`sheetrs_compiler::wasm_target`). The sizes of the bases and of
+compiled workbooks, and the time of the module against the native executable, are measured in
+[docs/performance.md](../docs/performance.md#webassembly), the only place where they are kept. The limit of the depth of chains that read one another at
+run time is that of the call stack of the host, as for the tools in the WebAssembly package.
 
 ### What the compiler checks
 
@@ -137,7 +256,7 @@ only if it names it (`null` sets a blank).
 ### Checking a real workbook: `sheetc verify`
 
 A workbook saved by Excel or LibreOffice holds, beside each formula, the value
-the application computed. `sheetc verify FILE [--sheet NAME]...` recomputes the
+the application computed. `sheetc verify -i FILE [--sheet NAME]...` recomputes the
 formulas of the named sheets (all by default) with the inputs the file holds,
 that is, its defaults, and compares with the cached values:
 
@@ -155,16 +274,16 @@ be identical. `volatile` formulas (`NOW`, `TODAY`, `RAND`) are not compared, and
 `unparsed` ones (syntax the compiler keeps as the cached value, like external
 workbook references) cannot differ by construction. The exit code is 1 when
 anything differs, so it can run in CI. Build options (`--locale`, `--config`…)
-apply: a model written for `es-CO` needs `--locale es-CO`. Keep real workbooks in
-`tests/production/`, which git ignores.
+apply: a model written for `es-CO` needs `--locale es-CO`. Keep real workbooks
+outside the repository.
 
-`sheetc inspect FILE` counts the functions a workbook uses, most used first, with
+`sheetc inspect -i FILE` counts the functions a workbook uses, most used first, with
 the cumulative share and whether the engine has each one: the way to see which
 functions matter for a given model.
 
 ### The request and the answer
 
-The executable (and `sheetc run`) takes one JSON object, all of it optional, and
+The executable (and `sheetc calculate`) takes one JSON object, all of it optional, and
 reads ranges the way the batch read of a spreadsheet API does (`ranges`,
 `valueRanges`, `majorDimension` as in Google Sheets):
 
@@ -174,18 +293,19 @@ reads ranges the way the batch read of a spreadsheet API does (`ranges`,
   "majorDimension": "ROWS" }
 ```
 
-* `inputs`: values for the declared inputs, by name. Only declared inputs can be
+* `inputs`: values for the inputs, by name, alias or range. Only inputs can be
   set, at every level. Left out, an input keeps the value stored in the file;
   unknown names are rejected.
 * **Without `ranges`**, the answer is the outputs declared when the program was
-  built: `{"outputs": {"payment": 1073.64, "interest": 186511.57}}`, a scalar for
-  a single cell and an array of rows for a range.
+  built, one entry each, named: `{"valueRanges": [{"name": "payment", "range": "Loan!B4",
+  "values": [[1073.64]]}, {"name": "interest", "range": "Loan!B6", "values": [[186511.57]]}]}`.
 * **With `ranges`**, the answer is exactly those ranges, in request order,
   repeats allowed, and not the declared outputs:
   `{"valueRanges": [{"name": "payment", "range": "Loan!B4", "values": [[1073.64]]}, ...]}`.
   `values` is always an array of rows (`"COLUMNS"`: of columns), even for one
   cell, rectangular, with `null` for blank cells (Google trims trailing blanks).
-  `range` is the canonical text; `name` appears when it was asked by a name.
+  `range` is the canonical text; `name` appears when it was asked by a name (and for every
+  declared output).
   Open-ended ranges (`Loan!C:C`, `Loan!3:5`) end where the sheet's data ends.
 * Each entry of `ranges` is a declared output's name, a defined name (levels
   `named` and `any`) or a range with its sheet (`'My Sheet'!B2:C9`; a bare
@@ -199,36 +319,41 @@ reads ranges the way the batch read of a spreadsheet API does (`ranges`,
   starting the process for each request. A bad request gets
   `{"error_message": "..."}` and the loop goes on; blank lines are skipped.
 
-What may be asked is decided when the program is built (`--outputs`):
+What may be asked is decided when the program is built, by what is declared: `ranges` may name an
+output, a defined name that lies inside the outputs, or a range inside them. Without `ranges` the
+answer is the outputs as value ranges (the declared ones, or the formula cells as rectangles). A range outside the
+outputs is an error saying so.
 
-| Level | `ranges` may name | Without `ranges` | Kept in the program |
-| ----- | ----------------- | ---------------- | ------------------- |
-| `declared` (default) | the declared outputs, or ranges inside them | the declared outputs | the minimum: only what feeds them |
-| `named` | also the workbook's defined names (and tables), by name | the declared outputs | also what feeds the named ranges |
-| `any` | any range, like the range API of a spreadsheet application (not the settings sheet), and the names | an error: `ranges` is required | every cell; formulas that depend on no input are still folded |
+### Logs
 
-A range the level does not allow is an error naming the level.
+The commands of `sheetc` write what they report besides their answer on the standard error, as
+diagnostics (a level, a stable code, a message and its context fields; see `sheetrs-protocol`):
+warnings and errors as text by default (`warning: …`), `-q` for the errors only, `-v` for what the
+command did (`wrote OUT`, the summary of a build) and `-vv` for the detail, and `--log-format json` for a
+JSON record per line (`{"level", "code", "message", "context"}`). The executables a build makes
+answer in JSON and have none of these flags.
 
 ### Execution options
 
-**The document decides** date system (`date1904` / `table:null-date`),
+**The document decides** date system (`date1904` / `table:null-date`: one of the three of LibreOffice Calc,
+1899-12-30, 1900-01-01 or 1904-01-01; any other null date is an error that names it),
 iterative calculation (`calcPr` / `table:iteration`), search settings (regular
 expressions, wildcards, whole cell, case sensitivity: ODS). There is no flag or
-configuration key for them in `build`, `run` or compiled executables, and a flag
+configuration key for them in `build`, `calculate` or compiled executables, and a flag
 given anyway is an error: the engine is faithful to what the file says. What the file
-does not say is LibreOffice's behavior. (`calc`, which has no file, accepts
-`--date-system 1899|1900|1904|YYYY-MM-DD` and `--iterate[=N[,EPS]]`; so does the library for models
+does not say is LibreOffice's behavior. (`evaluate`, which has no file, accepts
+`--date-system 1899|1900|1904` and `--iterate[=N[,EPS]]`; so does the library for models
 built in memory.)
 
 **The build configuration decides what a file cannot say.** Every option is a
-flag of `build`/`run` and a key of `sheetc.toml`; the command line wins over the
+flag of `build`/`calculate` and a key of `sheetc.toml`; the command line wins over the
 file, and the file over the defaults. The file is `--config PATH`, else
 `sheetc.toml` in the workbook's directory (only there: a build does not depend on
 where it is started). Unknown keys are errors.
 
 ```toml
 settings = "settings"   # --settings
-outputs  = "declared"   # --outputs: declared | named | any
+# settings_file = "model.json"   # --settings-file: the same declarations as JSON
 fold     = true         # --no-fold
 strict   = true         # --strict / --no-strict: refuse (or only warn about) macros
 now      = 45292.5      # --now SERIAL: fix NOW()/TODAY() (default: the clock, at each run)
@@ -308,8 +433,9 @@ reachable.
    evaluation and report which input broke which rule.
 3. **Spreadsheet as source**: embed programs in Rust crates
    (`include_bytes!` + typed accessors generated from the declared bindings),
-   native code generation for the static part, WASM runtime, language bindings,
-   and an HTTP wrapper around `--serve`.
+   native code generation for the static part and an HTTP wrapper around `--serve`. (The
+   WebAssembly target and the Python bindings exist already: see above and
+   [sheetrs-py](../sheetrs-py/README.md).)
 
 Details of each step are in the design document.
 
@@ -337,8 +463,9 @@ cargo run --release --example stress        # scale check
 ```
 
 `sheetrs-compiler` lives in the SheetRS workspace and uses its readers
-(`sheetrs-core`), the formula AST (`sheetrs-formula`) and the engine
+(`sheetrs-io`), the formula AST (`sheetrs-formula`) and the engine
 (`sheetrs-engine`) as path dependencies. Cargo features:
-`load` (default) enables the file frontend and the `sheetc` binary. The engine
+`load` (default) enables the file frontend (`sheetrs-io` and `sheetrs-answer`, which writes the answer into the
+workbook) and the `sheetc` binary. The compiler does not depend on `sheetrs-edit`: the editor depends on the compiler. The engine
 is its own crate, `sheetrs-engine`, whose binary `sheetrs-rt` is the runtime stub embedded into
 compiled executables).

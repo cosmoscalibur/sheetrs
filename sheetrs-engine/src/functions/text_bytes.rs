@@ -1,5 +1,5 @@
 //! The byte and width functions of text: `LENB`, `LEFTB`, `RIGHTB`, `MIDB`, `FINDB`, `SEARCHB`,
-//! `REPLACEB`, `ASC` and `JIS`. LibreOffice counts a character as one or two bytes by a table of
+//! `REPLACEB`, `ASC` and `JIS`. `LibreOffice` counts a character as one or two bytes by a table of
 //! its own (`width_data.rs`, generated from it), whatever the language of the document, and a
 //! double-byte character that a cut splits becomes a space.
 
@@ -72,9 +72,6 @@ fn find_bytes(e: &mut Engine, a: &[Value], sensitive: bool) -> Res<Value> {
     if start < 1.0 {
         return Err(ErrorKind::Domain);
     }
-    if needle.is_empty() {
-        return Err(ErrorKind::Value);
-    }
     let chars: Vec<char> = hay.chars().collect();
     // The byte at which each character starts (1-based), and the total.
     let mut starts = Vec::with_capacity(chars.len());
@@ -82,6 +79,17 @@ fn find_bytes(e: &mut Engine, a: &[Value], sensitive: bool) -> Res<Value> {
     for &c in &chars {
         starts.push(at);
         at += width(c);
+    }
+    // `FINDB` refuses (`Err:502`) a start from which the text to find does not fit in the bytes
+    // of the text, empty or not: `FINDB("a", "abc", 4)`, `FINDB("本", "abc", 3)`, `FINDB("a", "")`.
+    if sensitive {
+        let needle_bytes: usize = needle.chars().map(width).sum();
+        if (start as usize).saturating_add(needle_bytes) > at {
+            return Err(ErrorKind::Domain);
+        }
+    }
+    if needle.is_empty() {
+        return Err(ErrorKind::Value);
     }
     // Searching starts at the first character that starts at or after the byte given.
     let first = starts.partition_point(|&p| (p as f64) < start);

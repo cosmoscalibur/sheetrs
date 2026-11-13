@@ -1,0 +1,3 @@
+### Changed
+
+- The inputs a program deduces cost less to find and to keep: the pass that looks for the constants a formula reads no longer builds a set of every rectangle they read, the inputs join the formulas in one merge instead of a set and a sort, an embedded workbook with no outputs declared keeps them as `Input` cells without a node of the graph each (nothing would fold anyway), and the walk that looks for the constants the kept formulas read is skipped when those are the inputs already and nothing folds. Results do not change (the same answers and workbooks, byte for byte); a workbook of 4 M cells takes 8 to 17 % less CPU time in each default mode and up to 15 % less memory.

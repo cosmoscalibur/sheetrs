@@ -14,6 +14,7 @@ struct Skip {
 }
 
 /// The cells of the references and arrays, in order, minus what `skip` leaves out.
+#[allow(clippy::unnecessary_wraps)] // same fallible signature as its siblings, which share call sites
 fn cells(e: &mut Engine, args: &[Value], skip: &Skip) -> Res<Vec<Value>> {
     let mut out = Vec::new();
     for a in args {
@@ -119,6 +120,10 @@ pub(super) fn register(r: &mut Reg) {
         simple(base, &v)
     });
     r.eager("AGGREGATE", 3, VAR, |e, a| {
+        // An error a calculation gave as the function or the option is no function or option: `Err:502`.
+        if matches!(a[0], Value::Error(_)) || matches!(a[1], Value::Error(_)) {
+            return Err(ErrorKind::Libre(502));
+        }
         let code = e.num(&a[0])?.trunc() as i64;
         let opt = e.num(&a[1])?.trunc() as i64;
         if !(1..=19).contains(&code) || !(0..=7).contains(&opt) {
@@ -142,7 +147,7 @@ pub(super) fn register(r: &mut Reg) {
                     num(if m % 2 == 1 {
                         n[m / 2]
                     } else {
-                        (n[m / 2 - 1] + n[m / 2]) / 2.0
+                        f64::midpoint(n[m / 2 - 1], n[m / 2])
                     })
                 }
                 13 => {

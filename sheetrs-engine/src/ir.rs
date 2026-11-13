@@ -12,7 +12,7 @@ use crate::options::EngineOptions;
 use crate::value::Value;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// Namespace of a function, as OpenDocument names them. `Core` is the standard: its names carry
+/// Namespace of a function, as `OpenDocument` names them. `Core` is the standard: its names carry
 /// no prefix (`SUM`). The others are the prefixes a name carries in an ODS and, with `_xlfn.`,
 /// in an XLSX: `COM.MICROSOFT.` (functions Microsoft defined after ODF 1.2, and Excel's own
 /// version of a function whose bare name is something else), `ORG.OPENOFFICE.` and
@@ -28,6 +28,7 @@ pub enum Ns {
 }
 
 impl Ns {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Core => "core",
@@ -38,6 +39,7 @@ impl Ns {
         }
     }
 
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "core" => Self::Core,
@@ -50,6 +52,7 @@ impl Ns {
     }
 
     /// The namespace an ODS name's prefix names (`COM.MICROSOFT.` …), with the name that is left.
+    #[must_use]
     pub fn of_prefixed(name: &str) -> Option<(Self, &str)> {
         [
             ("COM.MICROSOFT.", Self::Microsoft),
@@ -68,10 +71,12 @@ impl Ns {
 pub struct FuncId(pub u16);
 
 impl FuncId {
+    #[must_use]
     pub fn def(self) -> &'static functions::FuncDef {
         &functions::table()[self.0 as usize]
     }
 
+    #[must_use]
     pub fn qualified(self) -> String {
         let d = self.def();
         format!("{}::{}", d.ns.as_str(), d.name)
@@ -205,14 +210,63 @@ pub struct Program {
     pub cycles: Vec<(u32, u32)>,
     pub inputs: Vec<Binding>,
     pub outputs: Vec<Binding>,
-    /// Which ranges, besides `outputs`, a caller may ask for when running.
+    /// The names, besides the bindings, a caller may use when running.
     pub queryable: Queryable,
+    /// What the program is for: values in and out, or the workbook itself as the answer.
+    #[serde(default)]
+    pub mode: Mode,
+    /// The formula cells the workbook answer writes, as runs in the order of their positions: in a
+    /// workbook mode (`Mode::is_workbook`) the formulas inside the outputs (all of them when no
+    /// output is declared), and none otherwise. The other formulas of the workbook keep the result
+    /// the template stored.
+    ///
+    /// The workbook is its own template, so the program is what knows where its formulas are: the
+    /// writer of the answer takes the positions to write from here and does not discover them in the
+    /// file. A formula the compiler folded, kept as the value the file cached (the parser did not
+    /// take it), or that lies inside an array formula is in the list all the same.
+    #[serde(default)]
+    pub formula_cells: Vec<CellRun>,
     /// Entries of the workbook's settings sheet, inputs and outputs included.
     pub meta: Vec<Meta>,
     pub diagnostics: Vec<String>,
     /// How and from what the program was built.
     #[serde(default)]
     pub build: BuildInfo,
+}
+
+/// A run of consecutive cells of one row: `first..=last` columns of `row` in `sheet` (0-based).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CellRun {
+    pub sheet: u16,
+    pub row: u32,
+    pub first: u32,
+    pub last: u32,
+}
+
+impl CellRun {
+    /// The runs of the positions `cells`, which must come in the order of their positions.
+    pub fn runs(cells: impl IntoIterator<Item = CellRef>) -> Vec<Self> {
+        let mut runs: Vec<Self> = Vec::new();
+        for at in cells {
+            match runs.last_mut() {
+                Some(r) if r.sheet == at.sheet && r.row == at.row && r.last + 1 == at.col => {
+                    r.last = at.col;
+                }
+                _ => runs.push(Self {
+                    sheet: at.sheet,
+                    row: at.row,
+                    first: at.col,
+                    last: at.col,
+                }),
+            }
+        }
+        runs
+    }
+
+    /// The positions of the run.
+    pub fn cells(&self) -> impl Iterator<Item = CellRef> + '_ {
+        (self.first..=self.last).map(|col| CellRef::new(self.sheet, self.row, col))
+    }
 }
 
 /// How and from what a program was built, listed by `--info`.
@@ -231,8 +285,11 @@ pub struct BuildInfo {
 /// The build options that shape the program.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BuildOptions {
-    /// `declared`, `named` or `any`.
+    /// `declared` (the outputs were declared) or `deduced` (the formula cells, as the rectangles that hold them).
     pub outputs: String,
+    /// `declared` (the inputs were declared) or `deduced` (the constants the outputs start from).
+    #[serde(default)]
+    pub inputs: String,
     /// The locale tag the program is fixed to.
     pub locale: String,
     /// Whether input-independent cells were evaluated at build time.
@@ -252,23 +309,38 @@ pub struct SourceInfo {
     pub sha256: String,
 }
 
-/// How far the caller's choice of outputs reaches. Each level keeps more of
-/// the workbook in the program.
+/// The names a request may use besides the bindings: the defined names and tables of the
+/// workbook that point inside what the program exposes. A name inside the outputs is an alias of
+/// that output; a name inside the inputs is an alias of those inputs.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub enum Queryable {
-    /// Only the declared outputs: everything else is pruned.
+pub struct Queryable {
+    pub names: Vec<Binding>,
+}
+
+/// What the program is for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Mode {
+    /// Values in, values out: the inputs and outputs of `Program::inputs` and `Program::outputs`.
     #[default]
-    Declared,
-    /// The declared outputs plus these ranges (the workbook's defined names).
-    Named(Vec<Binding>),
-    /// Any range of the workbook, like the cell-range API of a spreadsheet
-    /// application, except the `excluded` sheets (the settings sheet), also by
-    /// the workbook's defined `names`. Only constants that cannot change are
-    /// folded. There is no default answer: the request lists its ranges.
-    Any {
-        excluded: Vec<u16>,
-        names: Vec<Binding>,
-    },
+    Values,
+    /// Values in, values out as in any program, and the workbook embedded as a template: the answer
+    /// can also be the workbook with the outputs that are formulas, and the inputs given, written into
+    /// it (`--output`), the JSON, or both. Inputs and outputs are declared or deduced as in any
+    /// program; the formulas outside the program keep the result the template stored.
+    Embedded,
+    /// The editor's recalculation: as `Embedded`, with every formula an output and the declarations of the
+    /// workbook ignored, to bring the stale results of a workbook up to date before an edit reads them.
+    /// No command and no option builds it: what a user asks for is `calculate`, with inputs and
+    /// outputs declared or deduced.
+    Recalculate,
+}
+
+impl Mode {
+    /// Whether the answer is the workbook.
+    #[must_use]
+    pub fn is_workbook(self) -> bool {
+        self != Self::Values
+    }
 }
 
 /// A JSON value in a binary program: as its text (a binary format cannot hold a
@@ -276,7 +348,7 @@ pub enum Queryable {
 mod json_text {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S: Serializer>(v: &serde_json::Value, s: S) -> Result<S::Ok, S::Error> {
+    pub(super) fn serialize<S: Serializer>(v: &serde_json::Value, s: S) -> Result<S::Ok, S::Error> {
         if s.is_human_readable() {
             v.serialize(s)
         } else {
@@ -284,7 +356,9 @@ mod json_text {
         }
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<serde_json::Value, D::Error> {
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<serde_json::Value, D::Error> {
         if d.is_human_readable() {
             serde_json::Value::deserialize(d)
         } else {

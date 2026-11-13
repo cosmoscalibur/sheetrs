@@ -83,7 +83,7 @@ main {
 }
 
 .setup-panel h3 {
-    margin-top: 0;
+    margin-top: 18px;
     font-size: 0.9rem;
     color: #888;
     text-transform: uppercase;
@@ -189,6 +189,7 @@ main {
 }
 
 .status-bar {
+    flex-wrap: wrap;
     padding: 5px 20px;
     background-color: #1a1a1a;
     border-top: 1px solid var(--border-color);
@@ -244,4 +245,186 @@ main {
     margin-bottom: 8px;
     font-size: 0.85rem;
     cursor: pointer;
+}
+/* ---- Forms of the tools ---- */
+.setup-panel > h3:first-child {
+    margin-top: 0;
+}
+
+#file-info {
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 10px;
+    overflow-wrap: anywhere;
+}
+
+.field {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 0.8rem;
+    color: #aaa;
+}
+
+.field select,
+.field input[type="text"],
+.field textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 4px;
+    padding: 6px 8px;
+    background: #121212;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    border-radius: 4px;
+    font: inherit;
+}
+
+.field textarea {
+    font-family: 'Fira Code', 'Courier New', monospace;
+    resize: vertical;
+}
+
+.hint {
+    font-size: 0.75rem;
+    color: #777;
+    margin: 0 0 10px;
+}
+
+.setup-panel code {
+    background: #2a2a2a;
+    padding: 0 4px;
+    border-radius: 3px;
+}
+
+.plan {
+    padding-left: 20px;
+    margin: 10px 0;
+    font-size: 0.8rem;
+    color: #ccc;
+}
+
+.plan li {
+    margin-bottom: 4px;
+    overflow-wrap: anywhere;
+}
+
+/* ---- Results as a table, and the files a tool made ---- */
+#downloads {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 20px;
+}
+
+#downloads:not(:empty) {
+    padding-top: 10px;
+}
+
+.download-link {
+    text-decoration: none;
+    color: #10b981;
+    padding: 6px 12px;
+}
+
+#table-output {
+    flex-grow: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 10px 20px 0;
+}
+
+.table-wrap {
+    overflow: auto;
+    max-width: 100%;
+}
+
+#table-output table {
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    width: 100%;
+}
+
+#table-output th,
+#table-output td {
+    text-align: left;
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
+}
+
+#table-output th {
+    position: sticky;
+    top: 0;
+    background: #1a1a1a;
+    color: #aaa;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.04rem;
+}
+
+#table-output td {
+    color: #d0d0d0;
+    overflow-wrap: break-word;
+}
+
+#table-output td:nth-last-child(-n + 2) {
+    white-space: nowrap;
+}
+
+#output:empty {
+    display: none;
+}
+
+/* ---- Small screens: the tools on top, the sidebar above the results, the page scrolls ---- */
+@media (max-width: 800px) {
+    :root {
+        --sidebar-width: 100%;
+    }
+
+    body,
+    html {
+        height: auto;
+        overflow: auto;
+    }
+
+    header {
+        height: auto;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 10px 12px;
+    }
+
+    #tool-selector {
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+
+    .tool-btn {
+        padding: 8px 12px;
+        white-space: nowrap;
+    }
+
+    main {
+        flex-direction: column;
+        height: auto;
+    }
+
+    #sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    #setup-area {
+        max-height: 55vh;
+    }
+
+    #content {
+        min-height: 60vh;
+    }
+
+    #output {
+        min-height: 30vh;
+    }
 }

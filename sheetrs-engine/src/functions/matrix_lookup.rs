@@ -1,13 +1,13 @@
 //! Approximate lookups over an array that is not a range (an inline array or a computed one).
 //!
-//! LibreOffice searches those with code of their own, not the sorted-column search of a range, and
+//! `LibreOffice` searches those with code of their own, not the sorted-column search of a range, and
 //! the positions it gives differ when the data are not sorted. These follow `ScMatch`,
 //! `ScLookup` and `CalculateLookup` of `sc/source/core/tool/interpr1.cxx`.
 
-use crate::value::{Array, Coll, Value};
+use crate::value::{Array, Coll, ErrorKind, Value};
 use std::cmp::Ordering;
 
-/// What LibreOffice calls a value in a matrix: numbers, booleans and errors (an error is a number
+/// What `LibreOffice` calls a value in a matrix: numbers, booleans and errors (an error is a number
 /// that is not finite).
 fn is_value(v: &Value) -> bool {
     matches!(v, Value::Number(_) | Value::Bool(_) | Value::Error(_))
@@ -234,49 +234,80 @@ pub(super) fn table_position(
 ) -> Option<usize> {
     let n = keys.len();
     let mut delta = None;
-    match needle {
-        Value::Text(p) => {
-            if sorted {
-                let mut i = 0;
-                while i < n {
-                    if is_string_or_empty(&keys[i]) {
-                        if coll.compare(string_of(&keys[i]), p) != Ordering::Greater {
-                            delta = Some(i);
-                        } else if i > 0 {
-                            break;
-                        }
-                    } else {
+    if let Value::Text(p) = needle {
+        if sorted {
+            let mut i = 0;
+            while i < n {
+                if is_string_or_empty(&keys[i]) {
+                    if coll.compare(string_of(&keys[i]), p) != Ordering::Greater {
                         delta = Some(i);
-                    }
-                    i += 1;
-                }
-            } else {
-                delta = keys
-                    .iter()
-                    .position(|k| is_string_or_empty(k) && equal_text(string_of(k), p));
-            }
-        }
-        _ => {
-            let x = number_of(needle);
-            for (i, k) in keys.iter().enumerate() {
-                if is_string_or_empty(k) {
-                    continue;
-                }
-                let v = number_of(k);
-                if sorted {
-                    if v <= x {
-                        delta = Some(i);
-                    } else {
+                    } else if i > 0 {
                         break;
                     }
-                } else if v == x {
+                } else {
                     delta = Some(i);
+                }
+                i += 1;
+            }
+        } else {
+            delta = keys
+                .iter()
+                .position(|k| is_string_or_empty(k) && equal_text(string_of(k), p));
+        }
+    } else {
+        let x = number_of(needle);
+        for (i, k) in keys.iter().enumerate() {
+            if is_string_or_empty(k) {
+                continue;
+            }
+            let v = number_of(k);
+            if sorted {
+                if v <= x {
+                    delta = Some(i);
+                } else {
                     break;
                 }
+            } else if v == x {
+                delta = Some(i);
+                break;
             }
         }
     }
     delta
+}
+
+/// The error of a key that the search of `VLOOKUP`/`HLOOKUP` over an array reaches, which is the
+/// answer there: the approximate search walks the keys up to the first one larger than the number
+/// sought, and the exact one of a row (`HLOOKUP`) up to the first that equals it. The exact search
+/// of a column leaves the errors out.
+pub(super) fn error_reached(
+    needle: &Value,
+    keys: &[Value],
+    sorted: bool,
+    horizontal: bool,
+) -> Option<ErrorKind> {
+    if matches!(needle, Value::Text(_)) {
+        return None;
+    }
+    let x = number_of(needle);
+    for k in keys {
+        match k {
+            Value::Error(kind) if sorted || horizontal => return Some(*kind),
+            Value::Error(_) => {}
+            k if is_string_or_empty(k) => {}
+            k => {
+                let v = number_of(k);
+                if sorted {
+                    if v > x {
+                        return None;
+                    }
+                } else if v == x {
+                    return None;
+                }
+            }
+        }
+    }
+    None
 }
 
 /// How `XLOOKUP` compares: equal, or the nearest smaller (`LessEq`) or larger (`GreaterEq`).
@@ -328,7 +359,7 @@ fn cmp_cells(a: &Value, b: &Value, coll: &Coll) -> i32 {
 pub(super) enum Walk {
     Forward,
     Reverse,
-    /// The binary searches of search modes 2 and -2, which LibreOffice runs alike.
+    /// The binary searches of search modes 2 and -2, which `LibreOffice` runs alike.
     Binary,
 }
 

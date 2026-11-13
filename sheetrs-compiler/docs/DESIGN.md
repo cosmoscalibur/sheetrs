@@ -18,18 +18,18 @@ Python transpiler) were set aside: the strategy below needs a different shape.
                                                                    │
                            ┌───────────────────────┬───────────────┴───────────┐
                            ▼                       ▼                           ▼
-                  executable (bundle)       program.json              Program::execute
+                  executable (bundle)       program.json              Program::calculate
 ```
 
 The code is split in three crates: `sheetrs-formula` parses and prints formulas;
 `sheetrs-engine` holds `value`, `addr`, `ir`, `options`, `dates`, `coerce`, `format`,
-`matching`, `functions`, `engine`, `run`, `bundle` and the run-time `cli`;
+`matching`, `functions`, `engine`, `calculate`, `bundle` and the run-time `cli`;
 `sheetrs-compiler` holds `loader`, `model`, `formula` (lowering), `compile` and
 `graph`.
 
 | Module | Role |
 | ------ | ---- |
-| `loader` (feature `load`) | `sheetrs-core` workbook → `Model`. The only code that knows XLSX vs ODS: the settings the document carries, defined-name syntax, error codes. |
+| `loader` (feature `load`) | `sheetrs-io` workbook → `Model`. The only code that knows XLSX vs ODS: the settings the document carries, defined-name syntax, error codes. |
 | `model` | Format-independent workbook: cells, formula text, names, date system. |
 | `formula` | Lowers the `sheetrs-formula` AST (lossless; parsing lives there) to IR: resolves sheets and names, resolves function names and their namespaces, folds literal ranges. |
 | `ir` | `Expr`, `Program`, namespaced `FuncId`. Serializable. |
@@ -38,7 +38,7 @@ The code is split in three crates: `sheetrs-formula` parses and prints formulas;
 | `engine` | Demand-driven evaluator; iterative calculation; array context. |
 | `functions` | Registry and the functions. |
 | `options`, `coerce`, `format`, `dates` | Date system, locale, iteration; conversions; `TEXT`; serial dates. |
-| `run`, `bundle`, `consts`, `cli` | JSON mapping, executable payload, constants kept in blocks, command line. |
+| `calculate`, `bundle`, `consts`, `cli` | JSON mapping, executable payload, constants kept in blocks, command line. |
 
 ## One IR, one engine
 
@@ -46,7 +46,7 @@ The requirement is explicit: no double execution engine. Everything after the
 loader sees only `Model`/`Program`. Cell values (`Value`), references
 (`CellRef`/`Rect`), operators and function calls are the same whatever the
 source. ODS-isms (`;` separators, `[.A1]` references, `of:=`,
-`COM.MICROSOFT.` prefixes, `Err:522`) are resolved by `sheetrs-core` and the loader
+`COM.MICROSOFT.` prefixes, `Err:522`) are resolved by `sheetrs-io` and the loader
 or by the function-name resolution described next.
 
 ## Function namespaces
@@ -97,9 +97,12 @@ step that can reuse the same IR.
 
 ## Inputs, outputs and what is optimized
 
-The workbook's settings sheet (`input` and `output` rows) declares the cells or
-ranges exchanged as JSON; `--outputs` decides how far a caller's choice of
-outputs reaches (below). The compiler:
+The workbook's settings sheet (`input` and `output` rows, or the JSON file) declares the cells or
+ranges exchanged as JSON. Each of inputs and outputs is **declared or not**: no declaration of
+outputs means they are **deduced**: the cells that are calculated, the formulas and not the constants,
+as the rectangles that hold exactly them (the same in every mode, embedded or not), and no
+declaration of inputs means they are **deduced**: once the workbook is pruned to what the outputs
+read, every constant a path starts from is an input. The compiler:
 
 1. Starts from the outputs and walks dependencies backwards, **cutting at
    inputs** (an input cell's own formula is ignored). Everything else is dead.
@@ -108,43 +111,68 @@ outputs reaches (below). The compiler:
    function (`RAND`, `NOW`, `TODAY`) or a dynamic reference. All other cells
    are **folded**: evaluated at build time by the same engine and replaced by
    constants.
-4. Keeps only live formulas plus the constants they (or the outputs) read.
+4. Keeps only live formulas plus the constants they (or the outputs) read. With deduced inputs
+   those constants are the inputs (as the fewest rectangles that cover them, in the cells of the
+   program as `Input`), and since any of them can change, nothing that reads one is folded.
+
+An embedded workbook with no outputs declared calculates and writes every formula, so it is built
+without a node for each deduced input: the constants a formula reads (or a name covers) are listed
+as the inputs and kept as `Input` cells of the program, nothing is folded (with deduced inputs
+only a formula that reads no constant would have folded) and the walk that looks for the constants
+the kept formulas read is skipped, since those constants are the inputs already. The same walk is
+skipped in any mode with deduced inputs when nothing folds. It changes no result, only the cost:
+a node per input is the cost the cone, the graph and the order pay for each of them.
 
 The compiled loan example drops from 1086 formulas to 1 for `payment` (an
 intermediate computation that depends on inputs stays; the 360-row schedule
 nobody asked for is gone).
 
-### Query levels
+### What a request may name
 
-`declared` starts the walk from the declared outputs only. `named` adds the
-workbook's defined names as further roots, `any` adds every formula of every
-sheet (except the settings sheet) and keeps the workbook's constants. Folding
-works identically at every level, so `any` still drops the formulas that depend
-on no input, and the program grows to the size of the data (`stress`: 50 k folded
-formulas keep 1 cell when declared, 100 001 when any range is queryable). A
-range request is checked against the level (`Queryable` in the program): rectangles
-inside a declared output, a named range, or any range outside the excluded
-sheets.
+A defined name or table of the workbook is an **alias** in both modes, of what is exposed: a name
+that lies inside the outputs reads that output, and one inside the inputs gives those inputs
+(`Queryable` in the program is the list of such names). A range request is checked against the
+outputs: a declared output by name, a range inside one, or an alias. A key of `inputs` is an input
+binding, an alias, or a range inside the inputs; every cell of it must be an input. The metadata
+lists the inputs and outputs that were exposed, declared or not.
 
-### Why inputs stay strict
+### The workbook as the answer
 
-The query levels could also apply to inputs; they are not offered, because the
-cost lands on what makes the program small. An input cuts the dependency cone
-(its own formula is ignored) and marks everything downstream as live; whatever
-depends on no input folds at build time.
+`Mode::Embedded` and `Mode::Recalculate` (a program field; the second is internal) are the modes in which the answer can be
+the workbook (`sheetrs-answer::fill_template` writes it). `Embedded` is any program with the workbook
+inside it: inputs and outputs are declared or deduced as in any other (nothing declared: the outputs
+are the formula cells, the inputs the constants a path starts from), the JSON answer gives the
+outputs, and only the declared inputs are accepted when they are declared. The workbook answer is the
+template with the inputs given and the outputs that are formulas written into it
+(`Program::formula_cells` lists those formulas, as runs); the formulas outside the program keep the
+result the template stored, so declaring outputs narrows what the workbook answer refreshes, and
+leaving them undeclared refreshes every formula. `Recalculate`: every formula is an output and any
+constant an input whatever the settings declare (discarded with a note, the metadata is kept);
+recalculating takes no input and gives no JSON. `Embedded` is reached through `--embed-template` (build) or `calculate` with an output; `Recalculate` is
+the editor's own recalculation and no command builds it. The executable that carries the workbook is made from `sheetc` and one that does not
+has no capability to write workbooks.
+
+Whether an embedded executable answers JSON is decided when it runs, not when it is built: the base
+is `sheetc`, which carries the JSON of `sheetc calculate` already, so supporting it adds a negligible amount of code (the
+base grew 11 KB with the change) and no time to the workbook answer (see
+[docs/performance.md](../../docs/performance.md)). `--output OUT` alone writes the workbook, no `--output` gives the JSON, and
+`--output OUT --json` gives both from one calculation (`Program::handle_with` reads the values of
+the formula rectangles from the same evaluation as the JSON answer).
+
+### Why a program with every input open is the whole workbook
+
+An input cuts the dependency cone (its own formula is ignored) and marks everything downstream as
+live; whatever depends on no input folds at build time. So the more inputs, the less folds:
 
 | Inputs | Live part of the program | Consequence |
 | --- | --- | --- |
 | declared | what is downstream of the declared inputs | smallest program, most folding |
-| named (workbook names) | also what is downstream of every defined name | grows with the names; authors name assumptions *and* internal results, so the contract widens silently; the settings sheet already lets the author add an alias with one row |
-| any cell | everything: no formula can be folded | the program is the whole workbook; a cell may be a formula, so an input must override it |
+| deduced (none declared) | what is downstream of any constant the outputs read | nothing that reads a constant folds; the program is as big as what the outputs read |
 
-The last row is measured by `--no-fold`, which is its upper bound: 50 000
-independent formulas run in 27 µs when folded and 69 ms when nothing may fold
-(`cargo run --release --example stress`), the program grows from 1 cell to
-100 001, and at 40 MB the program, which is serialized JSON loaded at start, is
-the size of the workbook. Outputs do not pay this: a wider output set only keeps
-more of the cone, and the folded part stays folded.
+`--no-fold` is the upper bound of the last row: 50 000 independent formulas run in 27 µs when
+folded and 69 ms when nothing may fold (`cargo run --release --example stress`, measured at `c5f7189`), the program grows
+from 1 cell to 100 001, and at 40 MB the program, which is serialized JSON loaded at start, is the
+size of the workbook. Outputs do not pay this: a wider output set only keeps more of the cone.
 
 ### Who configures what
 
@@ -152,7 +180,7 @@ The date system, iteration and search settings are the document's and are never
 overridable. The behavior is LibreOffice's. What a file cannot say comes from the build configuration
 (`sheetc.toml`, overridden by flags): the locale (fixed at build time, so
 folding may use it; any BCP-47 tag, see FIDELITY.md), the clock, the seed,
-`--no-fold`, the settings sheet's name and the query level. A run can only fix
+`--no-fold` and the settings sheet's name. A run can only fix
 `NOW()` and the seed. Because the locale cannot change after the build, the
 compiler no longer needs to track which formulas depend on it: that analysis
 existed only for the former `--runtime-locale` and was removed. Who decides what
@@ -160,19 +188,11 @@ is in [FIDELITY.md](FIDELITY.md#who-decides-what).
 
 ## Scale
 
-Measured on a synthetic 49 MB XLSX (600 000 rows × 11 columns, 6.6 M cells, 600 000
-formulas), release build, `python3 sheetrs-compiler/scripts/measure_perf.py` (stages from
-`SHEETC_TRACE`; the full matrix, with the Delgado and the 1.2 M-formula workbooks, is in
-`scripts/README.md`):
-
-| phase | time | peak memory |
-| ----- | ---: | ----------: |
-| build, `outputs = any` (total) | 9.4 s | 1.3 GB |
-| read the file into the model | 4.0 s | |
-| lower formulas, dependency graph, fold, assemble | 0.2 + 0.6 + 0.9 + 0.8 s | |
-| write the executable (140 MB) | 0.7 s | |
-| build, declared outputs (executable 9 MB) | 5.8 s | 0.75 GB |
-| run: start-up and a small request | 3 ms | 13 MB |
+The figures of the build and of the run of a large workbook (time per stage, peak memory, size of the
+executable) are measured and kept in [docs/performance.md](../../docs/performance.md#sheetc-calculate-and-sheetc-build)
+(the build and the answer of the synthetic workbooks, and the modules under WebAssembly); they are not copied
+here, because a figure in this file would outlive the change that moved it. To measure again:
+`python3 scripts/bench.py run DIR compiler` (`sheetrs-compiler/scripts/measure_perf.py`, stages from `SHEETC_TRACE`).
 
 What makes this possible, and what any change must keep:
 
@@ -188,7 +208,8 @@ What makes this possible, and what any change must keep:
 - Maps keyed by address or node use the fast hasher; per-node results (folded values) are vectors
   indexed by node, not maps; small ranges are not cached while large ones are.
 - An executable keeps its constants in blocks of `BLOCK_CELLS` cells (`sheetrs-engine/src/consts.rs`) and decodes a block when a
-  request first reads a cell of it (12 MB and 3 ms for the 49 MB workbook).
+  request first reads a cell of it, so a small request on a large workbook neither decodes nor holds
+  the constants it does not read.
 - Text that ignores case takes ASCII and one-letter mappings (`casemap::upper`, `same_name`)
   before it asks ICU4X; the exhaustive tests compare those paths with ICU4X for every character.
 
@@ -213,7 +234,7 @@ Text is ordered by `icu_collator` and case is mapped by `icu_casemap` (ICU4X, wi
 into the binary), the libraries LibreOffice's own ICU is the reference of. An in-house table
 (derived once from ICU, Latin text only) was used before; it was smaller and faster but ordered every
 other script, emoji included, by code point, and had no way to follow the tailorings of other
-languages, which does not meet *replacement of LibreOffice*. Measured when the change was made:
+languages, which does not meet *replacement of LibreOffice*. Measured when the change was made (`c5f7189`, 2026-10-31):
 
 | | in-house table | ICU4X |
 | --- | ---: | ---: |
@@ -243,7 +264,7 @@ codes).
 Requirements: evaluation order, cycle detection (for iterative calculation),
 huge node counts, one pass for both. A measured comparison (random dependency
 graph, ~3 edges per node, build + order, release build; one-off benchmark, not
-kept in the tree) gave:
+kept in the tree; `c5f7189`) gave:
 
 | nodes | CSR + Tarjan (here) | petgraph `tarjan_scc` | petgraph `toposort` | ultragraph |
 | ----: | ------------------: | --------------------: | ------------------: | ---------: |
@@ -263,23 +284,23 @@ Range dependencies are modeled with shared *range nodes* (one per distinct
 rectangle) so `SUM(A$1:A$10000)` used by 50 000 cells costs one node, not 500 M
 edges.
 
-## Reusing `sheetrs-core`
+## Reusing `sheetrs-io`
 
 Yes, reuse it. Container parsing (zip, shared strings, shared formulas, ODS
 table repetition, covered cells, defined names, error cells) is where
-format-specific bugs live, and `sheetrs-core` already carries the fixes and the XLSX/ODS
+format-specific bugs live, and `sheetrs-io` already carries the fixes and the XLSX/ODS
 test files. Re-implementing it would add a second reader to keep faithful for no
 gain in the engine.
 
 Reuse is conditional on the reader being faithful, so the contract is: **the
 reader returns what the file stores; the engine owns every semantic decision.**
 Auditing against LibreOffice (see FIDELITY.md) found one violation, fixed in the
-`sheetrs-core` reader (same workspace): ODS dates were numbered from 1899-12-31, a convention of
+`sheetrs-io` reader (same workspace): ODS dates were numbered from 1899-12-31, a convention of
 the reader's own that is neither LibreOffice's nor Excel's (one lower from
 1900-03-01 on), and `office:time-value` was returned as display text. Dates are
 now days since the document's `table:null-date`, times a fraction of a day. No
-calendar adjustment happens in the reader; the date system (`1899`, `1900`,
-`1904`) is applied by the engine. The reader also exposes the calculation settings a document stores
+calendar adjustment happens in the reader; the date system (`DateSystem`: `Null1899`,
+`Null1900`, `Null1904`, the three of LibreOffice Calc) is applied by the engine. The reader also exposes the calculation settings a document stores
 (`Workbook::settings`: iteration, search mode, case sensitivity, two-digit-year
 window, language) **as stored, with no defaults applied**, so the engine can tell
 "not stated" from "stated as the default". Remaining reader-side items
@@ -307,8 +328,9 @@ a diagnostic.
 
 ## Execution parameters
 
-`EngineOptions`: date system (the null date, the document's: 1899-12-30 on the real calendar, LibreOffice's
-default and an XLSX's unless it says `date1904`; an ODS stores any date),
+`EngineOptions`: date system (a `DateSystem`, the document's: 1899-12-30 on the real calendar, LibreOffice's
+default and an XLSX's unless it says `date1904`; 1900-01-01 and 1904-01-01 in an ODS; another null date is an
+error of the reader),
 iteration (`max_iterations`, `max_change`; Excel defaults 100 / 0.001), locale
 (decimal/group separators, boolean names, month and day names; `en` and `es`
 from LibreOffice's table of locales (others defined in the build configuration); text order from ICU4X) plus fixed `now` and `rand` seed for determinism. The
@@ -318,12 +340,12 @@ localized because files always store the canonical ones.
 
 ## Executable format
 
-`sheetc build` copies a runtime stub — `sheetrs-rt` (~2.7 MB, engine only) or
-the full binary — and appends the program in `bincode`, the blocks of constants and a 24-byte
-trailer (`SHEETRS1`, size of the program, size of the blocks). The program is `bincode`, not JSON,
-which took half of a 0.85 s start of a 500k-formula program.
+`sheetc build` copies a runtime stub — `sheetrs-rt` (engine only; its size is in
+[docs/performance.md](../../docs/performance.md#sizes)) or the full binary — and appends the program in
+`bincode`, the blocks of constants and a 24-byte trailer (`SHEETRS1`, size of the program, size of
+the blocks). The program is `bincode`, not JSON: it is decoded at every start.
 
-A program with `consts::MIN_STORED` constants or more (a workbook built with `outputs = any` keeps every cell)
+A program with `consts::MIN_STORED` constants or more (a workbook whose formulas read many constants)
 does not carry them in the program: `consts::split` moves them, sorted by sheet, row and column,
 into blocks of about `BLOCK_CELLS` cells that end at a row boundary, each encoded on its own, and the
 program keeps an index of the blocks and the extent of each sheet. The runtime decodes the program
@@ -335,9 +357,9 @@ for the life of the process.
 
 At start the binary looks for the trailer in its own
 file; if present it runs the program, otherwise it is the compiler. No
-toolchain is needed to build, the artifact is a single file, startup is ~2 ms.
+toolchain is needed to build, the artifact is a single file, the start of an executable of a small workbook takes about 3 ms ([docs/performance.md](../../docs/performance.md#sheetc-calculate-and-sheetc-build)).
 Programs are plain data, so the same bytes can be embedded in a library or
-loaded by `sheetc run program.json`.
+loaded by `sheetc calculate -i program.json`.
 
 ## Testing
 
@@ -356,14 +378,15 @@ loaded by `sheetc run program.json`.
   options, JSON mapping.
 * `tests/cli.rs`: compiles `loan.xlsx` and `loan.ods` into executables and
   runs them, including `--serve` and error exit codes.
-* `examples/stress.rs`: 100 k-formula chain compiles in ~0.12 s and runs in
-  ~17 ms; 20 k `VLOOKUP`s over a 10 k-row table take ~1 s.
+* `examples/stress.rs`: a 100 k-formula chain and 20 k `VLOOKUP`s over a 10 k-row table (the
+  figures, measured at `c5f7189`: ~0.12 s to compile and ~17 ms to run the chain, ~1 s for the
+  lookups).
 
 ## Known limitations
 
 * **External references** (`[1]Sheet!A1`) and structured references keep the
   value cached in the file. Defined names lose their sheet scope in XLSX when
-  read through `sheetrs-core`.
+  read through `sheetrs-io`.
 * **Arrays**: operators over ranges use legacy implicit intersection outside
   array context (`SUMPRODUCT`, `INDEX`, `MATCH`, `XLOOKUP` and CSE formulas
   evaluate element-wise, scalar functions are lifted there). There is no
@@ -375,7 +398,8 @@ loaded by `sheetc run program.json`.
 * **Run-time `INDIRECT`/`OFFSET`** make the whole workbook reachable.
 * **Differences from LibreOffice not yet modeled** are listed in FIDELITY.md (regex mode
   of ODS documents, Unicode case mapping, locale-bound text dates, …).
-* `NOW`/`TODAY` use the system clock (pass `--now` on WASM).
+* `NOW`/`TODAY` use the system clock (in a WebAssembly module the host sets it with
+  `sheetrs_set_clock`, and `Date.now()` is the default of the package; `--now` fixes it).
 
 ## Roadmap
 
@@ -385,12 +409,12 @@ The IR already separates inputs from the rest of the program. Validation rules
 (list, whole/decimal bounds, date ranges, text length, custom formula) become
 predicates (`Expr`) attached to input bindings, evaluated before the run:
 
-1. `sheetrs-core` exposes data validations (XLSX `<dataValidations>`, ODS
+1. `sheetrs-io` exposes data validations (XLSX `<dataValidations>`, ODS
    `table:content-validations`) — upstream change.
 2. `compile` lowers each rule to an IR predicate over the input cell and, for
    list rules, a constant set or a range reference (itself part of the
    program, so lists can come from the workbook).
-3. `Program::execute` returns `{ "errors": [{ "input": "rate", "cell": "B2",
+3. `Program::calculate` returns `{ "errors": [{ "input": "rate", "cell": "B2",
    "rule": "decimal between 0 and 1", "message": … }] }` instead of running on
    invalid input; the executable exits with a distinct code.
 
@@ -401,12 +425,14 @@ predicates (`Expr`) attached to input bindings, evaluated before the run:
    later), so `loan.xlsx` is a Rust module with `LoanInput`/`LoanOutput`.
 2. **Service**: `--serve` already gives a line protocol; wrap it in an HTTP
    server (one program instance per worker, programs are immutable and `Sync`).
-3. **WASM**: the engine has no OS dependency besides the clock; ship
-   `sheetrs-engine` as a WASM module for browsers and edge runtimes.
+3. **WASM** (done): the engine has no OS dependency besides the clock, so `sheetc build --target wasm`
+   writes a module of a workbook (`sheetrs-rt-wasm` plus the program) and `sheetrs-wasm` compiles
+   one in the browser (see the README of the compiler and of `sheetrs-wasm`).
 4. **Native code**: emit Rust (or Cranelift) for the folded, ordered static
    part and keep the interpreter for dynamic references — same IR, same
    semantics, AOT speed.
-5. **Bindings**: Python/JS wrappers over `Program::execute`.
+5. **Bindings** (Python and JS done): `sheetrs-py` (`Book.calculate`) and `sheetrs-wasm`
+   (`Book.calculate` of the package) over the same engine; other languages are open.
 
 ### Engine
 

@@ -12,13 +12,18 @@ CLI tests and the README.
 Usage: scripts/gen_semantics_fixture.py [TAG ...]   (needs openpyxl and soffice; with tags, only the
 fixtures of those locales, see LOCALE_FIXTURES)
 """
+import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from datetime import date
 
 import openpyxl
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scripts"))
+import fixture_determinism  # noqa: E402  (the same bytes on every run, see its docstring)
 
 SOFFICE = os.environ.get("SOFFICE", "soffice")  # the reference build: LibreOffice 26.8
 OUT = os.path.join(os.path.dirname(__file__), "..", "tests", "assets")
@@ -1188,6 +1193,55 @@ for _ in range(25):
     BATCH24.append(f"INDEX({_fo('{' + _pairs.replace(';', ';') + '}', 'TRUE', *_opts)},{_rng.randint(1, _n)},{_rng.randint(1, 2)})")
 FORMULAS += BATCH24
 
+# The error LibreOffice gives per input, probed with `scripts/lo_probe.py` (see FIDELITY.md): an error
+# written in an array, a plain value where a range goes, the criteria and field of the database
+# functions, invalid arguments of the securities and of FIND/SEARCH, the number of arguments, `F.INV(1, …)`.
+BATCH_CODES = [line.rstrip("\n") for line in open(os.path.join(os.path.dirname(__file__), "error_code_formulas.txt"), encoding="utf-8") if line.strip()]
+FORMULAS += BATCH_CODES
+
+# A range in a formula that is not an array formula is met by the cell of the formula (`BATCH_INTERSECT`,
+# probed with `scripts/probe_intersection.py`): over the long ranges of the `Wide` sheet, so that the formula
+# of every row meets them whatever its row.
+BATCH_INTERSECT = [line.rstrip("\n") for line in open(os.path.join(os.path.dirname(__file__), "intersection_formulas.txt"), encoding="utf-8") if line.strip()]
+FORMULAS += BATCH_INTERSECT
+
+# What the engine did not reproduce before (`BATCH_RESIDUAL`, probed with `scripts/lo_probe.py`, see
+# FIDELITY.md): the arrays of an operator over a whole range (`Wide!A1:A40000*1`, empty cells included),
+# `MODE` with ties, the tables that come from an operator (`VLOOKUP`/`HLOOKUP` over `range*1`, an error among
+# the keys of a lookup, an index outside the table), the error of `LARGE`/`SMALL`, `SERIESSUM`, booleans in an
+# array written in the formula, arrays with elements left out (`{}`, `{1,2,}`, `{1,;2,3}`, `{{1,2}}`), and the
+# counts of arguments that LibreOffice takes (`ROWS()`, `IF(c)`, `IFS()`, `CHOOSE(1)`, `INDEX(range)`, ...).
+BATCH_RESIDUAL = [line.rstrip("\n") for line in open(os.path.join(os.path.dirname(__file__), "residual_formulas.txt"), encoding="utf-8") if line.strip()]
+FORMULAS += BATCH_RESIDUAL
+
+# References over several sheets (`Data:Wide!A1:A3`, `Data!A1:Wide!A3`), a sheet that is not there, arrays written
+# in a formula as the arguments of functions, the elements of an array as numbers, and an argument left empty
+# (`LOG(10,)`, `TAKE(r,)`), probed with `scripts/probe_3d.py`, `probe_lift.py` and `probe_omitted.py` (see FIDELITY.md).
+BATCH_SHEETS = [line.rstrip("\n") for line in open(os.path.join(os.path.dirname(__file__), "sheets_and_arrays_formulas.txt"), encoding="utf-8") if line.strip()]
+FORMULAS += BATCH_SHEETS
+# The element that a missing `else` of an `IF` gives, read by every kind of consumer (scripts/probe_marker.py,
+# probe_jump.py): operators, text and number functions, comparisons, aggregates, criteria, lookups, matrices.
+BATCH_MISSING_ELSE = [line.rstrip("\n") for line in open(os.path.join(os.path.dirname(__file__), "missing_else_formulas.txt"), encoding="utf-8") if line.strip()]
+FORMULAS += BATCH_MISSING_ELSE
+# The boolean format a single value keeps (`VALUE(TRUE())` is the number 1 that its cell shows as TRUE), probed with
+# `scripts/probe_logical.py` (see FIDELITY.md).
+BATCH_LOGICAL = [line.rstrip("\n") for line in open(os.path.join(os.path.dirname(__file__), "logical_format_formulas.txt"), encoding="utf-8") if line.strip()]
+FORMULAS += BATCH_LOGICAL
+
+# An error written in the formula where a function wants a reference is `Err:504` (`OFFSET(#NAME?,0,0)`), or the
+# answer of the array it wants (`CORREL(#NAME?,Data!A1:A3)` is `Err:502`); an error a calculation gave is that
+# error, and wins over a written one (`SUM(#NAME?,NA())` is `#N/A`), probed with `scripts/probe_literal_error.py`
+# (see FIDELITY.md).
+BATCH_LITERAL = [line.rstrip("\n") for line in open(os.path.join(os.path.dirname(__file__), "literal_error_formulas.txt"), encoding="utf-8") if line.strip()]
+FORMULAS += BATCH_LITERAL
+
+# An error written in the formula in the arguments of the functions that take arrays or lists of them
+# (`SUMPRODUCT("a",#NAME?)` is 0, `SUMPRODUCT(#NAME?,Data!A1:A3)` is `#VALUE!`, `TEXTSPLIT("a",#NAME?)` is `a`), and the
+# errors of the elements of an array next to a text (`SUMPRODUCT("a",{1}/0)` is 0): `scripts/probe_literal_error.py --strict`
+# (see FIDELITY.md).
+BATCH_LITERAL_ARRAYS = [line.rstrip("\n") for line in open(os.path.join(os.path.dirname(__file__), "literal_array_formulas.txt"), encoding="utf-8") if line.strip()]
+FORMULAS += BATCH_LITERAL_ARRAYS
+
 BATCH25 = []
 _greeks = ["", ',"value"', ',"price"', ',"delta"', ',"gamma"', ',"theta"', ',"vega"', ',"volga"', ',"vanna"', ',"rho"', ',"rhof"', ',"d"', ',"g"', ',"e"', ',"o"', ',"a"', ',"f"', ',"x"', ',""', ",1", ",TRUE"]
 for _ in range(500):
@@ -1427,36 +1481,223 @@ def build(path, formulas=None):
         data.cell(i, 60, v)   # BH = 2 * BF (collinear)
     crit(55, ["Name"], ["Gus"])
     crit(57, ["Name"], ["Eve"])
+    # Blank rows among the criteria (BATCH_CODES): LibreOffice ignores them unless every row is blank.
+    crit(66, ["Age"], [None], [30])
+    crit(67, ["Age"], [None], [25])
+    crit(68, ["Age"], [">40"], ["<26"])
+    crit(69, ["Name"], [None], ["B*"])
+    # A range as long as the formulas of `Calc` is met by the formula of every row (implicit
+    # intersection, see BATCH_INTERSECT): numbers, texts and a second number column that vary with the row.
+    todo = FORMULAS if formulas is None else formulas
+    wide = wb.create_sheet("Wide")
+    for i in range(1, max(len(todo), 3000) + 20):
+        wide.cell(i, 1, (i * 7) % 11 + 1)
+        wide.cell(i, 2, ["x", "yy", "zzz", "w"][i % 4])
+        wide.cell(i, 3, (i * 5) % 9)
     calc = wb.create_sheet("Calc")
-    for i, f in enumerate(FORMULAS if formulas is None else formulas, start=1):
+    for i, f in enumerate(todo, start=1):
         calc[f"A{i}"] = "=" + f
         calc[f"B{i}"] = f  # label (as text) for failure messages
         calc[f"B{i}"].data_type = "s"
     wb.save(path)
 
 
-def _profile(tmp, locale):
-    """A LibreOffice user profile with the given system locale (None: the default)."""
-    if locale is None:
+def _profile(tmp, locale, recalculate=False, ods=False):
+    """A LibreOffice user profile with the given system locale (None: the default); with
+    `recalculate`, one that recalculates the formulas of an XLSX (and, with `ods`, of an ODS) when it opens
+    it (hard recalc)."""
+    if locale is None and not recalculate:
         return []
-    prof = os.path.join(tmp, "profile_" + locale)
+    name = "profile_" + (locale or "default") + ("_recalc" if recalculate else "") + ("_ods" if ods else "")
+    prof = os.path.join(tmp, name)
     os.makedirs(os.path.join(prof, "user"), exist_ok=True)
+    items = ""
+    if locale is not None:
+        items += (
+            '<item oor:path="/org.openoffice.Setup/L10N"><prop oor:name="ooSetupSystemLocale" '
+            f'oor:op="fuse"><value>{locale}</value></prop></item>'
+        )
+    if recalculate:
+        items += (
+            '<item oor:path="/org.openoffice.Office.Calc/Formula/Load"><prop oor:name="OOXMLRecalcMode" '
+            'oor:op="fuse"><value>0</value></prop>'
+            + ('<prop oor:name="ODFRecalcMode" oor:op="fuse"><value>0</value></prop>' if ods else "")
+            + "</item>"
+        )
     with open(os.path.join(prof, "user", "registrymodifications.xcu"), "w") as f:
         f.write(
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<oor:items xmlns:oor="http://openoffice.org/2001/registry" '
             'xmlns:xs="http://www.w3.org/2001/XMLSchema" '
-            'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
-            '<item oor:path="/org.openoffice.Setup/L10N"><prop oor:name="ooSetupSystemLocale" '
-            f'oor:op="fuse"><value>{locale}</value></prop></item></oor:items>'
+            f'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">{items}</oor:items>'
         )
     return [f"-env:UserInstallation=file://{prof}"]
 
 
+_ODS_NS = {
+    "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
+    "office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+    "text": "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
+    "calcext": "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0",
+}
+
+
+def _oq(prefix, name):
+    return "{" + _ODS_NS[prefix] + "}" + name
+
+
+def _paragraph(p):
+    """The text of an ODS paragraph, with the spaces (`text:s`), tabs and line breaks it writes as elements."""
+    out = [p.text or ""]
+    for child in p.iter():
+        if child is p:
+            continue
+        tag = child.tag
+        if tag == _oq("text", "s"):
+            out.append(" " * int(child.get(_oq("text", "c"), "1")))
+        elif tag == _oq("text", "tab"):
+            out.append("\t")
+        elif tag == _oq("text", "line-break"):
+            out.append("\n")
+        out.append(child.tail or "")
+    return "".join(out)
+
+
+def _recalculated(xlsx, tmp, locale):
+    """What LibreOffice gives each row of the `Calc` sheet of `xlsx` when it opens THAT file and
+    calculates every formula again: `{row (1-based): (kind, text)}`, read from the ODS it converts
+    the file to (kind: float, string, boolean, error or empty; an error as LibreOffice shows it:
+    `Err:502`, `#N/A`…). It is the oracle of the XLSX itself: its export writes `#VALUE!` for every
+    error it has a code for, and a formula it rewrites (`T1:T1` as `T1`) is judged as written."""
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    outdir = os.path.join(tmp, "recalc_out")
+    os.makedirs(outdir, exist_ok=True)
+    subprocess.run(
+        [SOFFICE, *_profile(tmp, locale, recalculate=True), "--headless", "--convert-to", "ods", "--outdir", outdir, xlsx],
+        check=True, capture_output=True,
+    )
+    ods = os.path.join(outdir, os.path.splitext(os.path.basename(xlsx))[0] + ".ods")
+    with zipfile.ZipFile(ods) as z:
+        root = ET.fromstring(z.read("content.xml"))
+    rows = {}
+    for sheet in root.iter(_oq("table", "table")):
+        if sheet.get(_oq("table", "name")) != "Calc":
+            continue
+        n = 0
+        for row in sheet.iter(_oq("table", "table-row")):
+            repeat = int(row.get(_oq("table", "number-rows-repeated"), "1"))
+            cell = next((c for c in row if c.tag in (_oq("table", "table-cell"), _oq("table", "covered-table-cell"))), None)
+            if cell is None:
+                n += repeat
+                continue
+            kind = cell.get(_oq("calcext", "value-type")) or cell.get(_oq("office", "value-type")) or "empty"
+            text = "\n".join(_paragraph(p) for p in cell.findall(_oq("text", "p")))
+            if kind in ("float", "percentage", "currency"):
+                kind, text = "float", cell.get(_oq("office", "value")) or text
+            elif kind == "boolean":
+                text = cell.get(_oq("office", "boolean-value")) or text
+            for _ in range(repeat):
+                n += 1
+                rows[n] = (kind, text)
+        break
+    os.remove(ods)
+    return rows
+
+
+def _cached(xlsx):
+    """What the XLSX holds for each row of the `Calc` sheet, column A, as the file writes it
+    (`{row: (type, text)}`, type as in the `t` attribute: `n`, `b`, `e`, `str`, `s`, …)."""
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    with zipfile.ZipFile(xlsx) as z:
+        workbook = ET.fromstring(z.read("xl/workbook.xml"))
+        rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
+        rid = next(
+            sh.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+            for sh in workbook.iter(ns + "sheet") if sh.get("name") == "Calc"
+        )
+        target = next(r.get("Target") for r in rels if r.get("Id") == rid)
+        target = target.lstrip("/")
+        path = target if target.startswith("xl/") else "xl/" + target
+        shared = []
+        if "xl/sharedStrings.xml" in z.namelist():
+            for si in ET.fromstring(z.read("xl/sharedStrings.xml")).iter(ns + "si"):
+                shared.append("".join(t.text or "" for t in si.iter(ns + "t")))
+        out = {}
+        for c in ET.fromstring(z.read(path)).iter(ns + "c"):
+            ref = c.get("r")
+            if not ref.startswith("A") or not ref[1:].isdigit():
+                continue
+            v = c.find(ns + "v")
+            text = v.text if v is not None and v.text is not None else ""
+            kind = c.get("t", "n")
+            if kind == "s" and text != "":
+                text, kind = shared[int(text)], "str"
+            out[int(ref[1:])] = (kind, text)
+    return out
+
+
+def recalculated_oracle(xlsx, tmp, locale):
+    """The rows where the oracle of the XLSX file is not what the file caches: the result of
+    LibreOffice opening and recalculating that file (`_recalculated`) against the value the file
+    holds (`{"3": {"error": "Err:502"}, "9": {"number": 1.0}, …}`). Every error goes in (the XLSX export
+    caches `#VALUE!` for an error that has a code of its own, and the reader takes a cached error of a
+    formula with `:` as no value); another result goes in only when it differs from the cache."""
+    cached = _cached(xlsx)
+    out = {}
+    for row, (kind, text) in _recalculated(xlsx, tmp, locale).items():
+        held_kind, held = cached.get(row, ("n", ""))
+        if kind == "error":
+            out[str(row)] = {"error": text}
+        elif kind == "float":
+            number = float(text)
+            try:
+                same = held_kind == "n" and held != "" and abs(float(held) - number) <= 1e-9 * max(1.0, abs(number))
+            except ValueError:
+                same = False
+            if not same:
+                out[str(row)] = {"number": number}
+        elif kind == "boolean":
+            # LibreOffice writes `boolean-value="5"` for a number that shows as TRUE: the number.
+            try:
+                number = float(text)
+            except ValueError:
+                number = 1.0 if text.lower() == "true" else 0.0
+            if number not in (0.0, 1.0):
+                out[str(row)] = {"number": number}
+            elif not (held_kind == "b" and (held == "1") == (number == 1.0)):
+                out[str(row)] = {"bool": number == 1.0}
+        elif kind == "string":
+            if held_kind in ("str", "inlineStr") and held == text:
+                continue
+            if held_kind == "n" and held == "" and text == "":
+                continue
+            out[str(row)] = {"text": text}
+    return out
+
+
+def _recalculate_ods(ods, tmp, locale):
+    """The ODS as LibreOffice gives it when it opens THAT file and calculates every formula again. The ODS is made by
+    converting the XLSX, so its cached results are the ones of the XLSX import (a bare `#REF!` is a name there:
+    `#NAME?`), where the formulas it holds are read as an ODS reads them (`#ref!` is `#REF!`): the file says
+    what it says when it is opened, not what the conversion cached."""
+    outdir = os.path.join(tmp, "ods_recalc")
+    subprocess.run(
+        [SOFFICE, *_profile(tmp, locale, recalculate=True, ods=True), "--headless", "--convert-to", "ods", "--outdir", outdir, ods],
+        check=True, capture_output=True,
+    )
+    os.replace(os.path.join(outdir, os.path.basename(ods)), ods)
+
+
 def main(only=()):
-    """The semantics fixtures; with `only` (locale tags), just those of the locales."""
+    """The semantics fixtures; with `only` (locale tags), just those of the locales (`en-US` is the
+    fixture without a tag, `semantics`)."""
     with tempfile.TemporaryDirectory() as tmp:
-        fixtures = [] if only else [("semantics", None, FORMULAS)]
+        fixtures = [("semantics", None, FORMULAS)] if (not only or "en-US" in only) else []
         fixtures += [(f"semantics_{tag}", tag, locale_formulas(tag)) for tag in LOCALE_FIXTURES if not only or tag in only]
         for name, locale, formulas in fixtures:
             src = os.path.join(tmp, f"{name}.xlsx")
@@ -1468,7 +1709,14 @@ def main(only=()):
                     check=True, capture_output=True,
                 )
                 os.replace(os.path.join(outdir, f"{name}.{fmt}"), os.path.join(OUT, f"{name}.{fmt}"))
-            print(f"{name}: {len(formulas)} formulas")
+                if fmt == "ods":
+                    _recalculate_ods(os.path.join(OUT, f"{name}.ods"), tmp, locale)
+                fixture_determinism.normalize(os.path.join(OUT, f"{name}.{fmt}"))
+            oracle = recalculated_oracle(os.path.join(OUT, f"{name}.xlsx"), tmp, locale)
+            with open(os.path.join(OUT, f"{name}.xlsx.recalc.json"), "w") as f:
+                json.dump({"rows": oracle}, f, indent=1, sort_keys=True)
+                f.write("\n")
+            print(f"{name}: {len(formulas)} formulas, {len(oracle)} rows judged on the recalculated XLSX")
 
 
 # The same engine under a Spanish locale: separators and names of the user's
@@ -1602,6 +1850,7 @@ def main_loan():
                 check=True, capture_output=True,
             )
             os.replace(os.path.join(outdir, f"loan.{fmt}"), os.path.join(OUT, f"loan.{fmt}"))
+            fixture_determinism.normalize(os.path.join(OUT, f"loan.{fmt}"))
 
 
 def main_macro():
@@ -1612,11 +1861,10 @@ def main_macro():
         for item in zin.infolist():
             zout.writestr(item, zin.read(item.filename))
         zout.writestr("xl/vbaProject.bin", b"\xd0\xcf\x11\xe0")
+    fixture_determinism.normalize(dst)
 
 
 if __name__ == "__main__":
-    import sys
-
     if sys.argv[1:]:
         # `gen_semantics_fixture.py es-ES de-DE`: only the fixtures of those locales
         main(sys.argv[1:])

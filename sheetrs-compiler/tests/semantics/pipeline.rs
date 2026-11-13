@@ -1,9 +1,10 @@
 use crate::common::*;
 use serde_json::{Value as Json, json};
 use sheetrs_compiler::BindingSpec;
-use sheetrs_compiler::ir::CellKind;
-use sheetrs_compiler::options::Iteration;
-use sheetrs_compiler::{Overrides, Spec};
+use sheetrs_compiler::Spec;
+use sheetrs_engine::Overrides;
+use sheetrs_engine::ir::CellKind;
+use sheetrs_engine::options::Iteration;
 
 fn model() -> sheetrs_compiler::Model {
     sheet(&[
@@ -32,20 +33,23 @@ fn inputs_outputs_prune_and_fold() {
         .count();
     assert_eq!(formulas, 2);
     assert!(
-        p.cells.iter().all(|c| !(c.at.col == 3)),
+        p.cells.iter().all(|c| c.at.col != 3),
         "column D must be pruned"
     );
 
     let out = p
-        .execute(
+        .calculate(
             &json!({"Sheet1!A1": 100, "Sheet1!A2": 3}),
-            &Overrides::default(),
+            &sheetrs_engine::calculate::Overrides::default(),
         )
         .unwrap();
     assert_eq!(out["Sheet1!C2"], json!(300.0 * 1.21 + 0.42));
     // Defaults come from the source file when an input is omitted.
     let out = p
-        .execute(&json!({"Sheet1!A2": 1}), &Overrides::default())
+        .calculate(
+            &json!({"Sheet1!A2": 1}),
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
         .unwrap();
     assert_eq!(out["Sheet1!C2"], json!(100.0 * 1.21 + 0.42));
 }
@@ -54,21 +58,37 @@ fn inputs_outputs_prune_and_fold() {
 fn unknown_and_malformed_inputs_are_rejected() {
     let (p, _) = build(&model(), &spec(&["A1"], &["C2"]));
     let e = p
-        .execute(&json!({"nope": 1}), &Overrides::default())
+        .calculate(
+            &json!({"nope": 1}),
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
         .unwrap_err();
     assert!(
-        e.0.contains("unknown input `nope`") && e.0.contains("Sheet1!A1"),
+        e.to_string().contains("unknown input `nope`") && e.to_string().contains("Sheet1!A1"),
         "{e}"
     );
-    assert!(p.execute(&json!([1]), &Overrides::default()).is_err());
+    assert!(
+        p.calculate(
+            &json!([1]),
+            &sheetrs_engine::calculate::Overrides::default()
+        )
+        .is_err()
+    );
 }
 
 #[test]
-fn everything_folds_without_inputs() {
+fn everything_folds_when_the_declared_inputs_are_none() {
+    // `"inputs": []`: there are no inputs, so what the outputs read is constant and all of it
+    // folds. (With no declaration the constants are the inputs, and nothing that reads one folds.)
     let (p, r) = build(&model(), &spec(&[], &["C2", "D2"]));
     assert_eq!(r.formulas_kept, 0);
     assert!(p.cells.iter().all(|c| matches!(c.kind, CellKind::Const(_))));
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap();
     assert_eq!(out["Sheet1!D2"], json!(6000));
 }
 
@@ -86,15 +106,21 @@ fn range_bindings_use_json_matrices() {
     let (p, _) = build(&m, &spec(&["A1:A3"], &["B1:B3", "C1"]));
     for input in [json!([1, 2, 3]), json!([[1], [2], [3]])] {
         let out = p
-            .execute(&json!({ "Sheet1!A1:A3": input }), &Overrides::default())
+            .calculate(
+                &json!({ "Sheet1!A1:A3": input }),
+                &sheetrs_engine::calculate::Overrides::default(),
+            )
             .unwrap();
         assert_eq!(out["Sheet1!B1:B3"], json!([[2], [4], [6]]));
         assert_eq!(out["Sheet1!C1"], json!(12));
     }
     let e = p
-        .execute(&json!({"Sheet1!A1:A3": [1, 2]}), &Overrides::default())
+        .calculate(
+            &json!({"Sheet1!A1:A3": [1, 2]}),
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
         .unwrap_err();
-    assert!(e.0.contains("expects 3"), "{e}");
+    assert!(e.to_string().contains("expects 3"), "{e}");
 }
 
 #[test]
@@ -106,7 +132,10 @@ fn errors_and_blanks_in_json() {
     ]);
     let (p, _) = build(&m, &spec(&["A1"], &["B1", "C1"]));
     let out = p
-        .execute(&json!({"Sheet1!A1": "hi"}), &Overrides::default())
+        .calculate(
+            &json!({"Sheet1!A1": "hi"}),
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
         .unwrap();
     assert_eq!(out["Sheet1!B1"], err("#VALUE!"));
     // A formula that refers to a blank cell holds 0, as in Excel and LibreOffice.
@@ -114,12 +143,18 @@ fn errors_and_blanks_in_json() {
 }
 
 #[test]
-fn default_outputs_cover_formula_ranges() {
+fn default_outputs_are_the_formula_cells_as_the_rectangles_that_hold_them() {
+    // The constants (A1, A2, B1) are not outputs: the formulas are B2, C1:D1 and C2:D2.
     let (p, _) = build(&model(), &spec(&[], &[]));
-    assert_eq!(p.outputs.len(), 1);
-    assert_eq!(p.outputs[0].name, "Sheet1!B1:D2");
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
-    assert_eq!(out["Sheet1!B1:D2"][1][1], json!(300.0 * 1.21 + 0.42)); // C2 in B1:D2
+    let names: Vec<&str> = p.outputs.iter().map(|b| b.name.as_str()).collect();
+    assert_eq!(names, ["Sheet1!C1:D1", "Sheet1!B2:D2"]);
+    let out = p
+        .calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap();
+    assert_eq!(out["Sheet1!B2:D2"][0][1], json!(300.0 * 1.21 + 0.42)); // C2
 }
 
 #[test]
@@ -131,7 +166,12 @@ fn circular_references_and_iteration() {
     ]);
     let (p, r) = build(&m, &spec(&[], &["A1", "C1"]));
     assert_eq!(r.cycles, 1);
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap();
     assert_eq!(out["Sheet1!A1"], err("#CIRC!"));
     assert_eq!(out["Sheet1!C1"], err("#CIRC!"));
 
@@ -147,7 +187,12 @@ fn circular_references_and_iteration() {
         max_change: 1e-12,
     });
     let (p, _) = build(&m, &s);
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap();
     assert!((out["Sheet1!A1"].as_f64().unwrap() - 20.0).abs() < 1e-9);
     assert!((out["Sheet1!C1"].as_f64().unwrap() - 40.0).abs() < 1e-9);
 }
@@ -169,7 +214,10 @@ fn cycles_through_inputs_survive_to_run_time() {
     assert_eq!(r.formulas_kept, 2);
     assert_eq!(p.cycles.len(), 1);
     let out = p
-        .execute(&json!({"Sheet1!A1": 5}), &Overrides::default())
+        .calculate(
+            &json!({"Sheet1!A1": 5}),
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
         .unwrap();
     assert!((out["Sheet1!B1"].as_f64().unwrap() - 10.0).abs() < 1e-9);
 }
@@ -194,7 +242,10 @@ fn dynamic_references_resolve_at_run_time() {
         (3, [40, 0, 70, 40]),
     ] {
         let out = p
-            .execute(&json!({"Sheet1!A1": row}), &Overrides::default())
+            .calculate(
+                &json!({"Sheet1!A1": row}),
+                &sheetrs_engine::calculate::Overrides::default(),
+            )
             .unwrap();
         let got: Vec<Json> = out["Sheet1!C1:C4"]
             .as_array()
@@ -213,7 +264,11 @@ fn dynamic_references_resolve_at_run_time() {
     );
     assert!(!r.dynamic_refs);
     assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!A1"],
+        p.calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default()
+        )
+        .unwrap()["Sheet1!A1"],
         json!(4)
     );
 }
@@ -245,7 +300,12 @@ fn locale_is_fixed_at_build_time() {
         };
         s.locale = Some(from_tag(tag, &over).unwrap().0);
         let (p, _) = build(&m, &s);
-        p.execute(&Json::Null, &Overrides::default()).unwrap()[key].clone()
+        p.calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap()[key]
+            .clone()
     };
 
     // Folded or not, the build's locale is the one in force.
@@ -271,7 +331,11 @@ fn locale_is_fixed_at_build_time() {
     let m = sheet(&[("A1", json!("=DATE(2024,1,1)"))]);
     let (p, _) = build(&m, &spec(&[], &["A1"]));
     assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!A1"],
+        p.calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default()
+        )
+        .unwrap()["Sheet1!A1"],
         json!(45292)
     );
 }
@@ -286,8 +350,8 @@ fn volatile_functions_are_not_folded() {
         now: Some(45292.5),
         ..Overrides::default()
     };
-    let x = p.execute(&Json::Null, &o).unwrap();
-    assert_eq!(x, p.execute(&Json::Null, &o).unwrap()); // deterministic when seeded
+    let x = p.calculate(&Json::Null, &o).unwrap();
+    assert_eq!(x, p.calculate(&Json::Null, &o).unwrap()); // deterministic when seeded
     assert_eq!(x["Sheet1!B1"], json!(45292));
     let a = x["Sheet1!A1"].as_f64().unwrap();
     assert!((0.0..1.0).contains(&a));
@@ -297,12 +361,12 @@ fn volatile_functions_are_not_folded() {
 fn program_roundtrips_through_json() {
     let (p, _) = build(&model(), &spec(&["A1"], &["C2"]));
     let text = serde_json::to_string(&p).unwrap();
-    let q: sheetrs_compiler::Program = serde_json::from_str(&text).unwrap();
+    let q: sheetrs_engine::Program = serde_json::from_str(&text).unwrap();
     assert_eq!(p, q);
     let o = Overrides::default();
     assert_eq!(
-        p.execute(&json!({"Sheet1!A1": 7}), &o).unwrap(),
-        q.execute(&json!({"Sheet1!A1": 7}), &o).unwrap()
+        p.calculate(&json!({"Sheet1!A1": 7}), &o).unwrap(),
+        q.calculate(&json!({"Sheet1!A1": 7}), &o).unwrap()
     );
 }
 
@@ -312,8 +376,11 @@ fn defined_names_bind_and_parse() {
     m.names.insert("Rate".into(), "Sheet1!$A$1".into());
     let (p, _) = build(&m, &spec(&["Rate"], &["B1"]));
     assert_eq!(
-        p.execute(&json!({"Sheet1!A1": 4}), &Overrides::default())
-            .unwrap()["Sheet1!B1"],
+        p.calculate(
+            &json!({"Sheet1!A1": 4}),
+            &sheetrs_engine::calculate::Overrides::default()
+        )
+        .unwrap()["Sheet1!B1"],
         json!(8)
     );
 }
@@ -321,15 +388,14 @@ fn defined_names_bind_and_parse() {
 #[test]
 fn bad_targets_fail_early() {
     let e = sheetrs_compiler::compile(&model(), &spec(&["Nope!A1"], &["C2"])).unwrap_err();
-    assert!(e.0.contains("cannot resolve"));
+    assert!(e.to_string().contains("cannot resolve"));
     let e = sheetrs_compiler::compile(&model(), &spec(&["A1", "A1"], &["C2"])).unwrap_err();
-    assert!(e.0.contains("declared twice"));
+    assert!(e.to_string().contains("declared twice"));
 }
 
 #[test]
-fn query_levels_keep_progressively_more() {
-    use sheetrs_compiler::Program;
-    use sheetrs_compiler::compile::QueryLevel;
+fn outputs_are_declared_or_the_formula_cells_and_names_are_aliases() {
+    use sheetrs_engine::Program;
     let mut m = sheet(&[
         ("A1", json!(2)),
         ("B1", json!("=A1*10")),
@@ -337,107 +403,253 @@ fn query_levels_keep_progressively_more() {
         ("D1", json!("=A1+100")),
     ]);
     m.names.insert("Total".into(), "Sheet1!C1".into());
-    let at = |level, ins: &[&str]| {
+    let at = |outputs: &[(&str, &str)], ins: &[&str]| {
         let s = Spec {
-            query: level,
             inputs: ins.iter().map(|t| BindingSpec::named("a", t)).collect(),
-            outputs: vec![BindingSpec::named("ten", "B1")],
+            outputs: outputs
+                .iter()
+                .map(|(n, t)| BindingSpec::named(n, t))
+                .collect(),
             ..Spec::default()
         };
         build(&m, &s).0
     };
     let ask = |p: &Program, inputs: &Json, q: &[&str]| {
         let q: Vec<String> = q.iter().map(|s| (*s).to_string()).collect();
-        p.query(inputs, &Overrides::default(), &q, Default::default())
+        p.query(
+            inputs,
+            &sheetrs_engine::calculate::Overrides::default(),
+            &q,
+            sheetrs_engine::calculate::MajorDimension::default(),
+        )
     };
     let none = Json::Null;
 
-    // declared: the output, by name or by range; C1 and D1 are pruned away.
-    let p = at(QueryLevel::Declared, &[]);
+    // Declared: the output, by name or by range; C1 and D1 are pruned away, and the name of C1 is
+    // an alias of something that is not an output.
+    let p = at(&[("ten", "B1")], &[]);
     assert_eq!(
         ask(&p, &none, &["ten"]).unwrap(),
         json!([{"name": "ten", "range": "Sheet1!B1", "values": [[20]]}])
     );
     assert_eq!(ask(&p, &none, &["B1"]).unwrap()[0]["values"], json!([[20]]));
-    assert!(
-        ask(&p, &none, &["C1"])
-            .unwrap_err()
-            .0
-            .contains("outputs = declared")
-    );
+    for outside in ["C1", "D1"] {
+        let e = ask(&p, &none, &[outside]).unwrap_err().to_string();
+        assert!(e.contains("not inside the outputs"), "{outside}: {e}");
+    }
+    // The name of C1 is an alias of something that is not an output, so it is not a name here.
+    let e = ask(&p, &none, &["Total"]).unwrap_err().to_string();
+    assert!(e.contains("not a range or a name"), "{e}");
 
-    // named: a defined name is read by name (any case) or by range; D1 is not.
-    let p = at(QueryLevel::Named, &[]);
+    // A defined name inside the outputs is an alias of them, in any case.
+    let p = at(&[("both", "B1:C1")], &[]);
     assert_eq!(
         ask(&p, &none, &["total"]).unwrap(),
         json!([{"name": "Total", "range": "Sheet1!C1", "values": [[21]]}])
     );
-    assert_eq!(
-        ask(&p, &none, &["Sheet1!C1"]).unwrap()[0]["values"],
-        json!([[21]])
-    );
-    assert!(ask(&p, &none, &["D1"]).is_err());
 
-    // any: every cell, in request order, repeats allowed, following the inputs.
-    let p = at(QueryLevel::Any, &["A1"]);
-    let out = ask(&p, &json!({"a": 5}), &["D1", "Sheet1!A1:C1", "Total", "D1"]).unwrap();
+    // No outputs declared: the formula cells are (B1:D1, not the constant A1), in request order,
+    // repeats allowed, following the inputs.
+    let p = at(&[], &["A1"]);
+    let out = ask(&p, &json!({"a": 5}), &["D1", "Sheet1!B1:C1", "Total", "D1"]).unwrap();
     assert_eq!(out[0]["values"], json!([[105]]));
-    assert_eq!(out[1]["values"], json!([[5, 50, 51]]));
+    assert_eq!(out[1]["values"], json!([[50, 51]]));
     assert_eq!(
         (out[2]["name"].clone(), out[2]["values"].clone()),
         (json!("Total"), json!([[51]]))
     );
     assert_eq!(out[3], out[0]);
-    assert!(ask(&p, &none, &["Z9:Z10"]).is_ok());
     assert!(ask(&p, &none, &["Nope!A1"]).is_err());
-    // Open-ended ranges end where the data does.
-    let out = ask(&p, &none, &["Sheet1!A:A", "Sheet1!1:1", "Sheet1!E:F"]).unwrap();
-    assert_eq!(out[0], json!({"range": "Sheet1!A1", "values": [[2]]}));
-    assert_eq!(out[1]["range"], "Sheet1!A1:D1");
+    // A range beyond the formula cells is not an output, nor is a constant.
+    assert!(ask(&p, &none, &["Z9:Z10"]).is_err());
+    assert!(ask(&p, &none, &["A1"]).is_err());
+    // Open-ended ranges end where the data does, and must lie inside the outputs: the whole row 1
+    // reaches the constant A1, which is not one.
+    assert!(ask(&p, &none, &["Sheet1!1:1"]).is_err());
+    let out = ask(&p, &none, &["Sheet1!B:B", "Sheet1!B:D", "Sheet1!E:F"]).unwrap();
+    assert_eq!(out[0], json!({"range": "Sheet1!B1", "values": [[20]]}));
+    assert_eq!(out[1]["range"], "Sheet1!B1:D1");
     assert_eq!(out[2], json!({"range": "", "values": []}));
     // Columns instead of rows.
     let cols = p
         .query(
             &none,
-            &Overrides::default(),
-            &["A1:C1".into()],
-            sheetrs_compiler::run::MajorDimension::Columns,
+            &sheetrs_engine::calculate::Overrides::default(),
+            &["B1:C1".into()],
+            sheetrs_engine::calculate::MajorDimension::Columns,
         )
         .unwrap();
-    assert_eq!(cols[0]["values"], json!([[2], [20], [21]]));
+    assert_eq!(cols[0]["values"], json!([[20], [21]]));
+}
+
+#[test]
+fn inputs_are_declared_or_the_constants_the_outputs_start_from() {
+    use sheetrs_engine::Program;
+    let mut m = sheet(&[
+        ("A1", json!(2)),
+        ("A2", json!(3)),
+        ("B1", json!("=A1*10")),
+        ("C1", json!("=B1+1")),
+        ("D1", json!("=A2+100")),
+        ("F9", json!(7)),
+    ]);
+    m.names.insert("Both".into(), "Sheet1!A1:A2".into());
+    m.names.insert("Total".into(), "Sheet1!C1".into());
+    let spec = |outputs: &[(&str, &str)]| Spec {
+        outputs: outputs
+            .iter()
+            .map(|(n, t)| BindingSpec::named(n, t))
+            .collect(),
+        ..Spec::default()
+    };
+    let run = |p: &Program, inputs: Json| {
+        p.calculate(&inputs, &sheetrs_engine::calculate::Overrides::default())
+    };
+
+    // With the output `eleven` (C1), what it starts from is A1: A2, D1 and F9 are pruned and the
+    // only input is the cell that starts the path.
+    let p = build(&m, &spec(&[("eleven", "C1")])).0;
+    assert_eq!(
+        p.inputs.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(),
+        ["Sheet1!A1"]
+    );
+    assert_eq!(run(&p, Json::Null).unwrap(), json!({"eleven": 21}));
+    // The input is given by its range, and nothing else is one.
+    assert_eq!(
+        run(&p, json!({"Sheet1!A1": 5})).unwrap(),
+        json!({"eleven": 51})
+    );
+    assert_eq!(run(&p, json!({"A1": 5})).unwrap(), json!({"eleven": 51}));
+    let e = run(&p, json!({"Sheet1!A2": 1})).unwrap_err().to_string();
+    assert!(e.contains("not an input"), "{e}");
+    let e = run(&p, json!({"Sheet1!C1": 1})).unwrap_err().to_string();
+    assert!(e.contains("not an input"), "{e}");
+    let e = run(&p, json!({"nowhere": 1})).unwrap_err().to_string();
+    assert!(e.contains("unknown input"), "{e}");
+
+    // With nothing declared the outputs are the formula cells (B1:D1) and the inputs the constants a
+    // path starts from, as the fewest rectangles: A1:A2 (B1 and D1 read them). F9 is read by nothing
+    // and no name covers it: it starts no path, so it is not an input, and it is no output either (a
+    // constant). A defined name that lies inside the inputs is an alias; `Total` is a formula, not
+    // an input.
+    let p = build(&m, &spec(&[])).0;
+    assert_eq!(
+        p.inputs.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(),
+        ["Sheet1!A1:A2"]
+    );
+    let out = p
+        .query(
+            &json!({"Both": [[10], [20]]}),
+            &sheetrs_engine::calculate::Overrides::default(),
+            &["Sheet1!B1:D1".to_string()],
+            sheetrs_engine::calculate::MajorDimension::default(),
+        )
+        .unwrap();
+    assert_eq!(out[0]["values"], json!([[100, 101, 120]]));
+    assert!(
+        p.query(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+            &["Sheet1!F9".to_string()],
+            sheetrs_engine::calculate::MajorDimension::default(),
+        )
+        .is_err()
+    );
+    assert!(run(&p, json!({"Total": 1})).is_err());
+    let e = run(&p, json!({"Sheet1!F9": 1})).unwrap_err().to_string();
+    assert!(e.contains("not an input"), "{e}");
+    // Only the constants a path starts from are inputs, so what reads nothing of them is folded: a
+    // formula of constants only (`=1+1`) is a value of the program, not a computation.
+    let mut with_constant_formula = m.clone();
+    with_constant_formula.set_formula(0, "G1", "1+1");
+    let p = build(&with_constant_formula, &spec(&[])).0;
+    assert!(
+        p.cells
+            .iter()
+            .all(|c| c.at != sheetrs_engine::addr::CellRef::new(0, 0, 6)
+                || matches!(c.kind, sheetrs_engine::ir::CellKind::Const(_))),
+        "a formula that reads no input is folded"
+    );
+    // A constant that nothing reads is not kept, even under a name: the program holds what its
+    // outputs (the formula cells) start from.
+    let mut named = m.clone();
+    named.names.insert("Extra".into(), "Sheet1!F9".into());
+    let p = build(&named, &spec(&[])).0;
+    assert_eq!(
+        p.inputs.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(),
+        ["Sheet1!A1:A2"]
+    );
+    // One that a formula reads is an input, exposed under its name.
+    named.set_formula(0, "G1", "F9+1");
+    let p = build(&named, &spec(&[])).0;
+    assert_eq!(
+        p.inputs.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(),
+        ["Sheet1!A1:A2", "Sheet1!F9"]
+    );
+    assert_eq!(
+        p.query(
+            &json!({"Extra": 9}),
+            &sheetrs_engine::calculate::Overrides::default(),
+            &["Sheet1!G1".to_string()],
+            sheetrs_engine::calculate::MajorDimension::default(),
+        )
+        .unwrap()[0]["values"],
+        json!([[10]])
+    );
+
+    // Declared inputs are exactly the declared ones, and the rest stays folded.
+    let declared = Spec {
+        inputs: vec![BindingSpec::named("a", "A1")],
+        outputs: vec![BindingSpec::named("eleven", "C1")],
+        ..Spec::default()
+    };
+    let p = build(&m, &declared).0;
+    assert_eq!(p.inputs.len(), 1);
+    assert_eq!(run(&p, json!({"a": 4})).unwrap(), json!({"eleven": 41}));
 }
 
 #[test]
 fn requests_are_inputs_and_ranges() {
-    use sheetrs_compiler::compile::QueryLevel;
     let m = sheet(&[
         ("A1", json!(2)),
         ("B1", json!("=A1*10")),
         ("C1", json!("=B1+1")),
     ]);
-    let build_at = |level| {
+    let build_at = |declared: bool| {
         let s = Spec {
-            query: level,
             inputs: vec![BindingSpec::named("a", "A1")],
-            outputs: vec![
-                BindingSpec::named("ten", "B1"),
-                BindingSpec::named("eleven", "C1"),
-            ],
+            outputs: if declared {
+                vec![
+                    BindingSpec::named("ten", "B1"),
+                    BindingSpec::named("eleven", "C1"),
+                ]
+            } else {
+                Vec::new()
+            },
             ..Spec::default()
         };
         build(&m, &s).0
     };
-    let call = |p: &sheetrs_compiler::Program, r: Json| p.handle(&r, &Overrides::default());
+    let call = |p: &sheetrs_engine::Program, r: Json| {
+        p.handle(&r, &sheetrs_engine::calculate::Overrides::default())
+            .map(|answer| answer.to_json())
+    };
 
     // Without ranges: the outputs declared at build time, under their names.
-    let p = build_at(QueryLevel::Declared);
+    let p = build_at(true);
     assert_eq!(
         call(&p, json!({"inputs": {"a": 3}})).unwrap(),
-        json!({"outputs": {"ten": 30, "eleven": 31}})
+        json!({"valueRanges": [
+            {"name": "ten", "range": "Sheet1!B1", "values": [[30]]},
+            {"name": "eleven", "range": "Sheet1!C1", "values": [[31]]},
+        ]})
     );
     assert_eq!(
         call(&p, Json::Null).unwrap(),
-        json!({"outputs": {"ten": 20, "eleven": 21}})
+        json!({"valueRanges": [
+            {"name": "ten", "range": "Sheet1!B1", "values": [[20]]},
+            {"name": "eleven", "range": "Sheet1!C1", "values": [[21]]},
+        ]})
     );
     // With ranges: exactly those, and no more.
     assert_eq!(
@@ -453,14 +665,19 @@ fn requests_are_inputs_and_ranges() {
         (json!({"majorDimension": "DIAGONAL"}), "majorDimension"),
         (json!([1]), "JSON object"),
     ] {
-        let e = call(&p, req.clone()).unwrap_err().0;
+        let e = call(&p, req.clone()).unwrap_err().to_string();
         assert!(e.contains(want), "{req}: {e}");
     }
 
-    // `any` has no default answer: ranges are required.
-    let p = build_at(QueryLevel::Any);
-    let e = call(&p, json!({"inputs": {"a": 3}})).unwrap_err().0;
-    assert!(e.contains("must list `ranges`"), "{e}");
+    // No outputs declared: the formula cells are (B1:C1, not the constant A1), so the default answer
+    // is one entry per rectangle of them, and any range inside can be asked for.
+    let p = build_at(false);
+    assert_eq!(
+        call(&p, json!({"inputs": {"a": 3}})).unwrap(),
+        json!({"valueRanges": [
+            {"name": "Sheet1!B1:C1", "range": "Sheet1!B1:C1", "values": [[30, 31]]},
+        ]})
+    );
     assert_eq!(
         call(&p, json!({"inputs": {"a": 3}, "ranges": ["B1:C1"]})).unwrap(),
         json!({"valueRanges": [{"range": "Sheet1!B1:C1", "values": [[30, 31]]}]})
@@ -469,8 +686,8 @@ fn requests_are_inputs_and_ranges() {
 
 #[test]
 fn settings_sheet_errors_and_defaults() {
-    use sheetrs_compiler::Value;
     use sheetrs_compiler::config::Config;
+    use sheetrs_engine::Value;
     let mut m = sheet(&[("A1", json!(1)), ("B1", json!("=A1+1"))]);
     let s = m.add_sheet("settings");
     for (c, h) in ["key", "value", "description", "meta_type"]
@@ -481,25 +698,18 @@ fn settings_sheet_errors_and_defaults() {
     }
     m.set(s, "A2", Value::text("version"));
     m.set(s, "D2", Value::text("info"));
-    // Declared outputs are mandatory when the sheet exists.
-    let e = Config::default().spec(&m).unwrap_err().0;
-    assert!(e.contains("declares no output"), "{e}");
-    // ... unless the caller asks for ranges.
-    let any = Config {
-        outputs: Some("any".into()),
-        ..Config::default()
-    };
-    let spec = any.spec(&m).unwrap();
+    // The outputs may be left out: then the formula cells are, but for the settings sheet.
+    let spec = Config::default().spec(&m).unwrap();
     assert_eq!(spec.skip_sheet, Some(s));
     assert_eq!(spec.meta.len(), 1);
     let (p, _) = build(&m, &spec);
-    assert!(p.outputs.is_empty());
+    assert_eq!(p.outputs.len(), 1, "the formula cells of the first sheet");
     let out = p
         .query(
             &Json::Null,
-            &Overrides::default(),
+            &sheetrs_engine::calculate::Overrides::default(),
             &["B1".into()],
-            Default::default(),
+            sheetrs_engine::calculate::MajorDimension::default(),
         )
         .unwrap();
     assert_eq!(out[0]["values"], json!([[2]]));
@@ -507,12 +717,12 @@ fn settings_sheet_errors_and_defaults() {
     let e = p
         .query(
             &Json::Null,
-            &Overrides::default(),
+            &sheetrs_engine::calculate::Overrides::default(),
             &["settings!A1".into()],
-            Default::default(),
+            sheetrs_engine::calculate::MajorDimension::default(),
         )
         .unwrap_err()
-        .0;
+        .to_string();
     assert!(e.contains("cannot be read"), "{e}");
 }
 
@@ -539,7 +749,7 @@ fn declarations_are_validated_together() {
         ),
     )
     .unwrap_err()
-    .0;
+    .to_string();
     assert!(
         e.contains("input `b` (B1:B2) holds formulas in B1, B2"),
         "{e}"
@@ -556,7 +766,11 @@ fn declarations_are_validated_together() {
     let m = sheet(&[("A1", json!(5)), ("B1", json!("=A1*2+N(A2)"))]);
     let s = named(&[("a", "A1"), ("blank", "A2")], &[("out", "B1")]);
     let (p, _) = build(&m, &s);
-    let run = |j: Json| p.execute(&j, &Overrides::default()).unwrap()["out"].clone();
+    let run = |j: Json| {
+        p.calculate(&j, &sheetrs_engine::calculate::Overrides::default())
+            .unwrap()["out"]
+            .clone()
+    };
     assert_eq!(run(json!({})), json!(10));
     assert_eq!(run(json!({"a": 7})), json!(14));
     assert_eq!(run(json!({"blank": 1})), json!(11));
@@ -568,7 +782,7 @@ fn macros_are_refused_unless_strict_is_off() {
     use sheetrs_compiler::config::Config;
     let mut m = sheet(&[("A1", json!(1)), ("B1", json!("=A1+1"))]);
     m.macros = true;
-    let strict = Config::default().spec(&m).unwrap_err().0;
+    let strict = Config::default().spec(&m).unwrap_err().to_string();
     assert!(
         strict.contains("macros") && strict.contains("--no-strict"),
         "{strict}"
@@ -613,7 +827,12 @@ fn a_formula_ending_in_a_blank_keeps_an_empty_result() {
             ..spec(&[], &["B1:H1"])
         };
         let (p, _) = build(&m, &spec);
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["S!B1:H1"][0].clone()
+        p.calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap()["S!B1:H1"][0]
+            .clone()
     };
     for fold in [true, false] {
         assert_eq!(
@@ -640,7 +859,12 @@ fn conditional_sums_read_only_the_selected_cells() {
     ]);
     let (p, r) = build(&m, &spec(&[], &["B1:D1"]));
     assert_eq!(r.cycles, 1, "the static graph still sees the loop");
-    let got = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let got = p
+        .calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap();
     assert_eq!(got["Sheet1!B1:D1"], json!([[30, 30, 15]]));
 }
 
@@ -659,14 +883,18 @@ fn a_one_cell_array_formula_over_a_range_shows_its_first_element() {
     m.cells.insert(
         sheetrs_engine::addr::CellRef::new(0, 0, 2),
         sheetrs_compiler::model::ModelCell {
-            value: sheetrs_compiler::Value::Empty,
+            value: sheetrs_engine::Value::Empty,
             formula: Some("A1:B2".into()),
             array: true,
         },
     );
     let (p, _) = build(&m, &spec(&[], &["C1"]));
     assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!C1"],
+        p.calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default()
+        )
+        .unwrap()["Sheet1!C1"],
         json!(7)
     );
 }
@@ -674,15 +902,28 @@ fn a_one_cell_array_formula_over_a_range_shows_its_first_element() {
 #[test]
 fn an_xlsx_is_read_by_its_format_and_computed_like_any_other_file() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/assets/loan.xlsx");
-    let m = sheetrs_compiler::loader::load(&path).unwrap();
+    let m = sheetrs_compiler::loader::load(&sheetrs_io::Book::from_file(&path).unwrap()).unwrap();
     // The format decides what the file carries: an XLSX has no case-sensitivity setting and
     // its dates count from 1899-12-30 unless it says `date1904`.
     assert!(m.from_xlsx);
-    assert_eq!(
-        m.date_system,
-        sheetrs_compiler::options::DateSystem::NULL_1899
-    );
+    assert_eq!(m.date_system, sheetrs_engine::options::DateSystem::Null1899);
     assert_eq!(m.settings.string_ref_excel, Some(true));
+}
+
+/// A date system of none of the three of `LibreOffice` Calc (an ODS whose `table:null-date` is
+/// 1950-06-15, which `LibreOffice` stores through its API) is an error that names the date: the compiler
+/// never numbers dates from a date it does not support.
+#[test]
+fn an_ods_with_another_null_date_is_refused_with_the_date_named() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../sheetrs-io/tests/assets/other_null_date.ods");
+    let source = sheetrs_io::Book::from_file(&path).unwrap();
+    let error = sheetrs_compiler::loader::load(&source)
+        .unwrap_err()
+        .to_string();
+    for text in ["1950-06-15", "1899-12-30", "1900-01-01", "1904-01-01"] {
+        assert!(error.contains(text), "{error}");
+    }
 }
 
 #[test]
@@ -698,12 +939,20 @@ fn formula_text_follows_libreoffice_notation_and_locale() {
     let run = |tag: &str| {
         let mut s = spec(&[], &["B1:B4"]);
         s.locale = Some(
-            sheetrs_compiler::locale::from_tag(tag, &Default::default())
-                .unwrap()
-                .0,
+            sheetrs_compiler::locale::from_tag(
+                tag,
+                &sheetrs_compiler::locale::LocaleOverride::default(),
+            )
+            .unwrap()
+            .0,
         );
         let (p, _) = build(&m, &s);
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!B1:B4"].clone()
+        p.calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap()["Sheet1!B1:B4"]
+            .clone()
     };
     assert_eq!(
         run("en"),
@@ -749,7 +998,12 @@ fn the_longtext_feature_joins_constant_pieces_only() {
     let mut sp = spec(&[], &["A1", "A2"]);
     sp.features.longtext = true;
     let (p, _) = build(&m, &sp);
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap();
     assert_eq!(out["Sheet1!A1"], json!("abcd"));
     assert_eq!(out["Sheet1!A2"], json!({"error": "#NAME?"}));
     let note: Vec<_> = p
@@ -776,7 +1030,12 @@ fn a_longtext_wrapper_is_reported_per_cell() {
         .collect();
     assert_eq!(note.len(), 1, "{:?}", p.diagnostics);
     assert!(note[0].starts_with("Sheet1!A1: "), "{}", note[0]);
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap();
     assert_eq!(out["Sheet1!A1"], json!({"error": "#NAME?"}));
 }
 
@@ -794,7 +1053,11 @@ fn error_literals_are_capitals_only_in_libreoffice() {
     m.set_formula(s, "A2", "#N/A");
     let (p, _) = build(&m, &spec(&[], &["A1:A2"]));
     assert_eq!(
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!A1:A2"],
+        p.calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default()
+        )
+        .unwrap()["Sheet1!A1:A2"],
         json!([[err("#NAME?")], [err("#N/A")]])
     );
 }
@@ -831,7 +1094,12 @@ fn exact_lookups_over_big_ranges_use_an_index_with_the_scan_semantics() {
         .collect();
     let m = sheet(&owned);
     let (p, _) = build(&m, &spec(&[], &["D1:D7"]));
-    let got = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let got = p
+        .calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap();
     assert_eq!(
         got["Sheet1!D1:D7"],
         json!([[50], [70], [2500], [{"error": "#N/A"}], [0], [20], [0]])
@@ -846,7 +1114,12 @@ fn indirect_and_address_follow_the_documents_reference_syntax() {
         let s = m.add_sheet("Other");
         m.set_formula(s, "A1", formula);
         let (p, _) = build(&m, &spec(&[], &["Other!A1"]));
-        p.execute(&Json::Null, &Overrides::default()).unwrap()["Other!A1"].clone()
+        p.calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap()["Other!A1"]
+            .clone()
     };
     // An XLSX (or an XLSX saved as ODS): `Sheet!A1`.
     assert_eq!(run(true, "=INDIRECT(\"Sheet1!A1\")"), json!(7));
@@ -894,7 +1167,7 @@ fn xlsx_with(sheet_data: &str) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
-/// A shared formula whose cell would read outside the sheet is `#REF!` there, as LibreOffice
+/// A shared formula whose cell would read outside the sheet is `#REF!` there, as `LibreOffice`
 /// computes it: the workbook builds, and the cell is `#REF!` when it runs.
 #[test]
 fn a_shared_formula_moved_outside_the_sheet_builds_and_is_a_ref_error() {
@@ -908,9 +1181,14 @@ fn a_shared_formula_moved_outside_the_sheet_builds_and_is_a_ref_error() {
         ),
     )
     .unwrap();
-    let m = sheetrs_compiler::loader::load(&path).unwrap();
+    let m = sheetrs_compiler::loader::load(&sheetrs_io::Book::from_file(&path).unwrap()).unwrap();
     let (p, _) = build(&m, &spec(&[], &["XFC1", "XFD1"]));
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p
+        .calculate(
+            &Json::Null,
+            &sheetrs_engine::calculate::Overrides::default(),
+        )
+        .unwrap();
     assert_eq!(out["S!XFC1"], json!(5));
     assert_eq!(out["S!XFD1"], err("#REF!"));
 }

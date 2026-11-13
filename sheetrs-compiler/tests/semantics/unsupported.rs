@@ -1,9 +1,10 @@
-//! What the engine does not support stops the build: it is a replacement of LibreOffice or it
+//! What the engine does not support stops the build: it is a replacement of `LibreOffice` or it
 //! says it is not one for the workbook.
 
 use crate::common::*;
 use serde_json::json;
-use sheetrs_compiler::{Spec, Value, compile};
+use sheetrs_compiler::{Spec, compile};
+use sheetrs_engine::Value;
 
 fn build_with(f: &str) -> Result<sheetrs_compiler::Report, String> {
     let mut m = sheetrs_compiler::Model::new();
@@ -11,7 +12,7 @@ fn build_with(f: &str) -> Result<sheetrs_compiler::Report, String> {
     m.set_formula(s, "A1", f);
     compile(&m, &spec(&[], &["A1"]))
         .map(|(_, r)| r)
-        .map_err(|e| e.0)
+        .map_err(|e| e.to_string())
 }
 
 #[test]
@@ -38,7 +39,7 @@ fn a_function_of_libreoffice_the_engine_lacks_stops_the_build() {
 
 #[test]
 fn syntax_the_parser_does_not_read_stops_the_build() {
-    for f in ["[1]Sheet1!B3", "Table1[Col]", "A1:A5#", "SUM(1,"] {
+    for f in ["[1]Sheet1!B3", "Table1[Col]", "A1:A5#", "A1 B1"] {
         let e = build_with(f).unwrap_err();
         assert!(e.contains("syntax") && e.contains(f), "{f}: {e}");
     }
@@ -56,7 +57,7 @@ fn a_text_code_with_a_language_the_engine_has_no_names_for_stops_the_build() {
         assert!(build_with(ok).is_ok(), "{ok}");
     }
     // A tag LibreOffice rejects is an error value, as there.
-    assert_eq!(calc("TEXT(45367,\"[$-en-US]dddd\")"), err("#VALUE!"));
+    assert_eq!(calc("TEXT(45367,\"[$-en-US]dddd\")"), libre("Err:502"));
 }
 
 #[test]
@@ -66,7 +67,7 @@ fn a_document_option_the_engine_does_not_support_stops_the_build() {
     m.set(s, "A1", Value::Number(1.0));
     m.unsupported_options
         .push("the document uses 'precision as shown'".into());
-    let e = compile(&m, &spec(&[], &["A1"])).unwrap_err().0;
+    let e = compile(&m, &spec(&[], &["A1"])).unwrap_err().to_string();
     assert!(e.contains("precision as shown"), "{e}");
 }
 
@@ -108,10 +109,9 @@ fn xlookup_binary_search_over_a_range_stops_the_build() {
 
 #[test]
 fn distributions_where_libreoffice_is_not_reproduced_stop_the_build() {
-    // F.INV(1, …) is the end of LibreOffice's search range; more than 1E7 degrees of freedom or
-    // shape is where its continued fraction loses digits.
+    // More than 1E7 degrees of freedom or shape is where LibreOffice's continued fraction loses
+    // digits.
     for f in [
-        "F.INV(1,5,8)",
         "T.DIST(2,100000000,TRUE)",
         "F.DIST(2,5,1000000000,TRUE)",
         "BETA.DIST(0.5,1E9,1E9,TRUE)",
@@ -122,6 +122,8 @@ fn distributions_where_libreoffice_is_not_reproduced_stop_the_build() {
     }
     for ok in [
         "F.INV(0.9,5,8)",
+        // LibreOffice's search for the root of F.INV(1, …) is reproduced (the tail underflows).
+        "F.INV(1,5,8)",
         // The legacy FINV is the right tail: 1 is zero there.
         "FINV(1,5,8)",
         "T.DIST(2,10000000,TRUE)",
@@ -132,7 +134,7 @@ fn distributions_where_libreoffice_is_not_reproduced_stop_the_build() {
     ] {
         assert!(build_with(ok).is_ok(), "{ok}");
     }
-    assert_eq!(calc("CHISQ.DIST(10000000,10000000,TRUE)"), err("#VALUE!"));
+    assert_eq!(calc("CHISQ.DIST(10000000,10000000,TRUE)"), libre("Err:523"));
 }
 
 #[test]
@@ -147,7 +149,7 @@ fn sorting_by_keys_with_an_error_is_not_reproduced() {
     m.set_formula(s, "C3", "3");
     // The keys are a range with an error: the rows are not placed as LibreOffice places them.
     m.set_formula(s, "A1", "INDEX(SORTBY(B1:B3,C1:C3),1)");
-    let e = compile(&m, &spec(&[], &["A1"])).unwrap_err().0;
+    let e = compile(&m, &spec(&[], &["A1"])).unwrap_err().to_string();
     assert!(e.contains("SORTBY") && e.contains("Sheet1!A1"), "{e}");
     // The same range without an error, and `SORT` of the range with it (the errors last, as 0).
     m.set_formula(s, "C2", "2");
@@ -183,7 +185,7 @@ fn counting_the_records_of_a_database_with_field_zero_is_not_reproduced() {
     m.set(s, "C2", Value::Number(30.0));
     for f in ["DCOUNT(B1:B2,0,C1:C2)", "DCOUNTA(B1:B2,0,C1:C2)"] {
         m.set_formula(s, "A1", f);
-        let e = compile(&m, &spec(&[], &["A1"])).unwrap_err().0;
+        let e = compile(&m, &spec(&[], &["A1"])).unwrap_err().to_string();
         assert!(e.contains("field 0") && e.contains("Sheet1!A1"), "{f}: {e}");
     }
     m.set_formula(s, "A1", "DCOUNT(B1:B2,1,C1:C2)");
@@ -244,7 +246,7 @@ fn a_text_code_that_is_not_known_at_build_time_stops_the_build() {
     // The code is a constant: it is checked.
     assert!(compile(&m, &spec(&[], &["A1"])).is_ok());
     m.set_formula(s, "A1", "TEXT(45367,B2)");
-    let e = compile(&m, &spec(&[], &["A1"])).unwrap_err().0;
+    let e = compile(&m, &spec(&[], &["A1"])).unwrap_err().to_string();
     assert!(e.contains("TEXT code"), "{e}");
     // The code is an input: the build cannot tell, so it warns, and a run that gives a code with
     // such a tag gets the error value of what is not implemented.
@@ -258,9 +260,9 @@ fn a_text_code_that_is_not_known_at_build_time_stops_the_build() {
         r.warnings
     );
     let run = |code: &str| {
-        p.execute(
+        p.calculate(
             &json!({"Sheet1!B1": code}),
-            &sheetrs_compiler::Overrides::default(),
+            &sheetrs_engine::Overrides::default(),
         )
         .unwrap()["Sheet1!A1"]
             .clone()
@@ -271,7 +273,7 @@ fn a_text_code_that_is_not_known_at_build_time_stops_the_build() {
 
 #[test]
 fn a_regular_expression_outside_the_subset_stops_the_build() {
-    use sheetrs_compiler::options::{Search, SearchMode};
+    use sheetrs_engine::options::{Search, SearchMode};
     let regex = Search {
         mode: SearchMode::Regex,
         whole_cell: true,
@@ -288,7 +290,7 @@ fn a_regular_expression_outside_the_subset_stops_the_build() {
             search: Some(regex),
             ..spec(inputs, &["A1"])
         };
-        compile(&m, &sp).map(|_| ()).map_err(|e| e.0)
+        compile(&m, &sp).map(|_| ()).map_err(|e| e.to_string())
     };
     for f in [
         "COUNTIF(B1:B2,\"a*\")",
@@ -342,9 +344,9 @@ fn what_the_build_cannot_tell_warns_and_gives_an_error_value_when_met() {
         r.warnings
     );
     let run = |mode: i64| {
-        p.execute(
+        p.calculate(
             &json!({"Sheet1!D1": mode}),
-            &sheetrs_compiler::Overrides::default(),
+            &sheetrs_engine::Overrides::default(),
         )
         .unwrap()["Sheet1!A1"]
             .clone()
@@ -359,7 +361,7 @@ fn what_the_build_cannot_tell_warns_and_gives_an_error_value_when_met() {
 
 #[test]
 fn dates_and_patterns_that_only_the_inputs_make_unsupported_give_the_error_value() {
-    use sheetrs_compiler::options::{Search, SearchMode};
+    use sheetrs_engine::options::{Search, SearchMode};
     let mut m = sheetrs_compiler::Model::new();
     let s = m.add_sheet("Sheet1");
     m.set(s, "B1", Value::Number(45367.0));
@@ -382,9 +384,9 @@ fn dates_and_patterns_that_only_the_inputs_make_unsupported_give_the_error_value
         r.warnings
     );
     let run = |b: f64, d: &str| {
-        p.execute(
+        p.calculate(
             &json!({"Sheet1!B1": b, "Sheet1!D1": d}),
-            &sheetrs_compiler::Overrides::default(),
+            &sheetrs_engine::Overrides::default(),
         )
         .unwrap()
     };

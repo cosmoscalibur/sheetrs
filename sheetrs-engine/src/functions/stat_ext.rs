@@ -3,7 +3,7 @@
 
 use super::math_ext::{combin, norm_cdf, norm_inv};
 use super::stats::variance;
-use super::{Reg, VAR, num, opt_num};
+use super::{EagerFn, Reg, VAR, num, opt_num};
 use crate::engine::{Engine, Res};
 use crate::value::{ErrorKind, Value};
 
@@ -16,8 +16,10 @@ fn sorted(e: &mut Engine, v: &Value) -> Res<Vec<f64>> {
 /// Values of two equal-size ranges where both are numbers.
 fn pairs(e: &mut Engine, ys: &Value, xs: &Value) -> Res<(Vec<f64>, Vec<f64>)> {
     let (ay, ax) = (e.array_of(ys.clone()), e.array_of(xs.clone()));
+    // Sets of different sizes (a plain value against a range included) are outside the domain
+    // (`Err:502`) in `LibreOffice`; Excel says `#N/A`.
     if ay.data.len() != ax.data.len() {
-        return Err(ErrorKind::Na);
+        return Err(ErrorKind::Domain);
     }
     let (mut y, mut x) = (Vec::new(), Vec::new());
     for (a, b) in ay.data.iter().zip(&ax.data) {
@@ -174,35 +176,35 @@ fn var_a(v: &[f64], sample: bool) -> Res<f64> {
 
 pub(super) fn register(r: &mut Reg) {
     // ----- dispersion -----
-    r.eager("STDEV.S", 1, VAR, |e, a| {
+    r.eager("STDEV.S", 0, VAR, |e, a| {
         variance(e, a, true).map(f64::sqrt).and_then(num)
     });
     for name in ["STDEVP", "STDEV.P"] {
-        r.eager(name, 1, VAR, |e, a| {
+        r.eager(name, 0, VAR, |e, a| {
             variance(e, a, false).map(f64::sqrt).and_then(num)
         });
     }
-    r.eager("VAR.S", 1, VAR, |e, a| variance(e, a, true).and_then(num));
+    r.eager("VAR.S", 0, VAR, |e, a| variance(e, a, true).and_then(num));
     for name in ["VARP", "VAR.P"] {
-        r.eager(name, 1, VAR, |e, a| variance(e, a, false).and_then(num));
+        r.eager(name, 0, VAR, |e, a| variance(e, a, false).and_then(num));
     }
-    r.eager("STDEVA", 1, VAR, |e, a| {
+    r.eager("STDEVA", 0, VAR, |e, a| {
         let v = numbers_a(e, a)?;
         var_a(&v, true).map(f64::sqrt).and_then(num)
     });
-    r.eager("STDEVPA", 1, VAR, |e, a| {
+    r.eager("STDEVPA", 0, VAR, |e, a| {
         let v = numbers_a(e, a)?;
         var_a(&v, false).map(f64::sqrt).and_then(num)
     });
-    r.eager("VARA", 1, VAR, |e, a| {
+    r.eager("VARA", 0, VAR, |e, a| {
         let v = numbers_a(e, a)?;
         var_a(&v, true).and_then(num)
     });
-    r.eager("VARPA", 1, VAR, |e, a| {
+    r.eager("VARPA", 0, VAR, |e, a| {
         let v = numbers_a(e, a)?;
         var_a(&v, false).and_then(num)
     });
-    r.eager("AVERAGEA", 1, VAR, |e, a| {
+    r.eager("AVERAGEA", 0, VAR, |e, a| {
         let v = numbers_a(e, a)?;
         if v.is_empty() {
             Err(ErrorKind::DivZero)
@@ -218,10 +220,10 @@ pub(super) fn register(r: &mut Reg) {
         let v = numbers_a(e, a)?;
         num(v.into_iter().reduce(f64::min).unwrap_or(0.0))
     });
-    r.eager("DEVSQ", 1, VAR, |e, a| {
+    r.eager("DEVSQ", 0, VAR, |e, a| {
         let v = e.numbers(a)?;
         if v.is_empty() {
-            return Err(ErrorKind::Domain);
+            return Err(ErrorKind::DivZero);
         }
         let m = mean(&v);
         num(v.iter().map(|x| (x - m).powi(2)).sum())
@@ -234,16 +236,22 @@ pub(super) fn register(r: &mut Reg) {
         let m = mean(&v);
         num(v.iter().map(|x| (x - m).abs()).sum::<f64>() / v.len() as f64)
     });
-    r.eager("GEOMEAN", 1, VAR, |e, a| {
+    r.eager("GEOMEAN", 0, VAR, |e, a| {
         let v = e.numbers(a)?;
-        if v.is_empty() || v.iter().any(|x| *x <= 0.0) {
+        if v.is_empty() {
+            return Err(ErrorKind::Num);
+        }
+        if v.iter().any(|x| *x <= 0.0) {
             return Err(ErrorKind::Domain);
         }
         num((v.iter().map(|x| x.ln()).sum::<f64>() / v.len() as f64).exp())
     });
-    r.eager("HARMEAN", 1, VAR, |e, a| {
+    r.eager("HARMEAN", 0, VAR, |e, a| {
         let v = e.numbers(a)?;
-        if v.is_empty() || v.iter().any(|x| *x <= 0.0) {
+        if v.is_empty() {
+            return Err(ErrorKind::Num);
+        }
+        if v.iter().any(|x| *x <= 0.0) {
             return Err(ErrorKind::Domain);
         }
         num(v.len() as f64 / v.iter().map(|x| 1.0 / x).sum::<f64>())
@@ -293,19 +301,15 @@ pub(super) fn register(r: &mut Reg) {
         let k = (v.len() as f64 * p / 2.0).floor() as usize;
         num(mean(&v[k..v.len() - k]))
     });
-    for name in ["MODE", "MODE.SNGL"] {
-        r.eager(name, 1, VAR, |e, a| {
-            let v = e.numbers(a)?;
-            let mut best: Option<(usize, f64)> = None;
-            for x in &v {
-                let c = v.iter().filter(|y| *y == x).count();
-                if c > 1 && best.is_none_or(|(b, _)| c > b) {
-                    best = Some((c, *x));
-                }
-            }
-            // #VALUE! when nothing repeats.
-            best.map_or(Err(ErrorKind::Value), |(_, x)| num(x))
-        });
+    // `LibreOffice` answers a tie differently in the two: `MODE` takes the smallest of the values
+    // that repeat most, `MODE.SNGL` the one that comes first in the data.
+    for (name, smallest) in [("MODE", true), ("MODE.SNGL", false)] {
+        let f: EagerFn = if smallest {
+            |e, a| mode(e, a, true)
+        } else {
+            |e, a| mode(e, a, false)
+        };
+        r.eager(name, 1, VAR, f);
     }
 
     // ----- ranks and percentiles -----
@@ -411,7 +415,7 @@ pub(super) fn register(r: &mut Reg) {
         }
     });
     for name in ["NORMDIST", "NORM.DIST"] {
-        r.eager(name, 4, 4, |e, a| {
+        r.eager(name, if name == "NORMDIST" { 3 } else { 4 }, 4, |e, a| {
             let (x, m, s) = (e.num(&a[0])?, e.num(&a[1])?, e.num(&a[2])?);
             if s <= 0.0 {
                 return Err(ErrorKind::Domain);
@@ -424,8 +428,12 @@ pub(super) fn register(r: &mut Reg) {
             }
         });
     }
-    for name in ["NORMSINV", "NORM.S.INV"] {
-        r.eager(name, 1, 1, |e, a| {
+    for (name, max) in [("NORMSINV", 1), ("NORM.S.INV", VAR)] {
+        r.eager(name, 1, max, |e, a| {
+            // `NORM.S.INV` takes more arguments in `LibreOffice` and answers `#VALUE!` to them.
+            if a.len() > 1 {
+                return Err(ErrorKind::Value);
+            }
             let p = e.num(&a[0])?;
             if p <= 0.0 || p >= 1.0 {
                 Err(ErrorKind::Domain)
@@ -478,7 +486,7 @@ pub(super) fn register(r: &mut Reg) {
         });
     }
     for name in ["POISSON", "POISSON.DIST"] {
-        r.eager(name, 3, 3, |e, a| {
+        r.eager(name, if name == "POISSON" { 2 } else { 3 }, 3, |e, a| {
             let (k, m) = (e.num(&a[0])?.trunc(), e.num(&a[1])?);
             if k < 0.0 || m < 0.0 {
                 return Err(ErrorKind::Domain);
@@ -539,6 +547,16 @@ fn cumulative(e: &mut Engine, a: &[Value], i: usize) -> Res<bool> {
 }
 
 fn covariance(e: &mut Engine, a: &[Value], sample: bool) -> Res<Value> {
+    // A plain text or an empty cell is no set of numbers: `#VALUE!`, before the error of any element
+    // (`COVAR("a",{1}/0)`); a text among the elements of a set leaves its pair out.
+    for v in &a[..2] {
+        if !matches!(v, Value::Array(_)) {
+            let set = e.array_of(v.clone());
+            if set.data.len() == 1 && matches!(set.data[0], Value::Text(_) | Value::Empty) {
+                return Err(ErrorKind::Value);
+            }
+        }
+    }
     let (y, x) = pairs(e, &a[0], &a[1])?;
     let n = y.len() as f64;
     if n < if sample { 2.0 } else { 1.0 } {
@@ -546,4 +564,31 @@ fn covariance(e: &mut Engine, a: &[Value], sample: bool) -> Res<Value> {
     }
     let (_, _, sxy) = sums(&y, &x);
     num(sxy / if sample { n - 1.0 } else { n })
+}
+
+/// `MODE` (the smallest of the most repeated values) or `MODE.SNGL` (the first of them in the
+/// data); `#VALUE!` when nothing repeats.
+fn mode(e: &mut Engine, a: &[Value], smallest: bool) -> Res<Value> {
+    let v = e.numbers(a)?;
+    let mut counts: std::collections::HashMap<u64, (usize, usize, f64)> =
+        std::collections::HashMap::new();
+    for (i, x) in v.iter().enumerate() {
+        let key = if *x == 0.0 { 0 } else { x.to_bits() };
+        counts.entry(key).or_insert((0, i, *x)).0 += 1;
+    }
+    let best = counts
+        .values()
+        .filter(|(c, _, _)| *c > 1)
+        .copied()
+        .reduce(|a, b| {
+            let better = if a.0 != b.0 {
+                b.0 > a.0
+            } else if smallest {
+                b.2 < a.2
+            } else {
+                b.1 < a.1
+            };
+            if better { b } else { a }
+        });
+    best.map_or(Err(ErrorKind::Value), |(_, _, x)| num(x))
 }

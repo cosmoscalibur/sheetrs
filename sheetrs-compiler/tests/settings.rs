@@ -2,17 +2,16 @@
 //! two-digit-year window, document language.
 
 use serde_json::{Value as Json, json};
-use sheetrs_compiler::options::{Iteration, SearchMode};
-use sheetrs_compiler::{BindingSpec, Overrides, Spec, compile, loader};
+use sheetrs_compiler::{BindingSpec, Spec, compile, loader};
+use sheetrs_engine::Overrides;
+use sheetrs_engine::options::{Iteration, SearchMode};
 use std::path::Path;
 
 fn load(name: &str) -> sheetrs_compiler::Model {
-    loader::load(
-        &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/assets")
-            .join(name),
-    )
-    .unwrap()
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/assets")
+        .join(name);
+    loader::load(&sheetrs_io::Book::from_file(path).unwrap()).unwrap()
 }
 
 fn loop_values(model: &sheetrs_compiler::Model, spec: Spec) -> Vec<Json> {
@@ -21,7 +20,7 @@ fn loop_values(model: &sheetrs_compiler::Model, spec: Spec) -> Vec<Json> {
         ..spec
     };
     let (p, _) = compile(model, &spec).unwrap();
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p.calculate(&Json::Null, &Overrides::default()).unwrap();
     out["Loop!A1:C1"][0].as_array().unwrap().clone()
 }
 
@@ -58,7 +57,7 @@ fn iteration_off_in_the_document_means_circular_errors() {
 
 #[test]
 fn file_defined_settings_cannot_be_overridden() {
-    use sheetrs_compiler::options::{DateSystem, Search};
+    use sheetrs_engine::options::{DateSystem, Search};
     let on = load("circular_on.ods");
     let cases: Vec<(Spec, &str)> = vec![
         (
@@ -80,7 +79,7 @@ fn file_defined_settings_cannot_be_overridden() {
         ),
         (
             Spec {
-                date_system: Some(DateSystem::NULL_1904),
+                date_system: Some(DateSystem::Null1904),
                 ..Spec::default()
             },
             "date system",
@@ -96,7 +95,7 @@ fn file_defined_settings_cannot_be_overridden() {
     for (spec, what) in cases {
         let e = compile(&on, &spec).unwrap_err();
         assert!(
-            e.0.contains(what) && e.0.contains("defined by the document"),
+            e.to_string().contains(what) && e.to_string().contains("defined by the document"),
             "{e}"
         );
     }
@@ -135,7 +134,7 @@ fn document_language_is_information_only() {
             ..spec
         };
         let (p, _) = compile(&model, &spec).unwrap();
-        let v = p.execute(&Json::Null, &Overrides::default()).unwrap()["S!A1"].clone();
+        let v = p.calculate(&Json::Null, &Overrides::default()).unwrap()["S!A1"].clone();
         (v, p.diagnostics)
     };
     // The language does not change evaluation: March 1st under the default
@@ -150,7 +149,7 @@ fn document_language_is_information_only() {
     );
     // The locale (regional settings) is what decides: es → January 3rd.
     let es = Spec {
-        locale: Some(sheetrs_compiler::options::Locale::es_es()),
+        locale: Some(sheetrs_engine::options::Locale::es_es()),
         ..Spec::default()
     };
     let (v, diags) = eval(es);
@@ -170,6 +169,6 @@ fn two_digit_year_window_follows_the_document() {
         ..Spec::default()
     };
     let (p, _) = compile(&model, &spec).unwrap();
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p.calculate(&Json::Null, &Overrides::default()).unwrap();
     assert_eq!(out["S!A1:A2"], json!([[2049], [1950]]));
 }

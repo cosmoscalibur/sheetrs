@@ -11,28 +11,162 @@
 <body>
     <header>
         <h1>SheetRS 📊</h1>
-        <div id="tool-selector">
+        <nav id="tool-selector" aria-label="Tools">
             <button class="tool-btn active" data-tool="lint">Lint</button>
             <button class="tool-btn" data-tool="stats">Stats</button>
-            <button class="tool-btn" data-tool="transform" disabled title="Under Construction">Transform 🚧</button>
-        </div>
+            <button class="tool-btn" data-tool="query">Query</button>
+            <button class="tool-btn" data-tool="edit">Edit</button>
+            <button class="tool-btn" data-tool="calculate">Calculate</button>
+            <button class="tool-btn" data-tool="evaluate">Evaluate</button>
+            <button class="tool-btn" data-tool="compile">Compile</button>
+        </nav>
     </header>
     <main>
         <div id="sidebar">
             <div id="setup-area">
                 <div id="lint-setup" class="setup-panel">
-                    <h3>Linter Setup</h3>
+                    <h3>Linter</h3>
+                    <label class="field">Output
+                        <select id="lint-format">
+                            <option value="report">Report (text)</option>
+                            <option value="table">Table</option>
+                            <option value="json">JSON</option>
+                            <option value="sarif">SARIF 2.1.0</option>
+                        </select>
+                    </label>
                     <div id="rules-accordion">
-                        <!-- Categories and rules will be injected here -->
                         <div class="loading">Loading rules...</div>
                     </div>
                 </div>
+
                 <div id="stats-setup" class="setup-panel" style="display: none;">
-                    <h3>Stats Setup</h3>
+                    <h3>Statistics</h3>
                     <div class="checkbox-group">
-                        <label><input type="checkbox" id="stat-sheets" checked> Sheet Information</label>
-                        <label><input type="checkbox" id="stat-ranges" checked> Named Ranges</label>
-                        <label><input type="checkbox" id="stat-macros" checked> Macro Check</label>
+                        <label><input type="checkbox" id="stats-json"> As JSON (the fields of <code>sheetrs stats --format json</code>)</label>
+                    </div>
+                </div>
+
+                <div id="query-setup" class="setup-panel" style="display: none;">
+                    <h3>Query</h3>
+                    <label class="field">Where
+                        <select id="query-scope-kind">
+                            <option value="workbook">The whole workbook</option>
+                            <option value="sheet">A sheet</option>
+                            <option value="range" selected>A range</option>
+                        </select>
+                    </label>
+                    <label class="field">Sheet or range
+                        <input type="text" id="query-scope" placeholder="Loan!A1:B9" value="">
+                    </label>
+                    <div class="checkbox-group" id="query-properties">
+                        <label><input type="checkbox" data-property="value" checked> value</label>
+                        <label><input type="checkbox" data-property="formula"> formula</label>
+                        <label><input type="checkbox" data-property="number_format"> number format</label>
+                        <label><input type="checkbox" data-property="display" checked> display</label>
+                        <label><input type="checkbox" data-property="comment"> comment</label>
+                    </div>
+                    <h3>Find (optional)</h3>
+                    <label class="field">Text
+                        <input type="text" id="query-find" placeholder="leave empty to read the scope">
+                    </label>
+                    <label class="field">Mode
+                        <select id="query-mode">
+                            <option value="literal">Literal</option>
+                            <option value="regex">Regular expression</option>
+                            <option value="wildcards">Wildcards</option>
+                        </select>
+                    </label>
+                    <label class="field">Search in
+                        <select id="query-search-in">
+                            <option value="value">Values</option>
+                            <option value="formula">Formulas</option>
+                            <option value="comment">Notes</option>
+                        </select>
+                    </label>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" id="query-match-case"> Match case</label>
+                        <label><input type="checkbox" id="query-entire-cells"> Entire cells</label>
+                    </div>
+                </div>
+
+                <div id="edit-setup" class="setup-panel" style="display: none;">
+                    <h3>Edit</h3>
+                    <p class="hint">The operations are not a sequence: each one addresses the workbook as it is, and the planner decides the order they run in.</p>
+                    <label class="field">Operation
+                        <select id="edit-op">
+                            <option value="delete_sheets">Delete sheets</option>
+                            <option value="delete_names">Delete names</option>
+                            <option value="delete_rows">Delete rows</option>
+                            <option value="delete_columns">Delete columns</option>
+                            <option value="formula_to_value">Formula to value</option>
+                            <option value="replace">Find and replace</option>
+                        </select>
+                    </label>
+                    <label class="field" id="edit-arg-label">Names, one per line
+                        <textarea id="edit-arg" rows="3" placeholder="Tmp"></textarea>
+                    </label>
+                    <div id="edit-replace" style="display: none;">
+                        <label class="field">Replace with
+                            <input type="text" id="edit-with">
+                        </label>
+                        <div class="checkbox-group">
+                            <label><input type="checkbox" id="edit-match-case"> Match case</label>
+                            <label><input type="checkbox" id="edit-entire-cells"> Entire cells</label>
+                            <label><input type="checkbox" id="edit-regex"> Regular expression</label>
+                        </div>
+                    </div>
+                    <button class="action-btn" id="edit-add">Add to the plan</button>
+                    <ol id="edit-plan" class="plan"></ol>
+                    <button class="action-btn" id="edit-clear-plan">Empty the plan</button>
+                </div>
+
+                <div id="calculate-setup" class="setup-panel" style="display: none;">
+                    <h3>Calculate</h3>
+                    <label class="field">Mode
+                        <select id="calculate-mode">
+                            <option value="values">Values: JSON answer</option>
+                            <option value="embed_template">The workbook with the answer</option>
+                        </select>
+                    </label>
+                    <button class="action-btn" id="calculate-read">Read the model</button>
+                    <div id="calculate-inputs"></div>
+                    <label class="field">Ranges to read (one per line, optional)
+                        <textarea id="calculate-ranges" rows="2" placeholder="Loan!B6"></textarea>
+                    </label>
+                </div>
+
+                <div id="evaluate-setup" class="setup-panel" style="display: none;">
+                    <h3>Evaluate a formula</h3>
+                    <p class="hint">No workbook is needed.</p>
+                    <label class="field">Formula
+                        <input type="text" id="evaluate-formula" value="=SUM(1,2,3)">
+                    </label>
+                    <label class="field">Locale
+                        <input type="text" id="evaluate-locale" placeholder="en">
+                    </label>
+                </div>
+
+                <div id="compile-setup" class="setup-panel" style="display: none;">
+                    <h3>Compile to WebAssembly</h3>
+                    <p class="hint">The result is a module that holds the workbook and answers requests. It needs no glue: a browser or Node runs it.</p>
+                    <label class="field">What it answers
+                        <select id="compile-mode">
+                            <option value="values">Values: JSON</option>
+                            <option value="embed_template">The workbook with the answer</option>
+                        </select>
+                    </label>
+                    <label class="field">Declarations (JSON, optional)
+                        <textarea id="compile-declarations" rows="4" placeholder='{"inputs":[{"name":"rate","range":"Loan!B2"}],"outputs":[{"name":"payment","range":"Loan!B6"}]}'></textarea>
+                    </label>
+                    <div id="compile-run" style="display: none;">
+                        <h3>Run the module here</h3>
+                        <label class="field">Request
+                            <textarea id="compile-request" rows="3">{}</textarea>
+                        </label>
+                        <div class="checkbox-group">
+                            <label id="compile-json-label"><input type="checkbox" id="compile-json" checked> Also the JSON answer</label>
+                        </div>
+                        <button class="action-btn" id="compile-run-btn">Run the module</button>
                     </div>
                 </div>
             </div>
@@ -42,24 +176,26 @@
                     <p>Drag & Drop or Click to Select</p>
                     <input type="file" id="file-input" style="display: none;" accept=".xlsx,.xlsm,.ods">
                 </div>
-                <div id="file-info" style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">No file selected</div>
+                <div id="file-info">No file selected</div>
                 <button id="play-btn" disabled>▶ Run Tool</button>
             </div>
         </div>
 
         <div id="content">
             <div id="output-header">
-                <h3>Results</h3>
+                <h3 id="output-title">Results</h3>
                 <div class="actions">
                     <button class="action-btn" id="copy-btn">Copy</button>
                     <button class="action-btn" id="download-btn">Download Results</button>
                     <button class="action-btn" id="clear-btn">Clear</button>
                 </div>
             </div>
+            <div id="downloads"></div>
+            <div id="table-output" style="display: none;"></div>
             <div id="output">Welcome to SheetRS WASM Demo.
-                1. Select a tool and configure it.
-                2. Upload a spreadsheet.
-                3. Press Play!</div>
+1. Select a tool and configure it.
+2. Upload a spreadsheet.
+3. Press Play!</div>
 
             <div class="status-bar" id="status">Ready</div>
         </div>

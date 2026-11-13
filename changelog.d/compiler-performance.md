@@ -2,7 +2,7 @@
 
 - `sheetc`: exact `VLOOKUP`/`HLOOKUP` over a big range go through a hash index of its key column and compare text without allocating; programs are embedded in `bincode` instead of JSON. On a 1.2 M-formula synthetic workbook the build takes 16 s instead of 39 s and the executable is 100 MB instead of 234 MB; a 500 k-formula real workbook starts in 0.25 s instead of 0.57 s and its executable halves (104 MB to 50 MB).
 - `sheetc`: formulas are lowered on all cores and the range nodes of the dependency graph are no longer copied. Delgado build 9.6 s → 8.3 s; the 1.2 M-formula workbook builds in 11.5 s (was 39 s) and `verify` takes 8 s (was 36 s).
-- `sheetc verify --recalc` compares with a full LibreOffice recalculation of the file (`$SOFFICE` or `soffice`, under the build locale) instead of the file's cached values. LibreOffice reads a bare `#REF!` of an XLSX formula as an unknown name, which the engine now reproduces.
+- `sheetc verify --recalculate` compares with a full LibreOffice recalculation of the file (`$SOFFICE` or `soffice`, under the build locale) instead of the file's cached values. LibreOffice reads a bare `#REF!` of an XLSX formula as an unknown name, which the engine now reproduces.
 
 - `scripts/measure_perf.py` measures the full matrix (compiler build with its stages, engine start-up and execution; wall, user and system time, peak memory, sizes) for the small, Delgado and large workbooks; `SHEETC_TRACE` also prints the read, compile and write stages of `build`.
 - `_xlfn._longtext(…)`, which LibreOffice 26.2 wrote around text literals over 255 characters and 26.8 reads as `#NAME?`, evaluates to `#NAME?` and is listed per cell in the build diagnostics.

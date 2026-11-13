@@ -1,9 +1,9 @@
 //! Text collation: the order of `<`, `>` and sorted lookups.
 //!
-//! LibreOffice orders text with ICU's collator for the language of the document: three levels,
+//! `LibreOffice` orders text with ICU's collator for the language of the document: three levels,
 //! letters first (case and accents ignored), then accents, then, where a setting asks for case
 //! sensitivity, case. This is the same collator (ICU4X, with the data compiled in), so the order is
-//! LibreOffice's for every script, emoji included, and for the alphabets the language tailors (`ñ`
+//! `LibreOffice`'s for every script, emoji included, and for the alphabets the language tailors (`ñ`
 //! after `n` in Spanish). The equality of text is not by collation; see [`crate::casemap`].
 
 use icu_collator::options::{CollatorOptions, Strength};
@@ -22,6 +22,11 @@ impl std::fmt::Debug for Collator {
 impl Collator {
     /// The collator of the language of `tag`; `case_sensitive` lets case break ties, lowercase
     /// first.
+    ///
+    /// # Panics
+    ///
+    /// When the compiled collation data is missing, which a build of the crate rules out.
+    #[must_use]
     pub fn new(tag: &str, case_sensitive: bool) -> Self {
         let locale: Locale = tag.replace('_', "-").parse().unwrap_or(Locale::UNKNOWN);
         let mut options = CollatorOptions::default();
@@ -39,6 +44,7 @@ impl Collator {
     }
 
     /// Order of two texts at this collator's strength.
+    #[must_use]
     pub fn compare(&self, a: &str, b: &str) -> Ordering {
         self.0.compare(a, b)
     }

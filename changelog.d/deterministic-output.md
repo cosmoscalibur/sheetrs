@@ -9,6 +9,6 @@
 
 ### Fixed
 
-- Fix `sheetlint` output order varying between runs of the same build (#33).
+- Fix `sheetrs lint` output order varying between runs of the same build (#33).
 - Fix REF310 reporting a different set of violations between runs when value types tied in a range (#34).
 - Fix REF310 skipping later ranges of a formula once its first range was suppressed.

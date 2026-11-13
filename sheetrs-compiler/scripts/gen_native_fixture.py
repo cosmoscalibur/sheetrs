@@ -6,7 +6,7 @@ tests/assets/semantics.xlsx is loaded in LibreOffice only to read its formulas (
 LibreOffice's own names) and data; they are typed into a new document with ODF's default
 settings (case-sensitive comparisons, regular expressions...), plus the functions whose
 LibreOffice name means something else than the Excel one (CEILING, FLOOR), recalculated in
-full and saved as ODS. See docs/FIDELITY.md ("Format and namespace").
+full and saved as ODS. See docs/FIDELITY.md ("Document state and namespace").
 
 Run with LibreOffice's Python:  SOFFICE=soffice26 .../program/python scripts/gen_native_fixture.py
 """
@@ -18,6 +18,9 @@ import time
 
 import uno
 from com.sun.star.beans import PropertyValue
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scripts"))
+import fixture_determinism  # noqa: E402  (the same bytes on every run, see its docstring)
 
 SOFFICE = os.environ.get("SOFFICE", "soffice")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -70,23 +73,33 @@ def main():
     n = cur.RangeAddress.EndRow + 1
     formulas = [calc.getCellByPosition(0, i).getFormula() for i in range(n)]
     labels = [calc.getCellByPosition(1, i).getString() for i in range(n)]
-    data = src.Sheets.getByName("Data")
-    dcur = data.createCursor(); dcur.gotoEndOfUsedArea(False)
-    rows, cols = dcur.RangeAddress.EndRow + 1, dcur.RangeAddress.EndColumn + 1
-    values = data.getCellRangeByPosition(0, 0, cols - 1, rows - 1).getFormulaArray()
-    hidden = [not data.Rows.getByIndex(i).IsVisible for i in range(rows)]
+    # Every sheet of the source but `Calc` is copied (data and hidden rows), in the source order: the
+    # formulas of `Calc` read `Data` and, over several sheets, `Wide` (`Data:Wide!A1:A3`); a formula
+    # typed into a document without the sheet it names is written back garbled.
+    sheets = []
+    for name in src.Sheets.ElementNames:
+        if name == "Calc":
+            continue
+        sheet = src.Sheets.getByName(name)
+        cur2 = sheet.createCursor(); cur2.gotoEndOfUsedArea(False)
+        rows, cols = cur2.RangeAddress.EndRow + 1, cur2.RangeAddress.EndColumn + 1
+        values = sheet.getCellRangeByPosition(0, 0, cols - 1, rows - 1).getFormulaArray()
+        hidden = [not sheet.Rows.getByIndex(i).IsVisible for i in range(rows)]
+        sheets.append((name, rows, cols, values, hidden))
 
     doc = desktop.loadComponentFromURL("private:factory/scalc", "_blank", 0, (pv("Hidden", True),))
-    doc.Sheets.insertNewByName("Data", 0)
-    doc.Sheets.insertNewByName("Calc", 1)
+    for k, (name, *_rest) in enumerate(sheets):
+        doc.Sheets.insertNewByName(name, k)
+    doc.Sheets.insertNewByName("Calc", len(sheets))
     for name in list(doc.Sheets.ElementNames):
-        if name not in ("Data", "Calc"):
+        if name not in [x[0] for x in sheets] + ["Calc"]:
             doc.Sheets.removeByName(name)
-    d = doc.Sheets.getByName("Data")
-    d.getCellRangeByPosition(0, 0, cols - 1, rows - 1).setFormulaArray(values)
-    for i, h in enumerate(hidden):
-        if h:
-            d.Rows.getByIndex(i).IsVisible = False
+    for name, rows, cols, values, hidden in sheets:
+        d = doc.Sheets.getByName(name)
+        d.getCellRangeByPosition(0, 0, cols - 1, rows - 1).setFormulaArray(values)
+        for i, h in enumerate(hidden):
+            if h:
+                d.Rows.getByIndex(i).IsVisible = False
     c = doc.Sheets.getByName("Calc")
     for i, (f, label) in enumerate(zip(formulas, labels)):
         c.getCellByPosition(0, i).setFormula(f)
@@ -97,6 +110,7 @@ def main():
     doc.calculateAll()
     out = os.path.join(ASSETS, "native.ods")
     doc.storeToURL(uno.systemPathToFileUrl(os.path.abspath(out)), (pv("FilterName", "calc8"),))
+    fixture_determinism.normalize(out)
     doc.close(True); src.close(True)
     try:
         desktop.terminate()

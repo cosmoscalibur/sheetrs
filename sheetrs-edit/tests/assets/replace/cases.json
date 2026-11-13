@@ -1,0 +1,393 @@
+[
+ {
+  "name": "text_ci",
+  "text": "hello",
+  "with_": "bye"
+ },
+ {
+  "name": "match_case",
+  "text": "hello",
+  "with_": "bye",
+  "match_case": true
+ },
+ {
+  "name": "entire",
+  "text": "abc",
+  "with_": "xyz",
+  "entire_cells": true
+ },
+ {
+  "name": "number_digits",
+  "text": "34",
+  "with_": "99"
+ },
+ {
+  "name": "number_to_text",
+  "text": "1234",
+  "with_": "x"
+ },
+ {
+  "name": "text_to_number",
+  "text": "abc",
+  "with_": "12",
+  "entire_cells": true
+ },
+ {
+  "name": "text_to_bool",
+  "text": "abc",
+  "with_": "true",
+  "entire_cells": true
+ },
+ {
+  "name": "text_to_formula",
+  "text": "abc",
+  "with_": "=1+1",
+  "entire_cells": true
+ },
+ {
+  "name": "clear",
+  "text": "abc",
+  "with_": "",
+  "entire_cells": true
+ },
+ {
+  "name": "date_year",
+  "text": "2023",
+  "with_": "2024"
+ },
+ {
+  "name": "percent",
+  "text": "25",
+  "with_": "30"
+ },
+ {
+  "name": "formula_ref",
+  "text": "B1",
+  "with_": "B2",
+  "search_in": "formula"
+ },
+ {
+  "name": "formula_sheet_ref",
+  "text": "A1",
+  "with_": "A2",
+  "search_in": "formula",
+  "case": true
+ },
+ {
+  "name": "formula_string_literal",
+  "text": "abc",
+  "with_": "xyz",
+  "search_in": "formula"
+ },
+ {
+  "name": "formula_function",
+  "text": "SUM",
+  "with_": "AVERAGE",
+  "search_in": "formula"
+ },
+ {
+  "name": "formula_to_text",
+  "text": "=",
+  "with_": "",
+  "search_in": "formula",
+  "entire_cells": false
+ },
+ {
+  "name": "value_include_formulas",
+  "text": "abcd",
+  "with_": "zz",
+  "include_formulas": true
+ },
+ {
+  "name": "value_excludes_formulas",
+  "text": "abcd",
+  "with_": "zz"
+ },
+ {
+  "name": "formatted_number",
+  "text": "1,234",
+  "with_": "9,999",
+  "formatted": true
+ },
+ {
+  "name": "formatted_number_off",
+  "text": "1,234",
+  "with_": "9,999"
+ },
+ {
+  "name": "formatted_date",
+  "text": "Mar",
+  "with_": "Apr",
+  "formatted": true
+ },
+ {
+  "name": "formatted_currency",
+  "text": "$10",
+  "with_": "$20",
+  "formatted": true
+ },
+ {
+  "name": "formatted_custom",
+  "text": "x5",
+  "with_": "x9",
+  "formatted": true
+ },
+ {
+  "name": "formatted_label",
+  "text": "yes",
+  "with_": "no",
+  "formatted": true
+ },
+ {
+  "name": "formatted_percent",
+  "text": "25.6",
+  "with_": "30",
+  "formatted": true
+ },
+ {
+  "name": "formatted_percent_precision",
+  "text": "50.00",
+  "with_": "75",
+  "formatted": true
+ },
+ {
+  "name": "formatted_entire",
+  "text": "1,234.50",
+  "with_": "5",
+  "formatted": true,
+  "entire_cells": true
+ },
+ {
+  "name": "formatted_regex",
+  "text": "(\\d+),(\\d+)",
+  "with_": "$2-$1",
+  "mode": "regex",
+  "formatted": true
+ },
+ {
+  "name": "formatted_formula_search",
+  "text": "SUM",
+  "with_": "AVERAGE",
+  "search_in": "formula",
+  "formatted": true
+ },
+ {
+  "name": "regex_groups",
+  "text": "(l+)o",
+  "with_": "[$1|&]",
+  "mode": "regex"
+ },
+ {
+  "name": "wildcards",
+  "text": "h*o",
+  "with_": "X",
+  "mode": "wildcards",
+  "entire_cells": true
+ },
+ {
+  "name": "range_scope",
+  "text": "hello",
+  "with_": "bye",
+  "scope": [
+   {
+    "range": "T!A1:A2"
+   }
+  ]
+ },
+ {
+  "name": "repeated_cells",
+  "text": "repeat",
+  "with_": "again"
+ },
+ {
+  "name": "repeated_cells_partial",
+  "text": "repeat",
+  "with_": "again",
+  "scope": [
+   {
+    "range": "T!F14"
+   }
+  ]
+ },
+ {
+  "name": "repeated_rows",
+  "text": "rowrep",
+  "with_": "row"
+ },
+ {
+  "name": "repeated_rows_partial",
+  "text": "rowrep",
+  "with_": "row",
+  "scope": [
+   {
+    "range": "T!A21"
+   }
+  ]
+ },
+ {
+  "name": "sheet_scope",
+  "text": "Hello",
+  "with_": "Bye",
+  "scope": [
+   {
+    "sheet": "U Sheet"
+   }
+  ]
+ },
+ {
+  "name": "comment_ci",
+  "text": "hello",
+  "with_": "bye",
+  "search_in": "comment"
+ },
+ {
+  "name": "comment_match_case",
+  "text": "hello",
+  "with_": "bye",
+  "search_in": "comment",
+  "match_case": true
+ },
+ {
+  "name": "comment_entire",
+  "text": "Hello U note",
+  "with_": "x y",
+  "search_in": "comment",
+  "entire_cells": true
+ },
+ {
+  "name": "comment_regex",
+  "text": "(h)ello",
+  "with_": "[$1|&]",
+  "search_in": "comment",
+  "mode": "regex"
+ },
+ {
+  "name": "comment_wildcards",
+  "text": "*empty*",
+  "with_": "nothing",
+  "search_in": "comment",
+  "mode": "wildcards",
+  "entire_cells": true
+ },
+ {
+  "name": "comment_range_scope",
+  "text": "hello",
+  "with_": "bye",
+  "search_in": "comment",
+  "scope": [
+   {
+    "range": "T!A1:A1"
+   }
+  ]
+ },
+ {
+  "name": "comment_sheet_scope",
+  "text": "Hello",
+  "with_": "Bye",
+  "search_in": "comment",
+  "scope": [
+   {
+    "sheet": "U Sheet"
+   }
+  ]
+ },
+ {
+  "name": "filtered_left_out",
+  "text": "filt",
+  "with_": "done",
+  "input": "input_filtered"
+ },
+ {
+  "name": "filtered_included",
+  "text": "filt",
+  "with_": "done",
+  "filtered": true,
+  "input": "input_filtered"
+ },
+ {
+  "name": "invalid_open_paren",
+  "text": "*2",
+  "with_": "*((",
+  "search_in": "formula"
+ },
+ {
+  "name": "invalid_unknown_function",
+  "text": "SUM",
+  "with_": "SUMX",
+  "search_in": "formula"
+ },
+ {
+  "name": "invalid_missing_sheet",
+  "text": "U Sheet",
+  "with_": "Nope",
+  "search_in": "formula"
+ },
+ {
+  "name": "invalid_trailing_operator",
+  "text": "B1*2",
+  "with_": "B1*",
+  "search_in": "formula"
+ },
+ {
+  "name": "invalid_two_operands",
+  "text": "B1*2",
+  "with_": "B1 2",
+  "search_in": "formula"
+ },
+ {
+  "name": "invalid_extra_close",
+  "text": "B1*2",
+  "with_": "B1*2)",
+  "search_in": "formula"
+ },
+ {
+  "name": "invalid_function_left_open",
+  "text": "B1,B2)",
+  "with_": "B1,B2",
+  "search_in": "formula"
+ },
+ {
+  "name": "invalid_unknown_name",
+  "text": "B1*2",
+  "with_": "B1*Total",
+  "search_in": "formula"
+ },
+ {
+  "name": "invalid_error_constant",
+  "text": "B1*2",
+  "with_": "#REF!+1",
+  "search_in": "formula"
+ },
+ {
+  "name": "invalid_empty_paren",
+  "text": "B1*2",
+  "with_": "(",
+  "search_in": "formula"
+ },
+ {
+  "name": "typed_general",
+  "text": "T:(.*)",
+  "with_": "$1",
+  "mode": "regex",
+  "scope": [
+   {
+    "range": "V!A1:A63"
+   }
+  ],
+  "input": "input_typed",
+  "formats": true
+ },
+ {
+  "name": "typed_formats",
+  "text": "T:(.*)",
+  "with_": "$1",
+  "mode": "regex",
+  "scope": [
+   {
+    "range": "V!B1:B15"
+   }
+  ],
+  "input": "input_typed",
+  "formats": true
+ }
+]

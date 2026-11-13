@@ -1,0 +1,34 @@
+[package]
+name = "sheetrs-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+readme = "README.md"
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "The `sheetrs` executable: query, edit, lint and stats subcommands over XLSX and ODS workbooks"
+
+[[bin]]
+name = "sheetrs"
+path = "src/main.rs"
+
+[dependencies]
+sheetrs-query = { path = "../sheetrs-query", version = "0.4.0", features = ["cli"] }
+sheetrs-edit = { path = "../sheetrs-edit", version = "0.4.0", features = ["cli"] }
+sheetrs-linter = { path = "../sheetrs-linter", version = "0.4.0", features = ["cli"] }
+sheetrs-stats = { path = "../sheetrs-stats", version = "0.4.0", features = ["cli"] }
+sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.0", features = ["cli"] }
+clap.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.0" }
+
+[lints]
+workspace = true

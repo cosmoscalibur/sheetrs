@@ -35,12 +35,12 @@ enum Tok {
     /// `AM/PM` (`true`) or `A/P`.
     Ampm(bool),
     /// `[h]`, `[m]`, `[s]`: elapsed time since the null date, not a clock field.
-    Elapsed(char),
+    Elapsed(char, usize),
     /// `.0`, `.00`, `.000` after the seconds.
     Frac(usize),
     /// `/` in a date format: the locale's date separator.
     DateSep,
-    /// A `[$-407]` tag of a language the engine has no names for: LibreOffice writes that
+    /// A `[$-407]` tag of a language the engine has no names for: `LibreOffice` writes that
     /// language's names, so the code cannot be reproduced and TEXT is an error.
     Foreign,
     /// A `[$-409]` tag: the names of months and days, and AM/PM, are those of this locale's language.
@@ -88,7 +88,7 @@ fn tokenize_dt(fmt: &str) -> Option<Vec<Tok>> {
                     && l.chars().all(|c| c == k)
                 {
                     dt = true;
-                    out.push(Tok::Elapsed(k));
+                    out.push(Tok::Elapsed(k, l.chars().count()));
                 } else if let Some(cur) = inner.strip_prefix('$') {
                     let (sym, lang) = cur.split_once('-').unwrap_or((cur, ""));
                     // A language id (`409`) or a tag (`en-US`).
@@ -185,11 +185,20 @@ fn sym_only_symbol(sym: &str) -> bool {
 }
 
 /// Whether a date or time code carries a language tag the engine has no names for (`[$-407]`).
+#[must_use]
 pub fn has_foreign_language_tag(fmt: &str) -> bool {
     tokenize_dt(fmt).is_some_and(|t| t.contains(&Tok::Foreign))
 }
 
-fn render_dt(toks: &[Tok], serial: f64, loc: &Locale, sys: DateSystem) -> Option<String> {
+/// `shown`: the text of a cell (`display`), where `LibreOffice` writes `#FMT` for a date out of its
+/// range; the engine's `TEXT` does not imitate it (the build stops, see `dates::serial_to_ymd`).
+fn render_dt(
+    toks: &[Tok],
+    serial: f64,
+    loc: &Locale,
+    sys: DateSystem,
+    shown: bool,
+) -> Option<String> {
     if toks.contains(&Tok::Foreign) {
         crate::notes::note(crate::notes::TEXT_LANGUAGE);
         return None;
@@ -199,7 +208,7 @@ fn render_dt(toks: &[Tok], serial: f64, loc: &Locale, sys: DateSystem) -> Option
         _ => None,
     });
     let names = tagged.as_ref().unwrap_or(loc);
-    let elapsed = toks.iter().any(|t| matches!(t, Tok::Elapsed(_)));
+    let elapsed = toks.iter().any(|t| matches!(t, Tok::Elapsed(..)));
     let negative = elapsed && serial < 0.0;
     let serial = if negative { -serial } else { serial };
     let digits = toks
@@ -212,8 +221,14 @@ fn render_dt(toks: &[Tok], serial: f64, loc: &Locale, sys: DateSystem) -> Option
     // what it has reached (it does not round up to the next second); elapsed time
     // rounds to the smallest unit the format shows.
     let total = (serial * 86_400.0 * 1e7).round() / 1e7;
-    let units = if elapsed || digits > 0 {
+    let units = if elapsed {
         (total * scale).round()
+    } else if digits > 0 {
+        // The whole seconds are cut and the fraction is rounded without reaching the next second
+        // (`23:59:59.99` for `0.99999999` of a day, never `00:00:00.00`): `LibreOffice` shows what the
+        // clock has reached.
+        let whole = total.floor();
+        whole * scale + ((total - whole) * scale).round().min(scale - 1.0)
     } else {
         total.floor() * scale
     };
@@ -225,12 +240,44 @@ fn render_dt(toks: &[Tok], serial: f64, loc: &Locale, sys: DateSystem) -> Option
     let (hh, mi, ss) = (secs / 3600 % 24, secs / 60 % 60, secs % 60);
     let elapsed_secs = units / scale;
     let _ = &mut day;
+    // An elapsed time past 2^32 seconds is not written (`#FMT`).
+    if elapsed && elapsed_secs > f64::from(u32::MAX) {
+        return Some("#FMT".to_string());
+    }
     let twelve = toks.iter().any(|t| matches!(t, Tok::Ampm(_)));
-    let needs_date = toks
-        .iter()
-        .any(|t| matches!(t, Tok::Y(_) | Tok::M(_) | Tok::D(_)));
+    let is_hour = |t: &Tok| matches!(t, Tok::H(_) | Tok::Elapsed('h', _));
+    // `m` right after hours or right before seconds means minutes.
+    let is_minutes = |k: usize| {
+        let after_h = toks[..k]
+            .iter()
+            .rev()
+            .find(|t| !matches!(t, Tok::Lit(_)))
+            .is_some_and(is_hour);
+        let before_s = toks[k + 1..]
+            .iter()
+            .find(|t| !matches!(t, Tok::Lit(_)))
+            .is_some_and(|t| matches!(t, Tok::S(_)));
+        after_h || before_s
+    };
+    // A format with a clock only writes the time of day of any number, and one with a date is
+    // `#FMT` where the date is out of range.
+    let needs_date = toks.iter().enumerate().any(|(k, t)| match t {
+        Tok::Y(_) | Tok::D(_) => true,
+        Tok::M(_) => !is_minutes(k),
+        _ => false,
+    });
     let (y, mo, d) = if needs_date {
-        dates::serial_to_ymd(day, sys)?
+        let days = sys.days_from_unix_epoch() + day as i64;
+        if shown {
+            if !(dates::LIBRE_FIRST_DAY..=dates::LIBRE_LAST_DAY).contains(&days) {
+                return Some("#FMT".to_string());
+            }
+        } else {
+            dates::serial_to_ymd(day, sys)?;
+        }
+        let (y, mo, d) = dates::calendar_from_days(days);
+        // There is no year 0: the one before the year 1 is -1 (1 BC).
+        (if y <= 0 { y - 1 } else { y }, mo, d)
     } else {
         (0, 1, 1)
     };
@@ -243,7 +290,6 @@ fn render_dt(toks: &[Tok], serial: f64, loc: &Locale, sys: DateSystem) -> Option
     if negative {
         out.push('-');
     }
-    let is_hour = |t: &Tok| matches!(t, Tok::H(_) | Tok::Elapsed('h'));
     for (k, t) in toks.iter().enumerate() {
         match t {
             Tok::Lit(s) => out.push_str(s),
@@ -251,23 +297,20 @@ fn render_dt(toks: &[Tok], serial: f64, loc: &Locale, sys: DateSystem) -> Option
             Tok::DateSep => out.push(loc.date_sep),
             Tok::Y(n) => {
                 if *n <= 2 {
-                    let _ = write!(out, "{:02}", y.rem_euclid(100));
+                    // Two digits of the year, and none are added to a year under 10.
+                    if y.abs() < 10 {
+                        let _ = write!(out, "{}", y.abs());
+                    } else {
+                        let _ = write!(out, "{:02}", y.rem_euclid(100));
+                    }
+                } else if y < 0 {
+                    let _ = write!(out, "-{:04}", -y);
                 } else {
                     let _ = write!(out, "{y:04}");
                 }
             }
             Tok::M(n) => {
-                // `m` right after hours or right before seconds means minutes.
-                let after_h = toks[..k]
-                    .iter()
-                    .rev()
-                    .find(|t| !matches!(t, Tok::Lit(_)))
-                    .is_some_and(is_hour);
-                let before_s = toks[k + 1..]
-                    .iter()
-                    .find(|t| !matches!(t, Tok::Lit(_)))
-                    .is_some_and(|t| matches!(t, Tok::S(_)));
-                if after_h || before_s {
+                if is_minutes(k) {
                     if *n >= 2 {
                         let _ = write!(out, "{mi:02}");
                     } else {
@@ -317,13 +360,18 @@ fn render_dt(toks: &[Tok], serial: f64, loc: &Locale, sys: DateSystem) -> Option
                     out.extend(text.chars().take(1).flat_map(char::to_lowercase));
                 }
             }
-            Tok::Elapsed(k) => {
+            Tok::Elapsed(k, width) => {
                 let unit = match k {
                     'h' => 3600.0,
                     'm' => 60.0,
                     _ => 1.0,
                 };
-                let _ = write!(out, "{:.0}", (elapsed_secs / unit).floor());
+                let _ = write!(
+                    out,
+                    "{:0width$.0}",
+                    (elapsed_secs / unit).floor(),
+                    width = *width
+                );
             }
             Tok::Frac(n) => {
                 if *n > 0 {
@@ -387,7 +435,7 @@ fn parse_cond(s: &str) -> Option<(Cmp, f64)> {
     rest.trim().parse().ok().map(|v| (op, v))
 }
 
-/// The decimal and group characters a format code is written with. LibreOffice
+/// The decimal and group characters a format code is written with. `LibreOffice`
 /// reads the code of `TEXT` in the user's locale (`#.##0,00` in Spanish); the codes
 /// it was observed to take in English form whatever the locale are listed.
 fn code_separators(fmt: &str, loc: &Locale) -> (char, char) {
@@ -823,7 +871,7 @@ fn cond_holds(c: (Cmp, f64), x: f64) -> bool {
 }
 
 /// Whether a color or condition bracket comes after other content of its
-/// section: LibreOffice refuses such a code (`yyyy [Blue]`).
+/// section: `LibreOffice` refuses such a code (`yyyy [Blue]`).
 fn misplaced_bracket(section: &str) -> bool {
     let cs: Vec<char> = section.chars().collect();
     let mut seen = false;
@@ -868,7 +916,7 @@ fn misplaced_bracket(section: &str) -> bool {
 /// `TEXT` takes it. `None`: the code is not valid (`#VALUE!`). `General` (or an
 /// empty code) uses the general number format.
 /// A `[$-…]` tag without a currency symbol whose language is not a hexadecimal id (`[$-en-US]`,
-/// `[$-ZZZ]`): LibreOffice answers `Err:502`. With a symbol (`[$€-en-US]`) the language is not read.
+/// `[$-ZZZ]`): `LibreOffice` answers `Err:502`. With a symbol (`[$€-en-US]`) the language is not read.
 fn bad_language_tag(fmt: &str) -> bool {
     let mut rest = fmt;
     while let Some(at) = rest.find("[$-") {
@@ -883,15 +931,25 @@ fn bad_language_tag(fmt: &str) -> bool {
     false
 }
 
+#[must_use]
 pub fn format_number(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> Option<String> {
     let (dec, grp) = code_separators(fmt, loc);
-    format_with(x, fmt, loc, sys, dec, grp)
+    format_with(x, fmt, loc, sys, dec, grp, false)
+}
+
+/// [`format_number`] for the text a cell shows (`display`): a date outside the range that
+/// `LibreOffice` writes is `#FMT`, as it shows it, where `TEXT` does not imitate it.
+#[must_use]
+pub fn format_number_shown(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> Option<String> {
+    let (dec, grp) = code_separators(fmt, loc);
+    format_with(x, fmt, loc, sys, dec, grp, true)
 }
 
 /// [`format_number`] for a code the engine writes itself, always in English
 /// notation (`FIXED`).
+#[must_use]
 pub fn format_number_en(x: f64, fmt: &str, loc: &Locale, sys: DateSystem) -> String {
-    format_with(x, fmt, loc, sys, '.', ',').unwrap_or_default()
+    format_with(x, fmt, loc, sys, '.', ',', false).unwrap_or_default()
 }
 
 fn format_with(
@@ -901,6 +959,7 @@ fn format_with(
     sys: DateSystem,
     dec: char,
     grp: char,
+    shown: bool,
 ) -> Option<String> {
     if fmt.trim().eq_ignore_ascii_case("general") {
         return Some(fmt_number(x, loc));
@@ -951,7 +1010,7 @@ fn format_with(
     };
     let section_src = raw[idx];
     if let Some(toks) = tokenize_dt(section_src) {
-        return Some(render_dt(&toks, x, loc, sys).unwrap_or_else(|| fmt_number(x, loc)));
+        return Some(render_dt(&toks, x, loc, sys, shown).unwrap_or_else(|| fmt_number(x, loc)));
     }
     let sec = &secs[idx];
     if sec
@@ -979,6 +1038,7 @@ fn format_with(
 }
 
 /// Format a text value with the text section (`@`) of a format code, if it has one.
+#[must_use]
 pub fn format_text(text: &str, fmt: &str, loc: &Locale) -> Option<String> {
     let (dec, grp) = code_separators(fmt, loc);
     let raw = sections(fmt);
@@ -1005,11 +1065,62 @@ mod tests {
     use super::*;
 
     fn f(x: f64, fmt: &str) -> String {
-        format_number(x, fmt, &Locale::en_us(), DateSystem::NULL_1899).unwrap()
+        format_number(x, fmt, &Locale::en_us(), DateSystem::Null1899).unwrap()
+    }
+
+    fn shown(x: f64, fmt: &str) -> String {
+        format_number_shown(x, fmt, &Locale::en_us(), DateSystem::Null1899).unwrap()
+    }
+
+    /// What `LibreOffice` 26.8 writes (`scripts` of the oracle: `dates.xlsx`/`dates.ods` and the probes of
+    /// `TEXT` and of the formats of a cell).
+    #[test]
+    fn dates_and_times_as_libreoffice_writes_them() {
+        // The Julian calendar before 1582-10-15, the years before 1 as negative ones (a build does not
+        // imitate `TEXT` for a serial before 0001-01-01: `shown` is the text of a cell).
+        assert_eq!(shown(-693_595.0, "yyyy-mm-dd"), "0001-01-01");
+        assert_eq!(shown(-693_594.0, "yyyy-mm-dd"), "0001-01-02");
+        assert_eq!(shown(-693_596.0, "yyyy-mm-dd"), "-0001-12-31");
+        assert_eq!(f(-145_914.0, "d-mmm-yyyy"), "21-Jun-1500");
+        assert_eq!(f(-115_599.0, "d-mmm-yyyy"), "1-Jul-1583");
+        // A year under 10 has no zero added in two digits, a year from 10 has them.
+        assert_eq!(shown(-693_412.0, "d-mmm-yy"), "3-Jul-1");
+        assert_eq!(shown(-690_490.0, "yy"), "9");
+        assert_eq!(shown(-690_125.0, "yy"), "10");
+        assert_eq!(shown(-657_253.0, "yy"), "00");
+        // `[hh]` has two digits at least, `[h]` one.
+        assert_eq!(f(0.0, "[hh]:mm:ss"), "00:00:00");
+        assert_eq!(f(0.0, "[h]:mm:ss"), "0:00:00");
+        assert_eq!(f(3.75, "[hh]"), "90");
+        // Seconds are cut and fractions rounded without reaching the next second.
+        assert_eq!(f(45_366.999_999_99, "hh:mm:ss.00"), "23:59:59.99");
+        assert_eq!(
+            f(45_366.999_999_99, "yyyy-mm-dd hh:mm:ss.000"),
+            "2024-03-15 23:59:59.999"
+        );
+        assert_eq!(f(1.1574e-5, "hh:mm:ss.00"), "00:00:00.99");
+        // An elapsed time is rounded to the unit it shows, and one past 2^32 seconds is not written.
+        assert_eq!(f(1.1574e-5, "[hh]:mm:ss"), "00:00:01");
+        assert_eq!(f(49_710.0, "[hh]:mm:ss"), "1193040:00:00");
+        assert_eq!(f(49_710.269_6, "[h]:mm:ss"), "1193046:28:13");
+        assert_eq!(f(49_710.269_7, "[hh]:mm:ss"), "#FMT");
+        assert_eq!(f(-49_711.0, "[hh]:mm:ss"), "#FMT");
+        // A clock writes the time of day of any number, and a date out of the range is `#FMT` where it
+        // is shown (and a build that meets it in `TEXT` stops, see `dates::serial_to_ymd`).
+        for x in [-693_594.0, 11_274_308.0, 12_000_000.0] {
+            assert_eq!(shown(x, "hh:mm:ss"), "00:00:00");
+            assert_eq!(shown(x, "h:mm AM/PM"), "12:00 AM");
+            assert_eq!(shown(x, "mm:ss"), "00:00");
+        }
+        assert_eq!(shown(11_274_307.0, "yyyy-mm-dd"), "32768-01-01");
+        assert_eq!(shown(11_274_308.0, "yyyy-mm-dd"), "#FMT");
+        assert_eq!(shown(12_000_000.0, "yyyy hh:mm"), "#FMT");
+        assert_eq!(shown(-12_661_859.0, "yyyy-mm-dd"), "-32768-09-06");
+        assert_eq!(shown(-12_661_860.0, "yyyy-mm-dd"), "#FMT");
     }
 
     #[test]
-    fn numbers() {
+    fn numbers_are_formatted_by_their_codes_sections_and_text_literals() {
         assert_eq!(f(1234.567, "0.00"), "1234.57");
         assert_eq!(f(1234.567, "#,##0.00"), "1,234.57");
         assert_eq!(f(0.256, "0%"), "26%");
@@ -1020,7 +1131,7 @@ mod tests {
         assert_eq!(f(12.0, "\"EUR \"0"), "EUR 12");
         assert_eq!(f(1.5, "General"), "1.5");
         assert_eq!(
-            format_number(1234.5, "#,##0.00", &Locale::es_es(), DateSystem::NULL_1899).unwrap(),
+            format_number(1234.5, "#,##0.00", &Locale::es_es(), DateSystem::Null1899).unwrap(),
             "1.234,50"
         );
     }
@@ -1028,7 +1139,7 @@ mod tests {
     #[test]
     fn a_language_tag_without_a_symbol_must_be_a_hexadecimal_id() {
         let en = Locale::en_us();
-        let f = |c: &str| format_number(45367.0, c, &en, DateSystem::NULL_1899);
+        let f = |c: &str| format_number(45367.0, c, &en, DateSystem::Null1899);
         for bad in ["[$-en-US]dddd", "[$-en-US]#,##0", "[$-ZZZ]dddd", "[$-x]0"] {
             assert_eq!(f(bad), None, "{bad}");
         }
@@ -1045,9 +1156,9 @@ mod tests {
         assert_eq!(f(0.5, "# ??/??"), " \u{2007}1/2\u{2007}");
         assert_eq!(f(0.0, "# ?/?"), "0 \u{2007} \u{2007}");
         assert_eq!(f(1234.5678, "0.00E+00"), "1.23E+03");
-        assert_eq!(f(12345678.9, "##0.0E+0"), "12.3E+6");
+        assert_eq!(f(12_345_678.9, "##0.0E+0"), "12.3E+6");
         assert_eq!(f(1234.5678, "000-00"), "012-35");
-        assert_eq!(f(1000000.0, "0,"), "1000");
+        assert_eq!(f(1_000_000.0, "0,"), "1000");
         assert_eq!(f(-1234.5678, "[>100]0.0;0"), "1235");
         assert_eq!(f(-1234.5678, "#,##0_);(#,##0)"), "(1,235)");
         assert_eq!(f(1234.5678, "[$$-en-US]#,##0"), "$1,235");
@@ -1061,7 +1172,7 @@ mod tests {
     #[test]
     fn libreoffice_codes_follow_the_locale() {
         let es = Locale::es_es();
-        let g = |x: f64, code: &str| format_number(x, code, &es, DateSystem::NULL_1899).unwrap();
+        let g = |x: f64, code: &str| format_number(x, code, &es, DateSystem::Null1899).unwrap();
         // `#,##0` is read in English form; `#,##0;(#,##0)` is Spanish: the comma
         // is the decimal separator.
         assert_eq!(g(1234.5678, "#,##0"), "1.235");
@@ -1073,11 +1184,11 @@ mod tests {
     #[test]
     fn libreoffice_time_codes() {
         let g = |x: f64, code: &str| {
-            format_number(x, code, &Locale::en_us(), DateSystem::NULL_1899).unwrap()
+            format_number(x, code, &Locale::en_us(), DateSystem::Null1899).unwrap()
         };
         // A clock shows what it has reached; elapsed time rounds to the second.
-        assert_eq!(g(0.999999, "h:mm"), "23:59");
-        assert_eq!(g(0.999999, "[h]:mm"), "24:00");
+        assert_eq!(g(0.999_999, "h:mm"), "23:59");
+        assert_eq!(g(0.999_999, "[h]:mm"), "24:00");
         assert_eq!(g(45658.75123, "[h]:mm"), "1095810:01");
         assert_eq!(g(45658.75123, "hh:mm:ss.0"), "18:01:46.3");
         assert_eq!(g(45658.75123, "h A/P"), "6 p");
@@ -1086,12 +1197,12 @@ mod tests {
         assert_eq!(g(45292.0, "NN"), "Mon");
         // A color after the content is not a valid code.
         assert!(
-            format_number(1.0, "yyyy [Blue]", &Locale::en_us(), DateSystem::NULL_1899).is_none()
+            format_number(1.0, "yyyy [Blue]", &Locale::en_us(), DateSystem::Null1899).is_none()
         );
     }
 
     #[test]
-    fn dates() {
+    fn dates_and_times_are_formatted_by_their_codes_and_the_locale() {
         assert_eq!(f(45292.0, "yyyy-mm-dd"), "2024-01-01");
         assert_eq!(f(45292.5, "yyyy-mm-dd hh:mm:ss"), "2024-01-01 12:00:00");
         assert_eq!(f(45292.0, "dddd d mmmm yyyy"), "Monday 1 January 2024");
@@ -1101,7 +1212,7 @@ mod tests {
                 45292.0,
                 "dddd d mmmm",
                 &Locale::es_es(),
-                DateSystem::NULL_1899
+                DateSystem::Null1899
             )
             .unwrap(),
             "lunes 1 enero"

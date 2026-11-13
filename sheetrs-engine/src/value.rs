@@ -18,22 +18,27 @@ pub enum ErrorKind {
     Num,
     Na,
     Circ,
-    /// An engine extension: LibreOffice gives a result here that the engine does not reproduce
+    /// An engine extension: `LibreOffice` gives a result here that the engine does not reproduce
     /// (see `notes`). The build stops when it meets the case; this is what a run gives when the
     /// case only shows up with the inputs.
     Unsupported,
     /// Internal: an argument outside the domain of the function. It never reaches
-    /// a cell: the engine turns it into `#NUM!` (Excel) or `#VALUE!` (LibreOffice,
-    /// whose `Err:502` the readers translate to `#VALUE!`).
+    /// a cell: the engine turns it into `#NUM!` or `Libre(502)`, as `LibreOffice` does.
     Domain,
+    /// An error only `LibreOffice` has, with its code: `Err:502` (invalid argument), `Err:523` (the
+    /// iteration does not converge)… A file format that has no such codes holds it as `#VALUE!`
+    /// (an XLSX does, as `LibreOffice`'s own export writes it); an ODS holds the code. It behaves
+    /// as `#VALUE!` in every other respect (propagation); `ERROR.TYPE` of it is `#N/A`.
+    Libre(u16),
 }
 
 impl ErrorKind {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Null => "#NULL!",
             Self::DivZero => "#DIV/0!",
-            Self::Value => "#VALUE!",
+            Self::Value | Self::Libre(_) => "#VALUE!",
             Self::Ref => "#REF!",
             Self::Name => "#NAME?",
             Self::Num | Self::Domain => "#NUM!",
@@ -43,6 +48,18 @@ impl ErrorKind {
         }
     }
 
+    /// The code `LibreOffice` shows for the error when it is not its Excel name: `Err:502`,
+    /// `Err:522` for a circular reference, …
+    #[must_use]
+    pub fn libre_code(self) -> Option<String> {
+        match self {
+            Self::Libre(code) => Some(format!("Err:{code}")),
+            Self::Circ => Some("Err:522".to_string()),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s.to_ascii_uppercase().as_str() {
             "#NULL!" => Self::Null,
@@ -52,18 +69,19 @@ impl ErrorKind {
             "#NAME?" => Self::Name,
             "#NUM!" => Self::Num,
             "#N/A" => Self::Na,
-            "#CIRC!" => Self::Circ,
+            "#CIRC!" | "ERR:522" => Self::Circ,
             "#NOT_IMPLEMENTED!" => Self::Unsupported,
-            _ => return None,
+            other => Self::Libre(other.strip_prefix("ERR:")?.parse().ok()?),
         })
     }
 
     /// Code returned by the `ERROR.TYPE` function (1-based, `#N/A` is 7).
+    #[must_use]
     pub fn code(self) -> f64 {
         match self {
             Self::Null => 1.0,
             Self::DivZero => 2.0,
-            Self::Value => 3.0,
+            Self::Value | Self::Libre(_) => 3.0, // `ERROR.TYPE` gives `#N/A` for a `Libre` (see `logic.rs`)
             Self::Ref => 4.0,
             Self::Name => 5.0,
             Self::Num | Self::Domain => 6.0,
@@ -74,6 +92,16 @@ impl ErrorKind {
     }
 }
 
+/// Rows that follow the stored ones of an [`Array`] and all hold `value`: the part of a range past
+/// the data of its sheet, as an operator over it sees it (`Data!A1:A40000*1` has 40,000 rows, the
+/// empty ones 0). They are not stored: a function that does not know them gets the array with
+/// them stored (see `Engine::array_of`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Ghost {
+    pub rows: u32,
+    pub value: Value,
+}
+
 /// Rectangular block of scalar values (row-major). Cells are never `Array`
 /// or `Ref`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,18 +109,111 @@ pub struct Array {
     pub rows: u32,
     pub cols: u32,
     pub data: Vec<Value>,
+    /// More rows, all equal, after `rows` (none for most arrays). Only a run has them: a program
+    /// never holds one, so it is not written.
+    #[serde(skip)]
+    pub ghost: Option<Box<Ghost>>,
+    /// The array is what `IF` or `CHOOSE` chose element by element, and the last branch that set a
+    /// format in `LibreOffice` was a boolean (`TRUE()`, `NOT(…)`, a comparison…): the cell that
+    /// holds its first element shows it as a boolean, whatever the number is. Only the result of a
+    /// formula looks at it (`ISLOGICAL`, `INDEX`, `TYPE`… see the elements as numbers), so it is
+    /// not part of a program.
+    #[serde(skip)]
+    pub logical: bool,
+    /// The array is what `IF` or `CHOOSE` chose element by element (the matrix `LibreOffice` jumps
+    /// through). Where a function takes one value, such an array is taken element by element only in
+    /// array evaluation; in a formula that is not an array formula the function gets its first
+    /// element (`SUM(ABS(IF({1;0},2,3)))` is 2, `SUM(ABS({-1;-2}))` is 3). Only the result of a
+    /// formula looks at it, so it is not part of a program.
+    #[serde(skip)]
+    pub jump: bool,
+    /// The element that a missing `else` gave shows as `FALSE` in the cell that holds the array: the
+    /// array is what `IF`, `CHOOSE`, `IFERROR` or `IFNA` gave itself (any other array shows an empty
+    /// text there, and `TRANSPOSE` a 0). Only the result of a formula looks at it.
+    #[serde(skip)]
+    pub jump_false: bool,
 }
 
 impl Array {
+    #[must_use]
     pub fn new(rows: u32, cols: u32, data: Vec<Value>) -> Self {
         debug_assert_eq!(data.len(), rows as usize * cols as usize);
-        Self { rows, cols, data }
+        Self {
+            rows,
+            cols,
+            data,
+            ghost: None,
+            logical: false,
+            jump: false,
+            jump_false: false,
+        }
     }
 
+    /// The array with `rows` more rows of `value` after its own, not stored.
+    #[must_use]
+    pub fn with_ghost(mut self, rows: u32, value: Value) -> Self {
+        self.ghost = (rows > 0).then(|| Box::new(Ghost { rows, value }));
+        self
+    }
+
+    /// The array marked as the result of branches that left a boolean format.
+    #[must_use]
+    pub fn with_logical(mut self, logical: bool) -> Self {
+        self.logical = logical;
+        self
+    }
+
+    /// The array marked as what `IF` or `CHOOSE` chose element by element.
+    #[must_use]
+    pub fn with_jump(mut self, jump: bool) -> Self {
+        self.jump = jump;
+        self
+    }
+
+    /// The array marked as what `IF`, `CHOOSE`, `IFERROR` or `IFNA` gave: jump (see
+    /// [`with_jump`](Self::with_jump)) and showing `FALSE` for the element a missing `else` gave.
+    #[must_use]
+    pub fn with_jump_false(mut self) -> Self {
+        self.jump = true;
+        self.jump_false = true;
+        self
+    }
+
+    /// The rows the array has, the ones not stored included.
+    #[must_use]
+    pub fn logical_rows(&self) -> u64 {
+        u64::from(self.rows) + self.ghost.as_ref().map_or(0, |g| u64::from(g.rows))
+    }
+
+    /// The value at a row of the array, the rows that are not stored included (`r` must be a row
+    /// of the array).
+    #[must_use]
+    pub fn logical(&self, r: u32, c: u32) -> &Value {
+        match &self.ghost {
+            Some(g) if r >= self.rows => &g.value,
+            _ => self.get(r, c),
+        }
+    }
+
+    /// The array with its rows after the stored ones stored too.
+    #[must_use]
+    pub fn expanded(&self) -> Self {
+        let Some(g) = &self.ghost else {
+            return Self::new(self.rows, self.cols, self.data.clone());
+        };
+        let rows = self.rows + g.rows;
+        let mut data = Vec::with_capacity(rows as usize * self.cols as usize);
+        data.extend(self.data.iter().cloned());
+        data.resize(rows as usize * self.cols as usize, g.value.clone());
+        Self::new(rows, self.cols, data)
+    }
+
+    #[must_use]
     pub fn filled(rows: u32, cols: u32, v: Value) -> Self {
         Self::new(rows, cols, vec![v; rows as usize * cols as usize])
     }
 
+    #[must_use]
     pub fn get(&self, r: u32, c: u32) -> &Value {
         &self.data[r as usize * self.cols as usize + c as usize]
     }
@@ -111,15 +232,57 @@ pub enum Value {
     Ref(Rect),
 }
 
+/// The empty text that a branch `IF` does not have gives for an element of an array (`IF({0;1},1)`:
+/// the element of the first row): in `LibreOffice` an empty text that is not counted by `COUNTA`, and
+/// that a cell holding the array shows as `FALSE`. It is the one string every such element shares, so
+/// that it can be told from the empty text of a formula (`Arc::ptr_eq`): nothing else sees a
+/// difference (`LEN` is 0, `TYPE` 2, `=""` true, `+0` is `#VALUE!`).
+static EMPTY_PATH: std::sync::LazyLock<Arc<str>> = std::sync::LazyLock::new(|| Arc::from(""));
+
+/// The same element as an operator or a function applied to each element of an array reads it
+/// (`LEN(IF({0;1},1))`): `LibreOffice` reads it as the text `FALSE` where a text is taken (`LEN` is
+/// 5, `&` gives `FALSE`), as the number 0 where a number is (`+`, `ABS`), as empty in a comparison
+/// (`=""` and `=0` are both true) and as a text for `ISTEXT`. One string shared by every such
+/// element, so that the places that read it otherwise can tell it (`Arc::ptr_eq`).
+static ELEMENT_PATH: std::sync::LazyLock<Arc<str>> =
+    std::sync::LazyLock::new(|| Arc::from("FALSE"));
+
 impl Value {
     pub fn text(s: impl AsRef<str>) -> Self {
         Self::Text(Arc::from(s.as_ref()))
     }
 
+    /// The element of an array that the missing branch of an `IF` gives (see `EMPTY_PATH`).
+    #[must_use]
+    pub fn empty_path() -> Self {
+        Self::Text(Arc::clone(&EMPTY_PATH))
+    }
+
+    /// The element the missing branch of an `IF` gave, as a call applied to each element reads it
+    /// (see `ELEMENT_PATH`).
+    #[must_use]
+    pub fn element_path() -> Self {
+        Self::Text(Arc::clone(&ELEMENT_PATH))
+    }
+
+    /// Whether this is [`element_path`](Self::element_path).
+    #[must_use]
+    pub fn is_element_path(&self) -> bool {
+        matches!(self, Self::Text(t) if Arc::ptr_eq(t, &ELEMENT_PATH))
+    }
+
+    /// Whether this is the element the missing branch of an `IF` gives, not any other empty text.
+    #[must_use]
+    pub fn is_empty_path(&self) -> bool {
+        matches!(self, Self::Text(t) if Arc::ptr_eq(t, &EMPTY_PATH))
+    }
+
+    #[must_use]
     pub fn is_error(&self) -> bool {
         matches!(self, Self::Error(_))
     }
 
+    #[must_use]
     pub fn as_error(&self) -> Option<ErrorKind> {
         match self {
             Self::Error(e) => Some(*e),
@@ -128,7 +291,7 @@ impl Value {
     }
 
     /// Rank used by the cross-type ordering: numbers (booleans are the numbers 1 and 0 in
-    /// LibreOffice) < text.
+    /// `LibreOffice`) < text.
     fn type_rank(&self) -> u8 {
         match self {
             Self::Empty | Self::Number(_) | Self::Bool(_) => 0,
@@ -138,6 +301,7 @@ impl Value {
     }
 
     /// The number a value is for ordering and matching: a boolean is 1 or 0, an empty cell 0.
+    #[must_use]
     pub fn as_ordinal(&self) -> Option<f64> {
         match self {
             Self::Number(n) => Some(*n),
@@ -149,9 +313,10 @@ impl Value {
 }
 
 /// Text collators for a locale: one that ignores case (accents still count)
-/// and one that breaks ties by case, lowercase first. See [`crate::collate`].
+/// and one that breaks ties by case, lowercase first. See `crate::collate`.
 pub type Coll = Collator;
 
+#[derive(Debug)]
 pub struct Collators {
     ci: Coll,
     cs: Coll,
@@ -159,6 +324,7 @@ pub struct Collators {
 
 impl Collators {
     /// The collators of the language of `tag`.
+    #[must_use]
     pub fn new(tag: &str) -> Self {
         Self {
             ci: Collator::new(tag, false),
@@ -167,6 +333,7 @@ impl Collators {
     }
 
     /// `case_sensitive`: case decides ties instead of being ignored.
+    #[must_use]
     pub fn get(&self, case_sensitive: bool) -> &Coll {
         if case_sensitive { &self.cs } else { &self.ci }
     }
@@ -174,6 +341,7 @@ impl Collators {
 
 /// Spreadsheet ordering of two scalars. `Empty` takes the type of the other
 /// operand.
+#[must_use]
 pub fn compare(a: &Value, b: &Value, col: &Coll) -> Ordering {
     let (a, b) = match (a, b) {
         (Value::Empty, Value::Text(_)) => (&Value::Text(Arc::from("")), b),
@@ -195,7 +363,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collation() {
+    fn collation_orders_accents_and_case_as_the_locale_does() {
         let en = Collators::new("en");
         let es = Collators::new("es-ES");
         let (ci, cs) = (en.get(false), en.get(true));

@@ -7,7 +7,7 @@ and with [ExceLint](https://doi.org/10.1145/3276518) structural analysis.
 Every rule below is implemented as a walker rule and active by default, so the
 report no longer tracks support or migration status. Configuration parameters
 and their defaults are in the [rule reference](README.md#rule-reference) and
-[`sheetlint.toml`](../sheetlint.toml).
+[`sheetrs.toml`](../sheetrs.toml).
 
 > **TODO:** merge this report into the rule reference in
 > [`README.md`](README.md) once parity with the reference tools is settled and

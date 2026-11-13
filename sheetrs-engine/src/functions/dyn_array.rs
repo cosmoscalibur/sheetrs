@@ -2,7 +2,7 @@
 //! `SEQUENCE`, `FILTER`, `SORT`, `SORTBY`, `TAKE`, `DROP`, `CHOOSECOLS`, `CHOOSEROWS`, `HSTACK`,
 //! `VSTACK`, `EXPAND`, `TOCOL`, `TOROW`, `WRAPCOLS`, `WRAPROWS`, `RANDARRAY`, `TEXTSPLIT`,
 //! `TEXTBEFORE`, `TEXTAFTER`, `ENCODEURL` and `ROT13`. What they answer for an argument outside
-//! their domain is what the oracle (`tests/assets/semantics.*`) has from LibreOffice 26.8.
+//! their domain is what the oracle (`tests/assets/semantics.*`) has from `LibreOffice` 26.8.
 
 use super::{Reg, VAR, opt, opt_num};
 use crate::engine::{Engine, Res};
@@ -76,7 +76,7 @@ fn errors_of_a_range_are_zero(source: &Value, sorted: Value) -> Value {
     }
 }
 
-/// Keys with an error give an order that LibreOffice does not derive from the keys.
+/// Keys with an error give an order that `LibreOffice` does not derive from the keys.
 fn unordered_errors(key: &[Value]) -> Res<()> {
     if key.iter().any(|v| matches!(v, Value::Error(_))) {
         crate::notes::note(crate::notes::SORT_ERROR_KEY);
@@ -246,12 +246,33 @@ fn match_mode(e: &mut Engine, a: &[Value], i: usize) -> Res<bool> {
 }
 
 /// `TEXTBEFORE` (`before`) and `TEXTAFTER`.
+/// `TAKE(array)` and `DROP(array)`: no number of rows or columns is an invalid argument; an error
+/// handed over is that error.
+fn rows_missing(v: &Value) -> Res<Value> {
+    match v {
+        Value::Error(k) => Err(*k),
+        _ => Err(ErrorKind::Libre(502)),
+    }
+}
+
 fn text_around(e: &mut Engine, a: &[Value], before: bool) -> Res<Value> {
     let text = e.text(&a[0])?;
+    // The text with no delimiter has nothing to be before or after.
+    if a.len() == 1 {
+        return if text.is_empty() {
+            Err(DOMAIN)
+        } else {
+            Ok(na())
+        };
+    }
     let delims = delimiters(e, &a[1])?;
     let instance = whole(e, a, 2)?.unwrap_or(1);
     let ci = match_mode(e, a, 3)?;
     let match_end = whole(e, a, 4)?.is_some_and(|m| m != 0);
+    // An error in the value for "not found" is the result even when the text is found.
+    if let Some(Value::Error(k)) = opt(a, 5) {
+        return Err(*k);
+    }
     let not_found = || opt(a, 5).cloned().unwrap_or_else(na);
     if text.is_empty() {
         return Err(DOMAIN);
@@ -297,7 +318,7 @@ fn url_encode(s: &str) -> String {
 
 pub(super) fn register(r: &mut Reg) {
     r.eager("SEQUENCE", 1, 4, |e, a| {
-        let rows = e.num(&a[0])?.trunc();
+        let rows = opt_num(e, a, 0, 1.0)?.trunc();
         let cols = opt_num(e, a, 1, 1.0)?.trunc();
         let (start, step) = (opt_num(e, a, 2, 1.0)?, opt_num(e, a, 3, 1.0)?);
         if rows < 1.0 || cols < 1.0 {
@@ -311,23 +332,42 @@ pub(super) fn register(r: &mut Reg) {
     });
 
     r.eager("FILTER", 2, 3, |e, a| {
+        // What `LibreOffice` answers: a source that is no array is a parameter list error
+        // (`Err:504`), as is an include of the wrong size; a table as include is `#VALUE!`; a
+        // text in the include is `Err:536`; a blank one keeps nothing, and nothing kept without a
+        // value for it is `Err:533`.
+        for v in &a[..2] {
+            if let Value::Error(k) = v {
+                return Err(*k);
+            }
+        }
+        if !matches!(a[0], Value::Ref(_) | Value::Array(_)) {
+            return Err(ErrorKind::Libre(504));
+        }
         let m = e.array_of(a[0].clone());
         let inc = e.array_of(a[1].clone());
         let by_rows = inc.cols == 1 && inc.rows == m.rows;
         let by_cols = !by_rows && inc.rows == 1 && inc.cols == m.cols;
         if !by_rows && !by_cols {
-            return Err(DOMAIN);
+            return Err(if inc.rows > 1 && inc.cols > 1 {
+                ErrorKind::Value
+            } else {
+                ErrorKind::Libre(504)
+            });
         }
         let mut keep = Vec::new();
         for (i, v) in inc.data.iter().enumerate() {
-            if truth(v)? {
-                keep.push(i);
+            match v {
+                Value::Empty => {}
+                Value::Text(_) => return Err(ErrorKind::Libre(536)),
+                v if truth(v)? => keep.push(i),
+                _ => {}
             }
         }
         if keep.is_empty() {
             return match opt(a, 2) {
                 Some(v) => Ok(v.clone()),
-                None => Err(DOMAIN),
+                None => Err(ErrorKind::Libre(533)),
             };
         }
         Ok(if by_rows {
@@ -408,7 +448,10 @@ pub(super) fn register(r: &mut Reg) {
     })
     .array_args();
 
-    r.eager("TAKE", 2, 3, |e, a| {
+    r.eager("TAKE", 1, 3, |e, a| {
+        if a.len() == 1 {
+            return rows_missing(&a[0]);
+        }
         let m = e.array_of(a[0].clone());
         let span = |n: Option<i64>, len: u32| -> (usize, usize) {
             match n {
@@ -429,7 +472,10 @@ pub(super) fn register(r: &mut Reg) {
     })
     .array_args();
 
-    r.eager("DROP", 2, 3, |e, a| {
+    r.eager("DROP", 1, 3, |e, a| {
+        if a.len() == 1 {
+            return rows_missing(&a[0]);
+        }
         let m = e.array_of(a[0].clone());
         let span = |n: Option<i64>, len: u32| -> (usize, usize) {
             let len = len as usize;
@@ -522,8 +568,38 @@ pub(super) fn register(r: &mut Reg) {
     .volatile();
 
     // ----- text -----
-    r.eager("TEXTSPLIT", 2, 6, |e, a| {
+    r.eager("TEXTSPLIT", 1, 6, |e, a| {
+        // An error among the elements of an array that is a delimiter or an option: when an argument has several
+        // cells it is the answer, before the `#VALUE!` of the cells; otherwise the argument is left out, as if it
+        // were not written (the error written in the formula: see `sheetrs-compiler`).
+        let many = a.iter().any(|v| match v {
+            Value::Ref(_) => true,
+            Value::Array(m) => m.data.len() > 1,
+            _ => false,
+        });
+        let mut args = a.to_vec();
+        for v in args.iter_mut().skip(1) {
+            let Value::Array(set) = &*v else { continue };
+            let first_error = set.data.iter().find_map(|x| match x {
+                Value::Error(k) => Some(*k),
+                _ => None,
+            });
+            if let Some(k) = first_error {
+                if many {
+                    return Err(k);
+                }
+                *v = Value::Empty;
+            }
+        }
+        let a = &args[..];
         let text = e.text(&a[0])?;
+        // The text alone is not split: it comes back as it is.
+        if a.len() == 1 {
+            if text.is_empty() {
+                return Err(ErrorKind::Libre(504));
+            }
+            return Ok(array(1, 1, vec![Value::text(text)]));
+        }
         let cols = match opt(a, 1) {
             Some(v) => delimiters(e, v)?,
             None => Vec::new(),
@@ -536,7 +612,7 @@ pub(super) fn register(r: &mut Reg) {
         let ci = match_mode(e, a, 4)?;
         let pad = opt(a, 5).cloned().unwrap_or_else(na);
         if text.is_empty() {
-            return Err(DOMAIN);
+            return Err(ErrorKind::Libre(504));
         }
         let mut table: Vec<Vec<String>> = Vec::new();
         for line in pieces(&text, &rows, ci) {
@@ -561,8 +637,8 @@ pub(super) fn register(r: &mut Reg) {
         }
         Ok(array(table.len(), width, data))
     });
-    r.eager("TEXTBEFORE", 2, 6, |e, a| text_around(e, a, true));
-    r.eager("TEXTAFTER", 2, 6, |e, a| text_around(e, a, false));
+    r.eager("TEXTBEFORE", 1, 6, |e, a| text_around(e, a, true));
+    r.eager("TEXTAFTER", 1, 6, |e, a| text_around(e, a, false));
     r.eager("ENCODEURL", 1, 1, |e, a| {
         let t = e.text(&a[0])?;
         if t.is_empty() {
@@ -622,6 +698,7 @@ fn choose(e: &mut Engine, a: &[Value], cols: bool) -> Res<Value> {
 
 /// `HSTACK` / `VSTACK`: the arrays side by side (or one above the other), `#N/A` where one is
 /// shorter.
+#[allow(clippy::unnecessary_wraps)] // same fallible signature as its siblings, which share call sites
 fn stack(e: &mut Engine, a: &[Value], horizontal: bool) -> Res<Value> {
     let parts: Vec<Arc<Array>> = a.iter().map(|v| e.array_of(v.clone())).collect();
     let (rows, cols) = if horizontal {
@@ -655,6 +732,9 @@ fn stack(e: &mut Engine, a: &[Value], horizontal: bool) -> Res<Value> {
 /// `TOCOL` / `TOROW`: the elements in one line, by rows or by columns, leaving out blanks and
 /// errors as asked.
 fn to_vector(e: &mut Engine, a: &[Value], column: bool) -> Res<Value> {
+    if let Value::Error(k) = &a[0] {
+        return Err(*k);
+    }
     if !matches!(a[0], Value::Ref(_) | Value::Array(_)) {
         return Err(DOMAIN);
     }
@@ -699,8 +779,12 @@ fn wrap(e: &mut Engine, a: &[Value], by_rows: bool) -> Res<Value> {
         return Err(DOMAIN);
     }
     let size = whole(e, a, 1)?.unwrap_or(0);
-    if size < 1 {
-        return Err(DOMAIN);
+    // `LibreOffice`: none is a parameter list error (`Err:504`), a negative size `Err:538`.
+    if size == 0 {
+        return Err(ErrorKind::Libre(504));
+    }
+    if size < 0 {
+        return Err(ErrorKind::Libre(538));
     }
     let size = size as usize;
     let pad = opt(a, 2).cloned().unwrap_or_else(na);

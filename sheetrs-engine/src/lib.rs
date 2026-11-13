@@ -3,7 +3,7 @@
 //! A [`Program`] (the format-independent IR produced by `sheetrs-compiler`) is
 //! executed by a demand-driven [`engine::Engine`] with JSON in and JSON out. This
 //! crate has no knowledge of XLSX or ODS: it holds the IR, the function
-//! registry (`core`/`xlsx`/`ods` namespaces), values, dates, text conversion,
+//! registry (the namespaces of `OpenDocument`: `core`, `microsoft`, `openoffice`, `libreoffice`, `legacy`), values, dates, text conversion,
 //! collation, search patterns and the run-time command line used by compiled
 //! executables (`sheetrs-rt`).
 //!
@@ -11,26 +11,29 @@
 
 pub mod addr;
 pub mod bundle;
-pub mod casemap;
+pub mod calculate;
+mod casemap;
 pub mod cli;
+pub mod clock;
 pub mod coerce;
-pub mod collate;
+mod collate;
 pub mod consts;
 pub mod dates;
 pub mod datetext;
 pub mod engine;
+mod error;
 pub mod fastmap;
 pub mod format;
 pub mod functions;
 pub mod ir;
-pub mod locale_data;
+mod locale_data;
 pub mod matching;
-pub mod notes;
+mod notes;
 pub mod options;
 pub mod regex_subset;
-pub mod run;
 pub mod value;
 
+pub use calculate::Overrides;
+pub use error::{Error, Result};
 pub use ir::Program;
-pub use run::Overrides;
 pub use value::Value;

@@ -1,5 +1,5 @@
 //! The constants of a program, kept apart so that an executable decodes only the ones a request
-//! reads. A program of a whole workbook (`outputs = any`) holds millions of them; the formulas and
+//! reads. A program of a whole workbook (no outputs declared) holds millions of them; the formulas and
 //! the rest stay in the program, which then starts in constant time and memory.
 //!
 //! The constants are grouped by sheet and row into blocks of about [`BLOCK_CELLS`] cells, each
@@ -31,6 +31,7 @@ pub struct ConstIndex {
 
 impl ConstIndex {
     /// The number of constants kept apart.
+    #[must_use]
     pub fn cells(&self) -> u64 {
         self.cells
     }
@@ -58,7 +59,11 @@ type Block = Vec<(u32, u32, Value)>;
 /// Move the constants of `program` out of its cells, returning their index and encoded blocks.
 /// With fewer than `min` constants the program is left as it is and the index is empty. The slots
 /// of `cycles` follow the cells that stay.
-pub fn split(program: &mut Program, min: usize) -> Result<(ConstIndex, Vec<u8>), String> {
+///
+/// # Errors
+///
+/// When the constants cannot be split off the program.
+pub fn split(program: &mut Program, min: usize) -> crate::Result<(ConstIndex, Vec<u8>)> {
     let total = program
         .cells
         .iter()
@@ -112,16 +117,16 @@ pub fn split(program: &mut Program, min: usize) -> Result<(ConstIndex, Vec<u8>),
         let sh = index
             .sheets
             .get_mut(sheet as usize)
-            .ok_or("a constant lies on a sheet the program does not list")?;
+            .ok_or(crate::Error::ConstantOnUnknownSheet)?;
         let block: Vec<(u32, u32, &Value)> = consts[i..j]
             .iter()
             .map(|(at, v)| (at.row, at.col, v))
             .collect();
-        let encoded = bincode::serialize(&block).map_err(|e| e.to_string())?;
+        let encoded = bincode::serialize(&block)?;
         sh.blocks.push(BlockRef {
             row0: consts[i].0.row,
             offset: bytes.len() as u64,
-            len: u32::try_from(encoded.len()).map_err(|_| "a block of constants is too big")?,
+            len: u32::try_from(encoded.len()).map_err(|_| crate::Error::BlockTooBig)?,
         });
         for (at, _) in &consts[i..j] {
             sh.extent.0 = sh.extent.0.max(at.row + 1);
@@ -134,19 +139,40 @@ pub fn split(program: &mut Program, min: usize) -> Result<(ConstIndex, Vec<u8>),
 }
 
 /// The constants of an executable, decoded block by block as they are read.
+#[derive(Debug)]
 pub struct StoredConsts {
     index: ConstIndex,
-    file: RefCell<File>,
-    /// Where the blocks start in `file`.
+    backing: Backing,
+    /// Where the blocks start in the backing.
     start: u64,
     decoded: RefCell<FastMap<(u16, u32), Block>>,
 }
 
+/// Where the blocks are read from: the executable's file, or memory (a module that carries its
+/// program in its own linear memory has no file).
+#[derive(Debug)]
+enum Backing {
+    File(RefCell<File>),
+    Memory(&'static [u8]),
+}
+
 impl StoredConsts {
+    #[must_use]
     pub fn new(index: ConstIndex, file: File, start: u64) -> Self {
         Self {
             index,
-            file: RefCell::new(file),
+            backing: Backing::File(RefCell::new(file)),
+            start,
+            decoded: RefCell::default(),
+        }
+    }
+
+    /// Constants whose blocks are in `memory`, from `start`.
+    #[must_use]
+    pub fn from_memory(index: ConstIndex, memory: &'static [u8], start: u64) -> Self {
+        Self {
+            index,
+            backing: Backing::Memory(memory),
             start,
             decoded: RefCell::default(),
         }
@@ -162,13 +188,29 @@ impl StoredConsts {
     }
 
     fn load(&self, b: &BlockRef) -> Block {
-        let mut buf = vec![0u8; b.len as usize];
-        let mut f = self.file.borrow_mut();
-        f.seek(SeekFrom::Start(self.start + b.offset))
-            .and_then(|_| f.read_exact(&mut buf))
-            .unwrap_or_else(|e| panic!("cannot read the constants of the program: {e}"));
-        bincode::deserialize(&buf)
-            .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))
+        let damaged = |e: &dyn std::fmt::Display| -> ! {
+            panic!("cannot read the constants of the program: {e}")
+        };
+        let from = usize::try_from(self.start + b.offset).unwrap_or(usize::MAX);
+        match &self.backing {
+            Backing::File(file) => {
+                let mut buf = vec![0u8; b.len as usize];
+                let mut f = file.borrow_mut();
+                f.seek(SeekFrom::Start(self.start + b.offset))
+                    .and_then(|_| f.read_exact(&mut buf))
+                    .unwrap_or_else(|e| damaged(&e));
+                bincode::deserialize(&buf)
+                    .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))
+            }
+            Backing::Memory(memory) => {
+                let bytes = from
+                    .checked_add(b.len as usize)
+                    .and_then(|to| memory.get(from..to))
+                    .unwrap_or_else(|| damaged(&"a block is out of the memory"));
+                bincode::deserialize(bytes)
+                    .unwrap_or_else(|e| panic!("the constants of the program are damaged: {e}"))
+            }
+        }
     }
 }
 

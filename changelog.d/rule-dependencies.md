@@ -5,7 +5,7 @@
 
 ### Removed
 
-- Remove the sheetlint warning that rules depending on a disabled CALC202
+- Remove the sheetrs lint warning that rules depending on a disabled CALC202
   produce no violations.
 
 ### Fixed

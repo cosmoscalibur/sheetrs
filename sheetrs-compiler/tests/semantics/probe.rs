@@ -1,13 +1,14 @@
-//! Fidelity probes: formulas on which Excel and LibreOffice are known or suspected to differ
+//! Fidelity probes: formulas on which Excel and `LibreOffice` are known or suspected to differ
 //! (`scripts/probe_behavior.py`, documented in docs/FIDELITY.md). The ODS files hold
-//! LibreOffice's answers, which the engine must reproduce; the cases where it differs from
+//! `LibreOffice`'s answers, which the engine must reproduce; the cases where it differs from
 //! Excel are pinned below.
 
 use serde_json::{Value as Json, json};
-use sheetrs_compiler::addr::CellRef;
-use sheetrs_compiler::options::SearchMode;
-use sheetrs_compiler::value::Value;
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, compile, loader};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile, loader};
+use sheetrs_engine::Overrides;
+use sheetrs_engine::addr::CellRef;
+use sheetrs_engine::options::SearchMode;
+use sheetrs_engine::value::Value;
 use std::path::Path;
 
 /// Probes the engine deliberately does not reproduce, with the reason.
@@ -26,7 +27,7 @@ const NOT_REPRODUCED: &[(&str, &str)] = &[
     ),
 ];
 
-/// Error-valued probes where LibreOffice's error kind is not meaningful
+/// Error-valued probes where `LibreOffice`'s error kind is not meaningful
 /// (every invalid argument is Err:502): only "is an error" is compared.
 const ANY_ERROR: &[&str] = &[
     "CEILING(2.1,-2)",
@@ -46,7 +47,7 @@ fn run(model: &Model, n: u32) -> Vec<Json> {
         ..Spec::default()
     };
     let (p, _) = compile(model, &spec).unwrap();
-    let out = p.execute(&Json::Null, &Overrides::default()).unwrap();
+    let out = p.calculate(&Json::Null, &Overrides::default()).unwrap();
     out[&p.outputs[0].name]
         .as_array()
         .unwrap()
@@ -66,7 +67,7 @@ fn reproduces(file: &str, expect: impl Fn(&Model)) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/assets")
         .join(file);
-    let m = loader::load(&path).unwrap();
+    let m = loader::load(&sheetrs_io::Book::from_file(&path).unwrap()).unwrap();
     expect(&m);
     let calc = m.sheet_id("Calc").unwrap();
     let n = m
@@ -135,7 +136,7 @@ fn document_search_settings_literal_mode() {
     });
 }
 
-/// The behaviors that differ from Excel's, pinned: the answers are LibreOffice's.
+/// The behaviors that differ from Excel's, pinned: the answers are `LibreOffice`'s.
 #[test]
 fn libreoffice_behaviors_that_differ_from_excel_are_pinned() {
     let cases: &[(&str, Json)] = &[
@@ -155,8 +156,8 @@ fn libreoffice_behaviors_that_differ_from_excel_are_pinned() {
         ("YEAR(0)", json!(1899)),
         ("DATE(1850,1,1)", json!(-18260)),
         ("DATE(29,1,1)", json!(47119)),
-        ("DATEVALUE(\"1 Mar 2024\")", crate::common::err("#VALUE!")),
-        ("DATEVALUE(\"2024/03/01\")", crate::common::err("#VALUE!")),
+        ("DATEVALUE(\"1 Mar 2024\")", crate::common::libre("Err:502")),
+        ("DATEVALUE(\"2024/03/01\")", crate::common::libre("Err:502")),
         ("DATEVALUE(\"1-Mar-2024\")", json!(45352)),
         ("UPPER(\"ß\")", json!("ẞ")),
         ("UPPER(\"straße\")", json!("STRAẞE")),

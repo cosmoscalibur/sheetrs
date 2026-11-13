@@ -1,38 +1,93 @@
-# sheetlint
+# sheetrs lint
 
-**sheetlint** is a fast, configurable linter for Excel (XLSX) and ODS spreadsheets. It helps maintain data quality, security, and performance by enforcing a customizable set of rules.
+**sheetrs lint** is a fast, configurable linter for Excel (XLSX) and ODS spreadsheets. It helps maintain data quality, security, and performance by enforcing a customizable set of rules.
 
 ## Installation
 
+`sheetrs lint` is a subcommand of the `sheetrs` executable (crate `sheetrs-cli`), which also holds `query`, `edit`, `lint` and `stats`:
+
 ```bash
-cargo install --path .
+cargo install --path sheetrs-cli   # from the root of the workspace
 ```
 
 ## Usage
 
 ```bash
-sheetlint <FILE> [OPTIONS]
+sheetrs lint -i <FILE> [OPTIONS]
 ```
 
 ### Options
 
-- `-c, --config <FILE>`: Path to configuration file (default: `sheetlint.toml`).
-- `-f, --format <FORMAT>`: Output format: `text` (default) or `json`.
+- `-c, --config <FILE>`: Path to configuration file (default: `sheetrs.toml`).
+- `-f, --format <FORMAT>`: Output format: `human` (default), `json` or `sarif`.
+- `-e, --errors-only`: Report only the errors.
+
+### Output formats
+
+| Format | For | Library | WebAssembly | Python |
+|---|---|---|---|---|
+| `human` | a person | `LintReport::to_text` | `book.lint().toText()` | `LintReport.to_text()` |
+| `json` | an interface of your own | `LintReport::to_json` | `book.lint().toJsonText()` (text), `toJSON()` (object), `records` | `LintReport.to_json()`, `to_dict()` |
+| `sarif` | code scanning, editors, CI | `LintReport::to_sarif` | `book.lint().toSarif()` | `LintReport.to_sarif()` |
+
+`BookLint::lint(&Linter)` gives a `LintReport`: the violations (`violations()`, `records()`) and the
+three forms of the report as text (`to_text`, `to_json`, `to_sarif`) or into a writer
+(`write(out, format, file)`), where `file` names the workbook in the document. `output::write_report`
+and `output::render_report` are the one entry point to the three, with `OutputFormat` (`human`,
+`json`, `sarif`). The executable, the WebAssembly package and Python go through it, so they write the
+same text for the same run. The exit code is the same in every format. In Python `Book.lint(config_path)`
+returns the `LintReport` that wraps it.
+
+### JSON output
+
+`--format json` writes `{"file", "summary": {"errors", "info", "total", "warnings"}, "violations":
+[{"message", "rule_id", "scope", "severity"}]}`, with the keys in alphabetical order. `scope` is
+`"Book"`, `{"Sheet": index}` or `{"Cell": [index, {"col", "row"}]}` (0-based). It is written violation
+by violation, not as a tree of the whole document (about 4 KB a violation).
+
+### SARIF output
+
+`--format sarif` writes a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
+log to the standard output, the format that GitHub code scanning, the editors and the CI read. The
+log is written violation by violation (a large workbook has hundreds of thousands) and is checked
+against the official schema in the tests. The exit code is the same as with the human format.
+
+| SARIF | Content |
+|---|---|
+| `tool.driver` | `sheetrs lint`, its version and the repository; `rules[]` lists every rule in the order of its ID (`name`, `shortDescription`, `helpUri` to this reference, `defaultConfiguration.enabled` when it is active by default, `properties.category`) |
+| `results[].ruleId`, `ruleIndex` | the rule ID (`CALC201`) and its place in `rules[]` |
+| `results[].level` | `error`, `warning` or `note` (`Info`) |
+| `results[].message.text` | the message of the human format |
+| `physicalLocation.artifactLocation.uri` | the workbook, as the path was given, as a URI reference (an absolute path is a `file:` URI) |
+| `physicalLocation.region` | the cell as a place in the table: `startLine` is its row and `startColumn` its column, 1-based (`B7` is line 7, column 2) |
+| `logicalLocations[0]` | the cell (`kind` `cell`, `Data!B7`), the sheet (`sheet`) or the workbook (`workbook`) |
+| `results[].properties` | `scope` (`book`, `sheet` or `cell`) with `sheet` and `cell` when they apply |
+
+A workbook has no lines: a violation of a sheet or of the whole workbook has no cell, and its region is
+the nominal first position (line 1, column 1) because code scanning requires one; `properties.scope` and
+the logical location say what it is. The severity belongs to each violation, not to the rule (CALC202 is
+an error or a warning according to what the file saved), so the rules carry no default level, and no
+`partialFingerprints` are written (they are optional and the tools compute their own).
+
+```bash
+sheetrs lint -i workbook.xlsx --format sarif > sheetlint.sarif
+```
+
 
 ## Configuration
 
-See the [`sheetlint.toml`](../sheetlint.toml) example at the workspace root.
+See the [`sheetrs.toml`](../sheetrs.toml) example at the workspace root.
 Rule parameters are listed in the Params column of the
 [Rule Reference](#rule-reference).
 
 ## Rule Reference
 
-**sheetlint** uses a hierarchical rule system (1xx to 11xx) across 11 categories.
+**sheetrs lint** uses a hierarchical rule system (1xx to 11xx) across 11 categories.
 Every rule listed is implemented and active by default. Scope, dependencies
 between rules and parity with PerfectXL and ExceLint are in the
 [comparative report](comparative_report.md). Parameters are global
 unless marked † (overridable per sheet under `[sheets."<name>"]`); defaults are
-shown in [`sheetlint.toml`](../sheetlint.toml).
+shown in [`sheetrs.toml`](../sheetrs.toml).
 
 ### 1. Excel Errors (ERR1xx)
 
@@ -72,6 +127,7 @@ different input can make it real. Ranges are tracked by their corners.
 | **REF307** | Whole column or row reference | None |
 | **REF309** | Reference to empty cell | None |
 | **REF310** | Longer cell reference expected | `ref310_min_adjacent_data` |
+| **REF311** | Defined name defined more than once (workbook and sheet, or several sheets) | None |
 
 ### 4. Formula Interruptions (INT4xx)
 

@@ -33,10 +33,12 @@ body:
     attributes:
       label: Affected Tool
       options:
-        - sheetlint
-        - sheetstats
-        - sheetedit
-        - sheetrs-core (library)
+        - sheetrs lint
+        - sheetrs stats
+        - sheetrs edit
+        - sheetc
+        - Rust libraries (sheetrs-io, sheetrs-linter, sheetrs-stats, sheetrs-edit)
+        - sheetrs-py (Python)
         - sheetrs-wasm
         - Multiple / All
     validations:

@@ -4,15 +4,15 @@ default:
 
 # Run all tests
 test:
-    cargo test
+    cargo test --workspace --exclude sheetrs-py
 
 # Run tests in release mode (for rules-heavy workbooks)
 test-release:
-    cargo test --release
+    cargo test --release --workspace --exclude sheetrs-py
 
 # Lint with clippy
 lint:
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --workspace --exclude sheetrs-py --all-targets -- -D warnings
 
 # Format check
 fmt-check:
@@ -27,11 +27,11 @@ check: fmt-check lint test
 
 # Generate docs
 doc:
-    cargo doc --no-deps --open
+    cargo doc --workspace --exclude sheetrs-py --no-deps --open
 
 # Run benchmarks
 bench:
-    ./scripts/benchmark.sh
+    ./scripts/bench.py fixtures target/bench-data && ./scripts/bench.py run target/bench-data
 
 # Coverage (requires cargo-tarpaulin)
 coverage:

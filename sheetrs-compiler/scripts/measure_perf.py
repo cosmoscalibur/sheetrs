@@ -2,15 +2,15 @@
 the engine start-up (`--meta`) and the engine execution of one request; wall time, user and
 system CPU, peak memory and executable size. Median of REPS runs.
 
-PERF_DIR holds small.xlsx, delgado.xlsx, large.xlsx (49 MB, gen_data_fixture.py), large_declared.xlsx
-(the same data plus a settings sheet: the build keeps only what the outputs need) and
-formulas.xlsx (14 MB, 1.2 M formulas, gen_large_fixture.py); the same files in every measurement
-(tests/production/README.local.txt). delgado.toml is the config of the Delgado workbook.
-SHEETC points to the binary (default target/release/sheetc). Output: matrix on stdout and
+PERF_DIR holds small.xlsx (the loan schedule of tests/assets), large.xlsx (49 MB, gen_data_fixture.py),
+large_declared.xlsx (the same data plus a settings sheet: the build keeps only what the outputs need)
+and formulas.xlsx (gen_large_fixture.py); `scripts/bench.py fixtures` makes them and
+`scripts/bench.py run DIR compiler` runs this script on them.
+SHEETC points to the binary (default target/dist/sheetc). Output: matrix on stdout and
 PERF_DIR/matrix.json. Flamegraph: build with `--features profile`, SHEETC_FLAMEGRAPH=out.svg."""
 import os, re, subprocess, sys, time, json, statistics
 
-SC = os.environ.get("SHEETC", "target/release/sheetc")
+SC = os.environ.get("SHEETC", "target/dist/sheetc")
 REPS = int(os.environ.get("REPS", "3"))
 
 
@@ -61,11 +61,12 @@ def stages(err):
         if not m:
             continue
         t = seconds(m.group(2))
+        name = re.sub(r"\s*\(peak [^)]*\)$", "", m.group(3))
         if m.group(1) == "stage":
-            st[m.group(3)] = t
+            st[name] = t
         else:
-            marks[m.group(3)] = t
-    seq = ["parsed formulas", "bindings", "index built", "cone + csr", "scc", "taint", "fold evaluated", "needed"]
+            marks[name] = t
+    seq = ["parsed formulas", "constants that start a path", "bindings", "index built", "cone + csr", "scc", "taint", "fold evaluated", "needed"]
     prev = 0.0
     d = {}
     for k in seq:
@@ -73,18 +74,17 @@ def stages(err):
             d[k] = marks[k] - prev
             prev = marks[k]
     st["lower formulas"] = d.get("parsed formulas", 0)
-    st["dependency graph"] = sum(d.get(k, 0) for k in ("bindings", "index built", "cone + csr", "scc", "taint"))
+    st["dependency graph"] = sum(d.get(k, 0) for k in ("constants that start a path", "bindings", "index built", "cone + csr", "scc", "taint"))
     st["fold (engine at build)"] = d.get("fold evaluated", 0)
     st["assemble"] = d.get("needed", 0)
     return st
 
 
 FILES = [
-    ("small", "small.xlsx", '{"ranges":["Loan!B1:B8"]}', None),
-    ("delgado", "delgado.xlsx", '{"ranges":["OUTPUT!D457:E462"]}', "delgado.toml"),
-    ("large", "large.xlsx", '{"ranges":["Summary!B1:B5"]}', None),
+    ("small", "small.xlsx", '{"ranges":["Loan!B4","Loan!B6","Loan!B8"]}', None),
+    ("large", "large.xlsx", '{"ranges":["Summary!B1:B3"]}', None),
     ("large (declared)", "large_declared.xlsx", '{"inputs":{"scale":2}}', "declared"),
-    ("formulas", "formulas.xlsx", '{"ranges":["Summary!A1:A5"]}', None),
+    ("formulas", "formulas.xlsx", '{"ranges":["Summary!A1","Summary!A2","Summary!A3"]}', None),
 ]
 
 if __name__ == "__main__":
@@ -94,13 +94,13 @@ if __name__ == "__main__":
         exe = f"{d}/{name.split()[0]}_{cfg or 'any'}.exe"
         declared = cfg == "declared"
         extra = ["--config", f"{d}/{cfg}"] if cfg and not declared and os.path.exists(f"{d}/{cfg}") else []
-        cmd = [SC, "build", f"{d}/{f}", "-o", exe, "--outputs", "declared" if declared else "any"] + extra
+        cmd = [SC, "build", "-i", f"{d}/{f}", "-o", exe] + extra
         r = {"input_mb": os.path.getsize(f"{d}/{f}") / 1e6}
         r["build"] = checked(bench(cmd), f"{name}: build")
         r["exe_mb"] = os.path.getsize(exe) / 1e6
         r["stages"] = stages(run(cmd, env={"SHEETC_TRACE": "1"})["err"])
         r["meta"] = checked(bench([exe, "--meta"]), f"{name}: --meta")
-        r["exec"] = checked(bench([exe], stdin=req), f"{name}: request {req}")
+        r["exec"] = checked(bench([exe, "--request", "-"], stdin=req), f"{name}: request {req}")
         res[name] = r
     json.dump(res, open(d + "/matrix.json", "w"), indent=1)
     cols = ["wall", "user", "sys", "rss"]

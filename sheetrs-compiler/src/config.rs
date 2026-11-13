@@ -3,7 +3,8 @@
 //!
 //! ```toml
 //! settings = "settings"   # sheet that declares inputs, outputs and metadata
-//! outputs = "declared"    # declared | named | any
+//! settings_file = "model.json"   # the same declarations as JSON, for a workbook with no such
+//!                                # sheet (or one that must not change); path relative to this file
 //! fold = true
 //! enable_features = ["LONGTEXT"]   # compatibility features, all off unless listed
 //! strict = true           # refuse workbooks with macros (false: warn)
@@ -18,10 +19,11 @@
 //!
 //! The file only holds what the workbook cannot say itself. Whatever the document does not
 //! specify (how `TRUE()` is stored, what an error of a function's domain is, text
-//! collation, ...) is LibreOffice's behavior. The date system, iteration and search
+//! collation, ...) is `LibreOffice`'s behavior. The date system, iteration and search
 //! settings come from the document.
 
-use crate::compile::{BindingSpec, CompileError, Features, QueryLevel, Spec};
+use crate::compile::{BindingSpec, Features, Spec};
+use crate::error::{Error, Result};
 use crate::locale::{self, LocaleOverride};
 use crate::model::Model;
 use crate::settings;
@@ -35,8 +37,12 @@ pub const FILE_NAME: &str = "sheetc.toml";
 pub struct Config {
     /// Name of the settings sheet (default `settings`, optional when absent).
     pub settings: Option<String>,
-    /// `declared`, `named` or `any`.
-    pub outputs: Option<String>,
+    /// A JSON file with the declarations of the settings sheet (see [`settings::read_json`]), for
+    /// a workbook that has none: it compiles and calculates as it is, inputs included. A path in
+    /// a configuration file is relative to the file; it replaces the settings sheet, and naming
+    /// both is an error.
+    #[serde(alias = "settings-file")]
+    pub settings_file: Option<PathBuf>,
     /// Evaluate input-independent formulas at build time (default true).
     pub fold: Option<bool>,
     /// Refuse what the compiler cannot reproduce (macros); default true. When
@@ -87,7 +93,7 @@ impl Config {
     pub fn over(self, base: Self) -> Self {
         Self {
             settings: self.settings.or(base.settings),
-            outputs: self.outputs.or(base.outputs),
+            settings_file: self.settings_file.or(base.settings_file),
             fold: self.fold.or(base.fold),
             strict: self.strict.or(base.strict),
             now: self.now.or(base.now),
@@ -106,40 +112,82 @@ impl Config {
 
     /// The compiler's [`Spec`] for `model`: the settings sheet supplies inputs,
     /// outputs and metadata; this configuration the rest.
-    pub fn spec(&self, model: &Model) -> Result<Spec, CompileError> {
+    ///
+    /// # Errors
+    ///
+    /// When a target of the configuration cannot be resolved against `model`.
+    pub fn spec(&self, model: &Model) -> Result<Spec> {
+        let from_file = match &self.settings_file {
+            Some(path) => {
+                if self.settings.is_some() {
+                    return Err(Error::Config(
+                        "`settings` (a sheet) and `settings_file` (a JSON file) both declare the inputs and outputs: name one"
+                            .into(),
+                    ));
+                }
+                let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
+                Some(settings::read_json(
+                    model,
+                    &text,
+                    &path.display().to_string(),
+                )?)
+            }
+            None => None,
+        };
+        self.spec_with(model, from_file)
+    }
+
+    /// [`spec`](Self::spec) with the declarations of inputs and outputs given as the JSON text of a
+    /// `settings_file` (see [`settings::read_json`]), for a caller that has no file: it replaces the
+    /// settings sheet, and giving `settings` as well is an error.
+    ///
+    /// # Errors
+    ///
+    /// When the text is not valid declarations for `model`, `settings` is also set, or a target of
+    /// the configuration cannot be resolved against `model`.
+    pub fn spec_with_declarations(&self, model: &Model, declarations: &str) -> Result<Spec> {
+        if self.settings.is_some() {
+            return Err(Error::Config(
+                "`settings` (a sheet) and the declarations (JSON) both declare the inputs and outputs: name one"
+                    .into(),
+            ));
+        }
+        let declared = settings::read_json(model, declarations, "the declarations")?;
+        self.spec_with(model, Some(declared))
+    }
+
+    fn spec_with(&self, model: &Model, from_file: Option<settings::SheetSettings>) -> Result<Spec> {
         let mut spec = self.base_spec(model)?;
         let name = self.settings.as_deref().unwrap_or(settings::DEFAULT_SHEET);
-        if let Some(s) = settings::read(model, name, self.settings.is_some())? {
-            if s.outputs.is_empty() && spec.query == QueryLevel::Declared {
-                return Err(CompileError(format!(
-                    "settings sheet `{name}` declares no output; add `output` rows or build with outputs = \"any\""
-                )));
-            }
+        let found = match from_file {
+            Some(s) => Some(s),
+            None => settings::read(model, name, self.settings.is_some())?,
+        };
+        if let Some(s) = found {
+            spec.inputs_declared = s.inputs_declared || !s.inputs.is_empty();
             spec.inputs = s
                 .inputs
                 .iter()
-                .map(|(n, t)| BindingSpec::named(n, t))
+                .map(|(n, t)| BindingSpec::declared(n.as_deref(), t))
                 .collect();
             spec.outputs = s
                 .outputs
                 .iter()
-                .map(|(n, t)| BindingSpec::named(n, t))
+                .map(|(n, t)| BindingSpec::declared(n.as_deref(), t))
                 .collect();
             spec.meta = s.meta;
-            spec.skip_sheet = Some(s.sheet);
+            spec.skip_sheet = s.sheet;
         }
         Ok(spec)
     }
 
     /// Everything of the spec that does not come from the settings sheet: the
     /// level, folding, clock, seed, locale and the macro policy.
-    pub fn base_spec(&self, model: &Model) -> Result<Spec, CompileError> {
-        let query = match self.outputs.as_deref() {
-            None => QueryLevel::Declared,
-            Some(s) => QueryLevel::parse(s).ok_or_else(|| {
-                CompileError(format!("outputs must be declared, named or any, got `{s}`"))
-            })?,
-        };
+    ///
+    /// # Errors
+    ///
+    /// When a target of the configuration cannot be resolved against `model`.
+    pub fn base_spec(&self, model: &Model) -> Result<Spec> {
         let mut spec = Spec {
             fold: self.fold.unwrap_or(true),
             now: self.now,
@@ -147,19 +195,17 @@ impl Config {
             host: self.host.clone().unwrap_or_default(),
             features: match &self.enable_features {
                 None => Features::default(),
-                Some(names) => Features::parse(names).map_err(CompileError)?,
+                Some(names) => Features::parse(names)?,
             },
-            query,
             ..Spec::default()
         };
         let loc = self.locale.clone().unwrap_or_default();
-        let (l, notes) =
-            locale::from_tag(loc.tag.as_deref().unwrap_or("en"), &loc).map_err(CompileError)?;
+        let (l, notes) = locale::from_tag(loc.tag.as_deref().unwrap_or("en"), &loc)?;
         spec.locale = Some(l);
         spec.notes = notes;
         if model.macros {
             if self.strict.unwrap_or(true) {
-                return Err(CompileError(
+                return Err(Error::Config(
                     "the workbook contains macros, which are never run, so what depends on them would differ; \
                      build with --no-strict (strict = false) to compile anyway"
                         .into(),
@@ -175,17 +221,35 @@ impl Config {
     }
 }
 
-pub fn parse(text: &str, origin: &str) -> Result<Config, String> {
-    toml::from_str(text).map_err(|e| format!("{origin}: {e}"))
+/// # Errors
+///
+/// When `text` is not a valid configuration; the message names `origin`.
+pub fn parse(text: &str, origin: &str) -> Result<Config> {
+    toml::from_str(text).map_err(|source| Error::Toml {
+        origin: origin.to_string(),
+        source,
+    })
 }
 
-pub fn load(path: &Path) -> Result<Config, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    parse(&text, &path.display().to_string())
+/// # Errors
+///
+/// When the file cannot be read or is not a valid configuration.
+pub fn load(path: &Path) -> Result<Config> {
+    let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
+    let mut config = parse(&text, &path.display().to_string())?;
+    // A path in the file is relative to the file, not to where the build starts.
+    if let Some(file) = &config.settings_file
+        && file.is_relative()
+        && let Some(dir) = path.parent()
+    {
+        config.settings_file = Some(dir.join(file));
+    }
+    Ok(config)
 }
 
 /// The configuration next to the workbook, when there is one. Only that
 /// directory is searched, so a build does not depend on where it is started.
+#[must_use]
 pub fn discover(workbook: &Path) -> Option<PathBuf> {
     let dir = workbook
         .parent()
@@ -200,16 +264,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_every_section() {
+    fn a_configuration_with_every_section_is_read_and_unknown_keys_are_rejected() {
         let c = parse("settings = \"cfg\"\nouts = 1\n", "t");
         assert!(c.is_err(), "unknown keys are rejected");
         let c = parse(
-            "settings = \"cfg\"\noutputs = \"any\"\nfold = false\n[locale]\ntag = \"es-CO\"\ndecimal = \",\"\n",
+            "settings = \"cfg\"\nfold = false\n[locale]\ntag = \"es-CO\"\ndecimal = \",\"\n",
             "t",
         )
         .unwrap();
         assert_eq!(c.settings.as_deref(), Some("cfg"));
-        assert_eq!(c.outputs.as_deref(), Some("any"));
+        assert!(
+            parse("outputs = \"any\"\n", "t").is_err(),
+            "no level of outputs any more"
+        );
         let l = c.locale.unwrap();
         assert_eq!((l.tag.as_deref(), l.decimal), (Some("es-CO"), Some(',')));
         assert!(parse("[locale]\nbogus = 1\n", "t").is_err());
@@ -239,6 +306,6 @@ mod feature_tests {
         );
         assert!(!spec("enable_features = []").unwrap().features.longtext);
         let err = spec("enable_features = [\"NOPE\"]").unwrap_err();
-        assert!(err.0.contains("unknown feature `NOPE`"), "{err}");
+        assert!(err.to_string().contains("unknown feature `NOPE`"), "{err}");
     }
 }

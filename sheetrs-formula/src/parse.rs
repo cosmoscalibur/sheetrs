@@ -47,11 +47,19 @@ pub struct Formula {
 }
 
 /// Parse a formula; a leading `=` is accepted and dropped.
+///
+/// # Errors
+///
+/// When `src` is not a formula.
 pub fn parse(src: &str) -> Result<Expr, ParseError> {
     parse_spanned(src).map(|f| f.expr)
 }
 
 /// Parse keeping the source and the span of each reference.
+///
+/// # Errors
+///
+/// When `source` is not a formula.
 pub fn parse_spanned(source: &str) -> Result<Formula, ParseError> {
     let offset = usize::from(source.starts_with('='));
     let body = &source[offset..];
@@ -263,10 +271,36 @@ impl Parser<'_> {
 
     /// Unquoted name and the byte length consumed through the `!`.
     fn quoted_sheet(&self) -> Result<(String, usize), ParseError> {
-        match addr::split_sheet(&self.src[self.i..]) {
-            (Some(name), tail) => Ok((name, self.src.len() - self.i - tail.len())),
-            _ => self.fail("malformed quoted sheet name"),
+        let rest = &self.src[self.i..];
+        if let (Some(name), tail) = addr::split_sheet(rest) {
+            return Ok((name, self.src.len() - self.i - tail.len()));
         }
+        // `'Data':'Wide'!A1` and `'Data':Wide!A1` (LibreOffice reads them as `Data:Wide!A1`): the first
+        // name is quoted and alone, so what follows it names the last sheet.
+        let bad = || self.fail("malformed quoted sheet name");
+        let Some(close) = quoted_end(rest) else {
+            return bad();
+        };
+        let first = rest[1..close - 1].replace("''", "'");
+        let Some(after) = rest[close..].strip_prefix(':') else {
+            return bad();
+        };
+        let (second, tail) = if after.starts_with('\'') {
+            match addr::split_sheet(after) {
+                (Some(name), tail) => (name, tail),
+                _ => return bad(),
+            }
+        } else {
+            // An unquoted name runs to the next `!`.
+            let end = after
+                .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
+                .unwrap_or(after.len());
+            match after[end..].strip_prefix('!') {
+                Some(tail) if end > 0 => (after[..end].to_string(), tail),
+                _ => return bad(),
+            }
+        };
+        Ok((format!("{first}:{second}"), rest.len() - tail.len()))
     }
 
     fn number(&mut self) -> Result<Number, ParseError> {
@@ -332,41 +366,19 @@ impl Parser<'_> {
         Ok(Expr::Number(n))
     }
 
+    /// `{1,2;3,4}`. An element is any expression: a spreadsheet only takes constants there, and
+    /// what is not one (`{1;A1}`, `{1,2+3}`) is an error when the formula is compiled, which is not
+    /// a matter of syntax. The rows are not checked to be of one width either. An element left
+    /// out (`{}`, `{1,2,}`, `{1,;2,3}`) is an empty element, written `Expr::Error("")`.
     fn array_literal(&mut self) -> Result<Expr, ParseError> {
         self.i += 1; // `{`
         let mut rows: Vec<Vec<Expr>> = vec![vec![]];
         loop {
             self.ws();
             let v = match self.peek() {
-                Some(b'"') => Expr::Text(self.string()?),
-                Some(b'#') => Expr::Error(self.error_literal()?),
-                Some(b'-' | b'+' | b'0'..=b'9' | b'.') => {
-                    let sign = match self.peek() {
-                        Some(b'-') => Some(UnOp::Neg),
-                        Some(b'+') => Some(UnOp::Plus),
-                        _ => None,
-                    };
-                    if sign.is_some() {
-                        self.i += 1;
-                    }
-                    let n = Expr::Number(self.number()?);
-                    match sign {
-                        Some(op) => Expr::Unary(op, Box::new(n)),
-                        None => n,
-                    }
-                }
-                Some(c) if is_ident_start(c) => {
-                    let start = self.i;
-                    while self.peek().is_some_and(is_ident) {
-                        self.i += 1;
-                    }
-                    match self.src[start..self.i].to_ascii_uppercase().as_str() {
-                        "TRUE" => Expr::Bool(true),
-                        "FALSE" => Expr::Bool(false),
-                        _ => return self.fail("array literals hold constants only"),
-                    }
-                }
-                _ => return self.fail("bad array literal"),
+                None => return self.fail("bad array literal"),
+                Some(b',' | b';' | b'}') => Expr::Error(String::new()),
+                Some(_) => self.expr(0)?,
             };
             if let Some(r) = rows.last_mut() {
                 r.push(v);
@@ -384,10 +396,6 @@ impl Parser<'_> {
                 }
                 _ => return self.fail("expected `,`, `;` or `}`"),
             }
-        }
-        let cols = rows[0].len();
-        if rows.iter().any(|r| r.len() != cols) {
-            return self.fail("ragged array literal");
         }
         Ok(Expr::Array(rows))
     }
@@ -407,6 +415,27 @@ impl Parser<'_> {
                 self.i += 1;
                 return self.sheet_ref(text.to_string());
             }
+            // `T:V!A1`, the reference from sheet `T` to sheet `V` (the same area on each sheet in
+            // between): the sheet is written `T:V`, as the file keeps it when the names need quotes.
+            Some(b':') if addr::parse_cell(text).is_none() => {
+                // `T:'V'!A1`: the last sheet quoted.
+                if self.s.get(self.i + 1) == Some(&b'\'')
+                    && let (Some(last), tail) = addr::split_sheet(&self.src[self.i + 1..])
+                {
+                    let sheet = format!("{text}:{last}");
+                    self.i = self.src.len() - tail.len();
+                    return self.sheet_ref(sheet);
+                }
+                let mut j = self.i + 1;
+                while self.s.get(j).copied().is_some_and(is_ident) {
+                    j += 1;
+                }
+                if j > self.i + 1 && self.s.get(j) == Some(&b'!') {
+                    let sheet = format!("{text}:{}", &self.src[self.i + 1..j]);
+                    self.i = j + 1;
+                    return self.sheet_ref(sheet);
+                }
+            }
             _ => {}
         }
         match text.to_ascii_uppercase().as_str() {
@@ -414,14 +443,14 @@ impl Parser<'_> {
             "FALSE" => return Ok(Expr::Bool(false)),
             _ => {}
         }
-        if let Some(area) = self.area_from(text) {
+        if let Some(area) = self.area_from(text, None) {
             return Ok(Expr::Ref(Reference { sheet: None, area }));
         }
         Ok(Expr::Name(text.to_string()))
     }
 
     /// Try `text` (and a following `:ref` tail) as an area.
-    fn area_from(&mut self, text: &str) -> Option<RefArea> {
+    fn area_from(&mut self, text: &str, sheet: Option<&str>) -> Option<RefArea> {
         if self.peek() == Some(b':') {
             // Only consume the tail when it forms a literal area; otherwise
             // `:` stays a range operator (`A1:INDEX(…)`).
@@ -437,6 +466,19 @@ impl Parser<'_> {
             // by it.
             let three_d = self.peek() == Some(b'!') && addr::parse_cell(text).is_none();
             if !three_d && self.peek() == Some(b'!') {
+                // `Data!A1:Wide!A1` goes from a sheet to another: not a range of the first one (the
+                // `:` stays an operator between two references, which the lowering reads as one
+                // over several sheets).
+                if sheet.is_some_and(|s| !addr::same_name(s, tail)) {
+                    self.i = save;
+                    let (row, col, row_abs, col_abs) = addr::parse_cell(text)?;
+                    return Some(RefArea::Cell(CellAddr {
+                        row,
+                        col,
+                        row_abs,
+                        col_abs,
+                    }));
+                }
                 self.i += 1;
                 let t2 = self.i;
                 while self.peek().is_some_and(is_ident) {
@@ -475,7 +517,7 @@ impl Parser<'_> {
             self.i += 1;
         }
         let text = &self.src[start..self.i];
-        match self.area_from(text) {
+        match self.area_from(text, Some(&sheet)) {
             Some(area) => Ok(Expr::Ref(Reference {
                 sheet: Some(sheet),
                 area,
@@ -554,6 +596,26 @@ fn pair_area(a: &str, b: &str) -> Option<RefArea> {
     None
 }
 
+/// The byte length of the quoted sheet name at the start of `text` (`'Data'` is 6), with `''` for a quote.
+fn quoted_end(text: &str) -> Option<usize> {
+    let b = text.as_bytes();
+    if b.first() != Some(&b'\'') {
+        return None;
+    }
+    let mut i = 1;
+    while i < b.len() {
+        if b[i] == b'\'' {
+            if b.get(i + 1) == Some(&b'\'') {
+                i += 2;
+                continue;
+            }
+            return Some(i + 1);
+        }
+        i += 1;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -564,6 +626,52 @@ mod tests {
 
     fn rt(s: &str) -> String {
         p(s).to_string()
+    }
+
+    #[test]
+    fn a_reference_from_a_sheet_to_another() {
+        // `T:V!A1` is one reference on the sheets from `T` to `V`; written with the sheet in each
+        // end it is two references joined by the range operator, not a range of the first sheet.
+        let Expr::Ref(r) = p("Data:Wide!A1:B2") else {
+            panic!()
+        };
+        assert_eq!(r.sheet.as_deref(), Some("Data:Wide"));
+        let Expr::Ref(r) = p("'My Sheet:Other'!A1") else {
+            panic!()
+        };
+        assert_eq!(r.sheet.as_deref(), Some("My Sheet:Other"));
+        let Expr::Binary(BinOp::Range, a, b) = p("Data!A1:Wide!B2") else {
+            panic!()
+        };
+        assert!(matches!(*a, Expr::Ref(Reference { sheet: Some(ref s), .. }) if s == "Data"));
+        assert!(matches!(*b, Expr::Ref(Reference { sheet: Some(ref s), .. }) if s == "Wide"));
+        // The same sheet on both ends is the range of that sheet.
+        let Expr::Ref(r) = p("Data!A1:Data!B2") else {
+            panic!()
+        };
+        assert!(matches!(r.area, RefArea::Range(..)) && r.sheet.as_deref() == Some("Data"));
+    }
+
+    #[test]
+    fn a_sheet_quoted_at_one_end_or_both_of_a_reference_over_sheets() {
+        for text in [
+            "'Data':'Wide'!A1",
+            "'Data':Wide!A1",
+            "Data:'Wide'!A1",
+            "'Data':'My ''Sheet'!A1",
+        ] {
+            let Expr::Ref(r) = p(text) else {
+                panic!("{text}")
+            };
+            let sheet = r.sheet.unwrap();
+            assert!(sheet.starts_with("Data:"), "{text}: {sheet}");
+        }
+        let Expr::Ref(r) = p("'Data':'My ''Sheet'!A1") else {
+            panic!()
+        };
+        assert_eq!(r.sheet.as_deref(), Some("Data:My 'Sheet"));
+        assert!(parse("'Data':!A1").is_err());
+        assert!(parse("'Data'").is_err());
     }
 
     #[test]
@@ -648,11 +756,11 @@ mod tests {
         let Expr::Call(call) = &e else {
             panic!("{e:?}")
         };
-        let Some(Expr::Binary(BinOp::Range, a, b)) = &call.args[0] else {
+        let Some(Expr::Ref(r)) = &call.args[0] else {
             panic!("{e:?}")
         };
-        assert_eq!(**a, Expr::Name("T".into()));
-        assert!(matches!(&**b, Expr::Ref(r) if r.sheet.as_deref() == Some("V")));
+        assert_eq!(r.sheet.as_deref(), Some("T:V"));
+        assert_eq!(e.to_string(), "SUM(T:V!A:A)");
         // The qualifier of the second end of a range of cells is redundant.
         let e = parse("A1:Sheet1!B2").unwrap();
         assert!(
@@ -676,10 +784,51 @@ mod tests {
             "\"open",
             "[1]Sheet1!B3",
             "A1 B1",
-            "{1,2;3}",
+            "{1,",
+            "{1 2}",
+            "{",
         ] {
             assert!(parse(bad).is_err(), "{bad}");
         }
         assert_eq!(parse("1+").unwrap_err().pos, 2);
+    }
+
+    #[test]
+    fn an_array_takes_any_expression_and_any_width() {
+        // What a spreadsheet refuses there is an error of the formula, not of its syntax.
+        for ok in [
+            "{1;A1}",
+            "{1,2+3}",
+            "{1,SUM(1,2)}",
+            "{1,2;3}",
+            "{1,-2,+3}",
+            "{1,\"a\"&\"b\"}",
+        ] {
+            assert!(matches!(p(ok), Expr::Array(_)), "{ok}");
+        }
+        let Expr::Array(rows) = p("{1,2;3}") else {
+            panic!("an array")
+        };
+        assert_eq!(rows.iter().map(Vec::len).collect::<Vec<_>>(), [2, 1]);
+        assert_eq!(rt("{1,A1;2+3,4}"), "{1,A1;2+3,4}");
+    }
+
+    #[test]
+    fn an_array_may_leave_elements_out() {
+        let widths = |src: &str| {
+            let Expr::Array(rows) = p(src) else {
+                panic!("an array")
+            };
+            rows.iter().map(Vec::len).collect::<Vec<_>>()
+        };
+        assert_eq!(widths("{}"), [1]);
+        assert_eq!(widths("{1,2,}"), [3]);
+        assert_eq!(widths("{1,;2,3}"), [2, 2]);
+        assert_eq!(widths("{,1}"), [2]);
+        assert_eq!(widths("{1,2;}"), [2, 1]);
+        assert_eq!(rt("{1,;2,3}"), "{1,;2,3}");
+        assert_eq!(rt("{}"), "{}");
+        // A nested array is an element that is not a constant.
+        assert!(matches!(p("{{1,2}}"), Expr::Array(_)));
     }
 }

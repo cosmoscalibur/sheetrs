@@ -1,47 +1,62 @@
 //! Workbook and per-sheet statistics computed from the format-agnostic model.
 
 use serde::Serialize;
-use sheetrs_core::reader::parser_utils::column_letters;
-use sheetrs_core::reader::{Cell, CellSink, Sheet, Workbook};
+use sheetrs_io::Book;
+use sheetrs_io::Result;
+use sheetrs_io::reader::parser_utils::column_letters;
+use sheetrs_io::reader::{Cell, CellSink, Sheet, SheetState, Workbook};
+use std::collections::BTreeMap;
 
 /// Statistics for the whole workbook.
-#[derive(Debug, Serialize)]
-pub(crate) struct WorkbookStats {
-    pub(crate) total_sheets: usize,
-    pub(crate) total_named_ranges: usize,
-    pub(crate) total_file_size: u64,
-    pub(crate) total_used_cells: u64,
-    pub(crate) total_formulas: u64,
-    pub(crate) total_errors: u64,
-    pub(crate) total_empty_cells: u64,
-    pub(crate) total_comments: u64,
-    pub(crate) total_charts: u64,
-    pub(crate) total_tables: u64,
-    pub(crate) total_xml_size: u64,
-    pub(crate) sheets: Vec<SheetStats>,
+///
+/// The serialized form (`sheetrs stats --format json`) is the totals and the `sheets`; `has_macros`
+/// and `defined_names` are what the same read pass found out about the workbook, and are not in it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct WorkbookStats {
+    pub total_sheets: usize,
+    pub total_named_ranges: usize,
+    pub total_file_size: u64,
+    pub total_used_cells: u64,
+    pub total_formulas: u64,
+    pub total_errors: u64,
+    pub total_empty_cells: u64,
+    pub total_comments: u64,
+    pub total_charts: u64,
+    pub total_tables: u64,
+    pub total_xml_size: u64,
+    pub sheets: Vec<SheetStats>,
+    /// Whether the workbook carries macros or VBA code (found, never run).
+    #[serde(skip)]
+    pub has_macros: bool,
+    /// The defined names and what each refers to, as the file writes it, by name.
+    #[serde(skip)]
+    pub defined_names: BTreeMap<String, String>,
 }
 
 /// Statistics for one sheet, in workbook order.
-#[derive(Debug, Serialize)]
-pub(crate) struct SheetStats {
-    pub(crate) name: String,
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct SheetStats {
+    pub name: String,
+    /// Whether the sheet is shown, hidden or very hidden (not in the serialized form).
+    #[serde(skip)]
+    pub state: SheetState,
     /// Cells holding a value or a formula.
-    pub(crate) used_cells: u64,
-    pub(crate) formulas: u64,
+    pub used_cells: u64,
+    pub formulas: u64,
     /// Cells whose value (cached result for formulas) is an error.
-    pub(crate) errors: u64,
+    pub errors: u64,
     /// Cells without value or formula inside the used area, which spans from
     /// A1 to the last row and column holding a used cell.
-    pub(crate) empty_cells: u64,
+    pub empty_cells: u64,
     /// Bottom right corner of the used area (`GV5439`), `None` for a sheet without used cells.
-    pub(crate) end_of_sheet: Option<String>,
+    pub end_of_sheet: Option<String>,
     /// Notes of the sheet's cells.
-    pub(crate) comments: u64,
-    pub(crate) charts: u64,
+    pub comments: u64,
+    pub charts: u64,
     /// Table objects of an XLSX, named database ranges of an ODS.
-    pub(crate) tables: u64,
+    pub tables: u64,
     /// Uncompressed size of the XML describing the sheet.
-    pub(crate) xml_size: u64,
+    pub xml_size: u64,
 }
 
 /// What is counted of the cells of one sheet as they are read.
@@ -56,7 +71,7 @@ pub(crate) struct Tally {
 
 /// Counts the cells of each sheet as the reader hands them over, so the workbook's cells are never
 /// held in memory.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct StatsSink {
     sheets: Vec<Tally>,
 }
@@ -88,8 +103,39 @@ impl StatsSink {
     }
 }
 
+/// What a [`Book`] says about itself in numbers.
+pub trait BookStats {
+    /// The statistics of the workbook, counted in a single streaming pass: the cells are tallied as
+    /// they are read and not kept, so the memory used does not depend on the size of the workbook.
+    /// There is nothing to configure.
+    ///
+    /// ```no_run
+    /// use sheetrs_io::Book;
+    /// use sheetrs_stats::BookStats;
+    ///
+    /// # fn main() -> sheetrs_io::Result<()> {
+    /// let stats = Book::from_file("book.xlsx")?.stats()?;
+    /// println!("{} sheets, {} formulas", stats.total_sheets, stats.total_formulas);
+    /// # Ok(()) }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// When the workbook cannot be read (see [`Book::workbook`]).
+    fn stats(&self) -> Result<WorkbookStats>;
+}
+
+impl BookStats for Book {
+    fn stats(&self) -> Result<WorkbookStats> {
+        let mut sink = StatsSink::default();
+        let workbook = self.analysis_into(&mut sink)?;
+        Ok(WorkbookStats::from_workbook(&workbook, &sink))
+    }
+}
+
 impl WorkbookStats {
     /// The statistics of `workbook`, whose cells were counted by `sink` while it was read.
+    #[must_use]
     pub(crate) fn from_workbook(workbook: &Workbook, sink: &StatsSink) -> Self {
         let sheets: Vec<SheetStats> = workbook
             .sheets
@@ -111,6 +157,12 @@ impl WorkbookStats {
             total_tables: sheets.iter().map(|s| s.tables).sum(),
             total_xml_size: sheets.iter().map(|s| s.xml_size).sum(),
             sheets,
+            has_macros: workbook.has_macros,
+            defined_names: workbook
+                .defined_names
+                .iter()
+                .map(|(name, refers_to)| (name.clone(), refers_to.clone()))
+                .collect(),
         }
     }
 }
@@ -131,6 +183,7 @@ impl SheetStats {
 
         Self {
             name: sheet.name.clone(),
+            state: sheet.state,
             used_cells,
             formulas,
             errors,
@@ -152,7 +205,8 @@ fn is_used(cell: &Cell) -> bool {
 }
 
 /// Share of `part` in `total`, as a percentage (0 when `total` is 0).
-pub(crate) fn percentage(part: u64, total: u64) -> f64 {
+#[must_use]
+pub fn percentage(part: u64, total: u64) -> f64 {
     if total == 0 {
         0.0
     } else {
@@ -163,13 +217,12 @@ pub(crate) fn percentage(part: u64, total: u64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheetrs_core::reader::{CellValue, read_workbook_from_reader_into};
-    use sheetrs_core::violation::ExcelError;
-    use std::io::Cursor;
+    use sheetrs_io::reader::CellValue;
+    use sheetrs_io::reader::ExcelError;
     use std::sync::Arc;
 
-    const TEST_XLSX: &[u8] = include_bytes!("../../tests/minimal_test.xlsx");
-    const TEST_ODS: &[u8] = include_bytes!("../../tests/minimal_test.ods");
+    const TEST_XLSX: &[u8] = include_bytes!("../../tests/lint_book.xlsx");
+    const TEST_ODS: &[u8] = include_bytes!("../../tests/lint_book.ods");
 
     fn cell(row: u32, col: u32, value: CellValue, formula: Option<&str>) -> ((u32, u32), Cell) {
         (
@@ -195,11 +248,8 @@ mod tests {
         SheetStats::from_sheet(sheet, sink.tally(0))
     }
 
-    fn stats_for(bytes: &[u8], extension: &str) -> WorkbookStats {
-        let mut sink = StatsSink::default();
-        let workbook =
-            read_workbook_from_reader_into(Cursor::new(bytes), Some(extension), &mut sink).unwrap();
-        WorkbookStats::from_workbook(&workbook, &sink)
+    fn stats_for(bytes: &[u8]) -> WorkbookStats {
+        Book::from_bytes(bytes).unwrap().stats().unwrap()
     }
 
     #[test]
@@ -256,7 +306,7 @@ mod tests {
     #[test]
     fn workbook_totals_add_up_sheet_stats() {
         for (bytes, ext) in [(TEST_XLSX, "xlsx"), (TEST_ODS, "ods")] {
-            let stats = stats_for(bytes, ext);
+            let stats = stats_for(bytes);
 
             assert_eq!(stats.total_sheets, stats.sheets.len(), "{ext}");
             let sum = |f: fn(&SheetStats) -> u64| stats.sheets.iter().map(f).sum::<u64>();
@@ -269,21 +319,82 @@ mod tests {
         }
     }
 
+    /// The cells, formulas and errors of each sheet of each file are those `LibreOffice` reports for
+    /// that file (`sheetrs-io/tests/assets/oracle/lint_book.<ext>.oracle.json`, made by
+    /// `make_oracle.py`).
+    ///
+    /// The differences that nobody approved are listed in `PENDING`, and the test fails when one of
+    /// them goes. There is none.
     #[test]
-    fn xlsx_and_ods_cell_stats_match() {
-        let xlsx = stats_for(TEST_XLSX, "xlsx");
-        let ods = stats_for(TEST_ODS, "ods");
+    fn cell_stats_are_what_libreoffice_reports_for_each_file() {
+        // (file, sheet, what is counted, what the reader counts, what LibreOffice counts)
+        const PENDING: &[(&str, &str, &str, u64, u64)] = &[];
+        let mut found: Vec<(String, String, &str, u64, u64)> = Vec::new();
+        for (bytes, ext) in [(TEST_XLSX, "xlsx"), (TEST_ODS, "ods")] {
+            let path = format!(
+                "{}/../sheetrs-io/tests/assets/oracle/lint_book.{ext}.oracle.json",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let oracle: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            let stats = stats_for(bytes);
+            let libre_sheets = oracle["sheets"].as_array().unwrap();
+            assert_eq!(stats.total_sheets, libre_sheets.len(), "{ext}");
+            for sheet in &stats.sheets {
+                let cells: Vec<&serde_json::Value> = oracle["cells"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|c| c["sheet"] == sheet.name.as_str())
+                    .collect();
+                let count = |keep: fn(&serde_json::Value) -> bool| {
+                    cells.iter().filter(|c| keep(c)).count() as u64
+                };
+                for (what, ours, libre) in [
+                    ("used cells", sheet.used_cells, cells.len() as u64),
+                    (
+                        "formulas",
+                        sheet.formulas,
+                        count(|c| c["type"] == "FORMULA"),
+                    ),
+                    ("errors", sheet.errors, count(|c| c["error"] != 0)),
+                ] {
+                    if ours != libre {
+                        found.push((ext.to_string(), sheet.name.clone(), what, ours, libre));
+                    }
+                }
+            }
+        }
+        let pending: Vec<(String, String, &str, u64, u64)> = PENDING
+            .iter()
+            .map(|&(f, s, w, o, l)| (f.to_string(), s.to_string(), w, o, l))
+            .collect();
+        assert_eq!(found, pending);
+    }
 
-        assert_eq!(xlsx.total_sheets, ods.total_sheets);
-        assert_eq!(xlsx.total_named_ranges, ods.total_named_ranges);
-        for (x, o) in xlsx.sheets.iter().zip(&ods.sheets) {
-            assert_eq!(x.name, o.name);
-            assert_eq!(x.used_cells, o.used_cells, "used cells in {}", x.name);
-            assert_eq!(x.formulas, o.formulas, "formulas in {}", x.name);
-            assert_eq!(x.errors, o.errors, "errors in {}", x.name);
-            assert_eq!(x.empty_cells, o.empty_cells, "empty cells in {}", x.name);
-            assert_eq!(x.end_of_sheet, o.end_of_sheet, "end of {}", x.name);
-            assert_eq!(x.comments, o.comments, "comments in {}", x.name);
+    /// What `tests/make_lint_book.py` puts in the workbook, counted by hand: twenty sheets (one of them
+    /// empty, two hidden); the names `Rate`, `TaxRate`, `Local` (defined for the book and for `Calc`,
+    /// counted once) and `Gone`; one note (`Inputs!B1`); one chart (`Summary`); nine error cells
+    /// (`Errors!A1:A5`, the two of the loop in `Loops`, `Summary!B5`, which reads both, and
+    /// `Vulnerable!E4`, a `MODE` of values without repeats); no table. The two files agree with it, each
+    /// on its own account.
+    #[test]
+    fn the_statistics_of_the_lint_book_are_what_the_workbook_holds() {
+        for (bytes, ext) in [(TEST_XLSX, "xlsx"), (TEST_ODS, "ods")] {
+            let stats = stats_for(bytes);
+            assert_eq!(stats.total_sheets, 20, "{ext}");
+            assert_eq!(stats.total_named_ranges, 4, "{ext}");
+            assert_eq!(stats.total_comments, 1, "{ext}");
+            assert_eq!(stats.total_charts, 1, "{ext}");
+            assert_eq!(stats.total_tables, 0, "{ext}");
+            assert_eq!(stats.total_errors, 9, "{ext}");
+            let sheet = |name: &str| stats.sheets.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(sheet("Errors").errors, 5, "{ext}");
+            assert_eq!(sheet("Loops").errors, 2, "{ext}");
+            assert_eq!(sheet("Empty").used_cells, 0, "{ext}");
+            assert_eq!(sheet("Inputs").comments, 1, "{ext}");
+            assert_eq!(sheet("Summary").charts, 1, "{ext}");
+            assert_eq!(sheet("Seq").end_of_sheet.as_deref(), Some("D19"), "{ext}");
         }
     }
 
@@ -291,5 +402,36 @@ mod tests {
     fn percentage_of_zero_total_is_zero() {
         assert_eq!(percentage(5, 0), 0.0);
         assert_eq!(percentage(1, 4), 25.0);
+    }
+
+    #[test]
+    fn stats_gives_the_same_sheets_from_a_file_and_from_bytes() {
+        let tests = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests");
+        for (name, bytes) in [("lint_book.xlsx", TEST_XLSX), ("lint_book.ods", TEST_ODS)] {
+            let file = Book::from_file(tests.join(name)).unwrap();
+            let by_file = file.stats().unwrap();
+            let by_bytes = Book::from_bytes(bytes).unwrap().stats().unwrap();
+            assert_eq!(
+                serde_json::to_value(&by_file.sheets).unwrap(),
+                serde_json::to_value(&by_bytes.sheets).unwrap(),
+                "{name}"
+            );
+            assert_eq!(by_file.total_formulas, by_bytes.total_formulas);
+            assert_eq!(by_bytes.total_file_size, 0, "bytes carry no size");
+            assert!(by_file.total_file_size > 0);
+        }
+    }
+
+    #[test]
+    fn stats_reports_a_workbook_that_cannot_be_read_with_a_typed_error() {
+        // What is not a workbook, or is not there, is known when the source is made.
+        assert!(matches!(
+            Book::from_bytes(&b"not a zip"[..]),
+            Err(sheetrs_io::Error::Unsupported(_))
+        ));
+        assert!(matches!(
+            Book::from_file("tests/does-not-exist.xlsx"),
+            Err(sheetrs_io::Error::Open { .. })
+        ));
     }
 }

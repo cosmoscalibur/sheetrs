@@ -1,7 +1,7 @@
 //! Scale check: `cargo run --release --example stress`.
 use serde_json::json;
-use sheetrs_compiler::compile::QueryLevel;
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, Value, compile};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile};
+use sheetrs_engine::{Overrides, Value};
 use std::time::Instant;
 
 fn time<T>(label: &str, f: impl FnOnce() -> T) -> T {
@@ -11,23 +11,16 @@ fn time<T>(label: &str, f: impl FnOnce() -> T) -> T {
     r
 }
 
-fn run(title: &str, m: &Model, inputs: &[&str], outputs: &[&str], input: serde_json::Value) {
-    run_level(title, m, inputs, outputs, input, QueryLevel::Declared);
+fn run(title: &str, m: &Model, inputs: &[&str], outputs: &[&str], input: &serde_json::Value) {
+    run_level(title, m, inputs, outputs, input);
 }
 
-fn run_level(
-    title: &str,
-    m: &Model,
-    inputs: &[&str],
-    outputs: &[&str],
-    input: serde_json::Value,
-    query: QueryLevel,
-) {
+fn run_level(title: &str, m: &Model, inputs: &[&str], outputs: &[&str], input: &serde_json::Value) {
     println!("{title}");
     let spec = Spec {
         inputs: inputs.iter().map(|s| BindingSpec::parse(s)).collect(),
         outputs: outputs.iter().map(|s| BindingSpec::parse(s)).collect(),
-        query,
+        inputs_declared: true,
         ..Spec::default()
     };
     let (p, r) = time("compile", || compile(m, &spec).unwrap());
@@ -35,7 +28,7 @@ fn run_level(
         "  kept {} cells, {} formulas (of {} reachable)",
         r.cells_kept, r.formulas_kept, r.cells_reachable
     );
-    let out = time("run", || p.execute(&input, &Overrides::default()).unwrap());
+    let out = time("run", || p.calculate(input, &Overrides::default()).unwrap());
     println!(
         "  -> {}",
         out.to_string().chars().take(100).collect::<String>()
@@ -56,7 +49,7 @@ fn main() {
         &m,
         &["A1"],
         &[&format!("A{n}")],
-        json!({"S!A1": 5}),
+        &json!({"S!A1": 5}),
     );
 
     // B: running totals anchored at the top (quadratic range reads).
@@ -72,7 +65,7 @@ fn main() {
         &m,
         &["A1"],
         &[&format!("B1:B{k}")],
-        json!({"S!A1": 1}),
+        &json!({"S!A1": 1}),
     );
 
     // C: many lookups into one table.
@@ -97,7 +90,7 @@ fn main() {
         &m,
         &["D1"],
         &["F1"],
-        json!({"S!D1": 3}),
+        &json!({"S!D1": 3}),
     );
 
     // D: wide independent formulas, all folded at build time.
@@ -108,7 +101,7 @@ fn main() {
         m.set_formula(s, &format!("B{i}"), &format!("A{i}*2+ROUND(A{i}/3,2)"));
     }
     m.set_formula(s, "C1", "SUM(B1:B50000)");
-    run("50k folded formulas", &m, &[], &["C1"], json!(null));
+    run("50k folded formulas", &m, &[], &["C1"], &json!(null));
     // Inputs that may be any cell leave nothing to fold: the cost of `--no-fold`.
     let spec = Spec {
         outputs: vec![BindingSpec::parse("C1")],
@@ -121,14 +114,13 @@ fn main() {
         r.cells_kept, r.formulas_kept
     );
     time("run, no folding", || {
-        p.execute(&json!(null), &Overrides::default()).unwrap()
+        p.calculate(&json!(null), &Overrides::default()).unwrap()
     });
     run_level(
-        "50k folded formulas, any range queryable",
+        "50k folded formulas, outputs deduced (the formula cells)",
         &m,
         &[],
-        &["C1"],
-        json!(null),
-        QueryLevel::Any,
+        &[],
+        &json!(null),
     );
 }

@@ -1,10 +1,10 @@
-//! Dates and times written as text, as LibreOffice's input scanner reads them under a locale.
+//! Dates and times written as text, as `LibreOffice`'s input scanner reads them under a locale.
 //!
 //! A date of digits is accepted when it has the shape of one of the locale's patterns
 //! (`D/M/Y`, `M/D`: the separators must be written as in the pattern), or the ISO shape `Y-M-D`
 //! (`a-b-c` read as year, month, day, after the patterns). A pattern without a year gives the current year. A date with a month name is read
 //! by the form it is written in: the position of the month, the separator, and the digits of the
-//! numbers. What LibreOffice does with each form depends on the locale and is data
+//! numbers. What `LibreOffice` does with each form depends on the locale and is data
 //! (`Locale::named`, measured by `scripts/gen_locale_table.py`).
 
 use crate::coerce::expand_year;
@@ -21,16 +21,16 @@ pub struct DateCtx {
 }
 
 impl DateCtx {
+    #[must_use]
     pub fn new(sys: DateSystem, now: Option<f64>) -> Self {
         Self { sys, now }
     }
 
     /// The current year, read from the clock only when a date asks for it.
+    #[must_use]
     pub fn year(&self) -> i64 {
         let serial = self.now.unwrap_or_else(|| {
-            let secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0.0, |d| d.as_secs_f64());
+            let secs = crate::clock::unix_now().as_secs_f64();
             dates::unix_to_serial(secs, self.sys)
         });
         dates::serial_to_ymd_quiet(serial, self.sys).map_or(2000, |d| d.0)
@@ -39,6 +39,7 @@ impl DateCtx {
 
 /// A text date or date-time, as typed into a cell, optionally followed by a time. Also a time
 /// alone (`13:30`, `1:30 PM`), which is a fraction of a day.
+#[must_use]
 pub fn parse_date_text(s: &str, loc: &Locale, dc: DateCtx) -> Option<f64> {
     let t = s.trim();
     if let Some(tm) = parse_time(t, loc) {
@@ -162,6 +163,7 @@ fn iso_shaped(nums: &[&str], seps: &[&str]) -> bool {
 }
 
 /// Whether a text has the shape of a date of digits in the locale.
+#[must_use]
 pub fn looks_like_numeric_date(s: &str, loc: &Locale) -> bool {
     let Some((nums, seps)) = split_digits(s) else {
         return false;
@@ -174,6 +176,7 @@ pub fn looks_like_numeric_date(s: &str, loc: &Locale) -> bool {
 }
 
 /// `None`: not the shape of a date of digits; `Some(None)`: it is, but it is not a date.
+#[allow(clippy::option_option)] // two distinct failures, told apart by the caller
 fn numeric_date(d: &str, loc: &Locale, dc: DateCtx) -> Option<Option<(i64, i64, i64)>> {
     let (nums, seps) = split_digits(d)?;
     let iso = iso_shaped(&nums, &seps);
@@ -488,9 +491,9 @@ mod tests {
     /// Serials of the dates read below, and the clock at 2025-01-01 (45658).
     fn read(tag: &str, text: &str) -> Option<String> {
         let loc = Locale::by_tag(tag).unwrap();
-        let dc = DateCtx::new(DateSystem::NULL_1899, Some(45658.0));
+        let dc = DateCtx::new(DateSystem::Null1899, Some(45658.0));
         let n = parse_date_text(text, &loc, dc)?;
-        let (y, m, d) = dates::serial_to_ymd_quiet(n, DateSystem::NULL_1899)?;
+        let (y, m, d) = dates::serial_to_ymd_quiet(n, DateSystem::Null1899)?;
         Some(format!("{y}-{m:02}-{d:02}"))
     }
 
@@ -568,7 +571,7 @@ mod tests {
     #[test]
     fn times_use_the_locales_text_for_am_and_pm() {
         let loc = Locale::by_tag("en-US").unwrap();
-        let dc = DateCtx::new(DateSystem::NULL_1899, Some(45658.0));
+        let dc = DateCtx::new(DateSystem::Null1899, Some(45658.0));
         assert_eq!(parse_date_text("1:30 PM", &loc, dc), Some(13.5 / 24.0));
         let es = Locale::by_tag("es-ES").unwrap();
         assert_eq!(parse_date_text("1:30 PM", &es, dc), None);

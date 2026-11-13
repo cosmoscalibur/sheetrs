@@ -1,5 +1,5 @@
 //! Securities: the coupon functions and what is built on them (prices, yields, durations,
-//! accrued interest and the discount instruments). What LibreOffice 26.8 answers for the
+//! accrued interest and the discount instruments). What `LibreOffice` 26.8 answers for the
 //! arguments outside the plain case is what `tests/assets/semantics.*` holds.
 
 use super::{Reg, num};
@@ -78,9 +78,13 @@ fn frequency(e: &mut Engine, v: &Value) -> Res<i64> {
     }
 }
 
+/// The day-count basis: 0 when it is left out, or is an empty text (`LibreOffice` reads that as the
+/// default); a text that is no number is outside the domain (`Err:502`), not a `#VALUE!`.
 fn basis_of(e: &mut Engine, a: &[Value], i: usize) -> Res<i64> {
-    let b = match super::opt(a, i) {
-        Some(v) => e.num(v)?.trunc() as i64,
+    let b = match super::opt(a, i).map(|v| e.scalar(v.clone())) {
+        Some(Value::Text(t)) if t.is_empty() => 0,
+        Some(v @ Value::Text(_)) => e.num(&v).map_err(|_| DOMAIN)?.trunc() as i64,
+        Some(v) => e.num(&v)?.trunc() as i64,
         None => 0,
     };
     if (0..=4).contains(&b) {
@@ -143,7 +147,7 @@ fn coupon_of(e: &mut Engine, a: &[Value]) -> Res<Coupon> {
     coupon(e.opts.date_system, s, m, freq, basis)
 }
 
-/// The years between two dates as LibreOffice's securities count them: the 30/360 bases with the
+/// The years between two dates as `LibreOffice`'s securities count them: the 30/360 bases with the
 /// rule of `days360`, the others as `YEARFRAC`.
 fn year_frac(e: &Engine, a: f64, b: f64, basis: i64) -> Res<f64> {
     let (a, b) = if a <= b { (a, b) } else { (b, a) };
@@ -208,7 +212,7 @@ fn price_of(c: &Coupon, rate: f64, yld: f64, redemption: f64, freq: f64) -> f64 
     price
 }
 
-/// The yield for a price: the search of LibreOffice (a regula falsi from yields 0 and 1, the upper
+/// The yield for a price: the search of `LibreOffice` (a regula falsi from yields 0 and 1, the upper
 /// one doubled while the price is above that of it).
 fn yield_of(c: &Coupon, rate: f64, price: f64, redemption: f64, freq: f64) -> Res<f64> {
     let at = |y: f64| price_of(c, rate, y, redemption, freq);
@@ -457,20 +461,36 @@ fn odd_last(e: &mut Engine, a: &[Value], price_known: bool) -> Res<Value> {
     }
 }
 
-/// LibreOffice has no calculation behind `ODDFPRICE` and `ODDFYIELD`: they answer `#VALUE!` for
-/// every set of arguments that is a call of them (and the errors of the arguments).
-fn not_implemented_in_libreoffice(e: &mut Engine, a: &[Value]) -> Res<Value> {
-    for v in a {
-        e.num(v)?;
-    }
-    Err(ErrorKind::Value)
+/// `LibreOffice` has no calculation behind `ODDFPRICE` and `ODDFYIELD`: they answer `#VALUE!` for
+/// every set of arguments that is a call of them, and `Err:502` for the ones its checks refuse:
+/// the dates must run `issue < settlement < first coupon < maturity`, the rate (and the yield of
+/// `ODDFPRICE`) cannot be negative, the price of `ODDFYIELD` must be above 0, the frequency 1, 2 or
+/// 4 and the basis 0 to 4. The errors of the arguments (a text that is no number) come first.
+fn not_implemented_in_libreoffice(e: &mut Engine, a: &[Value], price: bool) -> Res<Value> {
+    let settle = date_arg(e, &a[0])?;
+    let maturity = date_arg(e, &a[1])?;
+    let issue = date_arg(e, &a[2])?;
+    let first = date_arg(e, &a[3])?;
+    let rate = e.num(&a[4])?;
+    let second = e.num(&a[5])?;
+    e.num(&a[6])?;
+    frequency(e, &a[7])?;
+    basis_of(e, a, 8)?;
+    let refused = !(issue < settle && settle < first && first < maturity)
+        || rate < 0.0
+        || if price { second < 0.0 } else { second <= 0.0 };
+    Err(if refused { DOMAIN } else { ErrorKind::Value })
 }
 
 pub(super) fn register(r: &mut Reg) {
     r.eager("ODDLPRICE", 7, 8, |e, a| odd_last(e, a, true));
     r.eager("ODDLYIELD", 7, 8, |e, a| odd_last(e, a, false));
-    r.eager("ODDFPRICE", 8, 9, not_implemented_in_libreoffice);
-    r.eager("ODDFYIELD", 8, 9, not_implemented_in_libreoffice);
+    r.eager("ODDFPRICE", 8, 9, |e, a| {
+        not_implemented_in_libreoffice(e, a, true)
+    });
+    r.eager("ODDFYIELD", 8, 9, |e, a| {
+        not_implemented_in_libreoffice(e, a, false)
+    });
     r.eager("VDB", 5, 7, vdb);
     r.eager("AMORLINC", 6, 7, |e, a| amor(e, a, false));
     r.eager("AMORDEGRC", 6, 7, |e, a| amor(e, a, true));

@@ -2,7 +2,7 @@
 
 use super::matrix_lookup;
 use super::stats::values_equal;
-use super::{Reg, num, opt, opt_num};
+use super::{Reg, VAR, num, opt, opt_num};
 use crate::addr::{self, MAX_COLS, MAX_ROWS, Rect};
 use crate::engine::{Engine, Res};
 use crate::matching::Matcher;
@@ -16,13 +16,20 @@ use std::sync::Arc;
 pub(super) fn register(r: &mut Reg) {
     r.eager("MATCH", 2, 3, |e, a| {
         let needle = e.scalar(a[0].clone());
+        if let Value::Error(k) = needle {
+            return Err(k);
+        }
         let hay = e.array_of(a[1].clone());
         let kind = opt_num(e, a, 2, 1.0)?.trunc();
-        if !(-1.0..=1.0).contains(&kind) {
-            return Err(ErrorKind::Domain);
-        }
-        if hay.rows > 1 && hay.cols > 1 {
-            return Err(ErrorKind::Domain);
+        // A match type that is not -1, 0 or 1, and a range that is not a vector: `Err:504` (parameter
+        // list) for a range and `Err:539` for an array written in the formula.
+        let not_valid = if matches!(a[1], Value::Ref(_)) {
+            504
+        } else {
+            539
+        };
+        if !(-1.0..=1.0).contains(&kind) || (hay.rows > 1 && hay.cols > 1) {
+            return Err(ErrorKind::Libre(not_valid));
         }
         // An array that is not a range has its own search for the types 1 and -1.
         if !matches!(a[1], Value::Ref(_)) && kind != 0.0 && !matches!(needle, Value::Empty) {
@@ -46,7 +53,7 @@ pub(super) fn register(r: &mut Reg) {
         found.map_or(Err(ErrorKind::Na), |p| num((p + 1) as f64))
     })
     .array_args();
-    r.eager("INDEX", 2, 4, index).array_args();
+    r.eager("INDEX", 1, 4, index).array_args();
     r.eager("VLOOKUP", 3, 4, |e, a| table_lookup(e, a, false));
     r.eager("HLOOKUP", 3, 4, |e, a| table_lookup(e, a, true));
     r.eager("XLOOKUP", 3, 6, xlookup).array_args();
@@ -67,25 +74,20 @@ pub(super) fn register(r: &mut Reg) {
     r.eager("ROW", 0, 1, |e, a| match a.first() {
         None => num(f64::from(e.at.row + 1)),
         Some(Value::Ref(r)) => num(f64::from(r.r0 + 1)),
+        Some(Value::Error(k)) => Err(*k),
+        // An array is no reference: `Err:504`.
+        Some(Value::Array(_)) => Err(ErrorKind::Libre(504)),
         Some(_) => Err(ErrorKind::Value),
     });
     r.eager("COLUMN", 0, 1, |e, a| match a.first() {
         None => num(f64::from(e.at.col + 1)),
         Some(Value::Ref(r)) => num(f64::from(r.c0 + 1)),
+        Some(Value::Error(k)) => Err(*k),
+        Some(Value::Array(_)) => Err(ErrorKind::Libre(504)),
         Some(_) => Err(ErrorKind::Value),
     });
-    r.eager("ROWS", 1, 1, |_, a| match &a[0] {
-        Value::Error(k) => Err(*k),
-        Value::Ref(r) => num(f64::from(r.rows())),
-        Value::Array(m) => num(f64::from(m.rows)),
-        _ => num(1.0),
-    });
-    r.eager("COLUMNS", 1, 1, |_, a| match &a[0] {
-        Value::Error(k) => Err(*k),
-        Value::Ref(r) => num(f64::from(r.cols())),
-        Value::Array(m) => num(f64::from(m.cols)),
-        _ => num(1.0),
-    });
+    r.eager("ROWS", 0, VAR, |_, a| extent_sum(a, false));
+    r.eager("COLUMNS", 0, VAR, |_, a| extent_sum(a, true));
     r.eager("ADDRESS", 2, 5, address);
     r.eager("AREAS", 1, 1, |_, a| match &a[0] {
         Value::Ref(_) => num(1.0),
@@ -103,13 +105,23 @@ pub(super) fn register(r: &mut Reg) {
                 .position(|s| s.eq_ignore_ascii_case(t));
             found.map_or(Err(ErrorKind::Domain), |i| num((i + 1) as f64))
         }
-        Some(_) => Err(ErrorKind::Domain),
+        // A number or a boolean is no reference: a parameter list error.
+        Some(_) => Err(ErrorKind::Libre(504)),
     });
-    r.eager("SHEETS", 0, 1, |e, a| match a.first() {
-        None => num(e.sheet_names().len() as f64),
-        Some(Value::Ref(_)) => num(1.0),
-        Some(Value::Error(k)) => Err(*k),
-        Some(_) => Err(ErrorKind::Domain),
+    r.eager("SHEETS", 0, VAR, |e, a| {
+        if a.is_empty() {
+            return num(e.sheet_names().len() as f64);
+        }
+        // The sheets of every reference, added up.
+        let mut n = 0.0;
+        for v in a {
+            match v {
+                Value::Ref(_) => n += 1.0,
+                Value::Error(k) => return Err(*k),
+                _ => return Err(ErrorKind::Domain),
+            }
+        }
+        num(n)
     });
     // The text of the link, or its address when it has none; a blank is 0 and a boolean a number.
     r.eager("HYPERLINK", 1, 2, |e, a| {
@@ -188,6 +200,25 @@ pub(super) fn position_with<'a>(
     best
 }
 
+/// `ROWS` or `COLUMNS` of every argument added up: a reference or an array counts its extent, and
+/// anything else is a parameter list error.
+fn extent_sum(a: &[Value], columns: bool) -> Res<Value> {
+    let mut total = 0.0;
+    for v in a {
+        total += match v {
+            Value::Error(k) => return Err(*k),
+            Value::Ref(r) => f64::from(if columns { r.cols() } else { r.rows() }),
+            Value::Array(m) => f64::from(if columns { m.cols } else { m.rows }),
+            // A number, a boolean or a text is no reference or array: `Err:504`.
+            Value::Text(_) | Value::Number(_) | Value::Bool(_) => {
+                return Err(ErrorKind::Libre(504));
+            }
+            Value::Empty => 1.0,
+        };
+    }
+    num(total)
+}
+
 fn index(e: &mut Engine, a: &[Value]) -> Res<Value> {
     // The index of an error is that error, wherever it points.
     if let Value::Error(k) = &a[0] {
@@ -195,6 +226,15 @@ fn index(e: &mut Engine, a: &[Value]) -> Res<Value> {
     }
     let row = opt(a, 1).map(|v| e.num(v)).transpose()?;
     let col = opt(a, 2).map(|v| e.num(v)).transpose()?;
+    let area = opt(a, 3).map(|v| e.num(v)).transpose()?;
+    // A negative index or area, or area 0, is `Err:502`; an area past the one there is, `#REF!`.
+    if row.is_some_and(|r| r < 0.0) || col.is_some_and(|c| c < 0.0) || area.is_some_and(|n| n < 1.0)
+    {
+        return Err(ErrorKind::Libre(502));
+    }
+    if area.is_some_and(|n| n >= 2.0) {
+        return Err(ErrorKind::Ref);
+    }
     let (rows, cols) = match &a[0] {
         Value::Ref(r) => (r.rows(), r.cols()),
         Value::Array(m) => (m.rows, m.cols),
@@ -234,8 +274,11 @@ fn index(e: &mut Engine, a: &[Value]) -> Res<Value> {
             for i in r0..=r1 {
                 for j in c0..=c1 {
                     // A blank that went through an array function is an empty text, as there.
+                    // The elements of an array are numbers: a boolean that a comparison or an array
+                    // written in the formula left there is 1 or 0 once it is picked out.
                     data.push(match m.get(i, j) {
                         Value::Empty => Value::text(""),
+                        Value::Bool(b) => Value::Number(f64::from(u8::from(*b))),
                         v => v.clone(),
                     });
                 }
@@ -243,7 +286,8 @@ fn index(e: &mut Engine, a: &[Value]) -> Res<Value> {
             Ok(if data.len() == 1 {
                 data.remove(0)
             } else {
-                Value::Array(Arc::new(Array::new(h, w, data)))
+                // What `INDEX` takes out of an array is taken like what `IF` chose.
+                Value::Array(Arc::new(Array::new(h, w, data).with_jump(true)))
             })
         }
     }
@@ -265,11 +309,9 @@ fn table_lookup(e: &mut Engine, a: &[Value], horizontal: bool) -> Res<Value> {
     } else {
         (t.rows, t.cols)
     };
-    if idx < 1.0 {
-        return Err(ErrorKind::Value);
-    }
-    if idx as u32 > depth {
-        return Err(ErrorKind::Ref);
+    // An index outside the table is an invalid argument (Excel: `#VALUE!` below 1, `#REF!` above).
+    if idx < 1.0 || idx > f64::from(depth) {
+        return Err(ErrorKind::Libre(502));
     }
     // An array that is not a range is searched as LibreOffice does.
     if let Value::Array(m) = &a[1] {
@@ -278,10 +320,26 @@ fn table_lookup(e: &mut Engine, a: &[Value], horizontal: bool) -> Res<Value> {
         } else {
             (0..m.rows).map(|r| m.get(r, 0).clone()).collect()
         };
+        // The element a missing `else` gave is found by no exact search of a table (`VLOOKUP("",…)`
+        // is `#N/A`, as `VLOOKUP(0,…)`): it is no key.
+        let keys: Vec<Value> = keys
+            .into_iter()
+            .map(|k| {
+                if !approx && k.is_empty_path() {
+                    Value::Number(f64::NAN)
+                } else {
+                    k
+                }
+            })
+            .collect();
         let needle = match needle {
             Value::Empty => Value::text(""),
             n => n,
         };
+        // An error among the keys that the search reaches is the answer.
+        if let Some(kind) = matrix_lookup::error_reached(&needle, &keys, approx, horizontal) {
+            return Err(kind);
+        }
         let coll = e.collator(false);
         let same = |x: &str, y: &str| values_equal(&Value::text(x), &Value::text(y), coll);
         let pos = matrix_lookup::table_position(&needle, &keys, approx, coll, &same)
@@ -365,15 +423,40 @@ fn table_lookup(e: &mut Engine, a: &[Value], horizontal: bool) -> Res<Value> {
 }
 
 fn xlookup(e: &mut Engine, a: &[Value]) -> Res<Value> {
+    // An error a calculation gave as the lookup array or the array to return is no array: `Err:504`.
+    if matches!(a[1], Value::Error(_)) || matches!(a[2], Value::Error(_)) {
+        return Err(ErrorKind::Libre(504));
+    }
+    if !matches!(a[1], Value::Ref(_) | Value::Array(_)) {
+        return Err(ErrorKind::Libre(504));
+    }
     let needle = e.scalar(a[0].clone());
+    // An error to look for is `Err:504`, except the `#VALUE!` of a range that the formula does not
+    // meet, which comes back as it is.
+    if needle.is_error() {
+        return if matches!(&a[0], Value::Ref(r) if !r.is_single()) {
+            Ok(needle)
+        } else {
+            Err(ErrorKind::Libre(504))
+        };
+    }
     let hay = e.array_of(a[1].clone());
+    // The lookup array is a row or a column: a block is `Err:504`, found or not.
+    if hay.rows > 1 && hay.cols > 1 {
+        return Err(ErrorKind::Libre(504));
+    }
+    // An error a calculation gave as the match mode is no mode: nothing is found, whatever is looked for.
+    let not_found = || match a.get(3) {
+        Some(v) if !matches!(v, Value::Empty) => Ok(v.clone()),
+        _ => Err(ErrorKind::Na),
+    };
+    if matches!(a.get(4), Some(Value::Error(_))) {
+        return not_found();
+    }
     let mode = opt_num(e, a, 4, 0.0)?;
     let search_mode = opt_num(e, a, 5, 1.0)?;
     let Some(i) = xlookup_find(e, &needle, &a[1], &hay, mode, search_mode)? else {
-        return match a.get(3) {
-            Some(v) if !matches!(v, Value::Empty) => Ok(v.clone()),
-            _ => Err(ErrorKind::Na),
-        };
+        return not_found();
     };
     xlookup_result(e, a, &hay, i)
 }
@@ -565,6 +648,24 @@ fn range_xlookup(
 fn xlookup_result(e: &mut Engine, a: &[Value], hay: &Array, i: usize) -> Res<Value> {
     // The match index applies along the orientation of the lookup array.
     let vertical = hay.cols == 1;
+    // What is returned must be as long as the lookup array along it, or LibreOffice refuses it (a
+    // reference counts as written, not as far as it holds data).
+    let size = |e: &mut Engine, v: &Value| match v {
+        Value::Ref(r) => (r.rows(), r.cols()),
+        other => {
+            let m = e.array_of(other.clone());
+            (m.rows, m.cols)
+        }
+    };
+    let (rows, cols) = size(e, &a[2]);
+    let (hay_rows, hay_cols) = size(e, &a[1]);
+    if if vertical {
+        rows != hay_rows
+    } else {
+        cols != hay_cols
+    } {
+        return Err(ErrorKind::Libre(504));
+    }
     match &a[2] {
         Value::Ref(r) => {
             let i = i as u32;
@@ -591,8 +692,12 @@ fn xlookup_result(e: &mut Engine, a: &[Value], hay: &Array, i: usize) -> Res<Val
 }
 
 fn offset(e: &mut Engine, a: &[Value]) -> Res<Value> {
-    let Value::Ref(base) = &a[0] else {
-        return Err(ErrorKind::Value);
+    let base = match &a[0] {
+        Value::Ref(base) => base,
+        // An error the reference argument calculated is the error of the call (`OFFSET(NA(),0,0)` is
+        // `#N/A`, and an XLSX `OFFSET(#REF!,0,0)` is `#NAME?`: the bare `#REF!` is a name there).
+        Value::Error(kind) => return Err(*kind),
+        _ => return Err(ErrorKind::Value),
     };
     let dr = e.num(&a[1])?.trunc() as i64;
     let dc = e.num(&a[2])?.trunc() as i64;

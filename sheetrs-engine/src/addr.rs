@@ -15,6 +15,7 @@ pub struct CellRef {
 }
 
 impl CellRef {
+    #[must_use]
     pub fn new(sheet: u16, row: u32, col: u32) -> Self {
         Self { sheet, row, col }
     }
@@ -31,6 +32,7 @@ pub struct Rect {
 }
 
 impl Rect {
+    #[must_use]
     pub fn new(sheet: u16, ra: u32, ca: u32, rb: u32, cb: u32) -> Self {
         Self {
             sheet,
@@ -41,38 +43,46 @@ impl Rect {
         }
     }
 
+    #[must_use]
     pub fn single(c: CellRef) -> Self {
         Self::new(c.sheet, c.row, c.col, c.row, c.col)
     }
 
+    #[must_use]
     pub fn rows(&self) -> u32 {
         self.r1 - self.r0 + 1
     }
 
+    #[must_use]
     pub fn cols(&self) -> u32 {
         self.c1 - self.c0 + 1
     }
 
+    #[must_use]
     pub fn area(&self) -> u64 {
         u64::from(self.rows()) * u64::from(self.cols())
     }
 
+    #[must_use]
     pub fn is_single(&self) -> bool {
         self.r0 == self.r1 && self.c0 == self.c1
     }
 
+    #[must_use]
     pub fn contains(&self, c: CellRef) -> bool {
         c.sheet == self.sheet
             && (self.r0..=self.r1).contains(&c.row)
             && (self.c0..=self.c1).contains(&c.col)
     }
 
+    #[must_use]
     pub fn top_left(&self) -> CellRef {
         CellRef::new(self.sheet, self.r0, self.c0)
     }
 }
 
 /// Bind an area written in a formula to a sheet.
+#[must_use]
 pub fn bind(area: Area, sheet: u16) -> Rect {
     Rect::new(sheet, area.r0, area.c0, area.r1, area.c1)
 }
@@ -86,6 +96,7 @@ pub fn qualified(sheets: &[String], r: &Rect) -> String {
 }
 
 /// Format a rectangle as A1 text (without sheet).
+#[must_use]
 pub fn rect_text(r: &Rect) -> String {
     if r.is_single() {
         a1(r.r0, r.c0)
@@ -143,7 +154,8 @@ fn calc_a1(text: &str) -> (Option<String>, String) {
 
 /// The sheet and the area of the text `INDIRECT` receives, read in the document's syntax:
 /// Excel A1 (`Sheet!A1`, what an XLSX import sets) or Calc A1 (`Sheet.A1`, a document created
-/// in LibreOffice). The other notation is not a reference. `None`: not a reference.
+/// in `LibreOffice`). The other notation is not a reference. `None`: not a reference.
+#[must_use]
 pub fn string_ref(text: &str, excel: bool) -> Option<(Option<String>, String)> {
     let text = text.trim();
     if excel {

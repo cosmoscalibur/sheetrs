@@ -28,14 +28,12 @@ impl Csr {
         Self { offsets, targets }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.offsets.len().saturating_sub(1)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
+    #[must_use]
     pub fn edges(&self, v: u32) -> &[u32] {
         &self.targets[self.offsets[v as usize] as usize..self.offsets[v as usize + 1] as usize]
     }
@@ -58,6 +56,7 @@ impl Sccs {
     }
 }
 
+#[must_use]
 pub fn tarjan(g: &Csr) -> Sccs {
     const UNSEEN: u32 = u32::MAX;
     let n = g.len();
@@ -118,6 +117,7 @@ pub fn tarjan(g: &Csr) -> Sccs {
 }
 
 /// Whether a component is a genuine cycle (several nodes, or a self-loop).
+#[must_use]
 pub fn is_cycle(g: &Csr, comp: &[u32]) -> bool {
     comp.len() > 1 || g.edges(comp[0]).contains(&comp[0])
 }
@@ -128,8 +128,8 @@ mod tests {
 
     fn lcg(seed: &mut u64) -> u32 {
         *seed = seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         (*seed >> 33) as u32
     }
 
@@ -172,7 +172,7 @@ mod tests {
         for n in [1usize, 2, 10, 60, 150] {
             for density in [1u32, 2, 4] {
                 let mut adj = vec![Vec::new(); n];
-                for edges in adj.iter_mut() {
+                for edges in &mut adj {
                     for _ in 0..(lcg(&mut seed) % (density + 1)) {
                         edges.push(lcg(&mut seed) % n as u32);
                     }

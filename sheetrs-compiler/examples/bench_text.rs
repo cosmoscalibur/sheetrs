@@ -1,13 +1,17 @@
 //! Cost of text comparison on a large workbook: `cargo run --release -p sheetrs-compiler
 //! --example bench_text -- FILE` (the file of the `timing` example: `Data!I` holds
 //! 600 000 labels, `Data!K` formulas).
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Spec, compile, loader};
+use sheetrs_compiler::{BindingSpec, Model, Spec, compile, loader};
+use sheetrs_engine::Overrides;
 use std::time::Instant;
 
 fn main() {
     let file = std::env::args().nth(1).expect("file");
-    let wb = sheetrs_core::reader::read_workbook(&file).unwrap();
-    let mut model: Model = loader::from_workbook_owned(wb, false);
+    let wb = sheetrs_io::Book::from_file(&file)
+        .unwrap()
+        .workbook()
+        .unwrap();
+    let mut model: Model = loader::from_workbook_owned(wb, sheetrs_io::reader::Format::Xlsx);
     let s = model.sheet_id("Summary").unwrap();
     let cases = [
         (
@@ -56,7 +60,7 @@ fn main() {
         let (p, _) = compile(&model, &spec).unwrap();
         let t = Instant::now();
         let out = p
-            .execute(&serde_json::Value::Null, &Overrides::default())
+            .calculate(&serde_json::Value::Null, &Overrides::default())
             .unwrap();
         println!(
             "{label:<44} {:>9.1?}  -> {}",

@@ -1,0 +1,1566 @@
+[
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1,234.50",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A3"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1,234.50",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1,234",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A3"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1234.5",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1234.5",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A3"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "15 Mar 2023",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!H26"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "15 Mar",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!H26"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "Mar",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "03/15/2023",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!H26"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "03/15/2023",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "$10.00",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!H27"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "$10.00",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "x5",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!H28"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "x5",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "yes",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!A12",
+   "T!H29"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "yes",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!A12"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "25.6%",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!A5"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "25.6",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A5"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "0.256",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "50.00%",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!H30"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "50%",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!H30"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "2023",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A4",
+   "T!H26"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "\\d+,\\d+",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A3"
+  ]
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "2,469.00",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "2469",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.xlsx",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "2469",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1,234.50",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A3"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1,234.50",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1,234",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A3"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1234.5",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "1234.5",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A3"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "15 Mar 2023",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!H26"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "15 Mar",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!H26"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "Mar",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "03/15/2023",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!H26"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "03/15/2023",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "$10.00",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!H27"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "$10.00",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "x5",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!H28"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "x5",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "yes",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!A12",
+   "T!H29"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "yes",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!A12"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "25.6%",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!A5"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "25.6",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A5"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "0.256",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "50.00%",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!H30"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "50%",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "T!H30"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "2023",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A4",
+   "T!H26"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "\\d+,\\d+",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": true,
+  "found": [
+   "T!A3"
+  ]
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "2,469.00",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "2469",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "input.ods",
+  "folder": "sheetrs-edit/tests/assets/replace",
+  "text": "2469",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "2023-03-15",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!A1",
+   "Inherit!BM1",
+   "Inherit!BQ1",
+   "Inherit!BU1",
+   "Inherit!C1",
+   "Inherit!CA1",
+   "Inherit!CC1",
+   "Inherit!CE1",
+   "Inherit!CG1",
+   "Inherit!CI1",
+   "Inherit!CL1",
+   "Inherit!CM1",
+   "Inherit!CN1",
+   "Inherit!CO1",
+   "Inherit!U14"
+  ]
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "03/15/23",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!AE14",
+   "Inherit!E12",
+   "Inherit!E3",
+   "Inherit!G12",
+   "Inherit!G3",
+   "Inherit!M1",
+   "Inherit!O1"
+  ]
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "$10.00",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!A4",
+   "Inherit!AK6",
+   "Inherit!BM4",
+   "Inherit!BQ4",
+   "Inherit!BU4",
+   "Inherit!C4",
+   "Inherit!CA4",
+   "Inherit!CC4",
+   "Inherit!CE4",
+   "Inherit!CG4",
+   "Inherit!CI4",
+   "Inherit!CL4",
+   "Inherit!CM4",
+   "Inherit!CN4",
+   "Inherit!CO4"
+  ]
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "$45,010.00",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!E4",
+   "Inherit!G4",
+   "Inherit!Q1",
+   "Inherit!S1"
+  ]
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "12.50%",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!A12",
+   "Inherit!BM12",
+   "Inherit!BO12",
+   "Inherit!BU12",
+   "Inherit!C12",
+   "Inherit!CA12",
+   "Inherit!CC12",
+   "Inherit!CE12",
+   "Inherit!CG12",
+   "Inherit!CI12",
+   "Inherit!CL12",
+   "Inherit!CM12",
+   "Inherit!CN12",
+   "Inherit!CO12"
+  ]
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "06:00:00 AM",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!AA2",
+   "Inherit!AC2",
+   "Inherit!I6",
+   "Inherit!I8",
+   "Inherit!K6",
+   "Inherit!K8",
+   "Inherit!M10",
+   "Inherit!O10",
+   "Inherit!Y3",
+   "Inherit!Y7"
+  ]
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "45000.25",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "Inherit!AR9",
+   "Inherit!AS9",
+   "Inherit!D2",
+   "Inherit!F2",
+   "Inherit!H1",
+   "Inherit!J1",
+   "Inherit!X9"
+  ]
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "45000.25",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "Inherit!AR9",
+   "Inherit!AS9",
+   "Inherit!D2",
+   "Inherit!F2",
+   "Inherit!H1",
+   "Inherit!J1",
+   "Inherit!X9"
+  ]
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "TRUE",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!A6",
+   "Inherit!AZ1",
+   "Inherit!AZ10",
+   "Inherit!AZ11",
+   "Inherit!AZ12",
+   "Inherit!AZ2",
+   "Inherit!AZ3",
+   "Inherit!AZ4",
+   "Inherit!AZ5",
+   "Inherit!AZ6",
+   "Inherit!AZ7",
+   "Inherit!AZ8",
+   "Inherit!AZ9",
+   "Inherit!B6",
+   "Inherit!BA1",
+   "Inherit!BA10",
+   "Inherit!BA11",
+   "Inherit!BA12",
+   "Inherit!BA2",
+   "Inherit!BA3",
+   "Inherit!BA4",
+   "Inherit!BA5",
+   "Inherit!BA6",
+   "Inherit!BA7",
+   "Inherit!BA8",
+   "Inherit!BA9",
+   "Inherit!BB1",
+   "Inherit!BB11",
+   "Inherit!BB4",
+   "Inherit!BB5",
+   "Inherit!BB7",
+   "Inherit!BB8",
+   "Inherit!BB9",
+   "Inherit!BC1",
+   "Inherit!BC11",
+   "Inherit!BC4",
+   "Inherit!BC5",
+   "Inherit!BC7",
+   "Inherit!BC8",
+   "Inherit!BC9",
+   "Inherit!BN6",
+   "Inherit!BO6",
+   "Inherit!BP6",
+   "Inherit!BQ6",
+   "Inherit!BZ6",
+   "Inherit!C6",
+   "Inherit!CA6",
+   "Inherit!CB6",
+   "Inherit!CC6",
+   "Inherit!CD6",
+   "Inherit!CE6",
+   "Inherit!CF6",
+   "Inherit!CG6",
+   "Inherit!CH6",
+   "Inherit!CI6",
+   "Inherit!CJ1",
+   "Inherit!CJ10",
+   "Inherit!CJ11",
+   "Inherit!CJ12",
+   "Inherit!CJ2",
+   "Inherit!CJ3",
+   "Inherit!CJ4",
+   "Inherit!CJ5",
+   "Inherit!CJ6",
+   "Inherit!CJ7",
+   "Inherit!CJ8",
+   "Inherit!CJ9",
+   "Inherit!CK1",
+   "Inherit!CK10",
+   "Inherit!CK11",
+   "Inherit!CK12",
+   "Inherit!CK2",
+   "Inherit!CK3",
+   "Inherit!CK4",
+   "Inherit!CK5",
+   "Inherit!CK6",
+   "Inherit!CK7",
+   "Inherit!CK8",
+   "Inherit!CK9",
+   "Inherit!CL6",
+   "Inherit!CM6",
+   "Inherit!CN6",
+   "Inherit!CO6"
+  ]
+ },
+ {
+  "file": "inherit.xlsx",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "03/15/23 06:00 AM",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "Inherit!E2",
+   "Inherit!G2",
+   "Inherit!I1",
+   "Inherit!K1",
+   "Inherit!Y9"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "2023-03-15",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!A1",
+   "Inherit!B1",
+   "Inherit!BL1",
+   "Inherit!BM1",
+   "Inherit!BP1",
+   "Inherit!BQ1",
+   "Inherit!BT1",
+   "Inherit!BU1",
+   "Inherit!BZ1",
+   "Inherit!C1",
+   "Inherit!CA1",
+   "Inherit!CB1",
+   "Inherit!CC1",
+   "Inherit!CD1",
+   "Inherit!CE1",
+   "Inherit!CF1",
+   "Inherit!CG1",
+   "Inherit!CH1",
+   "Inherit!CI1",
+   "Inherit!CL1",
+   "Inherit!CM1",
+   "Inherit!CN1",
+   "Inherit!CO1",
+   "Inherit!T14",
+   "Inherit!U14"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "03/15/23",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!AD14",
+   "Inherit!AE14",
+   "Inherit!D12",
+   "Inherit!D3",
+   "Inherit!E12",
+   "Inherit!E3",
+   "Inherit!F12",
+   "Inherit!F3",
+   "Inherit!G12",
+   "Inherit!G3",
+   "Inherit!L1",
+   "Inherit!M1",
+   "Inherit!N1",
+   "Inherit!O1"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "$10.00",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!A4",
+   "Inherit!AJ6",
+   "Inherit!AK6",
+   "Inherit!B4",
+   "Inherit!BL4",
+   "Inherit!BM4",
+   "Inherit!BP4",
+   "Inherit!BQ4",
+   "Inherit!BT4",
+   "Inherit!BU4",
+   "Inherit!BZ4",
+   "Inherit!C4",
+   "Inherit!CA4",
+   "Inherit!CB4",
+   "Inherit!CC4",
+   "Inherit!CD4",
+   "Inherit!CE4",
+   "Inherit!CF4",
+   "Inherit!CG4",
+   "Inherit!CH4",
+   "Inherit!CI4",
+   "Inherit!CL4",
+   "Inherit!CM4",
+   "Inherit!CN4",
+   "Inherit!CO4"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "$45,010.00",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!D4",
+   "Inherit!E4",
+   "Inherit!F4",
+   "Inherit!G4",
+   "Inherit!P1",
+   "Inherit!Q1",
+   "Inherit!R1",
+   "Inherit!S1"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "12.50%",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!A12",
+   "Inherit!B12",
+   "Inherit!BL12",
+   "Inherit!BM12",
+   "Inherit!BN12",
+   "Inherit!BO12",
+   "Inherit!BT12",
+   "Inherit!BU12",
+   "Inherit!BZ12",
+   "Inherit!C12",
+   "Inherit!CA12",
+   "Inherit!CB12",
+   "Inherit!CC12",
+   "Inherit!CD12",
+   "Inherit!CE12",
+   "Inherit!CF12",
+   "Inherit!CG12",
+   "Inherit!CH12",
+   "Inherit!CI12",
+   "Inherit!CL12",
+   "Inherit!CM12",
+   "Inherit!CN12",
+   "Inherit!CO12"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "06:00:00 AM",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!AA2",
+   "Inherit!AB2",
+   "Inherit!AC2",
+   "Inherit!B2",
+   "Inherit!BF2",
+   "Inherit!BG2",
+   "Inherit!BL2",
+   "Inherit!BM2",
+   "Inherit!BN2",
+   "Inherit!BO2",
+   "Inherit!BT2",
+   "Inherit!BU2",
+   "Inherit!BZ2",
+   "Inherit!C2",
+   "Inherit!CA2",
+   "Inherit!CB2",
+   "Inherit!CC2",
+   "Inherit!CD2",
+   "Inherit!CE2",
+   "Inherit!CF2",
+   "Inherit!CG2",
+   "Inherit!CH2",
+   "Inherit!CI2",
+   "Inherit!CL2",
+   "Inherit!CM2",
+   "Inherit!CN2",
+   "Inherit!CO2",
+   "Inherit!H6",
+   "Inherit!H8",
+   "Inherit!I6",
+   "Inherit!I8",
+   "Inherit!J6",
+   "Inherit!J8",
+   "Inherit!K6",
+   "Inherit!K8",
+   "Inherit!L10",
+   "Inherit!M10",
+   "Inherit!N10",
+   "Inherit!O10",
+   "Inherit!X3",
+   "Inherit!X7",
+   "Inherit!Y3",
+   "Inherit!Y7",
+   "Inherit!Z2"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "45000.25",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "Inherit!AR9",
+   "Inherit!AS9"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "45000.25",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "Inherit!AR9",
+   "Inherit!AS9"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "TRUE",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": true,
+  "regex": false,
+  "found": [
+   "Inherit!A6",
+   "Inherit!AZ1",
+   "Inherit!AZ10",
+   "Inherit!AZ11",
+   "Inherit!AZ12",
+   "Inherit!AZ2",
+   "Inherit!AZ3",
+   "Inherit!AZ4",
+   "Inherit!AZ5",
+   "Inherit!AZ6",
+   "Inherit!AZ7",
+   "Inherit!AZ8",
+   "Inherit!AZ9",
+   "Inherit!B6",
+   "Inherit!BA1",
+   "Inherit!BA10",
+   "Inherit!BA11",
+   "Inherit!BA12",
+   "Inherit!BA2",
+   "Inherit!BA3",
+   "Inherit!BA4",
+   "Inherit!BA5",
+   "Inherit!BA6",
+   "Inherit!BA7",
+   "Inherit!BA8",
+   "Inherit!BA9",
+   "Inherit!BB1",
+   "Inherit!BB11",
+   "Inherit!BB4",
+   "Inherit!BB5",
+   "Inherit!BB7",
+   "Inherit!BB8",
+   "Inherit!BB9",
+   "Inherit!BC1",
+   "Inherit!BC11",
+   "Inherit!BC4",
+   "Inherit!BC5",
+   "Inherit!BC7",
+   "Inherit!BC8",
+   "Inherit!BC9",
+   "Inherit!BN6",
+   "Inherit!BO6",
+   "Inherit!BP6",
+   "Inherit!BQ6",
+   "Inherit!BZ6",
+   "Inherit!C6",
+   "Inherit!CA6",
+   "Inherit!CB6",
+   "Inherit!CC6",
+   "Inherit!CD6",
+   "Inherit!CE6",
+   "Inherit!CF6",
+   "Inherit!CG6",
+   "Inherit!CH6",
+   "Inherit!CI6",
+   "Inherit!CJ1",
+   "Inherit!CJ10",
+   "Inherit!CJ11",
+   "Inherit!CJ12",
+   "Inherit!CJ2",
+   "Inherit!CJ3",
+   "Inherit!CJ4",
+   "Inherit!CJ5",
+   "Inherit!CJ6",
+   "Inherit!CJ7",
+   "Inherit!CJ8",
+   "Inherit!CJ9",
+   "Inherit!CK1",
+   "Inherit!CK10",
+   "Inherit!CK11",
+   "Inherit!CK12",
+   "Inherit!CK2",
+   "Inherit!CK3",
+   "Inherit!CK4",
+   "Inherit!CK5",
+   "Inherit!CK6",
+   "Inherit!CK7",
+   "Inherit!CK8",
+   "Inherit!CK9",
+   "Inherit!CL6",
+   "Inherit!CM6",
+   "Inherit!CN6",
+   "Inherit!CO6"
+  ]
+ },
+ {
+  "file": "inherit.ods",
+  "folder": "sheetrs-io/tests/assets",
+  "text": "03/15/23 06:00 AM",
+  "formatted": true,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "Inherit!D2",
+   "Inherit!E2",
+   "Inherit!F2",
+   "Inherit!G2",
+   "Inherit!H1",
+   "Inherit!I1",
+   "Inherit!J1",
+   "Inherit!K1",
+   "Inherit!X9",
+   "Inherit!Y9"
+  ]
+ },
+ {
+  "file": "filtered.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B2",
+   "T!B4",
+   "T!B6",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "filtered.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit",
+  "formatted": false,
+  "filtered": true,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B2",
+   "T!B3",
+   "T!B4",
+   "T!B5",
+   "T!B6",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "filtered.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "filtered.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "outside",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "filtered.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "key",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "filtered.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "key",
+  "formatted": false,
+  "filtered": true,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A1"
+  ]
+ },
+ {
+  "file": "filtered.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B2",
+   "T!B4",
+   "T!B6",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "filtered.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit",
+  "formatted": false,
+  "filtered": true,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B2",
+   "T!B3",
+   "T!B4",
+   "T!B5",
+   "T!B6",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "filtered.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit b",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "filtered.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "outside",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "filtered.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "key",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ },
+ {
+  "file": "filtered.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "key",
+  "formatted": false,
+  "filtered": true,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A1"
+  ]
+ },
+ {
+  "file": "filtered_range.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B2",
+   "T!B3",
+   "T!B4",
+   "T!B5",
+   "T!B6",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "filtered_range.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit",
+  "formatted": false,
+  "filtered": true,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B2",
+   "T!B3",
+   "T!B4",
+   "T!B5",
+   "T!B6",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "filtered_range.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B2",
+   "T!B4",
+   "T!B6",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "filtered_range.ods",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "hit",
+  "formatted": false,
+  "filtered": true,
+  "in_notes": false,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!B10",
+   "T!B2",
+   "T!B3",
+   "T!B4",
+   "T!B5",
+   "T!B6",
+   "T!B9"
+  ]
+ },
+ {
+  "file": "threaded.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "Real thread",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": true,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A1"
+  ]
+ },
+ {
+  "file": "threaded.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "Threaded comment",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": true,
+  "entire_cells": false,
+  "regex": false,
+  "found": [
+   "T!A1"
+  ]
+ },
+ {
+  "file": "threaded.xlsx",
+  "folder": "sheetrs-query/tests/assets",
+  "text": "A reply",
+  "formatted": false,
+  "filtered": false,
+  "in_notes": true,
+  "entire_cells": false,
+  "regex": false,
+  "found": []
+ }
+]

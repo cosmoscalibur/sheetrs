@@ -1,22 +1,42 @@
-# sheetstats
+# sheetrs stats
 
-**sheetstats** is a CLI tool for analyzing the complexity and structure of spreadsheets. It provides metrics that help identify "heavy" workbooks, complex dependencies, and potential optimization targets.
+**sheetrs stats** is a CLI tool for analyzing the complexity and structure of spreadsheets. It provides metrics that help identify "heavy" workbooks, complex dependencies, and potential optimization targets.
 
 ## Installation
 
+`sheetrs stats` is a subcommand of the `sheetrs` executable (crate `sheetrs-cli`), which also holds `query`, `edit`, `lint` and `stats`:
+
 ```bash
-cargo install --path .
+cargo install --path sheetrs-cli   # from the root of the workspace
 ```
 
 ## Usage
 
 ```bash
-sheetstats <FILE> [OPTIONS]
+sheetrs stats -i <FILE> [OPTIONS]
 ```
 
 ### Options
 
 - `--format <FORMAT>`: Output format (human/json).
+
+## Library
+
+The crate is also a library, used by the Python and WASM bindings:
+
+```rust
+use sheetrs_io::Book;
+use sheetrs_stats::BookStats;
+
+let book = Book::from_file("book.xlsx")?;   // or Book::from_bytes(data)?; the format is read from the content
+let stats = book.stats()?;
+println!("{} formulas in {} sheets", stats.total_formulas, stats.total_sheets);
+```
+
+`WorkbookStats` and `SheetStats` are `Clone`, `Default` and `PartialEq`; besides the counts they hold what the
+same pass found out (`has_macros`, `defined_names` and the `state` of each sheet), which the JSON of
+`--format json` does not carry. `stats` takes no argument because there is nothing to configure; it counts the
+cells as they are read and keeps none, so its memory does not depend on the size of the workbook.
 
 ## Metrics Reported
 

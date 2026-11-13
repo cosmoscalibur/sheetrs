@@ -1,9 +1,12 @@
 use serde_json::{Value as Json, json};
-use sheetrs_compiler::{BindingSpec, Model, Overrides, Program, Report, Spec, Value, compile};
+use sheetrs_compiler::{BindingSpec, Model, Report, Spec, compile};
+use sheetrs_engine::{Overrides, Program, Value};
 
 pub fn spec(ins: &[&str], outs: &[&str]) -> Spec {
     Spec {
         inputs: ins.iter().map(|s| BindingSpec::parse(s)).collect(),
+        // What is not listed is not an input: the tests that name no input mean none.
+        inputs_declared: true,
         outputs: outs.iter().map(|s| BindingSpec::parse(s)).collect(),
         ..Spec::default()
     }
@@ -19,7 +22,7 @@ pub fn calc(formula: &str) -> Json {
     let s = m.add_sheet("Sheet1");
     m.set_formula(s, "A1", formula);
     let (p, _) = build(&m, &spec(&[], &["A1"]));
-    p.execute(&Json::Null, &Overrides::default()).unwrap()["Sheet1!A1"].clone()
+    p.calculate(&Json::Null, &Overrides::default()).unwrap()["Sheet1!A1"].clone()
 }
 
 /// A workbook with `Sheet1` filled from `(address, value)` pairs, where text
@@ -49,6 +52,11 @@ pub fn sheet(cells: &[(&str, Json)]) -> Model {
 
 pub fn err(code: &str) -> Json {
     json!({ "error": code })
+}
+
+/// An error only `LibreOffice` has: its name for a file without codes and its own code.
+pub fn libre(code: &str) -> Json {
+    json!({ "error": "#VALUE!", "code": code })
 }
 
 fn near(a: f64, b: f64) -> bool {

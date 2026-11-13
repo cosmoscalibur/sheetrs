@@ -84,7 +84,7 @@ fn holidays(e: &mut Engine, v: Option<&Value>) -> Res<Vec<f64>> {
     }
 }
 
-fn working(e: &Engine, d: f64, w: &[bool; 7], hol: &[f64]) -> bool {
+fn working(e: &Engine, d: f64, w: [bool; 7], hol: &[f64]) -> bool {
     !w[dates::weekday_sun0(d, e.opts.date_system) as usize] && !hol.contains(&d)
 }
 
@@ -103,7 +103,7 @@ fn workday(e: &mut Engine, a: &[Value], intl: bool) -> Res<Value> {
     let (mut d, mut left) = (start, days.abs());
     while left > 0.0 {
         d += step;
-        if working(e, d, &w, &hol) {
+        if working(e, d, w, &hol) {
             left -= 1.0;
         }
         if !(0.0..2_958_466.0).contains(&d) {
@@ -115,6 +115,14 @@ fn workday(e: &mut Engine, a: &[Value], intl: bool) -> Res<Value> {
 
 fn networkdays(e: &mut Engine, a: &[Value], intl: bool) -> Res<Value> {
     let (s, t) = (e.num(&a[0])?.floor(), e.num(&a[1])?.floor());
+    // `NETWORKDAYS` takes a fourth argument in `LibreOffice` that is always refused: a text is a
+    // parameter list error and anything else an invalid argument.
+    if !intl && a.len() == 4 {
+        return Err(match e.scalar(a[3].clone()) {
+            Value::Text(_) => ErrorKind::Libre(504),
+            _ => ErrorKind::Libre(502),
+        });
+    }
     let (w, hol) = if intl {
         (weekend(e, a.get(2))?, holidays(e, a.get(3))?)
     } else {
@@ -124,7 +132,7 @@ fn networkdays(e: &mut Engine, a: &[Value], intl: bool) -> Res<Value> {
     let mut n = 0.0;
     let mut d = lo;
     while d <= hi {
-        if working(e, d, &w, &hol) {
+        if working(e, d, w, &hol) {
             n += 1.0;
         }
         d += 1.0;
@@ -142,7 +150,7 @@ fn iso_weeks_in(year: i64) -> i64 {
     }
 }
 
-/// The calendar distance `WEEKS`, `MONTHS` and `YEARS` of OpenOffice measure: `mode` 0 counts the
+/// The calendar distance `WEEKS`, `MONTHS` and `YEARS` of `OpenOffice` measure: `mode` 0 counts the
 /// complete intervals between two dates and 1 the boundaries (Monday, first of the month, first of
 /// the year) crossed.
 fn date_distance(e: &mut Engine, a: &[Value], unit: char) -> Res<Value> {
@@ -279,7 +287,7 @@ pub(super) fn register(r: &mut Reg) {
     });
     r.eager("WORKDAY", 2, 3, |e, a| workday(e, a, false));
     r.eager("WORKDAY.INTL", 2, 4, |e, a| workday(e, a, true));
-    r.eager("NETWORKDAYS", 2, 3, |e, a| networkdays(e, a, false));
+    r.eager("NETWORKDAYS", 2, 4, |e, a| networkdays(e, a, false));
     r.eager("NETWORKDAYS.INTL", 2, 4, |e, a| networkdays(e, a, true));
     r.eager("YEARFRAC", 2, 3, |e, a| {
         let (s, t) = (e.num(&a[0])?.floor(), e.num(&a[1])?.floor());
@@ -335,7 +343,7 @@ fn weeknum(e: &mut Engine, a: &[Value]) -> Res<Value> {
     num(week as f64)
 }
 
-/// `Date::GetWeekOfYear` of LibreOffice's `tools` with a week of at least 4 days, the week the
+/// `Date::GetWeekOfYear` of `LibreOffice`'s `tools` with a week of at least 4 days, the week the
 /// older `WEEKNUM_OOO` gives: `start` is the first day of the week, Monday being 0.
 fn week_of_year(e: &Engine, serial: f64, start: i64) -> Res<i64> {
     let sys = e.opts.date_system;

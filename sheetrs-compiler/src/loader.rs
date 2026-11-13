@@ -1,52 +1,72 @@
-//! Frontend for XLSX/ODS files, built on the `sheetrs-core` readers.
+//! Frontend for XLSX/ODS files, built on the `sheetrs-io` readers.
 //!
-//! `sheetrs-core` already resolves the container formats (shared strings, shared
-//! formulas, ODS table repetition) and normalizes ODS references and argument
-//! separators to the Excel syntax, so the only format knowledge left here is
-//! the syntax of function names.
+//! `sheetrs-io` already resolves the container formats (shared strings, shared
+//! formulas, ODS table repetition). The readers give each file's own formula syntax; the loader
+//! reads through the analysis form (`Book::analysis_into`, the Excel notation: ODS references
+//! and argument separators converted), so the only format knowledge left here is the syntax of
+//! function names.
 
-use crate::addr::CellRef;
 use crate::cellstore::CellStore;
+use crate::error::{Error, Result};
 use crate::model::{Model, ModelCell, ModelSettings};
-use crate::options::{DateSystem, Iteration, Search, SearchMode};
-use crate::value::{ErrorKind, Value};
-use sheetrs_core::reader::{CellValue, DocumentSettings, Workbook};
+use sheetrs_engine::addr::CellRef;
+use sheetrs_engine::options::{Iteration, Search, SearchMode};
+use sheetrs_engine::value::{ErrorKind, Value};
+use sheetrs_io::Book;
+use sheetrs_io::reader::{CellValue, DocumentSettings, Format, Workbook};
+use std::fmt::Write as _;
 use std::path::Path;
 
-pub fn load(path: &Path) -> Result<Model, String> {
-    let ods = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("ods"));
-    // The cells go straight into the model's map as the reader finds them: no workbook of
-    // cells is built first. What the file carries (settings, names) comes with the workbook
-    // the reader returns, whose sheets are empty.
+/// The model of the workbook `source` refers to: its cells go straight into the model as the reader
+/// finds them, with no workbook of cells built first.
+///
+/// # Errors
+///
+/// When the workbook cannot be read.
+pub fn load(source: &Book) -> Result<Model> {
+    let ods = source.format() == Format::Ods;
     let mut sink = ModelSink::default();
-    let wb = sheetrs_core::reader::read_workbook_into(path, &mut sink)
-        .map_err(|e| format!("{}: {e:#}", path.display()))?;
+    // What the file carries (settings, names) comes with the workbook the reader returns, whose
+    // sheets are empty.
+    let wb = source
+        .analysis_into(&mut sink)
+        .map_err(|error| Error::Workbook {
+            what: source.to_string(),
+            source: error,
+        })?;
     // The file's format decides how it is read (settings the document carries, names,
     // reference syntax); what computes it is LibreOffice's behavior.
     let mut m = assemble(wb, ods, sink.cells);
     m.from_xlsx = !ods;
-    m.file_name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+    m.file_name = source
+        .path()
+        .and_then(Path::file_name)
+        .map(|n| n.to_string_lossy().into_owned());
     m.source = sheetrs_engine::ir::SourceInfo {
         file: m.file_name.clone().unwrap_or_default(),
         format: if ods { "ods" } else { "xlsx" }.to_string(),
-        sha256: sha256_of(path).map_err(|e| format!("{}: {e}", path.display()))?,
+        sha256: sha256_of(source)?,
     };
     Ok(m)
 }
 
-/// SHA-256 of the file, in hexadecimal.
-fn sha256_of(path: &Path) -> std::io::Result<String> {
+/// SHA-256 of the workbook, in hexadecimal.
+fn sha256_of(source: &Book) -> Result<String> {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    std::io::copy(&mut std::fs::File::open(path)?, &mut hasher)?;
+    if let Some(path) = source.path() {
+        let mut file = std::fs::File::open(path).map_err(|e| Error::io(path, e))?;
+        std::io::copy(&mut file, &mut hasher).map_err(|e| Error::io(path, e))?;
+    } else if let Some(data) = source.bytes() {
+        hasher.update(data);
+    }
     Ok(hasher
         .finalize()
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+        .fold(String::new(), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        }))
 }
 
 /// The model's cells, filled by the reader.
@@ -55,21 +75,21 @@ struct ModelSink {
     cells: CellStore,
 }
 
-impl sheetrs_core::reader::CellSink for ModelSink {
+impl sheetrs_io::reader::CellSink for ModelSink {
     fn hint(&mut self, sheet: u16, cells: usize) {
         self.cells.reserve(sheet, cells);
     }
 
-    fn cell(&mut self, sheet: u16, at: (u32, u32), cell: sheetrs_core::reader::Cell) {
-        if let Some(c) = model_cell(cell.value, cell.formula, cell.is_array) {
+    fn cell(&mut self, sheet: u16, at: (u32, u32), cell: sheetrs_io::reader::Cell) {
+        if let Some(c) = model_cell(&cell.value, cell.formula, cell.is_array) {
             self.cells.insert(CellRef::new(sheet, at.0, at.1), c);
         }
     }
 }
 
 /// What the model keeps of a cell: nothing for one that holds no value and no formula.
-fn model_cell(value: CellValue, formula: Option<Box<str>>, array: bool) -> Option<ModelCell> {
-    let value = convert(&value);
+fn model_cell(value: &CellValue, formula: Option<Box<str>>, array: bool) -> Option<ModelCell> {
+    let value = convert(value);
     let formula = formula.map(String::from);
     (formula.is_some() || value != Value::Empty).then_some(ModelCell {
         value,
@@ -80,19 +100,20 @@ fn model_cell(value: CellValue, formula: Option<Box<str>>, array: bool) -> Optio
 
 /// Convert a workbook that holds its cells, consuming it: values and formula text move
 /// instead of being copied, and each sheet's cells are released as soon as they are converted.
-pub fn from_workbook_owned(mut wb: Workbook, ods: bool) -> Model {
+#[must_use]
+pub fn from_workbook_owned(mut wb: Workbook, format: Format) -> Model {
     let mut cells = CellStore::default();
     for (i, sheet) in wb.sheets.iter_mut().enumerate() {
         // In row order, so that each cell is an append.
         let sheet_cells = std::mem::take(&mut sheet.cells);
         cells.reserve(i as u16, sheet_cells.len());
         for ((row, col), cell) in sheet_cells {
-            if let Some(c) = model_cell(cell.value, cell.formula, cell.is_array) {
+            if let Some(c) = model_cell(&cell.value, cell.formula, cell.is_array) {
                 cells.insert(CellRef::new(i as u16, row, col), c);
             }
         }
     }
-    assemble(wb, ods, cells)
+    assemble(wb, format == Format::Ods, cells)
 }
 
 /// The model of a workbook whose cells were read apart.
@@ -112,20 +133,10 @@ fn header(wb: &Workbook, ods: bool) -> Model {
     let mut m = Model::new();
     m.from_file = true;
     m.macros = wb.has_macros;
-    m.properties = wb.properties.clone();
-    // The null date is the document's: an ODS stores any date, an XLSX says `date1904` or
-    // gets LibreOffice's default, 1899-12-30, on the real calendar.
-    m.date_system = match wb.settings.null_date {
-        Some((y, mo, d)) if ods => DateSystem::from_ymd(y, i64::from(mo), i64::from(d))
-            .unwrap_or_else(|| {
-                m.diagnostics.push(format!(
-                    "the null date {y}-{mo}-{d} is not a date; using 1899-12-30"
-                ));
-                DateSystem::NULL_1899
-            }),
-        _ if wb.date1904 => DateSystem::NULL_1904,
-        _ => DateSystem::NULL_1899,
-    };
+    m.properties.clone_from(&wb.properties);
+    // The date system is the document's, one of the three of LibreOffice: the reader said which (an
+    // ODS with another null date is an error of the reader, before the compiler sees the workbook).
+    m.date_system = wb.date_system;
     m.settings = settings(&wb.settings, ods, &mut m.unsupported_options);
     m.names = wb
         .defined_names
@@ -135,8 +146,10 @@ fn header(wb: &Workbook, ods: bool) -> Model {
     m
 }
 
-pub fn from_workbook(wb: &Workbook, ods: bool) -> Model {
-    let mut m = header(wb, ods);
+/// The model of a workbook that holds its cells, of the given format, leaving the workbook as it is.
+#[must_use]
+pub fn from_workbook(wb: &Workbook, format: Format) -> Model {
+    let mut m = header(wb, format == Format::Ods);
     for (i, sheet) in wb.sheets.iter().enumerate() {
         m.sheets.push(sheet.name.clone());
         m.hidden_rows
@@ -162,7 +175,7 @@ pub fn from_workbook(wb: &Workbook, ods: bool) -> Model {
 
 /// Resolve the settings the document states into engine terms. ODS applies the
 /// ODF defaults to what it leaves out (case sensitive, whole-cell, regular
-/// expressions on, wildcards off); LibreOffice itself omits an attribute that
+/// expressions on, wildcards off); `LibreOffice` itself omits an attribute that
 /// equals the default. Excel files carry no search settings and use Excel's
 /// behavior.
 fn settings(s: &DocumentSettings, ods: bool, unsupported: &mut Vec<String>) -> ModelSettings {
@@ -212,19 +225,11 @@ fn convert(v: &CellValue) -> Value {
     }
 }
 
-/// Excel error literal or LibreOffice `Err:NNN` code.
+/// An error of the workbook as the engine has it: the Excel errors, the circular reference of
+/// `LibreOffice` (`Err:522`) and the other codes only `LibreOffice` has (`Err:502`, `Err:523`, …),
+/// which keep their code.
 fn error_kind(s: &str) -> ErrorKind {
-    if let Some(k) = ErrorKind::parse(s) {
-        return k;
-    }
-    match s.strip_prefix("Err:").and_then(|c| c.parse::<u16>().ok()) {
-        Some(522 | 523) => ErrorKind::Circ,
-        Some(524) => ErrorKind::Ref,
-        Some(525 | 508 | 509 | 510 | 511) => ErrorKind::Name,
-        Some(502 | 503) => ErrorKind::Num,
-        Some(532) => ErrorKind::DivZero,
-        _ => ErrorKind::Value,
-    }
+    ErrorKind::parse(s).unwrap_or(ErrorKind::Value)
 }
 
 /// ODS stores a defined range as `Sheet7.C3:Sheet7.C10` or
@@ -247,7 +252,7 @@ fn ods_name(def: &str) -> String {
                 None => return def.to_string(),
             }
         };
-        if crate::addr::parse_area(cell).is_none() {
+        if sheetrs_engine::addr::parse_area(cell).is_none() {
             return def.to_string();
         }
         sheet = sheet.or(name);
@@ -277,6 +282,8 @@ mod tests {
     fn libreoffice_error_codes() {
         assert_eq!(error_kind("Err:522"), ErrorKind::Circ);
         assert_eq!(error_kind("#N/A"), ErrorKind::Na);
-        assert_eq!(error_kind("Err:999"), ErrorKind::Value);
+        assert_eq!(error_kind("Err:999"), ErrorKind::Libre(999));
+        assert_eq!(error_kind("Err:502"), ErrorKind::Libre(502));
+        assert_eq!(error_kind("garbage"), ErrorKind::Value);
     }
 }
