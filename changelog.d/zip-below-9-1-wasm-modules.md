@@ -4,4 +4,5 @@
 
 ### Changed
 
-- The tests of `sheetc` that had vague names have short ones that say what they check (`locale_flag_is_refused_at_run_time`, `emitted_ir_calculates_without_the_workbook`, ...). The two that checked several things are split (`run_time_options_are_only_what_a_file_cannot_say` in three, `executable_is_self_describing_and_strict` in two), and the test that only said that there is no `--dialect` flag is removed: an unknown flag is already refused by `bad_requests_are_refused`.
+- The tests of `sheetc` that mixed several behaviors or had vague names are split and have short names that say the behavior (`locale_flag_is_refused_at_run_time`, `info_lists_inputs_and_outputs`, `explicit_config_replaces_the_discovered_one`, ...). Two checks that only fixed a design decision (that there is no `--dialect` flag, and that `outputs` is no longer a key of `sheetc.toml`) are removed: an unknown flag and an unknown key are already refused by their own tests.
+- `CONTRIBUTING.md` (*Test Patterns*): a test is named for the behavior it checks, tests behavior and not design, and checks one behavior.

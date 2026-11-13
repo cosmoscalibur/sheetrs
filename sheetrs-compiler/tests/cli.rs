@@ -123,7 +123,7 @@ fn each_format_compiles_to_an_executable_that_answers_the_loan() {
 }
 
 #[test]
-fn info_and_meta_describe_the_program() {
+fn info_lists_inputs_and_outputs() {
     let dir = tempfile::tempdir().unwrap();
     let exe = build_loan("loan.xlsx", dir.path(), &[]);
     let (code, out, _) = run(&exe, &["--info"], "");
@@ -131,8 +131,13 @@ fn info_and_meta_describe_the_program() {
     let info: Json = serde_json::from_str(&out).unwrap();
     assert_eq!(info["inputs"].as_array().unwrap().len(), 4);
     assert_eq!(info["outputs"][0]["name"], "payment");
+}
 
-    // The settings sheet's rows, inputs and outputs included.
+/// The settings sheet's rows, inputs and outputs included.
+#[test]
+fn meta_lists_the_settings_sheet_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = build_loan("loan.xlsx", dir.path(), &[]);
     let (code, out, _) = run(&exe, &["--meta"], "");
     assert_eq!(code, 0);
     let meta: Json = serde_json::from_str(&out).unwrap();
@@ -159,18 +164,36 @@ fn info_and_meta_describe_the_program() {
 }
 
 #[test]
-fn bad_requests_are_refused() {
+fn unknown_input_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let exe = build_loan("loan.xlsx", dir.path(), &[]);
     let (code, _, err) = run(&exe, &[], r#"{"inputs": {"bogus": 1}}"#);
     assert_eq!(code, 1);
     assert!(err.contains("unknown input `bogus`"), "{err}");
-    // Flat inputs are a mistake with a hint.
+}
+
+/// Flat inputs are a mistake with a hint.
+#[test]
+fn inputs_outside_inputs_get_a_hint() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = build_loan("loan.xlsx", dir.path(), &[]);
     let (code, _, err) = run(&exe, &[], r#"{"principal": 1}"#);
     assert_eq!(code, 1);
     assert!(err.contains("input values go under `inputs`"), "{err}");
+}
+
+#[test]
+fn unknown_flag_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = build_loan("loan.xlsx", dir.path(), &[]);
     let (code, _, err) = run(&exe, &["--wat"], "{}");
     assert_eq!(code, 2, "{err}");
+}
+
+#[test]
+fn invalid_json_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = build_loan("loan.xlsx", dir.path(), &[]);
     let (code, _, err) = run(&exe, &[], "{not json");
     assert_eq!(code, 1);
     assert!(err.contains("invalid JSON"), "{err}");
@@ -201,8 +224,7 @@ fn serve_mode_answers_line_by_line() {
     assert!((b / a - 2.0).abs() < 1e-9);
 }
 
-/// The locale is fixed when the program is built, with or without `--no-fold`, so asking for another at
-/// run time is refused.
+/// The locale is fixed when the program is built, with or without `--no-fold`.
 #[test]
 fn locale_flag_is_refused_at_run_time() {
     let dir = tempfile::tempdir().unwrap();
@@ -216,18 +238,28 @@ fn locale_flag_is_refused_at_run_time() {
 
 /// The date system, the iteration and the search settings belong to the document: there is no flag for
 /// them, at run time or when building.
+const DOCUMENT_SETTINGS: [[&str; 2]; 3] = [
+    ["--date-system", "1904"],
+    ["--iterate", "5"],
+    ["--search", "regex"],
+];
+
+/// The date system, the iteration and the search settings are the document's: a flag for them is an
+/// error and not something that is ignored.
 #[test]
-fn document_settings_are_not_flags() {
+fn document_setting_flag_is_refused_at_run_time() {
     let dir = tempfile::tempdir().unwrap();
     let open = build_loan("loan.ods", dir.path(), &[]);
-    for flag in [
-        ["--date-system", "1904"],
-        ["--iterate", "5"],
-        ["--search", "regex"],
-    ] {
+    for flag in DOCUMENT_SETTINGS {
         let (code, _, err) = run(&open, &flag, "{}");
         assert_eq!(code, 2, "{flag:?}: {err}");
         assert!(err.contains("defined by the document"), "{err}");
+    }
+}
+
+#[test]
+fn document_setting_flag_is_refused_at_build() {
+    for flag in DOCUMENT_SETTINGS {
         let (code, _, err) = run(
             Path::new(SHEETC),
             &[
@@ -332,7 +364,6 @@ fn emitted_ir_calculates_without_the_workbook() {
     );
     assert_eq!(code, 0, "{err}");
     assert!(by_name(&serde_json::from_str::<Json>(&out).unwrap())["payment"].is_number());
-    let _ = json!(null);
 }
 
 #[test]
@@ -412,69 +443,99 @@ fn outputs_are_declared_or_the_formula_cells() {
     assert!(column.iter().all(Json::is_number));
 }
 
-#[test]
-fn config_file_and_command_line_precedence() {
-    let dir = tempfile::tempdir().unwrap();
-    let book = dir.path().join("loan.ods");
-    std::fs::copy(asset("loan.ods"), &book).unwrap();
-    let exe = dir.path().join("m");
-    let build = |extra: &[&str]| {
-        let mut args = vec![
-            "build",
-            "-i",
-            book.to_str().unwrap(),
-            "--runtime",
-            RUNTIME,
-            "-o",
-            exe.to_str().unwrap(),
-        ];
-        args.extend_from_slice(extra);
-        run(Path::new(SHEETC), &args, "")
-    };
-    let locale_of = |exe: &Path| {
-        let (_, out, _) = run(exe, &["--info"], "");
-        serde_json::from_str::<Json>(&out).unwrap()["build"]["options"]["locale"].clone()
-    };
+/// Builds a copy of `loan.ods` in `dir` with `extra` arguments: the exit code, the standard error and
+/// the executable.
+fn build_ods(dir: &Path, extra: &[&str]) -> (i32, String, PathBuf) {
+    let book = dir.join("loan.ods");
+    if !book.exists() {
+        std::fs::copy(asset("loan.ods"), &book).unwrap();
+    }
+    let exe = dir.join("m");
+    let mut args = vec![
+        "build",
+        "-i",
+        book.to_str().unwrap(),
+        "--runtime",
+        RUNTIME,
+        "-o",
+        exe.to_str().unwrap(),
+    ];
+    args.extend_from_slice(extra);
+    let (code, _, err) = run(Path::new(SHEETC), &args, "");
+    (code, err, exe)
+}
 
-    // `sheetc.toml` next to the workbook is picked up.
+fn locale_of(exe: &Path) -> Json {
+    let (_, out, _) = run(exe, &["--info"], "");
+    serde_json::from_str::<Json>(&out).unwrap()["build"]["options"]["locale"].clone()
+}
+
+#[test]
+fn sheetc_toml_beside_the_workbook_is_used() {
+    let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("sheetc.toml"),
         "[locale]\ntag = \"en-GB\"\n",
     )
     .unwrap();
-    let (code, _, err) = build(&[]);
+    let (code, err, exe) = build_ods(dir.path(), &[]);
     assert_eq!(code, 0, "{err}");
     assert_eq!(locale_of(&exe), "en-GB");
-    // The command line wins.
-    let (code, _, err) = build(&["--locale", "es-CO"]);
+}
+
+#[test]
+fn command_line_overrides_the_config_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("sheetc.toml"),
+        "[locale]\ntag = \"en-GB\"\n",
+    )
+    .unwrap();
+    let (code, err, exe) = build_ods(dir.path(), &["--locale", "es-CO"]);
     assert_eq!(code, 0, "{err}");
     assert_eq!(locale_of(&exe), "es-CO");
-    // An explicit file replaces the discovered one; unknown keys are errors.
+}
+
+#[test]
+fn explicit_config_replaces_the_discovered_one() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("sheetc.toml"),
+        "[locale]\ntag = \"en-GB\"\n",
+    )
+    .unwrap();
     let other = dir.path().join("other.toml");
     std::fs::write(&other, "[locale]\ntag = \"es-ES\"\n").unwrap();
-    let (code, _, _) = build(&["--config", other.to_str().unwrap()]);
-    assert_eq!(code, 0);
+    let (code, err, exe) = build_ods(dir.path(), &["--config", other.to_str().unwrap()]);
+    assert_eq!(code, 0, "{err}");
     assert_eq!(locale_of(&exe), "es-ES");
+}
+
+#[test]
+fn unknown_config_key_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let other = dir.path().join("other.toml");
     std::fs::write(&other, "iterations = 5\n").unwrap();
-    let (code, _, err) = build(&["--config", other.to_str().unwrap()]);
+    let (code, err, _) = build_ods(dir.path(), &["--config", other.to_str().unwrap()]);
     assert_eq!(code, 1);
     assert!(err.contains("iterations"), "{err}");
-    // The outputs are not a key of the file any more: they are declared, or the formula cells.
-    std::fs::write(&other, "outputs = \"any\"\n").unwrap();
-    let (code, _, err) = build(&["--config", other.to_str().unwrap()]);
-    assert_eq!(code, 1);
-    assert!(err.contains("outputs"), "{err}");
+}
 
-    // A locale the table lacks is defined in full in the file; one it has needs only its tag.
+/// A locale the table has needs only its tag; one it lacks is defined in full in the file.
+#[test]
+fn locale_outside_the_table_needs_a_full_definition() {
+    let dir = tempfile::tempdir().unwrap();
+    let other = dir.path().join("other.toml");
+    let config = other.to_str().unwrap();
     std::fs::write(&other, "[locale]\ntag = \"en-GB\"\n").unwrap();
-    let (code, _, err) = build(&["--config", other.to_str().unwrap()]);
+    let (code, err, _) = build_ods(dir.path(), &["--config", config]);
     assert_eq!(code, 0, "{err}");
     std::fs::write(
         &other,
         "[locale]\ntag = \"sw-KE\"\ndecimal = \".\"\ngroup = \",\"\n",
     )
     .unwrap();
-    let (code, _, err) = build(&["--config", other.to_str().unwrap()]);
+    let (code, err, _) = build_ods(dir.path(), &["--config", config]);
     assert_eq!(code, 1);
     assert!(err.contains("missing: date_order, months, days"), "{err}");
     std::fs::write(
@@ -485,11 +546,14 @@ fn config_file_and_command_line_precedence() {
          days = [\"So\",\"Mo\",\"Di\",\"Mi\",\"Do\",\"Fr\",\"Sa\"]\n",
     )
     .unwrap();
-    let (code, _, err) = build(&["--config", other.to_str().unwrap()]);
+    let (code, err, _) = build_ods(dir.path(), &["--config", config]);
     assert_eq!(code, 0, "{err}");
+}
 
-    // A settings sheet that does not exist is an error once named explicitly.
-    let (code, _, err) = build(&["--settings", "nowhere"]);
+#[test]
+fn missing_settings_sheet_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (code, err, _) = build_ods(dir.path(), &["--settings", "nowhere"]);
     assert_eq!(code, 1);
     assert!(err.contains("settings sheet `nowhere` not found"), "{err}");
 }
