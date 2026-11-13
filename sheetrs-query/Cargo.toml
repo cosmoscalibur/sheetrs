@@ -32,6 +32,7 @@ anyhow = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true
+zip.workspace = true
 
 [lints]
 workspace = true
