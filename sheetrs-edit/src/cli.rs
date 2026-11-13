@@ -19,7 +19,7 @@ pub enum Where {
 #[derive(clap::Args)]
 #[allow(clippy::struct_excessive_bools)] // the flags of a command line
 #[command(
-    about = "Edit a workbook: delete sheets, names, rows and columns, turn formulas into values, find and replace"
+    about = "Edit a workbook: delete or hide sheets, rows and columns, delete names, turn formulas into values, find and replace"
 )]
 pub struct Args {
     /// The Excel/ODS workbook to edit
@@ -52,6 +52,31 @@ pub struct Args {
     /// Delete columns (`Sheet!B:D`, or `Sheet!B` for one), in the columns of the input file
     #[arg(long, num_args = 1.., value_name = "COLUMNS")]
     pub delete_columns: Vec<ColumnRange>,
+
+    /// Hide rows (`Sheet!3:10`), keeping them in the file. In the rows of the input file, before any
+    /// deletion
+    #[arg(long, num_args = 1.., value_name = "ROWS")]
+    pub hide_rows: Vec<RowRange>,
+
+    /// Show rows, whatever hid them (by hand or by a filter). Applied after `--hide-rows`
+    #[arg(long, num_args = 1.., value_name = "ROWS")]
+    pub show_rows: Vec<RowRange>,
+
+    /// Hide columns (`Sheet!B:D`)
+    #[arg(long, num_args = 1.., value_name = "COLUMNS")]
+    pub hide_columns: Vec<ColumnRange>,
+
+    /// Show columns. Applied after `--hide-columns`
+    #[arg(long, num_args = 1.., value_name = "COLUMNS")]
+    pub show_columns: Vec<ColumnRange>,
+
+    /// Hide these sheets (one must stay visible)
+    #[arg(long, num_args = 1.., value_name = "SHEET")]
+    pub hide_sheets: Vec<String>,
+
+    /// Show these sheets. Applied after `--hide-sheets`
+    #[arg(long, num_args = 1.., value_name = "SHEET")]
+    pub show_sheets: Vec<String>,
 
     /// Find and replace text in the cells, as `LibreOffice`'s Find & Replace does (needs `--with`).
     /// The text of a number is the one of its input line (`1234.5`, `25.6%`, `03/15/2024`); the
@@ -133,6 +158,12 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
         || !cli.formula_to_value.is_empty()
         || !cli.delete_rows.is_empty()
         || !cli.delete_columns.is_empty()
+        || !cli.hide_rows.is_empty()
+        || !cli.show_rows.is_empty()
+        || !cli.hide_columns.is_empty()
+        || !cli.show_columns.is_empty()
+        || !cli.hide_sheets.is_empty()
+        || !cli.show_sheets.is_empty()
         || !cli.replace.is_empty();
 
     if !has_ops {
@@ -193,7 +224,13 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
                 }),
         );
     }
-    book.formula_to_value(cli.formula_to_value)
+    book.hide_rows(cli.hide_rows)
+        .show_rows(cli.show_rows)
+        .hide_columns(cli.hide_columns)
+        .show_columns(cli.show_columns)
+        .hide_sheets(cli.hide_sheets)
+        .show_sheets(cli.show_sheets)
+        .formula_to_value(cli.formula_to_value)
         .delete_rows(cli.delete_rows)
         .delete_columns(cli.delete_columns)
         .delete_names(cli.delete_names)

@@ -1,7 +1,7 @@
 //! The operations a workbook is asked to undergo, as data: what a [`Book`](crate::Book) holds
 //! while they are pending and what the planner of `sheetrs-edit` turns into passes of the writer.
 
-use super::{CellWrites, ColumnRange, RowRange, ValueScope};
+use super::{CellWrites, ColumnRange, RowRange, ValueScope, VisibilityChange};
 use serde_json::{Map, Value as Json};
 use sheetrs_protocol::{MajorDimension, Replace, Scope};
 use std::fmt;
@@ -50,6 +50,10 @@ pub enum Operation {
     /// content of the cells, so it is a pass of its own: what it decides is decided against the
     /// workbook as the operations before it leave it.
     Replace(ReplaceSpec),
+    /// Hide or show rows, columns and sheets, in the coordinates of the workbook as it is. The
+    /// changes keep the order they were pushed in (a later one wins over an earlier one) and are
+    /// applied before any deletion.
+    SetVisibility(Vec<VisibilityChange>),
     /// Write values into cells, decided by the caller (see [`CellWrites`]).
     WriteCells(CellWrites),
     /// Calculate every formula again. The plan puts it where a conversion would read results that
@@ -76,6 +80,7 @@ impl fmt::Display for Operation {
             Self::FormulaToValue(scopes) => {
                 write!(f, "formula to value in {}", list(scopes))
             }
+            Self::SetVisibility(changes) => write!(f, "{}", list(changes)),
             Self::DeleteRows(rows) => write!(f, "delete rows {}", list(rows)),
             Self::DeleteColumns(columns) => write!(f, "delete columns {}", list(columns)),
             Self::Recalculate => f.write_str("recalculate every formula (the results are stale)"),
@@ -139,6 +144,7 @@ impl Operation {
             Self::FormulaToValue(items) => items.is_empty(),
             Self::DeleteRows(items) => items.is_empty(),
             Self::DeleteColumns(items) => items.is_empty(),
+            Self::SetVisibility(items) => items.is_empty(),
             Self::Replace(_) | Self::Recalculate | Self::Calculate(_) => false,
             Self::WriteCells(writes) => writes.is_empty(),
         }

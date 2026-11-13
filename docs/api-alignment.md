@@ -71,6 +71,9 @@ aligned and the table that maps each operation to its form in every layer.
 | Delete defined names | `--delete-names N...` | `delete_names(names)` | `book.delete_names(names)` | `book.deleteNames(names)` |
 | Formulas to values | `--formula-to-value SCOPE...` | `formula_to_value(scopes)` | `book.formula_to_value(scopes)` | `book.formulaToValue(scopes)` |
 | Delete rows | `--delete-rows ROWS...` | `delete_rows(rows)` | `book.delete_rows(rows)` | `book.deleteRows(ranges)` |
+| Hide / show rows | `--hide-rows ROWS...` / `--show-rows ROWS...` | `hide_rows(rows)` / `show_rows(rows)` | `book.hide_rows(rows)` / `book.show_rows(rows)` | `book.hideRows(ranges)` / `book.showRows(ranges)` |
+| Hide / show columns | `--hide-columns COLUMNS...` / `--show-columns COLUMNS...` | `hide_columns(columns)` / `show_columns(columns)` | `book.hide_columns(columns)` / `book.show_columns(columns)` | `book.hideColumns(ranges)` / `book.showColumns(ranges)` |
+| Hide / show sheets | `--hide-sheets SHEET...` / `--show-sheets SHEET...` | `hide_sheets(names)` / `show_sheets(names)` | `book.hide_sheets(names)` / `book.show_sheets(names)` | `book.hideSheets(names)` / `book.showSheets(names)` |
 | Delete columns | `--delete-columns COLUMNS...` | `delete_columns(columns)` | `book.delete_columns(columns)` | `book.deleteColumns(ranges)` |
 | Find and replace | `--replace TEXT --with TEXT` (repeatable), `--regex`, `--wildcards`, `--match-case`, `--entire-cells`, `--formatted`, `--filtered`, `--in`, `--scope` | `replace(...)` | `book.replace(...)` | `book.replace(replaces, options?)` |
 | Calculate with a request | `sheetc calculate -i FILE --request JSON --range R [-o OUT]` | `BookEdit::calculate(Calculation { inputs, ranges, major, .. })`, `BookCompile::calculate(...)` | `book.calculate(inputs, ranges, major=)` | `book.calculate({inputs, ranges, majorDimension})` |

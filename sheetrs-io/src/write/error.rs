@@ -36,6 +36,9 @@ pub enum Error {
     SheetNotFound { sheet: String, part: String },
     #[error("Cannot delete every sheet of the workbook")]
     EverySheet,
+    /// A workbook keeps at least one sheet that is shown.
+    #[error("Cannot hide every sheet of the workbook: one must stay visible")]
+    NoVisibleSheet,
     /// The output would replace the file it is made from.
     #[error("The output is the input file ({}): --output never overwrites the original; use --in-place to replace it", .0.display())]
     OutputIsInput(PathBuf),

@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 use serde_json::{Map, Value};
 use sheetrs_compiler::memory::{self, BookCompile, Options};
-use sheetrs_edit::{ColumnRange, RowRange, ValueScope};
+use sheetrs_edit::{ColumnRange, RowRange, ValueScope, VisibilityChange};
 use sheetrs_io::Book;
 use sheetrs_protocol::{Find, MajorDimension, Property, Replace, Scope, SearchIn};
 use sheetrs_query::{BookQuery, FindOptions, Major, RangeOptions};
@@ -282,6 +282,54 @@ impl PyBook {
         slf
     }
 
+    fn rows_visibility<'py>(
+        slf: PyRefMut<'py, Self>,
+        rows: &Bound<'_, PyAny>,
+        visible: bool,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        let changes: Vec<VisibilityChange> = parse_all::<RowRange>(rows, "`rows`")?
+            .into_iter()
+            .map(|range| VisibilityChange::Rows { range, visible })
+            .collect();
+        Ok(Self::push_unless_empty(
+            slf,
+            changes.is_empty(),
+            Step::SetVisibility(changes),
+        ))
+    }
+
+    fn columns_visibility<'py>(
+        slf: PyRefMut<'py, Self>,
+        columns: &Bound<'_, PyAny>,
+        visible: bool,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        let changes: Vec<VisibilityChange> = parse_all::<ColumnRange>(columns, "`columns`")?
+            .into_iter()
+            .map(|range| VisibilityChange::Columns { range, visible })
+            .collect();
+        Ok(Self::push_unless_empty(
+            slf,
+            changes.is_empty(),
+            Step::SetVisibility(changes),
+        ))
+    }
+
+    fn sheets_visibility<'py>(
+        slf: PyRefMut<'py, Self>,
+        names: &Bound<'_, PyAny>,
+        visible: bool,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        let changes: Vec<VisibilityChange> = texts(names, "`names`")?
+            .into_iter()
+            .map(|name| VisibilityChange::Sheet { name, visible })
+            .collect();
+        Ok(Self::push_unless_empty(
+            slf,
+            changes.is_empty(),
+            Step::SetVisibility(changes),
+        ))
+    }
+
     /// A call with no target does nothing: it adds no operation (so it costs no pass).
     fn push_unless_empty(slf: PyRefMut<'_, Self>, empty: bool, step: Step) -> PyRefMut<'_, Self> {
         if empty { slf } else { Self::push(slf, step) }
@@ -426,6 +474,56 @@ impl PyBook {
             columns.is_empty(),
             Step::DeleteColumns(columns),
         ))
+    }
+
+    /// Hide rows (`"Sheet!3:10"`, or `"Sheet!3"`): *Format ▸ Rows ▸ Hide*. They stay in the file.
+    /// One or an iterable of them, in the rows of the workbook as it is.
+    fn hide_rows<'py>(
+        slf: PyRefMut<'py, Self>,
+        rows: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::rows_visibility(slf, rows, false)
+    }
+
+    /// Show rows, whatever hid them (by hand or by a filter): *Format ▸ Rows ▸ Show*.
+    fn show_rows<'py>(
+        slf: PyRefMut<'py, Self>,
+        rows: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::rows_visibility(slf, rows, true)
+    }
+
+    /// Hide columns (`"Sheet!B:D"`, or `"Sheet!B"`): *Format ▸ Columns ▸ Hide*.
+    fn hide_columns<'py>(
+        slf: PyRefMut<'py, Self>,
+        columns: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::columns_visibility(slf, columns, false)
+    }
+
+    /// Show columns: *Format ▸ Columns ▸ Show*.
+    fn show_columns<'py>(
+        slf: PyRefMut<'py, Self>,
+        columns: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::columns_visibility(slf, columns, true)
+    }
+
+    /// Hide sheets by name (*Sheet ▸ Hide Sheet*): one name or an iterable of them. One sheet must
+    /// stay visible.
+    fn hide_sheets<'py>(
+        slf: PyRefMut<'py, Self>,
+        names: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::sheets_visibility(slf, names, false)
+    }
+
+    /// Show sheets by name (*Sheet ▸ Show Sheet*).
+    fn show_sheets<'py>(
+        slf: PyRefMut<'py, Self>,
+        names: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::sheets_visibility(slf, names, true)
     }
 
     /// Find `text` and replace it with `replacement`, as Find & Replace of `LibreOffice` does (it

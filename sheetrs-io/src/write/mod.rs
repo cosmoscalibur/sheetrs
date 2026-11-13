@@ -12,13 +12,16 @@ mod error;
 pub(crate) mod formats;
 mod ods_formats;
 mod ods_structure;
+mod ods_visibility;
 mod ods_writer;
 mod operation;
 mod shapes;
 pub(crate) mod structure;
+mod visibility;
 #[cfg(test)]
 mod workbooks;
 mod xlsx_structure;
+mod xlsx_visibility;
 mod xlsx_writer;
 
 pub use cells::{CellWrites, Constant};
@@ -27,6 +30,7 @@ pub use formats::{display_code, ods_value};
 pub use ods_writer::modify_workbook_ods;
 pub use operation::{Calculation, Operation, ReplaceSpec};
 pub use structure::Bands;
+pub use visibility::VisibilityChange;
 pub use xlsx_writer::modify_workbook_xlsx;
 
 use std::borrow::Cow;
@@ -119,6 +123,9 @@ pub struct WorkbookModifications {
     pub delete_rows: Vec<ValueScope>,
     /// Delete these columns (`Sheet!B:D`), in the coordinates of the input.
     pub delete_columns: Vec<ValueScope>,
+    /// Hide or show rows, columns and sheets, in the coordinates of the input. It is a pass of its
+    /// own: the writers apply it before everything else when it comes with other changes.
+    pub visibility: Vec<VisibilityChange>,
     /// Cells whose content is replaced, by sheet name (the replacements of a pass, already
     /// decided against the input of the pass).
     pub replacements: std::collections::HashMap<String, SheetEdits>,
@@ -127,6 +134,28 @@ pub struct WorkbookModifications {
     /// Take off the mark to recalculate when the workbook is opened, because the results the
     /// input holds were just calculated (an XLSX has the mark in `calcPr`; an ODS has none).
     pub clear_recalculation_mark: bool,
+}
+
+impl WorkbookModifications {
+    /// What the modifications ask besides visibility.
+    fn without_visibility(&self) -> Self {
+        Self {
+            visibility: Vec::new(),
+            ..self.clone()
+        }
+    }
+
+    /// Whether, leaving visibility aside, nothing is asked.
+    fn asks_nothing_else(&self) -> bool {
+        self.delete_sheets.as_ref().is_none_or(HashSet::is_empty)
+            && self.delete_names.as_ref().is_none_or(HashSet::is_empty)
+            && self.formula_to_value.is_empty()
+            && self.delete_rows.is_empty()
+            && self.delete_columns.is_empty()
+            && self.replacements.is_empty()
+            && !self.recalculate_on_open
+            && !self.clear_recalculation_mark
+    }
 }
 
 /// Cells of one sheet whose formulas are replaced by their cached values.

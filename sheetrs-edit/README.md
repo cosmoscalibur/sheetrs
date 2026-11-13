@@ -424,3 +424,25 @@ Each operation is judged against `LibreOffice` 26.8 in each format on its own:
 
 
 XLSX, deleting the cell a chart is anchored to.
+
+## Hide and show
+
+`--hide-rows`, `--show-rows`, `--hide-columns`, `--show-columns`, `--hide-sheets` and `--show-sheets`
+(`hide_rows`, `show_rows`, … in the Rust, Python and WebAssembly `Book`) change the visibility of
+rows, columns and sheets, and keep them in the file (`hidden` of `<row>`, `<col>` and `<sheet>` in an
+XLSX; `table:visibility` and the `table:display` of the table style in an ODS).
+
+- The rows and columns are those of the workbook as it is: the changes run in a pass of their own
+  before any deletion, so `--delete-rows T!3 --hide-rows T!5` hides the row that is the fifth of the
+  input. A later change of the same row wins; on the command line `--show-*` is applied after
+  `--hide-*`.
+- A row hidden here is hidden by hand: a search or replacement with `filtered` off still reaches it.
+  Showing a row shows it whatever hid it (by hand or by a filter).
+- A hidden row changes what `SUBTOTAL` and `AGGREGATE` add up, so the results are calculated again
+  after it; hiding columns or sheets changes no result.
+- One sheet must stay visible (the run fails otherwise). Hiding a very hidden XLSX sheet leaves it very
+  hidden; showing makes it visible. If the sheet that opens first is hidden, the workbook opens on the
+  first visible one.
+- A row or column that the file does not declare is added (a hidden `<row>`, a `<col>`).
+
+Checked by opening the results in LibreOffice 26.8 (rows, columns and sheet states read back).

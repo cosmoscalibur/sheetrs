@@ -681,3 +681,12 @@ def test_to_bytes_of_a_file_that_went(structure):
         book.to_bytes()
     with pytest.raises(sheetrs.Error):  # operations: the editor cannot read it
         book.delete_rows("T!2").to_bytes()
+
+
+def test_hide_and_show_rows_columns_and_sheets(structure, tmp_path):
+    hidden = tmp_path / f"h{structure.suffix}"
+    sheetrs.Book(structure).hide_rows("T!3").hide_columns("T!B").hide_sheets("V").save(hidden)
+    # What was hidden is shown again by the opposite operations.
+    shown = tmp_path / f"s{structure.suffix}"
+    sheetrs.Book(hidden).show_rows("T!3").show_columns("T!B").show_sheets("V").save(shown)
+    assert sheetrs.Book(shown).range("T!A1:A4")["T!A1:A4"].values == sheetrs.Book(structure).range("T!A1:A4")["T!A1:A4"].values

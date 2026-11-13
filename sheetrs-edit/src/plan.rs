@@ -13,7 +13,10 @@
 //!    replacements is a sequence of texts, and the next one sees what the previous one left);
 //! 2. the calculation ([`Operation::Calculate`]): the inputs are written and every formula is
 //!    calculated;
-//! 3. the conversion of formulas to values (it reads the results the workbook caches, so it comes
+//! 3. the changes of visibility (rows, columns and sheets hidden or shown): a pass of their own,
+//!    against the input, so that they name the rows and columns of the workbook as it is and a
+//!    deletion that follows removes hidden rows like any other;
+//! 4. the conversion of formulas to values (it reads the results the workbook caches, so it comes
 //!    after what could have left them stale, and when something did, the formulas are calculated
 //!    again first), the deletions of rows and columns, of defined names and of sheets, all in one
 //!    pass over the file: they are written against that workbook, whose rows, columns and sheets are
@@ -64,7 +67,7 @@ use sheetrs_io::Book;
 use sheetrs_io::reader::Format;
 use sheetrs_io::write::{
     self as writer, Bands, Calculation, ColumnRange, Operation, RowRange, ValueScope, ValueTarget,
-    WorkbookModifications,
+    VisibilityChange, WorkbookModifications,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -141,8 +144,10 @@ pub(crate) fn canonical(operations: &[Operation]) -> Vec<Operation> {
     let mut names: Vec<String> = Vec::new();
     let mut sheets: Vec<String> = Vec::new();
     let (mut writes, mut replaces, mut calculations) = (Vec::new(), Vec::new(), Vec::new());
+    let mut visibility: Vec<VisibilityChange> = Vec::new();
     for operation in operations {
         match operation {
+            Operation::SetVisibility(changes) => visibility.extend(changes.iter().cloned()),
             Operation::FormulaToValue(scopes) => converts.extend(scopes.iter().cloned()),
             Operation::DeleteRows(ranges) => {
                 rows.extend(ranges.iter().map(|r| (r.sheet.clone(), r.first, r.last)));
@@ -169,6 +174,8 @@ pub(crate) fn canonical(operations: &[Operation]) -> Vec<Operation> {
     canonical.extend(replaces);
     canonical.extend(calculations);
     for operation in [
+        // The rows, columns and sheets are those of the input: it runs before any deletion.
+        Operation::SetVisibility(visibility),
         Operation::FormulaToValue(converts),
         Operation::DeleteRows(bands(rows, |sheet, first, last| RowRange {
             sheet,
@@ -249,6 +256,12 @@ pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<
                 // own.
                 passes.push(vec![operation]);
                 stale = false;
+            }
+            Operation::SetVisibility(_) => {
+                // Hidden rows change what SUBTOTAL and AGGREGATE add up, and the changes are in
+                // the coordinates of the input: a pass of its own, before the deletions.
+                stale |= leaves_results_stale(&operation);
+                passes.push(vec![operation]);
             }
             Operation::Replace(_) | Operation::WriteCells(_) => {
                 // A replacement reads what the operations before it leave and decides the cells it
@@ -633,6 +646,13 @@ fn modifications_for(
 /// formulas read or the formulas themselves. A conversion changes no result, and a write is made by
 /// a program that computed what depends on it.
 fn leaves_results_stale(operation: &Operation) -> bool {
+    // Rows hidden or shown change what SUBTOTAL and AGGREGATE read; columns and sheets are read
+    // by no formula.
+    if let Operation::SetVisibility(changes) = operation {
+        return changes
+            .iter()
+            .any(|change| matches!(change, VisibilityChange::Rows { .. }));
+    }
     !matches!(
         operation,
         Operation::FormulaToValue(_)
@@ -647,6 +667,7 @@ fn modifications_of(pass: &[Operation]) -> WorkbookModifications {
     let mut mods = WorkbookModifications::default();
     for operation in pass {
         match operation {
+            Operation::SetVisibility(changes) => mods.visibility.extend(changes.iter().cloned()),
             Operation::DeleteSheets(names) => mods
                 .delete_sheets
                 .get_or_insert_with(Default::default)
