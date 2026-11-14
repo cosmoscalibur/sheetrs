@@ -437,6 +437,7 @@
         "Data!3"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -867,6 +868,7 @@
         "Data!2:3"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A2 formula: =$Data.A#REF!*2 -> =#REF!*2"
       ]
@@ -1306,6 +1308,7 @@
         "Data!B"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A7 formula: =IF($Data.#REF!1<>\"\";\"t\";0) -> =IF(#REF!<>\"\";\"t\";0)"
       ]
@@ -1750,6 +1753,7 @@
         "Data!D"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -2177,6 +2181,7 @@
         "Data"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A1 formula: =SUM($#REF!.A1:A6) -> =SUM(#REF!)",
        "Calc!C1 formula: =$#REF!.C1+1 -> =#REF!+1",
@@ -2668,6 +2673,7 @@
         "rate"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -3114,6 +3120,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -3561,6 +3568,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -4008,6 +4016,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -4455,6 +4464,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -4902,6 +4912,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -5346,6 +5357,7 @@
         "Data!2"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -5794,6 +5806,7 @@
         "Data!3"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -6238,6 +6251,7 @@
         "Data!B"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A7 value: 't' -> 'from-excel'"
       ]
@@ -6688,6 +6702,7 @@
         "Data!C"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A7 value: 't' -> 'from-excel'"
       ]
@@ -7132,6 +7147,7 @@
         "Data"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A7 value: 't' -> 'from-excel'"
       ]
@@ -7579,6 +7595,10 @@
         "Calc!A:A"
        ]
       ],
+      "reread_differences": [
+       "Calc!A6 value: 14.0 -> 140.0",
+       "Calc!A8 value: 8.0 -> 99.0"
+      ],
       "written_differences": [
        "Calc!A6 value: 14.0 -> 140.0",
        "Calc!A8 value: 8.0 -> 99.0"
@@ -8016,6 +8036,7 @@
         "Data!B"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A7 formula: =IF($Data.#REF!1<>\"\";\"t\";0) -> =IF(#REF!<>\"\";\"t\";0)"
       ]
@@ -8470,6 +8491,7 @@
         "Data!4"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      }
     ]
@@ -8909,6 +8931,7 @@
         "Data!3"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -9338,6 +9361,11 @@
         "delete_rows",
         "Data!2:3"
        ]
+      ],
+      "reread_differences": [
+       "Calc!A2 formula: =#ref!*2 -> =Data.$#REF!$#REF!*2",
+       "Calc!A2 value: '#NAME?' -> '#REF!'",
+       "Calc!A3 value: '#NAME?' -> '#REF!'"
       ],
       "written_differences": [
        "Calc!A2 formula: =$Data.A#REF!*2 -> =Data.$#REF!$#REF!*2"
@@ -9777,6 +9805,10 @@
         "delete_columns",
         "Data!B"
        ]
+      ],
+      "reread_differences": [
+       "Calc!A7 formula: =IF(#ref!<>\"\";\"t\";0) -> =IF(Data.$#REF!$#REF!<>\"\";\"t\";0)",
+       "Calc!A7 value: '#NAME?' -> '#REF!'"
       ],
       "written_differences": [
        "Calc!A7 formula: =IF($Data.#REF!1<>\"\";\"t\";0) -> =IF(Data.$#REF!$#REF!<>\"\";\"t\";0)"
@@ -10222,6 +10254,7 @@
         "Data!D"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -10698,6 +10731,7 @@
         "Data"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A1 formula: =SUM($#REF!.A1:A6) -> =SUM(#ref!)",
        "Calc!A1 value: '#REF!' -> '#NAME?'",
@@ -11238,6 +11272,7 @@
         "rate"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -11684,6 +11719,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -12131,6 +12167,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -12578,6 +12615,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -13025,6 +13063,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -13472,6 +13511,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -13916,6 +13956,7 @@
         "Data!2"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -14364,6 +14405,7 @@
         "Data!3"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -14808,6 +14850,7 @@
         "Data!B"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!B2 value: 210.0 -> 777.0",
        "Calc!A6 value: 14.0 -> 140.0",
@@ -15261,6 +15304,7 @@
         "Data!C"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!B2 value: 210.0 -> 777.0",
        "Calc!A6 value: 14.0 -> 140.0",
@@ -15708,6 +15752,7 @@
         "Data"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!B2 value: 210.0 -> 777.0",
        "Calc!A6 value: 14.0 -> 140.0",
@@ -16155,6 +16200,7 @@
         "Calc!A:A"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!B2 value: 210.0 -> 777.0"
       ]
@@ -16590,6 +16636,10 @@
         "delete_columns",
         "Data!B"
        ]
+      ],
+      "reread_differences": [
+       "Calc!A7 formula: =IF(#ref!<>\"\";\"t\";0) -> =IF(Data.$#REF!$#REF!<>\"\";\"t\";0)",
+       "Calc!A7 value: '#NAME?' -> '#REF!'"
       ],
       "written_differences": [
        "Calc!A7 formula: =IF($Data.#REF!1<>\"\";\"t\";0) -> =IF(Data.$#REF!$#REF!<>\"\";\"t\";0)"
@@ -17045,6 +17095,7 @@
         "Data!4"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      }
     ]
@@ -17482,6 +17533,7 @@
         "Data"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A1 formula: =COUNT($#REF!.A:A) -> =COUNT(#REF!)",
        "Calc!A1 value: '#REF!' -> 0.0",
@@ -17990,6 +18042,7 @@
         "Data!3"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(#REF!)",
        "Calc!A5 value: '#REF!' -> 0.0",
@@ -18438,6 +18491,7 @@
         "Data!1:6"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A2 formula: =COUNT($Data.$A#REF!:$XFD#REF!) -> =COUNT(#REF!)",
        "Calc!A2 value: '#REF!' -> 0.0",
@@ -18939,6 +18993,7 @@
         "Data!2:3"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(#REF!)",
        "Calc!A4 value: '#REF!' -> 0.0",
@@ -19403,6 +19458,7 @@
         "Data!A"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(#REF!)",
        "Calc!A1 value: '#REF!' -> 0.0",
@@ -19888,6 +19944,7 @@
         "Data!A:B"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(#REF!)",
        "Calc!A1 value: '#REF!' -> 0.0",
@@ -20410,6 +20467,7 @@
         "Data"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A1 formula: =COUNT($#REF!.A:A) -> =COUNT(#ref!)",
        "Calc!A1 value: '#REF!' -> 0.0",
@@ -20942,12 +21000,38 @@
         "Data!3"
        ]
       ],
+      "reread_differences": [
+       "Calc!A5 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: 0.0 -> '#REF!'",
+       "Calc!A10 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 value: '#NAME?' -> '#REF!'",
+       "Calc!A15 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: 1.0 -> '#REF!'",
+       "Calc!A20 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 value: '#NAME?' -> '#REF!'",
+       "Calc!A25 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 value: '#NAME?' -> '#REF!'",
+       "Calc!A30 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 value: '#NAME?' -> '#REF!'",
+       "Calc!A35 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 value: '#NAME?' -> '#REF!'",
+       "Calc!A39 formula: =#ref!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A39 value: '#NAME?' -> '#REF!'",
+       "Calc!A40 formula: =#ref! -> =Data.$#REF!$#REF!",
+       "Calc!A40 value: '#NAME?' -> '#REF!'",
+       "Calc!A42 formula: =ISREF(#ref!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR(#ref!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR(#ref!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: 7.0 -> '#REF!'",
+       "Calc!A48 formula: =COUNT(#ref!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: 1.0 -> '#REF!'",
+       "Calc!A49 formula: =SUM(#ref!;5) -> =SUM(Data.$#REF!$#REF!;5)",
+       "Calc!A49 value: '#NAME?' -> '#REF!'"
+      ],
       "written_differences": [
        "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A5 value: '#REF!' -> 0.0",
        "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A15 value: '#REF!' -> 1.0",
        "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
        "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(Data.$#REF!$#REF!)",
        "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(Data.$#REF!$#REF!)",
@@ -20957,9 +21041,7 @@
        "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(Data.$#REF!$#REF!)",
        "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(Data.$#REF!$#REF!)",
        "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
-       "Calc!A44 value: '#REF!' -> 7.0",
        "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
-       "Calc!A48 value: '#REF!' -> 1.0",
        "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(Data.$#REF!$#REF!;5)"
       ]
      },
@@ -21375,27 +21457,101 @@
         "Data!1:6"
        ]
       ],
+      "reread_differences": [
+       "Calc!A2 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A2 value: 0.0 -> '#REF!'",
+       "Calc!A3 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A3 value: 0.0 -> '#REF!'",
+       "Calc!A4 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A4 value: 0.0 -> '#REF!'",
+       "Calc!A5 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: 0.0 -> '#REF!'",
+       "Calc!A7 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A7 value: '#NAME?' -> '#REF!'",
+       "Calc!A8 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A8 value: '#NAME?' -> '#REF!'",
+       "Calc!A9 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A9 value: '#NAME?' -> '#REF!'",
+       "Calc!A10 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 value: '#NAME?' -> '#REF!'",
+       "Calc!A12 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A12 value: 1.0 -> '#REF!'",
+       "Calc!A13 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A13 value: 1.0 -> '#REF!'",
+       "Calc!A14 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A14 value: 1.0 -> '#REF!'",
+       "Calc!A15 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: 1.0 -> '#REF!'",
+       "Calc!A17 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A17 value: '#NAME?' -> '#REF!'",
+       "Calc!A18 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A18 value: '#NAME?' -> '#REF!'",
+       "Calc!A19 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A19 value: '#NAME?' -> '#REF!'",
+       "Calc!A20 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 value: '#NAME?' -> '#REF!'",
+       "Calc!A22 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A22 value: '#NAME?' -> '#REF!'",
+       "Calc!A23 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A23 value: '#NAME?' -> '#REF!'",
+       "Calc!A24 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A24 value: '#NAME?' -> '#REF!'",
+       "Calc!A25 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 value: '#NAME?' -> '#REF!'",
+       "Calc!A27 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A27 value: '#NAME?' -> '#REF!'",
+       "Calc!A28 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A28 value: '#NAME?' -> '#REF!'",
+       "Calc!A29 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A29 value: '#NAME?' -> '#REF!'",
+       "Calc!A30 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 value: '#NAME?' -> '#REF!'",
+       "Calc!A32 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A32 value: '#NAME?' -> '#REF!'",
+       "Calc!A33 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A33 value: '#NAME?' -> '#REF!'",
+       "Calc!A34 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A34 value: '#NAME?' -> '#REF!'",
+       "Calc!A35 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 value: '#NAME?' -> '#REF!'",
+       "Calc!A37 formula: =COUNTIF(#ref!;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A37 value: '#NAME?' -> '#REF!'",
+       "Calc!A38 formula: =SUMIF(#ref!;\">1\") -> =SUMIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A38 value: '#NAME?' -> '#REF!'",
+       "Calc!A39 formula: =#ref!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A39 value: '#NAME?' -> '#REF!'",
+       "Calc!A40 formula: =#ref! -> =Data.$#REF!$#REF!",
+       "Calc!A40 value: '#NAME?' -> '#REF!'",
+       "Calc!A41 formula: =ROWS(#ref!) -> =ROWS(Data.$#REF!$#REF!)",
+       "Calc!A41 value: '#NAME?' -> 1.0",
+       "Calc!A42 formula: =ISREF(#ref!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR(#ref!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR(#ref!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: 7.0 -> '#REF!'",
+       "Calc!A45 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A45 value: '#NAME?' -> '#REF!'",
+       "Calc!A46 formula: =INDEX(#ref!;2) -> =INDEX(Data.$#REF!$#REF!;2)",
+       "Calc!A46 value: '#NAME?' -> '#REF!'",
+       "Calc!A47 formula: =SUMPRODUCT(#ref!) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
+       "Calc!A47 value: '#NAME?' -> '#REF!'",
+       "Calc!A48 formula: =COUNT(#ref!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: 1.0 -> '#REF!'",
+       "Calc!A49 formula: =SUM(#ref!;5) -> =SUM(Data.$#REF!$#REF!;5)",
+       "Calc!A49 value: '#NAME?' -> '#REF!'"
+      ],
       "written_differences": [
        "Calc!A2 formula: =COUNT($Data.$A#REF!:$XFD#REF!) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A2 value: '#REF!' -> 0.0",
        "Calc!A3 formula: =COUNT($Data.A#REF!:A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A3 value: '#REF!' -> 0.0",
        "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A4 value: '#REF!' -> 0.0",
        "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A5 value: '#REF!' -> 0.0",
        "Calc!A7 formula: =SUM($Data.$A#REF!:$XFD#REF!) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A8 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A12 formula: =COUNTA($Data.$A#REF!:$XFD#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A12 value: '#REF!' -> 1.0",
        "Calc!A13 formula: =COUNTA($Data.A#REF!:A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A13 value: '#REF!' -> 1.0",
        "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A14 value: '#REF!' -> 1.0",
        "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A15 value: '#REF!' -> 1.0",
        "Calc!A17 formula: =AVERAGE($Data.$A#REF!:$XFD#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
        "Calc!A18 formula: =AVERAGE($Data.A#REF!:A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
        "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
@@ -21421,12 +21577,10 @@
        "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(Data.$#REF!$#REF!)",
        "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(Data.$#REF!$#REF!)",
        "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
-       "Calc!A44 value: '#REF!' -> 7.0",
        "Calc!A45 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A46 formula: =INDEX($Data.A#REF!:A#REF!;2) -> =INDEX(Data.$#REF!$#REF!;2)",
        "Calc!A47 formula: =SUMPRODUCT($Data.A#REF!:A#REF!) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
        "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
-       "Calc!A48 value: '#REF!' -> 1.0",
        "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(Data.$#REF!$#REF!;5)"
       ]
      },
@@ -21864,17 +22018,55 @@
         "Data!2:3"
        ]
       ],
+      "reread_differences": [
+       "Calc!A4 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A4 value: 0.0 -> '#REF!'",
+       "Calc!A5 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: 0.0 -> '#REF!'",
+       "Calc!A9 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A9 value: '#NAME?' -> '#REF!'",
+       "Calc!A10 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 value: '#NAME?' -> '#REF!'",
+       "Calc!A14 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A14 value: 1.0 -> '#REF!'",
+       "Calc!A15 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: 1.0 -> '#REF!'",
+       "Calc!A19 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A19 value: '#NAME?' -> '#REF!'",
+       "Calc!A20 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 value: '#NAME?' -> '#REF!'",
+       "Calc!A24 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A24 value: '#NAME?' -> '#REF!'",
+       "Calc!A25 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 value: '#NAME?' -> '#REF!'",
+       "Calc!A29 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A29 value: '#NAME?' -> '#REF!'",
+       "Calc!A30 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 value: '#NAME?' -> '#REF!'",
+       "Calc!A34 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A34 value: '#NAME?' -> '#REF!'",
+       "Calc!A35 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 value: '#NAME?' -> '#REF!'",
+       "Calc!A39 formula: =#ref!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A39 value: '#NAME?' -> '#REF!'",
+       "Calc!A40 formula: =#ref! -> =Data.$#REF!$#REF!",
+       "Calc!A40 value: '#NAME?' -> '#REF!'",
+       "Calc!A42 formula: =ISREF(#ref!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR(#ref!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR(#ref!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: 7.0 -> '#REF!'",
+       "Calc!A48 formula: =COUNT(#ref!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: 1.0 -> '#REF!'",
+       "Calc!A49 formula: =SUM(#ref!;5) -> =SUM(Data.$#REF!$#REF!;5)",
+       "Calc!A49 value: '#NAME?' -> '#REF!'"
+      ],
       "written_differences": [
        "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A4 value: '#REF!' -> 0.0",
        "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A5 value: '#REF!' -> 0.0",
        "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A14 value: '#REF!' -> 1.0",
        "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A15 value: '#REF!' -> 1.0",
        "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
        "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
        "Calc!A24 formula: =MAX($Data.A#REF!:B#REF!) -> =MAX(Data.$#REF!$#REF!)",
@@ -21888,9 +22080,7 @@
        "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(Data.$#REF!$#REF!)",
        "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(Data.$#REF!$#REF!)",
        "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
-       "Calc!A44 value: '#REF!' -> 7.0",
        "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
-       "Calc!A48 value: '#REF!' -> 1.0",
        "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(Data.$#REF!$#REF!;5)"
       ]
      },
@@ -22315,22 +22505,86 @@
         "Data!A"
        ]
       ],
+      "reread_differences": [
+       "Calc!A1 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A1 value: 0.0 -> '#REF!'",
+       "Calc!A3 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A3 value: 0.0 -> '#REF!'",
+       "Calc!A5 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: 0.0 -> '#REF!'",
+       "Calc!A6 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A6 value: '#NAME?' -> '#REF!'",
+       "Calc!A8 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A8 value: '#NAME?' -> '#REF!'",
+       "Calc!A10 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 value: '#NAME?' -> '#REF!'",
+       "Calc!A11 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A11 value: 1.0 -> '#REF!'",
+       "Calc!A13 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A13 value: 1.0 -> '#REF!'",
+       "Calc!A15 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: 1.0 -> '#REF!'",
+       "Calc!A16 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A16 value: '#NAME?' -> '#REF!'",
+       "Calc!A18 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A18 value: '#NAME?' -> '#REF!'",
+       "Calc!A20 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 value: '#NAME?' -> '#REF!'",
+       "Calc!A21 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A21 value: '#NAME?' -> '#REF!'",
+       "Calc!A23 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A23 value: '#NAME?' -> '#REF!'",
+       "Calc!A25 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 value: '#NAME?' -> '#REF!'",
+       "Calc!A26 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A26 value: '#NAME?' -> '#REF!'",
+       "Calc!A28 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A28 value: '#NAME?' -> '#REF!'",
+       "Calc!A30 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 value: '#NAME?' -> '#REF!'",
+       "Calc!A31 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A31 value: '#NAME?' -> '#REF!'",
+       "Calc!A33 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A33 value: '#NAME?' -> '#REF!'",
+       "Calc!A35 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 value: '#NAME?' -> '#REF!'",
+       "Calc!A36 formula: =COUNTIF(#ref!;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A36 value: '#NAME?' -> '#REF!'",
+       "Calc!A37 formula: =COUNTIF(#ref!;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A37 value: '#NAME?' -> '#REF!'",
+       "Calc!A38 formula: =SUMIF(#ref!;\">1\") -> =SUMIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A38 value: '#NAME?' -> '#REF!'",
+       "Calc!A39 formula: =#ref!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A39 value: '#NAME?' -> '#REF!'",
+       "Calc!A40 formula: =#ref! -> =Data.$#REF!$#REF!",
+       "Calc!A40 value: '#NAME?' -> '#REF!'",
+       "Calc!A41 formula: =ROWS(#ref!) -> =ROWS(Data.$#REF!$#REF!)",
+       "Calc!A41 value: '#NAME?' -> 1.0",
+       "Calc!A42 formula: =ISREF(#ref!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR(#ref!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR(#ref!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: 7.0 -> '#REF!'",
+       "Calc!A45 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A45 value: '#NAME?' -> '#REF!'",
+       "Calc!A46 formula: =INDEX(#ref!;2) -> =INDEX(Data.$#REF!$#REF!;2)",
+       "Calc!A46 value: '#NAME?' -> '#REF!'",
+       "Calc!A47 formula: =SUMPRODUCT(#ref!) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
+       "Calc!A47 value: '#NAME?' -> '#REF!'",
+       "Calc!A48 formula: =COUNT(#ref!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: 1.0 -> '#REF!'",
+       "Calc!A49 formula: =SUM(#ref!;5) -> =SUM(Data.$#REF!$#REF!;5)",
+       "Calc!A49 value: '#NAME?' -> '#REF!'"
+      ],
       "written_differences": [
        "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A1 value: '#REF!' -> 0.0",
        "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A3 value: '#REF!' -> 0.0",
        "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A5 value: '#REF!' -> 0.0",
        "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A11 value: '#REF!' -> 1.0",
        "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A13 value: '#REF!' -> 1.0",
        "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A15 value: '#REF!' -> 1.0",
        "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(Data.$#REF!$#REF!)",
        "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(Data.$#REF!$#REF!)",
        "Calc!A20 formula: =AVERAGE($Data.#REF!3) -> =AVERAGE(Data.$#REF!$#REF!)",
@@ -22353,12 +22607,10 @@
        "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(Data.$#REF!$#REF!)",
        "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(Data.$#REF!$#REF!)",
        "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
-       "Calc!A44 value: '#REF!' -> 7.0",
        "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(Data.$#REF!$#REF!;2)",
        "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
        "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(Data.$#REF!$#REF!;5)",
-       "Calc!A48 value: '#REF!' -> 1.0",
        "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(Data.$#REF!$#REF!;5)"
       ]
      },
@@ -22783,27 +23035,103 @@
         "Data!A:B"
        ]
       ],
+      "reread_differences": [
+       "Calc!A1 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A1 value: 0.0 -> '#REF!'",
+       "Calc!A3 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A3 value: 0.0 -> '#REF!'",
+       "Calc!A4 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A4 value: 0.0 -> '#REF!'",
+       "Calc!A5 formula: =COUNT(#ref!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: 0.0 -> '#REF!'",
+       "Calc!A6 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A6 value: '#NAME?' -> '#REF!'",
+       "Calc!A8 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A8 value: '#NAME?' -> '#REF!'",
+       "Calc!A9 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A9 value: '#NAME?' -> '#REF!'",
+       "Calc!A10 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 value: '#NAME?' -> '#REF!'",
+       "Calc!A11 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A11 value: 1.0 -> '#REF!'",
+       "Calc!A13 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A13 value: 1.0 -> '#REF!'",
+       "Calc!A14 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A14 value: 1.0 -> '#REF!'",
+       "Calc!A15 formula: =COUNTA(#ref!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: 1.0 -> '#REF!'",
+       "Calc!A16 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A16 value: '#NAME?' -> '#REF!'",
+       "Calc!A18 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A18 value: '#NAME?' -> '#REF!'",
+       "Calc!A19 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A19 value: '#NAME?' -> '#REF!'",
+       "Calc!A20 formula: =AVERAGE(#ref!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 value: '#NAME?' -> '#REF!'",
+       "Calc!A21 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A21 value: '#NAME?' -> '#REF!'",
+       "Calc!A23 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A23 value: '#NAME?' -> '#REF!'",
+       "Calc!A24 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A24 value: '#NAME?' -> '#REF!'",
+       "Calc!A25 formula: =MAX(#ref!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 value: '#NAME?' -> '#REF!'",
+       "Calc!A26 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A26 value: '#NAME?' -> '#REF!'",
+       "Calc!A28 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A28 value: '#NAME?' -> '#REF!'",
+       "Calc!A29 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A29 value: '#NAME?' -> '#REF!'",
+       "Calc!A30 formula: =MIN(#ref!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 value: '#NAME?' -> '#REF!'",
+       "Calc!A31 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A31 value: '#NAME?' -> '#REF!'",
+       "Calc!A33 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A33 value: '#NAME?' -> '#REF!'",
+       "Calc!A34 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A34 value: '#NAME?' -> '#REF!'",
+       "Calc!A35 formula: =COUNTBLANK(#ref!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 value: '#NAME?' -> '#REF!'",
+       "Calc!A36 formula: =COUNTIF(#ref!;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A36 value: '#NAME?' -> '#REF!'",
+       "Calc!A37 formula: =COUNTIF(#ref!;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A37 value: '#NAME?' -> '#REF!'",
+       "Calc!A38 formula: =SUMIF(#ref!;\">1\") -> =SUMIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A38 value: '#NAME?' -> '#REF!'",
+       "Calc!A39 formula: =#ref!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A39 value: '#NAME?' -> '#REF!'",
+       "Calc!A40 formula: =#ref! -> =Data.$#REF!$#REF!",
+       "Calc!A40 value: '#NAME?' -> '#REF!'",
+       "Calc!A41 formula: =ROWS(#ref!) -> =ROWS(Data.$#REF!$#REF!)",
+       "Calc!A41 value: '#NAME?' -> 1.0",
+       "Calc!A42 formula: =ISREF(#ref!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR(#ref!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR(#ref!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: 7.0 -> '#REF!'",
+       "Calc!A45 formula: =SUM(#ref!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A45 value: '#NAME?' -> '#REF!'",
+       "Calc!A46 formula: =INDEX(#ref!;2) -> =INDEX(Data.$#REF!$#REF!;2)",
+       "Calc!A46 value: '#NAME?' -> '#REF!'",
+       "Calc!A47 formula: =SUMPRODUCT(#ref!) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
+       "Calc!A47 value: '#NAME?' -> '#REF!'",
+       "Calc!A48 formula: =COUNT(#ref!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: 1.0 -> '#REF!'",
+       "Calc!A49 formula: =SUM(#ref!;5) -> =SUM(Data.$#REF!$#REF!;5)",
+       "Calc!A49 value: '#NAME?' -> '#REF!'"
+      ],
       "written_differences": [
        "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A1 value: '#REF!' -> 0.0",
        "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A3 value: '#REF!' -> 0.0",
        "Calc!A4 formula: =COUNT($Data.#REF!2:#REF!3) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A4 value: '#REF!' -> 0.0",
        "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(Data.$#REF!$#REF!)",
-       "Calc!A5 value: '#REF!' -> 0.0",
        "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A9 formula: =SUM($Data.#REF!2:#REF!3) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A11 value: '#REF!' -> 1.0",
        "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A13 value: '#REF!' -> 1.0",
        "Calc!A14 formula: =COUNTA($Data.#REF!2:#REF!3) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A14 value: '#REF!' -> 1.0",
        "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(Data.$#REF!$#REF!)",
-       "Calc!A15 value: '#REF!' -> 1.0",
        "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(Data.$#REF!$#REF!)",
        "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(Data.$#REF!$#REF!)",
        "Calc!A19 formula: =AVERAGE($Data.#REF!2:#REF!3) -> =AVERAGE(Data.$#REF!$#REF!)",
@@ -22830,12 +23158,10 @@
        "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(Data.$#REF!$#REF!)",
        "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(Data.$#REF!$#REF!)",
        "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
-       "Calc!A44 value: '#REF!' -> 7.0",
        "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(Data.$#REF!$#REF!)",
        "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(Data.$#REF!$#REF!;2)",
        "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
        "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(Data.$#REF!$#REF!;5)",
-       "Calc!A48 value: '#REF!' -> 1.0",
        "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(Data.$#REF!$#REF!;5)"
       ]
      }
@@ -23279,6 +23605,7 @@
         "Data!D"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -23715,6 +24042,7 @@
         "Data!6"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -24143,6 +24471,7 @@
         "Other"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -24586,6 +24915,7 @@
         "rate"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -25033,6 +25363,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -25480,6 +25811,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -25928,6 +26260,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -26375,6 +26708,7 @@
         "Data!2:4"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -26820,6 +27154,7 @@
         "Data!D"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      }
     ]
@@ -27260,6 +27595,7 @@
         "Data!D"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -27696,6 +28032,7 @@
         "Data!6"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -28124,6 +28461,7 @@
         "Other"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -28567,6 +28905,7 @@
         "rate"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -29014,6 +29353,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -29461,6 +29801,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -29909,6 +30250,7 @@
         }
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -30356,6 +30698,7 @@
         "Data!2:4"
        ]
       ],
+      "reread_differences": [],
       "written_differences": []
      },
      {
@@ -30801,6 +31144,7 @@
         "Data!D"
        ]
       ],
+      "reread_differences": [],
       "written_differences": [
        "Calc!A1 value: 17.0 -> 555.0",
        "Calc!C1 value: 8.0 -> 1001.0",

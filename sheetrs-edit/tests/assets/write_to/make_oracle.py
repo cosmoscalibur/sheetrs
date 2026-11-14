@@ -8,7 +8,11 @@ format, and for each edit of `EDITS`,
   opened     what LibreOffice shows of the file `sheetrs edit` writes for the same edit, with every formula
              calculated again (`calculateAll`), and
   differences  the cells, hidden rows and columns and sheets where `opened` is not `expected`, for the formulas
-             and for the values. They are reported to the maintainer: nothing here is an approved difference.
+             and for the values. They are reported to the maintainer: nothing here is an approved difference;
+  reread_differences  the same, between what LibreOffice shows of the file it saves itself after the edit
+             (loaded again and calculated: `own_reread`) and `opened`: whether the file `sheetrs edit` writes
+             reads back as the one LibreOffice writes (a reference that went is spelled `#REF!` in the files of
+             both, and read differently from what the edit gave).
 
 The edit is the same list of operations in the three places: `sheetrs edit` flags, UNO calls, and the methods of
 `BookEdit` that the Rust test calls. Run it with a LibreOffice listening on a socket
@@ -283,8 +287,14 @@ def main():
                 apply_lo(doc, operations)
                 doc.calculateAll()
                 expected = dump(doc)
-                doc.close(True)
                 with tempfile.TemporaryDirectory() as folder:
+                    own = os.path.join(folder, f"own.{extension}")
+                    doc.storeToURL("file://" + own, (pv("FilterName", FILTERS[extension]),))
+                    doc.close(True)
+                    doc = load(own)
+                    doc.calculateAll()
+                    own_reread = dump(doc)
+                    doc.close(True)
                     out = os.path.join(folder, f"out.{extension}")
                     done = subprocess.run([SHEETRS, *flags(operations), "-i", source, "-o", out],
                                           capture_output=True, text=True)
@@ -300,10 +310,12 @@ def main():
                     "operations": operations,
                     "expected": expected,
                     "differences": differences(expected, opened),
+                    "reread_differences": differences(own_reread, opened),
                     "written_differences": differences(expected, written),
                 })
                 print(f"{fixture}.{extension} {label}: {len(results[-1]['differences'])} differences after "
-                      f"calculating, {len(results[-1]['written_differences'])} as written", flush=True)
+                      f"calculating, {len(results[-1]['written_differences'])} as written, "
+                      f"{len(results[-1]['reread_differences'])} from the file LibreOffice saves", flush=True)
             oracle["fixtures"][fixture][extension] = {"edits": results}
     with open(os.path.join(HERE, "oracle.json"), "w") as f:
         json.dump(oracle, f, indent=1, sort_keys=True)

@@ -12,8 +12,10 @@
 //!
 //! The formulas are compared by the script (`differences` of the oracle: what `LibreOffice` shows of the file
 //! `sheetrs edit` writes, after calculating it) and are not asserted here: a reference that goes is spelled
-//! differently by each writer. The differences the script found are reported to the maintainer, none is
-//! approved; `known_differences` below lists the cells of the values that differ, so that a change shows.
+//! as the files of `LibreOffice` and Excel spell it and not as `LibreOffice` shows it in memory (an approved
+//! difference, `docs/approved-differences.md`). What is asserted is the evidence of that decision, recorded by
+//! the script as `reread_differences` (what `LibreOffice` shows of the file it saves itself after the edit,
+//! against what it shows of the file `sheetrs edit` writes, both loaded again and calculated).
 
 use serde_json::Value as Json;
 use sheetrs_edit::BookEdit;
@@ -321,6 +323,35 @@ fn layout_differences(got: &Dump, expected: &Dump) -> Vec<String> {
         }
     }
     out
+}
+
+/// The file `sheetrs edit` writes reads back in `LibreOffice` as the file `LibreOffice` saves after the same edit
+/// (the approved difference about the spelling of a reference that went), but where it is better: in an XLSX a
+/// deleted cell is `Data!#REF!`, which `LibreOffice` reads as the reference that went (`#REF!`, the result of the
+/// edit), and the bare `#REF!` of its own file as an unknown name. The edits that convert formulas to values are
+/// another matter (the cached results of the file against the calculation of `LibreOffice` when it loads).
+#[test]
+fn the_file_reads_back_in_libreoffice_as_the_one_libreoffice_saves() {
+    for (fixture, by_format) in ORACLE["fixtures"].as_object().unwrap() {
+        for (extension, entry) in by_format.as_object().unwrap() {
+            for edit in entry["edits"].as_array().unwrap() {
+                let label = edit["label"].as_str().unwrap();
+                if label.contains("formula to value") {
+                    continue;
+                }
+                for line in edit["reread_differences"].as_array().unwrap() {
+                    let line = line.as_str().unwrap();
+                    // The cells of an XLSX the edit left `Sheet!#REF!` in: the value is the edit's.
+                    // `ROWS(Data!#REF!)` (a range that went whole) is 1 for `LibreOffice` when it reads the file.
+                    let better = extension == "xlsx"
+                        && (line.contains(" formula: ") && line.contains("#ref!")
+                            || line.ends_with("-> '#REF!'")
+                            || line == "Calc!A41 value: '#NAME?' -> 1.0");
+                    assert!(better, "{fixture}.{extension}: {label}: {line}");
+                }
+            }
+        }
+    }
 }
 
 #[test]

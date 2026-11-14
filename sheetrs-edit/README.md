@@ -402,6 +402,10 @@ is no longer valid; one that does not change keeps it.
   reference that went): the file keeps the spelling of both programs and the result of the edit, and
   `sheetrs query` reads the cell as LibreOffice calculates it when it opens the file (`#NAME?`, see the
   approved differences on cached errors of an XLSX).
+- **The spelling of a reference that went is the one of the files, not the one LibreOffice shows in
+  memory** (`=$Data.A#REF!*2` there; `[#REF!]*2` in the ODS it saves, `#REF!*2` in the XLSX it saves; `Data!#REF!*2`
+  in the XLSX of `sheetrs edit` for deleted cells): an approved difference, with its analysis, in
+  `docs/approved-differences.md`.
 - **A reference that went is not an error written in the formula.** After the edit, a function that
   reads one gives `#REF!` whatever it does with errors (`COUNT(Data!A:A)` of a sheet that was deleted is
   `#REF!`, not 0; so are `COUNTA`, `COUNTBLANK`, `SUM`, `AVERAGE`, `MAX`, `MIN`, `COUNTIF`, `SUMIF`, `INDEX`,

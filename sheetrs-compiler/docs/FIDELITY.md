@@ -583,6 +583,9 @@ what LibreOffice writes:
   `#REF!` (what is left of a reference to a removed sheet, and what Excel writes for it) is the
   unknown name `#NAME?` in LibreOffice, **also in an XLSX it saved itself**.
 * In an ODS: `[#REF!]` in a formula and `#REF!` as the `table:cell-range-address` of a name.
+* The text LibreOffice shows for a reference that went (`=$Data.A#REF!*2`) exists only in memory; the files
+  spell it `#REF!` (see *Approved differences* in `docs/approved-differences.md` for what SheetRS writes and
+  what each program reads back).
 * **What a function does with a reference that went.** LibreOffice keeps the deleted reference as a
   token that has no cell: a function that asks for it answers `#REF!` (`COUNT`, `COUNTA`, `COUNTBLANK`,
   `SUM`, `AVERAGE`, `MAX`, `MIN`, `COUNTIF`, `SUMIF`, `INDEX`, `ROWS`... over a whole column, a whole row, a
