@@ -7,6 +7,7 @@ template again and again; (3) cut time and peak memory of the run of a compiled 
 
 Status: the data of the matrix below is collected. Four small changes found on the way are
 implemented (they are not one of the three options and pay for themselves); the three options are not.
+The LLVM spike (prototype in [spike-llvm/](spike-llvm/README.md)) is done: [what it measured](#llvm-spike).
 Limits of the data: [What this does not show](#what-this-does-not-show).
 
 ## The matrix
@@ -15,7 +16,7 @@ Limits of the data: [What this does not show](#what-this-does-not-show).
 |---|---|---|---|---|---|---|
 | **Direct interpreter** (skip compile stages) | 9-11 % of a full recalculation at 2.4 M formulas; 16-22 % of a declared one-shot calculation at 0.8 M | none | none (peak: the graph is already freed) | yes | low-medium; needs a fallback on depth and cycles | worth doing, modest; not first |
 | **JIT** (Cranelift, native only) | none | ceiling about 3-4× per request on numeric shapes, and only with `ROUND` fixed first; unproven | request time only | no (guarded) | high | defer: does not meet its own stop criterion today |
-| **LLVM, ahead of time** | none | as the JIT | request time only | no | very high | no-go |
+| **LLVM** (JIT or ahead of time) | none | as the JIT; 1.3× over Cranelift on a pure numeric loop, equal with the exact `ROUND` | request time only; the only way to put compiled code in a WebAssembly module (shown) | no (guarded) | very high: a system package, +51 MB, 15-20× the compile time of Cranelift | not now; kept open as a second emitter of the same kernel IR ([LLVM spike](#llvm-spike)) |
 | *Implemented, not an option:* dense index, constants by row, index kept in the program, no copy of the writes | `calculate -i` -11 %; `calculate -o` -19 % time, -12 % peak | request -60 % (1.5 → 0.65 s) | request -32 %, first request -35 % | yes | done | keep |
 
 The three options are not independent: they share one lever, how a cell address becomes a value, and that
@@ -135,16 +136,6 @@ stay bound by their functions. The ceiling is not a prototype. The stop criterio
 request over the interpreter) is therefore met, if at all, at the ceiling: the next gains are in
 `round_dec` and in not building an engine for every request, both cheaper than code generation.
 
-### Cost of the backends
-
-| | Size | Notes |
-|---|--:|---|
-| Cranelift (`cranelift-jit` 0.120, pure Rust) | +2.85 MB on a stripped binary with one JIT function | compiles and sets up a function with an `IF` in 0.4 ms; no system library |
-| LLVM 18 (`libLLVM.so`) | 123 MB shared library | a matching system installation for every wheel (linux x86_64 and aarch64) and for the build of an executable; no wasm host JIT |
-
-Neither works in the WebAssembly modules (no JIT in a module), and a build of an executable with LLVM would
-need a toolchain where today it needs none ([DESIGN.md](../sheetrs-compiler/docs/DESIGN.md#executable-format)).
-
 ## Options
 
 **Direct interpreter.** Same `Engine` with a different schedule: lowered cells in row-major order and
@@ -155,16 +146,14 @@ reachable. Gain: 9-11 % of a full recalculation, 16-22 % of a declared one-shot 
 a service. Memory: the graph is freed before the peak already. It is worth doing for what it is, after
 the writer.
 
-**JIT.** Formula shapes repeat in a copied-across model, so the unit of compilation is the shape (tens),
+**JIT.** (Cranelift; LLVM is in its own section.) Formula shapes repeat in a copied-across model, so the unit of compilation is the shape (tens),
 not the cell (millions), and compile latency is not the obstacle. The cost is fidelity: dynamic
 types need guards and a path back to the interpreter, and blank, error propagation and `logical_fmt` must
 be reproduced in the fast path or the shape must bail out. Only native binaries and the Python wheel could
 carry it. Defer until `round_dec` and the engine per request are fixed and a profile of `--serve` still
 shows the glue.
 
-**LLVM, ahead of time.** Conflicts with no toolchain and a single file, with the WebAssembly target,
-with the CI of the wheels, and with the single engine; the runtime functions (hundreds, with quirks of
-LibreOffice, ICU4X, formats) stay Rust behind an ABI; peak memory does not drop. No-go.
+**LLVM.** See the [LLVM spike](#llvm-spike): the data, what is system-level, and the criteria to include it.
 
 **Compact program (not an option of the request, and not decided).** One tree per R1C1 shape plus
 `(shape, anchor)` per cell would cut memory and decode time (about 480 B per formula at 2.4 M; decode
@@ -179,6 +168,109 @@ much real models repeat, and that census is missing.
 
 Only the first two say anything about real models, and both are synthetic or tiny.
 
+## LLVM spike
+
+The question was whether LLVM, as the standard infrastructure for this kind of solution, justifies itself:
+less to maintain by having one infrastructure for compiling, and a better result at run time. The prototype
+(`docs/spike-llvm/`, see its README) builds the kernel of the five input-dependent columns of the benchmark
+workbook with LLVM 23 through `inkwell`, and the same kernel with Cranelift and in Rust, and checks the
+values bit by bit against the Rust reference.
+
+### Is it a system dependency?
+
+Yes, in the way you describe: cargo is not enough. `inkwell` (and `llvm-sys` under it) calls `llvm-config` and
+links the libraries of a **system installation of the same major version**: on Ubuntu 24.04 the packages
+`llvm-N-dev` and `libpolly-N-dev`, plus a C toolchain. A machine with `libLLVM.so`, `clang` and `lld` (this
+one had LLVM 18) is not enough: `llvm-config` fails for lack of the static libraries until `-dev` is installed.
+The ways to use LLVM, with what each needs:
+
+| Way | Needs at build time of SheetRS | Needs where it runs | Size |
+|---|---|---|---|
+| Link LLVM (`inkwell`, static) | `llvm-N-dev` of one exact major, in every CI image and wheel builder (manylinux needs it in the container) | nothing | the probe binary: 59.7 MB stripped (x86 only); `sheetc` is 8.8 MB |
+| Link LLVM (dynamic) | the same | `libLLVM.so.N`, 123 MB (LLVM 18) | small binary |
+| Write IR and call `clang`/`llc`/`lld` | nothing | a toolchain on the machine of whoever compiles a workbook | none |
+| Bitcode of the Rust runtime (below) | the LLVM of `rustc` | the same | none |
+
+The third way is the only one with no build dependency, and it gives up "no toolchain to build a workbook",
+which the project states as a property. The distribution has LLVM 18 and 20; `rustc` 1.99 bundles
+**LLVM 23.1.1**, so the LLVM that matches the compiler of the project is not in the distribution:
+`apt.llvm.org` (or building LLVM) is part of every environment. `llvm-sys` 231 and `inkwell` 0.11 (`llvm23-1`)
+exist, and the prototype built and ran against 23.1.6 and 20.1.2 with the same results.
+
+### What the measurements say
+
+The kernel, 1.5 M live formulas (`IF`, product, `ROUND(…,2)`, running total, `IFERROR`, `MAX - MIN`):
+
+| | approximate rounding (inline) | exact rounding (`round_dec`) |
+|---|--:|--:|
+| `rustc -O` | 4.7-5.3 ms | 116-119 ms |
+| Cranelift, `speed` | 2.13 ms | 115 ms |
+| LLVM, O2 / O3 | 1.60-1.65 ms | 113-115 ms |
+
+All variants give the same values as the Rust reference (checked in the LLVM runs and in Cranelift's exact one;
+Cranelift's approximate run uses another rounding instruction and is not compared). So LLVM is 1.3× faster than
+Cranelift on a numeric loop with inline rounding and the same with the exact rounding, which is the one the
+engine must use. The generated code does not remove the cost that matters.
+
+Compilation of N distinct formulas of 25 nodes on average (one function each; LLVM 23, close to LLVM 20):
+
+| | 1 000 formulas | 10 000 formulas | per formula |
+|---|--:|--:|--:|
+| LLVM O0 (fast instruction selection) | 65 ms | 0.65 s | 65 µs |
+| LLVM O1 | 0.74 s | 8.0 s | 0.8 ms |
+| LLVM O2 | 1.05 s | 10.8 s | 1.05 ms |
+| Cranelift, no optimization | 55 ms | 0.58 s | 58 µs |
+| Cranelift, `speed` | 69 ms | 0.81 s | 80 µs |
+
+The kernel above compiles in 0.5 ms (Cranelift) and 10-14 ms (LLVM O2). Against an interpreter that costs
+about 0.43 µs per formula today (0.65 s for 1.5 M), a function pays for itself after about 2 500
+evaluations with LLVM O2 and about 190 with Cranelift `speed`. That is a shape that repeats down a column
+(300 000 rows), and never a formula that is distinct: in an oracle workbook with 34 k distinct formulas,
+LLVM O2 would spend about 36 s and Cranelift about 2.7 s before the first value. The census of shapes of
+real models decides how much of a workbook is in the first case.
+
+What is LLVM's alone:
+
+- **Compiled code for the WebAssembly module.** Cranelift does not emit wasm. The prototype generates the
+  kernel as a wasm object with LLVM, links it with the Rust runtime (including `round_dec`) with `wasm-ld`
+  into a module of 74 KB with **no imports** (the restriction of the project's modules), and in Node 22 it
+  gives the same checksum as the Rust version and 152.9 ms against 154.3 ms with exact rounding
+  (3.8 against 4.7 ms with approximate rounding).
+- **Inlining of the runtime into the generated code**, from the bitcode of `rustc`: it works with LLVM 23
+  (a leaf of the runtime was linked, no call is left in the IR, same values) and gains about 5 %
+  (1.72 → 1.63 ms). LLVM 20 cannot even read the file (`Unknown attribute kind (105)`, producer
+  `LLVM23.1.1-rust-1.99.1`), so it ties the LLVM of the project to the one of its compiler, which changes
+  with every Rust release; and only a leaf with no allocation can be a target (`round_dec` formats text).
+
+### Would it reduce what is maintained?
+
+What a compiled path replaces is dispatch, not meaning. The semantics stay in 524 registered functions
+(19 lazy, 505 eager, about 19.5 k lines) and about 4 k lines of engine, coercion, value and format that the
+generated code still calls: LLVM does not remove one of them. A compiled path adds a lowering (typed
+shapes with guards), an ABI for `Value` (an enum with `Arc`, not stable across the boundary), a differential
+test between the two paths, the system package, and a pin of the LLVM version. The size of the emitter
+is not the issue: the same kernel is about 70 lines with `inkwell` and about 60 with Cranelift.
+
+The reasoning that does hold is the other one: **having both strategies is worth its cost**, because the
+interpreter is the reference of the fidelity (the compiled path is tested against it, and it runs the
+first requests while a shape compiles, as in any tiered design). What is not worth it is making LLVM the
+only path: it would put the 4 k lines of control flow of `eval` into an IR builder, with a compile latency of
+1 ms per distinct formula before the first value.
+
+### Criteria to include it, and the way that keeps the option open
+
+LLVM enters when all of these hold, none of which is true today:
+
+1. A typed kernel IR exists (numeric shapes, guards, fallback per shape) and runs with Cranelift or with the
+   interpreter as its first backend, so the emitter is one module with one backend trait.
+2. `round_dec` stops being the floor of a numeric request: today it is 97 % of the kernel, and any backend ties.
+3. A measured need that only LLVM serves: compiled code in the WebAssembly module (the one shown), or a
+   numeric workload where its 1.3× over Cranelift on a loop is worth 15-20× the compile time.
+4. The maintainer accepts a pinned system LLVM in CI and in the builders of the wheels, under a feature that is off by default.
+
+Until then the decision costs nothing: the kernel IR of criterion 1 is backend-neutral, and an LLVM emitter
+of about 300 lines (the prototype) can be added behind a feature later.
+
 ## Sequence
 
 1. **Done** (this branch): the four changes above.
@@ -191,7 +283,7 @@ Only the first two say anything about real models, and both are synthetic or tin
    fixture of `tests/semantics` between the two paths (`RAND` excluded).
 5. **Shape census** on real workbooks of the maintainer; compact program only if the ratio of formulas
    per shape is 10 or more.
-6. **JIT prototype** only if step 3 leaves the glue as the main cost of `--serve`. **LLVM:** not started.
+6. **Typed kernel IR with a backend trait** (interpreter first, Cranelift second) only if step 3 leaves the glue as the main cost of `--serve`. **LLVM** as a third emitter when its criteria are met ([LLVM spike](#llvm-spike)).
 
 ## What this does not show
 
@@ -202,6 +294,7 @@ Only the first two say anything about real models, and both are synthetic or tin
   percentages are not. The stubs carry the `profile` feature, the same for both sides of every comparison.
 - The ceiling of the JIT comes from a hand-written kernel, not from generated code; the gain of the direct
   mode, from the stage trace, not from a prototype.
+- LLVM was measured through `inkwell` on x86-64 with 20.1.2 and 23.1.6; the build of wheels for aarch64 and the size of a stripped static LLVM there were not measured.
 - One 4-core virtual machine; times move 10-20 % between sessions, so only the pairs measured together
   are compared.
 - The 100 k-row stage table predates the changes; the 2.4 M recalculation trace is after the first of them.

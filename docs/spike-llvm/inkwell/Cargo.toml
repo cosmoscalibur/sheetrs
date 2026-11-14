@@ -1,0 +1,19 @@
+# Prototype of the LLVM spike (docs/spike-execution-backends.md). Not part of the workspace.
+[package]
+name = "ll"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+inkwell = { version = "0.11", default-features = false, features = ["llvm23-1", "target-x86", "target-webassembly"] }
+cranelift-codegen = "0.120"
+cranelift-frontend = "0.120"
+cranelift-jit = "0.120"
+cranelift-module = "0.120"
+cranelift-native = "0.120"
+
+[profile.release]
+opt-level = 3
