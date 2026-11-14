@@ -373,6 +373,11 @@ pub(crate) fn decide(
     source: &Book,
     spec: &ReplaceSpec,
 ) -> Result<(HashMap<String, SheetEdits>, Report)> {
+    // The empty search text matches nothing (`LibreOffice`'s `replaceAll` changes no cell): decided
+    // before the workbook is read or the search is compiled.
+    if spec.replace.find.matches_nothing() {
+        return Ok((HashMap::new(), Report::default()));
+    }
     let origin = source
         .path()
         .map_or_else(|| "the workbook".to_string(), |p| p.display().to_string());

@@ -695,6 +695,10 @@ fn leaves_results_stale(operation: &Operation) -> bool {
             .iter()
             .any(|change| matches!(change, VisibilityChange::Rows { .. }));
     }
+    // The empty search text matches nothing: the replacement changes no cell.
+    if let Operation::Replace(spec) = operation {
+        return !spec.replace.find.matches_nothing();
+    }
     !matches!(
         operation,
         Operation::FormulaToValue(_)

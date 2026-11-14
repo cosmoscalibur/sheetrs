@@ -212,6 +212,11 @@ fn locale_of(source: &Book, query: &Query) -> Option<String> {
 /// When the workbook cannot be read, the query names a sheet it does not have, the locale is
 /// unknown, or the search is one the matcher does not reproduce.
 pub(crate) fn run(source: &Book, query: &Query) -> Result<QueryResponse> {
+    // The empty search text matches nothing (`LibreOffice`'s `findAll` gives no cell): answered
+    // before anything is read or compiled.
+    if query.find.as_ref().is_some_and(Find::matches_nothing) {
+        return Ok(QueryResponse { cells: Vec::new() });
+    }
     let wants = |p: Property| query.properties.contains(&p);
     let searching = query.find.is_some();
     // Only the value is given as a date, and only when it is asked for.

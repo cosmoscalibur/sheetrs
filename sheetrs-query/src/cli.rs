@@ -69,7 +69,8 @@ pub struct Args {
     )]
     pub property: Vec<Prop>,
 
-    /// Keep only the cells where this text is found (as `LibreOffice`'s Find & Replace finds it)
+    /// Keep only the cells where this text is found (as `LibreOffice`'s Find & Replace finds it); the
+    /// empty text matches nothing
     #[arg(long, value_name = "TEXT")]
     pub find: Option<String>,
 

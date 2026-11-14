@@ -159,7 +159,9 @@ returns, or run the query before adding the operations if it does not depend on 
   `row`, `col` and the properties asked). A regular expression (`regex=True`) may have the anchors `^`
   and `$`, which anchor the text of the cell (`"^(Code|Total)$"`); `replace` reads them too, and a
   pattern that can match the empty text (`x*`, `$`), as LibreOffice replaces: an empty match is
-  replaced only at the very end of the text (`"abc"` with `$` replaced by `X` is `"abcX"`).
+  replaced only at the very end of the text (`"abc"` with `$` replaced by `X` is `"abcX"`). The empty
+  `text` matches nothing in every mode: `find("")` is `[]` and `replace("", ...)` changes no cell, at
+  once and with no error.
 - **`value_ranges()`** gives the value ranges of the `calculate` step as a `ValueRanges` (the `ranges` asked
   for, by the text they were asked with, or the outputs of the workbook by name); a formula with a
   function the engine does not have raises `sheetrs.UnavailableFunctionError`, and any other workbook

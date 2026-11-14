@@ -13,6 +13,11 @@
 //! - `^` and `$` anchor the text of the cell, not its lines: `^` is its start, `$` its end or the
 //!   place before a line terminator that ends it. A search ([`Matcher::for_find`]) and a
 //!   replacement ([`Matcher::new`]) read them.
+//! - The empty search text matches nothing, in every mode: `findAll` reports no cell and
+//!   `replaceAll` changes none (probed on an XLSX and an ODS, `entire_cells` on and off, every mode,
+//!   an empty and a non-empty replacement; `tests/assets/probe_empty_search.py`). Nothing is
+//!   translated or compiled for it, and the callers answer it before any cell is read
+//!   ([`sheetrs_protocol::Find::matches_nothing`]).
 //! - A match of no characters is not a hit, with one exception: at the very end of the text it is
 //!   (`abc` with `$` replaced by `X` gives `abcX`, with `^` or `x*` nothing changes). The hits are
 //!   found as `LibreOffice` finds them: from the start of the text, each search begins where the
@@ -33,7 +38,8 @@ use sheetrs_protocol::{Find, Mode};
 /// A [`Find`] ready to test texts.
 #[derive(Debug)]
 pub struct Matcher {
-    re: Regex,
+    /// `None` for the empty search text, which matches nothing.
+    re: Option<Regex>,
     regex_mode: bool,
     entire: bool,
     /// Whether the pattern matches the empty text in the middle of a text (`x*` does, `$` and `^`
@@ -89,6 +95,16 @@ impl Matcher {
     }
 
     fn build(find: &Find, replacing: bool) -> Result<Self> {
+        if find.text.is_empty() {
+            // `LibreOffice` finds nothing and replaces nothing with the empty text, in every mode:
+            // nothing is translated or compiled.
+            return Ok(Self {
+                re: None,
+                regex_mode: false,
+                entire: false,
+                empty_inside: false,
+            });
+        }
         let body = match find.mode {
             Mode::Literal => escape(&find.text),
             Mode::Wildcards => wildcards(&find.text),
@@ -113,7 +129,7 @@ impl Matcher {
             .and_then(|c| c.get(0).map(|m| m.start() == 3 && m.end() == 3))
             .unwrap_or(false);
         Ok(Self {
-            re,
+            re: Some(re),
             regex_mode: find.mode == Mode::Regex,
             entire: find.entire_cells,
             empty_inside,
@@ -148,7 +164,8 @@ impl Matcher {
         mut mid: bool,
     ) -> Option<Captures<'a, str>> {
         while start < text.len() || mid {
-            let caps = self.re.captures_from_pos(text, start).ok().flatten()?;
+            let re = self.re.as_ref()?;
+            let caps = re.captures_from_pos(text, start).ok().flatten()?;
             let whole = caps.get(0)?;
             if !whole.as_str().is_empty() || whole.start() == text.len() {
                 return Some(caps);
@@ -386,8 +403,25 @@ mod tests {
     }
 
     #[test]
+    fn the_empty_search_text_matches_nothing_in_every_mode() {
+        for mode in [Mode::Literal, Mode::Regex, Mode::Wildcards] {
+            for entire_cells in [false, true] {
+                let f = Find {
+                    mode,
+                    entire_cells,
+                    ..find("", mode)
+                };
+                let m = Matcher::new(&f).unwrap();
+                assert!(!m.is_match("abc") && !m.is_match(""), "{mode:?}");
+                assert_eq!(m.replace_all("abc", "X"), None, "{mode:?}");
+                assert!(Matcher::for_find(&f).unwrap().re.is_none());
+            }
+        }
+    }
+
+    #[test]
     fn a_replacement_refuses_what_is_not_reproduced() {
-        for pattern in ["", "^*", "\\b", "(a*)*"] {
+        for pattern in ["^*", "\\b", "(a*)*"] {
             assert!(
                 matches!(
                     Matcher::new(&find(pattern, Mode::Regex)),

@@ -144,6 +144,11 @@ that can match the empty text (`^`, `$`, `^$`, `a*$`): what `findAll` does with 
 `tests/libreoffice_find.rs` (workbooks `tests/assets/anchors.*`, made by
 `tests/assets/make_anchors_fixtures.py`).
 
+The empty search text (`--find ''`) matches nothing, in every mode, as `findAll` reports no cell for
+it (probed in XLSX and ODS, with `entire_cells` on and off: `tests/assets/probe_empty_search.py`): the
+answer is `{"cells": []}` at once, with no error and nothing read (not even a sheet in `--scope`
+that is not there).
+
 ## The format of a formula cell
 
 LibreOffice gives a formula cell whose style is `General` the format its result has: `=A1` over a

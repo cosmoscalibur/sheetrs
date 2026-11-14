@@ -155,3 +155,11 @@ def test_a_search_with_operations_pending_raises(texts):
     texts.delete_sheets("R")
     with pytest.raises(sheetrs.PendingOperationsError):
         texts.find("apple")
+
+
+def test_the_empty_search_text_finds_nothing_in_every_mode(texts):
+    # LibreOffice: findAll with an empty search string reports no cell, in every mode.
+    for options in [{}, {"regex": True}, {"wildcards": True}, {"entire_cells": True}, {"regex": True, "entire_cells": True, "match_case": True}]:
+        assert texts.find("", **options) == []
+    # Nothing is read, so not even a sheet that is not there is an error.
+    assert texts.find("", scope="Nowhere") == []

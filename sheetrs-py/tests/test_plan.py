@@ -690,3 +690,22 @@ def test_hide_and_show_rows_columns_and_sheets(structure, tmp_path):
     shown = tmp_path / f"s{structure.suffix}"
     sheetrs.Book(hidden).show_rows("T!3").show_columns("T!B").show_sheets("V").save(shown)
     assert sheetrs.Book(shown).range("T!A1:A4")["T!A1:A4"].values == sheetrs.Book(structure).range("T!A1:A4")["T!A1:A4"].values
+
+
+def test_replace_with_the_empty_text_replaces_nothing_in_every_mode(tmp_path):
+    # LibreOffice: an empty search string matches nothing (replaceAll changes no cell), in every mode.
+    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    for options in [{}, {"regex": True}, {"wildcards": True}, {"entire_cells": True}, {"regex": True, "entire_cells": True, "match_case": True}]:
+        saved = sheetrs.Book(source).replace("", "X", **options).save(tmp_path / "e.xlsx")
+        assert saved.report.replaced == 0 and saved.report.skipped == []
+        assert saved.range("S!A1:C1")["S!A1:C1"].values == [["Apple", 1.5, "APPLE"]]
+    # A sheet that is not there is no error either: nothing is read.
+    saved = sheetrs.Book(source).replace("", "X", scope="Nowhere").save(tmp_path / "n.xlsx")
+    assert saved.report.replaced == 0
+
+
+def test_replace_with_an_empty_mapping_key_replaces_nothing(tmp_path):
+    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    saved = sheetrs.Book(source).replace({"": "X", "apple": "cherry"}).save(tmp_path / "m.xlsx")
+    assert saved.report.replaced == 5
+    assert saved.range("S!A1:C1")["S!A1:C1"].values == [["cherry", 1.5, "cherry"]]

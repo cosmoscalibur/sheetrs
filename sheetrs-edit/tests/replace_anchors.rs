@@ -224,9 +224,80 @@ fn the_replacement_of_an_anchored_search_has_the_groups_of_the_match() {
 #[test]
 fn a_pattern_that_is_not_reproduced_is_still_refused() {
     for extension in ["xlsx", "ods"] {
-        for pattern in ["", "^*", "(a*)*", "\\bfoo", "(?=a)b"] {
+        for pattern in ["^*", "(a*)*", "\\bfoo", "(?=a)b"] {
             let err = replaced(extension, pattern, "X", false, false).unwrap_err();
             assert!(err.contains("unsupported search"), "{pattern}: {err}");
         }
+    }
+}
+
+/// What a replacement of `find` by `with` does to `T!A:A` in `extension`: the texts and the cells it
+/// reports as replaced.
+fn replaced_find(extension: &str, find: Find, with: &str) -> (Vec<String>, usize) {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join(format!("out.{extension}"));
+    let mut book = Book::from_file(asset(&format!("input.{extension}"))).unwrap();
+    book.replace(
+        [],
+        [Replace {
+            find,
+            with: with.to_string(),
+        }],
+    );
+    let report = book.write(&out).unwrap();
+    let workbook = Book::from_file(&out).unwrap().workbook().unwrap();
+    let sheet = workbook.sheets.iter().find(|s| s.name == "T").unwrap();
+    let after = (0..texts().len() as u32)
+        .map(|row| match sheet.cells.get(&(row, 0)).map(|c| &c.value) {
+            Some(CellValue::Text(t)) => t.to_string(),
+            other => format!("{other:?}"),
+        })
+        .collect();
+    (after, report.replaced)
+}
+
+#[test]
+fn the_empty_search_text_replaces_nothing_in_every_mode() {
+    // `LibreOffice` 26.8: `replaceAll` with an empty search string changes no cell, in every mode,
+    // with `entire_cells` or without it, and with an empty or a non-empty replacement (probed on
+    // both formats).
+    for extension in ["xlsx", "ods"] {
+        let (before, _) = replaced_find(extension, Find::literal("zzz"), "");
+        for mode in [Mode::Literal, Mode::Regex, Mode::Wildcards] {
+            for entire_cells in [false, true] {
+                for with in ["", "Z"] {
+                    let find = Find {
+                        mode,
+                        entire_cells,
+                        ..Find::literal("")
+                    };
+                    let (after, replaced) = replaced_find(extension, find, with);
+                    assert_eq!(replaced, 0, "{extension} {mode:?} {entire_cells} {with:?}");
+                    assert_eq!(
+                        after, before,
+                        "{extension} {mode:?} {entire_cells} {with:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn the_empty_search_text_is_answered_at_once_even_for_a_sheet_that_is_not_there() {
+    for extension in ["xlsx", "ods"] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = Book::from_file(asset(&format!("input.{extension}"))).unwrap();
+        book.replace(
+            [sheetrs_protocol::Scope::Sheet("Nowhere".into())],
+            [Replace {
+                find: Find::literal(""),
+                with: "Z".into(),
+            }],
+        );
+        let report = book
+            .write(dir.path().join(format!("out.{extension}")))
+            .unwrap();
+        assert_eq!(report, sheetrs_edit::Report::default(), "{extension}");
     }
 }
