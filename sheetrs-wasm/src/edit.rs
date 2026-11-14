@@ -458,6 +458,20 @@ impl Book {
         self.inner.operations().len()
     }
 
+    /// Whether `save` keeps the results the file caches for the formulas the operations do not reach
+    /// (`true`): only the formulas they reach, and the ones that depend on them, are calculated again.
+    /// `false`, the default, calculates every formula the operations leave stale.
+    #[wasm_bindgen(getter, js_name = useCache)]
+    pub fn use_cache(&self) -> bool {
+        self.inner.use_cache()
+    }
+
+    /// Sets [`use_cache`](Self::use_cache).
+    #[wasm_bindgen(setter, js_name = useCache)]
+    pub fn set_use_cache(&mut self, use_cache: bool) {
+        self.inner = self.inner.clone().with_use_cache(use_cache);
+    }
+
     /// What `save` will do: the passes over the file, one operation per line.
     pub fn explain(&self) -> String {
         self.inner.explain()

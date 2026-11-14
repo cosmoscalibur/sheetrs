@@ -102,6 +102,40 @@ pub struct Spec {
     pub notes: Vec<String>,
     /// Compatibility features (`enable_features`); every one is off unless enabled.
     pub features: Features,
+    /// A recalculation that uses the results the workbook caches (see [`Cache`]); only
+    /// `Mode::Recalculate` reads it.
+    pub cache: Option<Cache>,
+}
+
+/// What a recalculation that uses the results a workbook caches is told, besides the workbook: the
+/// changes the passes before it made that its formulas cannot show. Only the formulas those changes
+/// reach, and the ones that depend on them, are calculated; every other formula is a constant that
+/// holds the result the workbook caches, and keeps it.
+///
+/// A formula that nothing reaches keeps its result only when the workbook can tell it is right. A
+/// formula with no cached result (the writer drops the result of a formula it rewrites because it
+/// read a deleted cell or a range that shrank), a volatile one, and one that reads the cells of a
+/// change are calculated, and so is everything that depends on them. A workbook that reads cells at
+/// run time (`INDIRECT`, `OFFSET`) can read any of them: it is calculated whole, and so is one in
+/// which more than a quarter of the formulas are stale, where the analysis would only add its own cost.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Cache {
+    /// Cells whose content changed, as `(sheet, first row, first column, last row, last column)`
+    /// (0-based, inclusive): the formulas that read them are stale.
+    pub changed: Vec<(String, u32, u32, u32, u32)>,
+    /// Rows were hidden or shown: `SUBTOTAL` and `AGGREGATE` read them.
+    pub rows_hidden: bool,
+    /// Rows, columns or sheets were deleted: a formula whose result depends on where cells are
+    /// (`ROW`, `COLUMNS`, `SHEET`...) or that reads through a defined name (the name may point to a
+    /// range that shrank) is stale.
+    pub layout: bool,
+    /// The sheets that lost rows: a formula that reads whole columns of one (a range to the last
+    /// row, which keeps its text when rows go) is stale.
+    pub rows_deleted: Vec<String>,
+    /// The sheets that lost columns: a formula that reads whole rows of one is stale.
+    pub columns_deleted: Vec<String>,
+    /// The defined names that were deleted: a formula that reads through one is stale.
+    pub names_deleted: Vec<String>,
 }
 
 /// Optional compatibility behaviours, resolved while the program is built. All are off by default:
@@ -159,6 +193,7 @@ impl Default for Spec {
             inspect: false,
             notes: Vec::new(),
             features: Features::default(),
+            cache: None,
         }
     }
 }
@@ -173,6 +208,9 @@ pub struct Report {
     pub formulas_folded: usize,
     /// Formulas that remain in the program.
     pub formulas_kept: usize,
+    /// Formulas that keep the result the workbook caches, because nothing reaches them (see
+    /// [`Cache`]).
+    pub formulas_cached: usize,
     pub cells_kept: usize,
     pub cycles: usize,
     /// A reference computed at run time forced the whole workbook to be kept.
@@ -567,7 +605,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
     report.formulas_total += formula_cells.len();
     // Where the formulas are, whatever becomes of each below (lowered, folded, or kept as the value
     // the file cached): the outputs nothing declares are the cells that are calculated.
-    let formula_positions: Vec<CellRef> = formula_cells.iter().map(|(at, _)| *at).collect();
+    let mut formula_positions: Vec<CellRef> = formula_cells.iter().map(|(at, _)| *at).collect();
     // Lowering a formula reads only the model: the cells go to as many threads as
     // the machine has, and what each one found is merged afterwards (the result is
     // sorted below, so the order they finish in does not matter).
@@ -619,6 +657,19 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
     }
     formulas.sort_unstable_by_key(|(at, _)| *at);
     subtotal_cells.sort_unstable();
+    if spec.mode == Mode::Recalculate
+        && let Some(cache) = &spec.cache
+    {
+        report.formulas_cached = keep_cached(
+            model,
+            cache,
+            &formula_cells,
+            &subtotal_cells,
+            &mut formulas,
+            &mut cached,
+            &mut formula_positions,
+        );
+    }
     drop(formula_cells);
     if let Cow::Owned(own) = &mut owned {
         own.cells.release_formulas();
@@ -2143,6 +2194,213 @@ impl Lazy<'_> {
         }
         self.adj[v as usize].as_deref().unwrap_or(&[])
     }
+}
+
+/// The functions whose result depends on where cells are, not on what they hold.
+const POSITIONAL: [&str; 11] = [
+    "ROW",
+    "ROWS",
+    "COLUMN",
+    "COLUMNS",
+    "ADDRESS",
+    "CELL",
+    "SHEET",
+    "SHEETS",
+    "AREAS",
+    "FORMULA",
+    "ISFORMULA",
+];
+
+fn overlaps(a: &Rect, b: &Rect) -> bool {
+    a.sheet == b.sheet && a.r0 <= b.r1 && b.r0 <= a.r1 && a.c0 <= b.c1 && b.c0 <= a.c1
+}
+
+/// Whether `text` names one of `names` (in lower case), however it is written.
+fn mentions(text: &str, names: &HashSet<String>, buffer: &mut String) -> bool {
+    text.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
+        .filter(|word| !word.is_empty())
+        .any(|word| {
+            buffer.clear();
+            buffer.extend(word.chars().flat_map(char::to_lowercase));
+            names.contains(buffer.as_str())
+        })
+}
+
+/// Cuts the formulas to those a recalculation has to calculate (see [`Cache`]): the others become
+/// constants that hold the result the workbook caches (`cached`) and are no longer outputs
+/// (`positions`). Returns how many keep their result, none when the whole workbook is calculated.
+///
+/// The ones to calculate are the stale ones and the formulas that depend on them, directly or
+/// through a range, found on the graph of the formulas. A change to a cell that is no formula
+/// reaches the formulas that read it, and those are where the walk starts.
+fn keep_cached(
+    model: &Model,
+    cache: &Cache,
+    texts: &[(CellRef, &ModelCell)],
+    subtotal_cells: &[CellRef],
+    formulas: &mut Vec<(CellRef, CellKind)>,
+    cached: &mut FastMap<CellRef, Value>,
+    positions: &mut Vec<CellRef>,
+) -> usize {
+    let n = formulas.len();
+    let changed: Vec<Rect> = cache
+        .changed
+        .iter()
+        .filter_map(|(sheet, r0, c0, r1, c1)| {
+            Some(Rect::new(model.sheet_id(sheet)?, *r0, *c0, *r1, *c1))
+        })
+        .collect();
+    let sheet_ids = |names: &[String]| -> Vec<u16> {
+        names
+            .iter()
+            .filter_map(|name| model.sheet_id(name))
+            .collect()
+    };
+    let (rows_deleted, columns_deleted) = (
+        sheet_ids(&cache.rows_deleted),
+        sheet_ids(&cache.columns_deleted),
+    );
+    // The names a formula may read through: the deleted ones, and the ones that stay when rows,
+    // columns or sheets were deleted (a name that points to a range that shrank).
+    let mut names: HashSet<String> = cache
+        .names_deleted
+        .iter()
+        .map(|name| name.to_lowercase())
+        .collect();
+    if cache.layout {
+        names.extend(model.names.keys().map(|name| name.to_lowercase()));
+    }
+    // The formulas the writer left with no result are the first to tell how much is stale: where
+    // they are most of the workbook there is nothing to keep, and nothing else is looked at.
+    let no_result = |i: usize| {
+        texts
+            .get(i)
+            .is_none_or(|(_, cell)| cell.value == Value::Empty)
+    };
+    if (0..n).filter(|&i| no_result(i)).count() * 4 > n {
+        return 0;
+    }
+    let (mut deps, mut buffer) = (Vec::new(), String::new());
+    let mut roots = vec![false; n];
+    let mut count = 0;
+    for (i, (at, kind)) in formulas.iter().enumerate() {
+        let CellKind::Formula(e) = kind else {
+            continue;
+        };
+        deps.clear();
+        let flags = dependencies_into(e, &mut deps);
+        if flags.dynamic {
+            // It can read any cell: nothing is out of reach.
+            return 0;
+        }
+        let mut stale = flags.volatile
+            || no_result(i)
+            || changed
+                .iter()
+                .any(|r| r.contains(*at) || deps.iter().any(|d| overlaps(d, r)))
+            || cache.rows_hidden && subtotal_cells.binary_search(at).is_ok()
+            || deps.iter().any(|d| {
+                d.r1 == addr::MAX_ROWS - 1 && rows_deleted.contains(&d.sheet)
+                    || d.c1 == addr::MAX_COLS - 1 && columns_deleted.contains(&d.sheet)
+            });
+        if !stale && cache.layout {
+            e.walk(&mut |x| {
+                if let Expr::Call(id, _) = x {
+                    stale |= POSITIONAL.contains(&id.def().name);
+                }
+            });
+        }
+        if !stale
+            && !names.is_empty()
+            && let Some((text_at, cell)) = texts.get(i)
+            && text_at == at
+            && let Some(text) = &cell.formula
+        {
+            stale = mentions(text, &names, &mut buffer);
+        }
+        roots[i] = stale;
+        count += usize::from(stale);
+    }
+    // Where more than a quarter of the workbook is stale the walk below could only add its cost.
+    if count * 4 > n {
+        return 0;
+    }
+    let all = std::mem::take(formulas);
+    let (ats, kinds): (Vec<CellRef>, Vec<CellKind>) = all.into_iter().unzip();
+    let index = NodeIndex::new(&ats, model.sheets.len());
+    // The cells of an array formula are calculated together: the writer drops the result of the
+    // first one only, and what is stale for one is for all.
+    let group = |at: &CellRef, offset: &(u32, u32)| -> Option<(usize, usize)> {
+        let master = CellRef::new(
+            at.sheet,
+            at.row.checked_sub(offset.0)?,
+            at.col.checked_sub(offset.1)?,
+        );
+        Some((index.get(at)? as usize, index.get(&master)? as usize))
+    };
+    for (at, offset) in &model.array_members {
+        if let Some((member, master)) = group(at, offset) {
+            roots[master] |= roots[member];
+        }
+    }
+    for (at, offset) in &model.array_members {
+        if let Some((member, master)) = group(at, offset) {
+            roots[member] = roots[master];
+        }
+    }
+    let mut graph = Lazy {
+        index: &index,
+        kinds: &kinds,
+        adj: vec![None; n],
+        rect_ids: FastMap::default(),
+        rect_members: Vec::new(),
+        flags: vec![Flags::default(); n],
+        deps: Vec::new(),
+    };
+    for v in 0..n as u32 {
+        graph.adj_of(v);
+    }
+    // Who reads each node (the formulas, and the rectangles that stand for ranges), as a CSR: the
+    // walk goes from a stale node to what depends on it.
+    let total = n + graph.rect_members.len();
+    let mut start = vec![0u32; total + 2];
+    for v in 0..total as u32 {
+        for &w in graph.adj_known(v) {
+            start[w as usize + 2] += 1;
+        }
+    }
+    for i in 2..start.len() {
+        start[i] += start[i - 1];
+    }
+    let mut readers = vec![0u32; start[total + 1] as usize];
+    for v in 0..total as u32 {
+        for &w in graph.adj_known(v) {
+            let slot = &mut start[w as usize + 1];
+            readers[*slot as usize] = v;
+            *slot += 1;
+        }
+    }
+    drop(graph);
+    let mut reached = vec![false; total];
+    let mut stack: Vec<u32> = (0..n as u32).filter(|&v| roots[v as usize]).collect();
+    while let Some(v) = stack.pop() {
+        if !std::mem::replace(&mut reached[v as usize], true) {
+            let (from, to) = (start[v as usize] as usize, start[v as usize + 1] as usize);
+            stack.extend_from_slice(&readers[from..to]);
+        }
+    }
+    positions.retain(|at| index.get(at).is_some_and(|id| reached[id as usize]));
+    let mut kept = 0;
+    for (i, (at, kind)) in ats.iter().zip(kinds).enumerate() {
+        if reached[i] {
+            formulas.push((*at, kind));
+        } else {
+            let value = model.cells.get(at).map(|c| c.value.clone());
+            cached.insert(*at, value.unwrap_or_default());
+            kept += 1;
+        }
+    }
+    kept
 }
 
 /// Appends the references of `e` to `deps` and returns the flags of the functions it calls.

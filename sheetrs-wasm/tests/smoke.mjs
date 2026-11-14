@@ -259,6 +259,14 @@ for (const file of [book, bookOds]) {
     assert.ok(edited.explain().includes("delete rows"));
     // The plan is not consumed: saved again it gives the same bytes.
     sameBytes(edited.save(), saved);
+    // `useCache = true` is `--use-cache`: the results the file caches stay where nothing reaches them.
+    assert.equal(edited.useCache, false);
+    run("edit", ["-i", file, "--delete-rows", "Data!10:11", "--use-cache", "-o", out]);
+    const cached = open(file);
+    cached.useCache = true;
+    assert.equal(cached.useCache, true);
+    cached.deleteRows("Data!10:11");
+    sameBytes(cached.save(), readFileSync(out));
   });
 }
 // A sweep: arrays of targets and a replace with pairs, the same as the command with its flags repeated.

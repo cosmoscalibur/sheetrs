@@ -55,6 +55,23 @@
 //! other result and has nothing to calculate. A workbook that came marked and was calculated by the
 //! engine loses the mark, since its results are fresh.
 //!
+//! **A run can use the cache** (`Book::with_use_cache(true)`, `--use-cache`, `use_cache=True`,
+//! `useCache = true`): the recalculation then calculates the formulas the plan reaches and what
+//! depends on them, and every other formula keeps, byte for byte, the result the file caches. It is
+//! never the default, because the result a file caches is the one of the application that wrote it
+//! (it is not a goal, see `docs/approved-differences.md`), and it changes nothing about when the
+//! engine runs, only how much of the workbook it calculates. A formula is reached when the writer
+//! left it with no cached result (it read a deleted cell or a range that shrank; the replaced
+//! formula), when it reads a cell a replacement wrote, when it is volatile, when it is a `SUBTOTAL`
+//! or `AGGREGATE` and rows were hidden or shown, when it calls a function of position (`ROW`,
+//! `COLUMNS`, `SHEET`...) or reads through a defined name and rows, columns, sheets or names were
+//! deleted; the engine itself is what finds who depends on those (see
+//! `sheetrs_compiler::Cache`). A workbook that reads cells at run time (`INDIRECT`, `OFFSET`), one
+//! that the file says is stale (an XLSX marked to be recalculated when it is opened), one where the
+//! replacements and the deletions meet, and one where more than a quarter of the formulas are stale at the start, are calculated
+//! whole: the result is then that of a run that does not use the cache. A run that does not need the
+//! engine at all (the cone is empty) writes the workbook as the passes left it.
+//!
 //! The plan is a description, not a model of the workbook: it holds the operations (a few bands
 //! and names), and each pass streams the file once, rewriting each cell as it goes by. The memory
 //! of a pass does not depend on the size of the workbook.
@@ -63,13 +80,14 @@ use crate::calculate::CalculateError;
 use crate::diagnostics::not_calculated;
 use crate::error::{Context, Error, Result};
 use crate::replace::Report;
+use sheetrs_compiler::Cache;
 use sheetrs_io::reader::Format;
 use sheetrs_io::write::{
-    self as writer, Bands, Calculation, ColumnRange, Operation, RowRange, ValueScope, ValueTarget,
-    VisibilityChange, WorkbookModifications,
+    self as writer, Bands, Calculation, ColumnRange, Operation, RowRange, SheetEdits, ValueScope,
+    ValueTarget, VisibilityChange, WorkbookModifications,
 };
 use sheetrs_io::{Book, Volatile};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 /// What a run is asked besides its operations (nothing, but in the tests: the engine of the
@@ -88,7 +106,13 @@ pub(crate) type StandIn = fn(&Book) -> std::result::Result<Vec<u8>, String>;
 impl Engine {
     /// Every formula of `workbook` calculated again, by the engine.
     #[cfg_attr(not(test), allow(clippy::unused_self))] // the tests give the engine a stand-in
-    fn recalculate(&self, workbook: &Book, operation: &str, volatile: Volatile) -> Result<Vec<u8>> {
+    fn recalculate(
+        &self,
+        workbook: &Book,
+        operation: &str,
+        volatile: Volatile,
+        cache: Option<&Cache>,
+    ) -> Result<Vec<u8>> {
         #[cfg(test)]
         if let Some(recalculate) = self.recalculate {
             return recalculate(workbook).map_err(|reason| Error::Recalculation {
@@ -96,10 +120,104 @@ impl Engine {
                 reason,
             });
         }
-        crate::calculate::recalculate(workbook, volatile).map_err(|reason| Error::Recalculation {
-            operation: operation.to_string(),
-            reason,
+        crate::calculate::recalculate(workbook, volatile, cache).map_err(|reason| {
+            Error::Recalculation {
+                operation: operation.to_string(),
+                reason,
+            }
         })
+    }
+}
+
+/// What a run that keeps the results the file caches ([`Book::use_cache`]) has changed since the
+/// results of the workbook were last known to be right: the recalculation calculates what this
+/// reaches and leaves every other formula as the file has it.
+struct Touched {
+    use_cache: bool,
+    /// `None`: every formula is calculated (the run does not use the cache, or the file says its
+    /// results are stale, or the changes cannot be placed).
+    cache: Option<Cache>,
+}
+
+/// Replacements beyond this many rectangles in a sheet are one rectangle that holds them all.
+const MOST_CHANGES: usize = 64;
+
+impl Touched {
+    fn start(book: &Book) -> Result<Self> {
+        let use_cache = book.use_cache();
+        // An XLSX marked to be recalculated when it is opened caches nothing to trust. An ODS has no
+        // such mark: a formula that has no result is calculated like any other that the plan reaches.
+        let marked =
+            use_cache && book.format() == Format::Xlsx && crate::stale::input_is_stale(book)?;
+        Ok(Self {
+            use_cache,
+            cache: (use_cache && !marked).then(Cache::default),
+        })
+    }
+
+    /// The workbook was calculated: its results are right, whatever came before.
+    fn calculated(&mut self) {
+        self.cache = self.use_cache.then(Cache::default);
+    }
+
+    /// A pass ran, with these replacements in it.
+    fn record(&mut self, pass: &[Operation], replacements: &HashMap<String, SheetEdits>) {
+        let Some(cache) = &mut self.cache else {
+            return;
+        };
+        for operation in pass {
+            match operation {
+                Operation::SetVisibility(changes) => {
+                    cache.rows_hidden |= changes
+                        .iter()
+                        .any(|change| matches!(change, VisibilityChange::Rows { .. }));
+                }
+                Operation::DeleteRows(rows) => {
+                    cache.layout = true;
+                    cache
+                        .rows_deleted
+                        .extend(rows.iter().map(|range| range.sheet.clone()));
+                }
+                Operation::DeleteColumns(columns) => {
+                    cache.layout = true;
+                    cache
+                        .columns_deleted
+                        .extend(columns.iter().map(|range| range.sheet.clone()));
+                }
+                Operation::DeleteSheets(_) => cache.layout = true,
+                Operation::DeleteNames(names) => {
+                    cache.names_deleted.extend(names.iter().cloned());
+                }
+                _ => {}
+            }
+        }
+        for (sheet, edits) in replacements {
+            // Runs of cells along a row, one rectangle each.
+            let mut rects: Vec<(u32, u32, u32, u32)> = Vec::new();
+            for &(row, col) in edits.keys() {
+                match rects.last_mut() {
+                    Some(last) if last.0 == row && last.2 == row && last.3 + 1 == col => {
+                        last.3 = col;
+                    }
+                    _ => rects.push((row, col, row, col)),
+                }
+            }
+            if rects.len() > MOST_CHANGES {
+                let hull = rects.iter().fold(rects[0], |h, r| {
+                    (h.0.min(r.0), h.1.min(r.1), h.2.max(r.2), h.3.max(r.3))
+                });
+                rects = vec![hull];
+            }
+            cache.changed.extend(
+                rects
+                    .into_iter()
+                    .map(|(r0, c0, r1, c1)| (sheet.clone(), r0, c0, r1, c1)),
+            );
+        }
+        // Where a change and a deletion meet, the cells of the change are not where they were.
+        if cache.layout && !cache.changed.is_empty() {
+            self.cache = None;
+        }
     }
 }
 
@@ -332,6 +450,11 @@ pub(crate) fn explain_book(book: &Book) -> String {
             let _ = writeln!(out, "  {operation}");
         }
     }
+    if book.use_cache() && passes.contains(&vec![Operation::Recalculate]) {
+        out.push_str(
+            "use the cache: the formulas the plan reaches, and what depends on them, are calculated; the others keep the results the file caches\n",
+        );
+    }
     if has_calculate(operations)
         || passes.last().map(Vec::as_slice) == Some(&[Operation::Recalculate])
     {
@@ -405,6 +528,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
         _ => unreachable!("a book of bytes has a folder"),
     };
     let mut report = Report::default();
+    let mut touched = Touched::start(book)?;
     // Whether the engine failed: only then is the workbook marked to be recalculated.
     let mut failed = false;
     let marked = WorkbookModifications {
@@ -428,6 +552,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                     &first_conversion(operations),
                     engine,
                     volatile,
+                    touched.cache.as_ref(),
                     &mut report,
                 )
                 .with_context(said)?
@@ -445,6 +570,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
         };
         if let Some(calculated) = calculated {
             if let Some(bytes) = calculated {
+                touched.calculated();
                 std::fs::write(&target, bytes).context("Cannot write the calculated workbook")?;
                 current = target;
             } else {
@@ -465,6 +591,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
         )
         .with_context(said)?;
         mods.clear_recalculation_mark = false;
+        touched.record(pass, &mods.replacements);
         writer::modify_workbook(&current, &target, &mods).with_context(said)?;
         current = target;
     }
@@ -505,6 +632,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
         copy
     };
     let mut report = Report::default();
+    let mut touched = Touched::start(book)?;
     let mut result = Vec::new();
     // Whether the engine failed: only then is the workbook marked to be recalculated.
     let mut failed = false;
@@ -525,6 +653,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
                     &first_conversion(operations),
                     engine,
                     volatile,
+                    touched.cache.as_ref(),
                     &mut report,
                 )
                 .with_context(said)?
@@ -541,6 +670,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
         );
         if let Some(calculated) = calculated {
             if let Some(bytes) = calculated {
+                touched.calculated();
                 result = bytes;
             } else {
                 failed = true;
@@ -556,6 +686,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
         }
         let mods =
             modifications_for(pass, &current, last && failed, &mut report).with_context(said)?;
+        touched.record(pass, &mods.replacements);
         result = writer::modify_workbook_bytes(format, &data, &mods).with_context(said)?;
         if !last {
             current = Book::from_bytes(result.clone())?.with_locale_of(book);
@@ -588,9 +719,10 @@ fn recalculate_pass(
     operation: &str,
     engine: &Engine,
     volatile: Volatile,
+    cache: Option<&Cache>,
     report: &mut Report,
 ) -> Result<Option<Vec<u8>>> {
-    match engine.recalculate(workbook, operation, volatile) {
+    match engine.recalculate(workbook, operation, volatile, cache) {
         Ok(bytes) => Ok(Some(fresh(bytes, workbook.format())?)),
         Err(Error::Recalculation { reason, .. }) if last => {
             // The recalculation that ends a run is the planner's own; a conversion that asks for it names itself.
@@ -623,7 +755,7 @@ fn calculate_pass(
         seed: calculation.seed.or(volatile.seed),
         ..calculation.clone()
     };
-    match crate::calculate::calculate(workbook, calculation) {
+    match crate::calculate::calculate(workbook, calculation, None) {
         Ok(done) => {
             if calculation.answer {
                 report.value_ranges = done.answer;

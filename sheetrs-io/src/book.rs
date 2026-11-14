@@ -151,6 +151,9 @@ pub struct Book {
     volatile: Volatile,
     #[cfg(feature = "write")]
     operations: Vec<crate::write::Operation>,
+    /// Whether a run keeps the results the file caches for the formulas the operations do not reach.
+    #[cfg(feature = "write")]
+    use_cache: bool,
 }
 
 impl Book {
@@ -206,6 +209,8 @@ impl Book {
             volatile: Volatile::default(),
             #[cfg(feature = "write")]
             operations: Vec::new(),
+            #[cfg(feature = "write")]
+            use_cache: false,
         }
     }
 
@@ -498,6 +503,25 @@ impl Book {
     pub fn clear_operations(&mut self) -> &mut Self {
         self.operations.clear();
         self
+    }
+
+    /// The same workbook that, when its operations leave results stale, calculates only what they
+    /// reach (`true`) and keeps the results the file caches for every other formula, instead of
+    /// calculating every formula again (`false`, the default). A formula an operation does not reach
+    /// then holds the value the application that wrote the file computed, byte for byte; a formula
+    /// that is reached, and everything that depends on it, is calculated as ever. A workbook whose
+    /// results the file declares stale, or that reads cells at run time (`INDIRECT`, `OFFSET`), is
+    /// calculated whole.
+    #[must_use]
+    pub fn with_use_cache(mut self, use_cache: bool) -> Self {
+        self.use_cache = use_cache;
+        self
+    }
+
+    /// Whether the run keeps the results the file caches ([`with_use_cache`](Self::with_use_cache)).
+    #[must_use]
+    pub fn use_cache(&self) -> bool {
+        self.use_cache
     }
 }
 

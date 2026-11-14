@@ -232,7 +232,7 @@ spec is an operation as if `replace` were called once per spec: it sees what the
 so the order of the specs matters. The options of a spec are its own (a replacement that needs
 other options is another element); one replacement is `[spec]`.
 
-**Recalculation is the planner's, with no option for it, and the mark is never decided beforehand.**
+**Recalculation is the planner's, and the mark is never decided beforehand.**
 A plan that deletes rows, columns, sheets or names, or replaces text, ends with a pass in which the engine
 (the semantics of LibreOffice) calculates every formula again. The result a file cached is not a goal
 (see [approved differences](../docs/approved-differences.md)): what a cell holds is the value its formula
@@ -248,6 +248,33 @@ assigns the mark before the engine has run, and nothing takes it off except the 
 calculated a workbook that came with it. A run that only converts formulas to values changes no other
 result and has nothing to calculate. The mark cannot be asked for or avoided, in the command line or in the library. What the engine costs is in
 [`docs/performance.md`](../docs/performance.md#sheetrs-edit). `--dry-run` says the passes and the calculation that ends them.
+
+**Using the cache is an option, never the default.** `sheetrs edit --use-cache` (`Book::with_use_cache(true)`,
+`use_cache=True` in Python, `useCache = true` in WebAssembly) makes the recalculation calculate only the formulas the
+plan reaches and the ones that depend on them; every other formula is read as a constant that holds the result the
+file caches, and keeps it, byte for byte. A formula is reached when:
+
+- the writer left it with no cached result (the formula read a deleted cell or a range that shrank, so the
+  plan rewrote it; a formula the file never gave a result, as in an ODS written by a program that does not store them);
+- it is volatile (`NOW`, `RAND`...), or reads a cell a replacement wrote, or is a `SUBTOTAL` or `AGGREGATE` and
+  rows were hidden or shown;
+- rows, columns or sheets were deleted and it calls a function of position (`ROW`, `COLUMNS`, `SHEET`...), reads a range
+  that goes to the last row (or column) of a sheet that lost rows (or columns), or reads through a defined name
+  (a name may point to a range that shrank); or a defined name was deleted and it reads through it.
+
+What depends on those is found with the dependency graph the compiler already builds (through names, ranges and whole
+columns), and is calculated too: for the cells reached the result is that of a run without the option. The run is
+the one of the default, and calculates **every** formula, where the workbook reads cells at run time (`INDIRECT`,
+`OFFSET` with an argument that is not known), where the file says its results are stale (an XLSX marked to be
+recalculated when it is opened), where a replacement and a deletion meet (the cells of the
+replacement are not where they were), and where the formulas without a result are more than a quarter of the workbook
+(nothing would be kept and the analysis would only add its cost). The result a file caches is still not a goal of
+the project (see [approved differences](../docs/approved-differences.md)); what the option gives is the choice of
+the caller, who wants an edit to change only the cells it has to (the issue that asked for it,
+[#126](https://github.com/cosmoscalibur/sheetrs/issues/126), shows cells where Excel and the engine differ, and a
+`TEXT` calculated with another locale than the one the workbook was written with). What it costs and what it
+saves are in [`docs/performance.md`](../docs/performance.md#using-the-cache): the engine, the writing of the results and
+the memory of the calculation shrink with what is not reached; the reading of the workbook and the passes of the plan do not.
 
 **`calculate` is an operation, and `sheetrs edit` has no flag for it.** In the library,
 `BookEdit::calculate(Calculation { inputs, ranges, major, answer, now, seed })` writes the inputs and calculates every
@@ -448,6 +475,11 @@ Each operation is judged against `LibreOffice` 26.8 in each format on its own:
 - `tests/replace.rs` does the same for Find & Replace on `tests/assets/replace/`.
 - The tests of rows, columns, sheets and names deleted start from `tests/assets/structure/`
   (`scripts/gen_structure_fixtures.py`).
+- `tests/use_cache.rs` runs the same edits with and without `use_cache` on `tests/assets/use_cache/`
+  (`make_fixtures.py`: formulas that cache a result the engine would not give, so that a formula that kept its
+  cache is told from one calculated again): the cells reached are those of a full calculation, the others are the
+  file's (the XML of the cell, byte for byte, in an XLSX), and the cases that are calculated whole are equal to a run
+  without the option; in each format.
 
 
 XLSX, deleting the cell a chart is anchored to.

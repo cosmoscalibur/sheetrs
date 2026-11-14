@@ -736,8 +736,9 @@ impl PyBook {
     /// What `save` will do: the passes over the file that run the operations, one operation per
     /// line, and the calculations in their place. The operations are not run in the order they were
     /// given: each is written against the workbook as it is, and the planner orders them.
-    fn explain(&self) -> String {
-        plan::explain(&self.source, &self.steps)
+    #[pyo3(signature = (*, use_cache=false))]
+    fn explain(&self, use_cache: bool) -> String {
+        plan::explain(&self.source.clone().with_use_cache(use_cache), &self.steps)
     }
 
     /// The cut: run the operations and write the workbook.
@@ -757,14 +758,18 @@ impl PyBook {
     /// the operations leave stale is calculated again by the engine, so it is written with fresh
     /// results; where the engine cannot, it is written marked so that the application that opens it
     /// recalculates every formula, and a `RecalculationWarning` says so (also logged by `sheetrs`).
+    /// With `use_cache=True` only the formulas the operations reach, and the ones that depend on
+    /// them, are calculated: every other formula keeps the result the file caches (the default
+    /// calculates every formula).
     /// Raises `OSError` for a file that cannot be read or written and `sheetrs.Error` when the
     /// workbook cannot be edited (including when there are no operations).
-    #[pyo3(signature = (dest=None, *, json=None))]
+    #[pyo3(signature = (dest=None, *, json=None, use_cache=false))]
     fn save<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
         dest: Option<&Bound<'py, PyAny>>,
         json: Option<&Bound<'py, PyAny>>,
+        use_cache: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         if json.is_some() && !plan::has_calculate(&slf.steps) {
             return Err(raise(
@@ -773,7 +778,7 @@ impl PyBook {
                  call calculate() first",
             ));
         }
-        let source = slf.source.clone();
+        let source = slf.source.clone().with_use_cache(use_cache);
         let steps = slf.steps.clone();
         let stream_dest = match dest {
             Some(dest) if is_stream(dest)? => Some(dest.clone()),
@@ -872,12 +877,15 @@ impl PyBook {
     /// made from).
     ///
     /// Raises `OSError` for a file that cannot be read when there are no operations, and
-    /// `sheetrs.Error` when the workbook cannot be read or edited to run them.
+    /// `sheetrs.Error` when the workbook cannot be read or edited to run them. `use_cache` is the one
+    /// of `save`.
+    #[pyo3(signature = (*, use_cache=false))]
     fn to_bytes<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
+        use_cache: bool,
     ) -> PyResult<Bound<'py, PyBytes>> {
-        let source = slf.source.clone();
+        let source = slf.source.clone().with_use_cache(use_cache);
         if slf.steps.is_empty() {
             let bytes = py
                 .detach(|| match (source.path(), source.bytes()) {

@@ -8,7 +8,8 @@ the table of its flow here, and `sheetrs-linter/docs/PROFILING.md` when it targe
 - [Method](#method)
 - [Fixtures](#fixtures)
 - [Results](#results): [lint](#sheetrs-lint), [stats](#sheetrs-stats), [query](#sheetrs-query),
-  [edit](#sheetrs-edit), [calculate and the compiler](#sheetc-calculate-and-sheetc-build),
+  [edit](#sheetrs-edit), [using the cache](#using-the-cache),
+  [calculate and the compiler](#sheetc-calculate-and-sheetc-build),
   [Python](#python), [WebAssembly](#webassembly), [sizes](#sizes)
 - [Against LibreOffice](#against-libreoffice)
 - [Known limits](#known-limits)
@@ -37,7 +38,7 @@ To measure again:
 ```bash
 cargo build --profile dist -p sheetrs-cli -p sheetrs-compiler
 python3 scripts/bench.py fixtures DIR                  # about 4 minutes; needs `xlsxwriter`, `openpyxl` and LibreOffice
-python3 scripts/bench.py run DIR                       # every group; or `run DIR lint,edit` for some
+python3 scripts/bench.py run DIR                       # every group; or `run DIR lint,edit` for some (`cache`: `edit --use-cache` against the default)
 python3 scripts/bench.py run DIR python --python VENV/bin/python   # a venv with `maturin develop --profile dist`
 scripts/package-wasm.sh && scripts/build-wasm-rt.sh && python3 scripts/bench.py run DIR wasm
 ```
@@ -144,6 +145,48 @@ history of #102). Measured on this workbook (one run per cell, ODS / XLSX with r
 what changes (`--delete-columns`: 49.4 s with it, 30.2 s without; `--delete-sheets`: 49.0 and 32.3 s), while it won
 where nothing was stale (`--delete-columns Data!E:G`: 25.9 s with it, 34.7 s without; XLSX 16.7 and 27.7 s). Since the
 result a file cached is not a goal (`docs/approved-differences.md`), it was removed.
+
+### Using the cache
+
+`sheetrs edit --use-cache` (see the README of `sheetrs-edit`) calculates only the formulas the plan reaches and the ones
+that depend on them; every other formula is a constant that holds the result the file caches. It is measured against
+the default on the workbooks that cache true results (`formulas_cached.xlsx`, and `formulas.ods`; `formulas.xlsx`
+caches `0` and says so, so a run on it calculates everything either way), with `scripts/bench.py run DIR cache` (min-max
+of 3 runs). Each row is a plan whose recalculation has the share of the 2.4 M formulas that the third column says.
+
+| Workbook and scenario | default | `--use-cache` | Formulas calculated (cone) |
+|---|---|---|---|
+| XLSX `--delete-names base_rate` (nothing reads it) | 18.27-19.39 s, 1603 MB | 6.67-6.92 s, 1237 MB | 0 |
+| XLSX `--delete-rows Data!299990:299995` | 27.05-27.63 s, 1607 MB | 20.40-21.54 s, 1237 MB | 59 |
+| XLSX `--delete-rows Data!10:20` (the running total reads on) | 26.68-27.34 s, 1622 MB | 22.73-23.97 s, 1255 MB | 300 074 (12.5 %) |
+| XLSX `--delete-sheets Lookup` | 24.56-25.55 s, 1799 MB | 21.98-22.68 s, 1546 MB | 1 500 004 (62.5 %) |
+| XLSX `--delete-columns Data!B:D` | 23.56-27.42 s, 2153 MB | 23.13-25.98 s, 2153 MB | all (falls back: 37.5 % of the formulas lose their result) |
+| ODS `--delete-names base_rate` | 26.08-27.44 s, 1586 MB | 13.45-14.18 s, 1239 MB | 0 |
+| ODS `--delete-rows Data!299990:299995` | 33.02-33.39 s, 1587 MB | 25.21-25.61 s, 1238 MB | 59 |
+| ODS `--delete-rows Data!10:20` | 33.12-34.12 s, 1603 MB | 29.01-29.46 s, 1257 MB | 300 074 |
+| ODS `--delete-sheets Lookup` | 29.22-29.66 s, 1880 MB | 26.68-27.39 s, 1613 MB | 1 500 004 |
+| ODS `--delete-columns Data!B:D` | 29.11-29.87 s, 2169 MB | 29.10-30.00 s, 2169 MB | all (falls back) |
+
+What it saves is the calculation and the writing of the results of the formulas that are not reached, and the memory
+the program holds for them: 8-25 % of the time and 14-23 % of the peak where a share of the formulas is reached
+(12.5 % or less: 11-24 % of the time and 22-23 % of the peak; 62.5 %: 8-12 % and 14 %), and 64 % of the time in an XLSX and
+49 % in an ODS where no formula is reached (the engine is not asked and no result is written). What it
+does not save is what the plan costs whatever the engine does: the pass that deletes (7-8 s on this workbook) and,
+in the recalculation, reading the workbook, parsing its 2.4 M formulas and building their graph (about 7 s); the
+second takes the same time with a cone of 59 formulas as with the whole workbook. In the default run of
+`--delete-names` (18.7 s) the engine takes 3.9 s, the reading and the compilation 7.1 s and the rest is the
+streaming write of 2.4 M results; the same run with the cone of one input (300 006 formulas) takes 14.1 s, with the
+engine at 0.4 s.
+
+The cost of finding the cone is the walk over the formulas: for a workbook of this size 0.6-1.3 s (the dependencies of
+the 2.4 M formulas and the reverse of the graph, which the compiler builds again for what it calculates). Where the
+formulas without a result (the ones the deletion rewrote) are more than a quarter of the workbook the walk is not made
+and the run is the default, because the cone is then at least that large and the walk would only add its cost: before
+that threshold existed `--delete-columns` (37.5 % of the formulas without a result and a cone of 100 %) took 24.0-24.5
+s against 22.7-23.2 s (XLSX) and 29.1-29.7 s against 27.2-28.2 s (ODS), a loss of 5-7 %; with it the two are equal
+within the noise of the machine (23.1-26.0 against 23.6-27.4 s, and 29.1-30.0 against 29.1-29.9 s). Below the threshold
+the loss, if the cone turns out to be the whole workbook, is the cost of the walk, 1-1.3 s on this workbook (4-5 %).
+A workbook that reads cells at run time (`INDIRECT`, `OFFSET`) is calculated whole as without the option.
 
 ### `sheetc calculate` and `sheetc build`
 

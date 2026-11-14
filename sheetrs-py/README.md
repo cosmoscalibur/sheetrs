@@ -130,6 +130,13 @@ content as Python dicts and lists, `to_json()` as JSON text (and, for the lint r
   `sheetrs.Error`. The workbook can be read from memory at any time: `sheetrs.Book(book.calculate(...).to_bytes()).range("Data!A1:C9")`.
   (The compiled program, which writes no workbook, refuses a range outside the declared outputs and lists
   them: see [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for).)
+- **`use_cache=True`** (a keyword of `save`, `to_bytes` and `explain`; `False`, calculating every formula,
+  is the default): the recalculation after an edit calculates only the formulas the operations reach
+  (the ones that read a deleted cell or a range that shrank, a replaced cell, a `SUBTOTAL` when rows are hidden
+  or shown, a function of position or a name when rows, columns, sheets or names are deleted) and the ones that depend on
+  them; every other formula keeps, as the file has it, the result the application that wrote it cached. It takes
+  less time and memory the fewer formulas the edit reaches and is the same as without the option where it
+  reaches most of them (see `sheetrs-edit/README.md`, *Using the cache*).
 - **Recalculation on open**, with no option: a workbook whose results the changes leave stale (rows,
   columns, sheets or names deleted) and that no `calculate` calculated again is saved marked so that
   the application that opens it recalculates every formula. When the engine cannot calculate the

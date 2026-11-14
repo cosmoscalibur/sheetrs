@@ -5,6 +5,7 @@
 //! `LibreOffice`): [`recalculate`] is a calculation with nothing written and nothing asked for.
 
 use serde_json::{Map, Value as Json};
+use sheetrs_compiler::Cache;
 use sheetrs_compiler::memory::{BookCompile, Options};
 use sheetrs_engine::ir::Mode;
 use sheetrs_io::write::Calculation;
@@ -50,12 +51,14 @@ impl fmt::Display for CalculateError {
 pub(crate) fn calculate(
     source: &Book,
     calculation: &Calculation,
+    cache: Option<&Cache>,
 ) -> Result<Calculated, CalculateError> {
     // The clock and the seed reach the engine as the options of the build and of the run, as the
     // `--now` and `--seed` of `sheetc` do: the step's own, else the ones given to the book.
     let mut options = Options::default().with_book(source);
     options.config.now = calculation.now.or(options.config.now);
     options.config.seed = calculation.seed.or(options.config.seed);
+    options.cache = cache.cloned();
     // Inputs, ranges or an answer are the embedded mode (the workbook is its own template, inputs
     // and outputs declared or deduced); with none of them the workbook is calculated as it is.
     let embedded =
@@ -129,15 +132,20 @@ pub(crate) fn calculate(
 }
 
 /// Every formula of the workbook calculated again, as it is: the bytes of the workbook with fresh
-/// cached results, in its own format, with the clock and the seed `volatile` fixes. The error is why
-/// that cannot be done.
-pub(crate) fn recalculate(source: &Book, volatile: Volatile) -> Result<Vec<u8>, String> {
+/// cached results, in its own format, with the clock and the seed `volatile` fixes. With a `cache`, only
+/// the formulas it names and the ones that depend on them: the others keep the result the workbook
+/// caches. The error is why that cannot be done.
+pub(crate) fn recalculate(
+    source: &Book,
+    volatile: Volatile,
+    cache: Option<&Cache>,
+) -> Result<Vec<u8>, String> {
     let calculation = Calculation {
         now: volatile.now,
         seed: volatile.seed,
         ..Calculation::default()
     };
-    calculate(source, &calculation)
+    calculate(source, &calculation, cache)
         .map(|calculated| calculated.workbook)
         .map_err(|error| error.to_string())
 }

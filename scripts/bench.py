@@ -19,6 +19,7 @@ sheetrs-compiler`). Every command runs RUNS times; the table gives the minimum a
 time and of the peak resident memory (`ru_maxrss` of the child: no `/usr/bin/time` is needed). Groups:
 
   lint stats query edit calculate   `sheetrs lint|stats|query|edit` and `sheetc calculate` on formulas.xlsx / .ods
+  cache                             `sheetrs edit --use-cache` against the default, on formulas_cached.xlsx / formulas.ods
   compiler                          `sheetc build` and the executable it writes, by stage (measure_perf.py)
   wasm                              the WebAssembly package (needs scripts/package-wasm.sh and scripts/build-wasm-rt.sh): time and
                                     peak memory of one call per tool, sizes, and
@@ -182,6 +183,29 @@ def group_edit(a):
                 rs = measure([a.sheetrs, "edit", "-i", os.path.join(a.dir, f), *args, "-o", out], a.runs,
                              before=lambda: os.path.exists(out) and os.remove(out))
                 row(f"{f} {name}", rs, f"`{' '.join(args)}`")
+
+
+CACHE_SCENARIOS = [
+    ("delete-names (nothing reads it)", ["--delete-names", "base_rate"]),
+    ("delete-rows at the end of `Data`", ["--delete-rows", "Data!299990:299995"]),
+    ("delete-rows `Data!10:20` (a running total reads on)", ["--delete-rows", "Data!10:20"]),
+    ("delete-sheets `Lookup` (5 of the 8 columns read it)", ["--delete-sheets", "Lookup"]),
+    ("delete-columns `Data!B:D` (every formula reads them)", ["--delete-columns", "Data!B:D"]),
+]
+
+
+def group_cache(a):
+    """`--use-cache` against the default, on the workbooks that cache true results (`formulas.xlsx` is marked stale)."""
+    table("`sheetrs edit --use-cache` against the default", "Workbook, scenario and option")
+    with tempfile.TemporaryDirectory() as work:
+        for f in ("formulas_cached.xlsx", "formulas.ods"):
+            ext = f.rsplit(".", 1)[1]
+            out = os.path.join(work, f"out.{ext}")
+            for label, args in CACHE_SCENARIOS:
+                for flag in ([], ["--use-cache"]):
+                    rs = measure([a.sheetrs, "edit", "-i", os.path.join(a.dir, f), *args, *flag, "-o", out], a.runs,
+                                 before=lambda: os.path.exists(out) and os.remove(out))
+                    row(f"{f} {label} {'`--use-cache`' if flag else 'default'}", rs, f"`{' '.join(args + flag)}`")
 
 
 def group_calculate(a):
@@ -354,7 +378,7 @@ def group_model(a):
 
 
 GROUPS = {"lint": group_lint, "stats": group_stats, "query": group_query, "edit": group_edit, "calculate": group_calculate,
-          "compiler": group_compiler, "wasm": group_wasm, "model": group_model, "python": group_python, "libreoffice": group_libreoffice}
+          "cache": group_cache, "compiler": group_compiler, "wasm": group_wasm, "model": group_model, "python": group_python, "libreoffice": group_libreoffice}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)

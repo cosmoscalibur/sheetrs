@@ -351,6 +351,17 @@ a query and the dates a search reads. The first of these that is set decides, an
 `sheetrs_compiler::locale::resolve` is the one place that applies the order for the engine. The
 adapters (`sheetrs-py`, `sheetrs-wasm`, the command lines) only convert the argument.
 
+### Using the cache of a `Book`
+
+Whether an edit keeps the results a file caches for the formulas the plan does not reach (instead of
+calculating every formula again) is a property of the run, off by default, and its name is `use_cache` in
+every layer, converted only to the convention of each language: `Book::with_use_cache` and `Book::use_cache`
+(`sheetrs-io`; the planner of `sheetrs-edit` reads it), `--use-cache` of `sheetrs edit`, the keyword
+`use_cache` of `save`, `to_bytes` and `explain` in Python, and the property `useCache` of the `Book` in
+WebAssembly. The option is never implied by another and is never the default (the cache is not a fidelity criterion,
+see `CONTRIBUTING.md`); what it hands the engine is `sheetrs_compiler::Cache`, built by the planner from the
+operations it has run (`sheetrs-edit/src/plan.rs`).
+
 ### Versioning
 
 The workspace uses [semantic versioning](https://semver.org/):

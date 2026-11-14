@@ -63,7 +63,7 @@ statistics, which are a tool like the others: `stats()` reads it.
 | | `valueRanges()` | `ValueRanges` of the calculation (`toJSON()` is the answer of the protocol, `{valueRanges: [{range, name, values}]}`, `toObject()` is `{name: rows}`); runs the operations in memory and writes nothing |
 | | `report` | `Report` of the last `save` or `valueRanges`: `replaced`, `written`, `skipped` (`{sheet, cell, reason}`), `diagnostics`, `valueRanges`; `undefined` before |
 | **compile** | `compile(options?)` | `{module, cells, reachable, formulas, folded, kept, cycles, diagnostics}`: `module` is a `Uint8Array`, the WebAssembly module of the workbook (`sheetc build --target wasm`) |
-| **settings** | `locale`, `now`, `seed` (read only), `dates`, `onDiagnostic` | `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
+| **settings** | `locale`, `now`, `seed` (read only), `useCache`, `dates`, `onDiagnostic` | `useCache = true` makes `save` calculate only the formulas the operations reach (and the ones that depend on them) and keep, as the file has them, the results it caches for the rest (see below; `false`, calculating every formula the operations leave stale, is the default); `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
 
 Free functions: `lintRules()` (array of `{id, name, category, is_default}`), `evaluateFormula(formula,
 locale, options)` (the value of one formula, `sheetc evaluate`) and `initPanicHook()`.
@@ -97,6 +97,13 @@ calculate the workbook (a function or syntax it does not have) is it written mar
 when it is opened, with a diagnostic with the code `RECALC_NOT_SUPPORTED` in `report.diagnostics`
 (and in `onDiagnostic`): the recalculation that is needed will be done by the spreadsheet program that
 opens it later. `valueRanges()` has no workbook to mark: there it is an error that gives the reason.
+
+`useCache = true` (a property of the `Book`, `false` by default) asks `save` to keep the results the file caches
+for the formulas the operations do not reach: the engine calculates the ones they reach (a formula that read a deleted
+cell or a range that shrank, one that reads a replaced cell, a `SUBTOTAL` when rows are hidden or shown...) and
+the ones that depend on them, and every other formula keeps the value the application that wrote the file
+computed. A workbook that reads cells at run time (`INDIRECT`), or whose file says its results are stale, is
+calculated whole, as without it (see `sheetrs-edit/README.md`, *Using the cache*).
 
 A `formulaToValue` that follows a change which leaves results stale (rows, columns, sheets or names
 deleted) converts the results calculated again by the engine, as an application that calculates as it goes

@@ -15,7 +15,7 @@
 //! | `sheetc verify -i FILE` (`--reference cache`) | [`BookCompile::verify`] |
 //! | `sheetc evaluate FORMULA` | [`evaluate`] |
 
-use crate::compile::{Report, compile};
+use crate::compile::{Cache, Report, compile};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::loader;
@@ -37,6 +37,9 @@ pub struct Options {
     /// The declarations of inputs and outputs as the JSON text of a `settings_file`; they replace
     /// the settings sheet.
     pub declarations: Option<String>,
+    /// For [`Mode::Recalculate`]: calculate only what these changes reach, and keep the results the
+    /// workbook caches for the rest (see [`Cache`]).
+    pub cache: Option<Cache>,
 }
 
 impl Options {
@@ -69,6 +72,7 @@ impl Options {
         Ok(Self {
             config,
             declarations,
+            cache: None,
         })
     }
 
@@ -78,6 +82,7 @@ impl Options {
             None => self.config.spec(model)?,
         };
         spec.mode = mode;
+        spec.cache.clone_from(&self.cache);
         Ok(spec)
     }
 

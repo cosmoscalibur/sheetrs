@@ -155,6 +155,14 @@ pub struct Args {
     #[arg(short = 'c', long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
+    /// Keep the results the file caches: the recalculation that an edit leaves to do calculates only
+    /// the formulas the edit reaches and the ones that depend on them, and every other formula keeps,
+    /// as it is, the value the application that wrote the file cached. By default every formula is
+    /// calculated again by the engine. A workbook that reads cells at run time (`INDIRECT`, `OFFSET`)
+    /// or that the file says is stale is calculated whole either way
+    #[arg(long)]
+    pub use_cache: bool,
+
     /// Output file (required unless `--in-place`)
     #[arg(short, long, conflicts_with = "in_place")]
     pub output: Option<PathBuf>,
@@ -214,7 +222,7 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
 
     // The flags of a command are all written against the input file, in no order: the planner
     // decides what runs first (see `sheetrs_edit::BookEdit`), as it does for every other caller.
-    let mut book = Book::from_file(&cli.file)?;
+    let mut book = Book::from_file(&cli.file)?.with_use_cache(cli.use_cache);
     if let Some(tag) =
         sheetrs_io::locale::for_command(cli.locale.as_deref(), cli.config.as_deref())?
     {
