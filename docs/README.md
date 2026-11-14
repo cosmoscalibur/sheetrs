@@ -10,6 +10,9 @@ getting-started instructions, see the root [README.md](../README.md).
 - [Coding Patterns](coding-patterns.md) — conventions, naming, SoC principle,
   WalkerRule trait pattern, CLI and library guidelines.
 
+- [Spike: interpreter, JIT and LLVM](spike-execution-backends.md) — what a direct mode, a JIT and an
+  LLVM compiler would add to the engine, with the measurements behind the verdicts.
+
 ## API
 
 - [API alignment](api-alignment.md) — the rules that keep the command line, Rust, Python and WebAssembly
