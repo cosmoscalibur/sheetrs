@@ -359,7 +359,7 @@ impl PyBook {
     /// workbook: `calculate`, the recalculation that follows an edit and `inspect`; they are the
     /// `--now` and `--seed` of `sheetc`. Without them the engine reads the clock. The `now` and
     /// `seed` of a single call (`calculate(now=, seed=)`) win over them. Distinct seeds give distinct
-    /// streams; `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of SheetRS.
+    /// streams; `RAND` of `LibreOffice` cannot be seeded, so `seed` is an extension of `SheetRS`.
     ///
     /// Raises `FileNotFoundError` for a path that is not a file, `FormatError` for a workbook
     /// that is not an XLSX, XLSM or ODS one and `ValueError` for a `locale` that is not a locale tag.
