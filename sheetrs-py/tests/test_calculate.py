@@ -407,7 +407,15 @@ def test_seed_fixes_rand(volatile):
 
     assert 0 <= rand(42) < 1
     assert rand(42) == rand(42)
-    assert rand(42) != rand(44)  # an odd seed and the even one before it are the same stream
+    assert rand(42) != rand(44)
+
+
+def test_an_even_seed_and_the_next_odd_one_give_distinct_streams(volatile):
+    def rand(seed):
+        return volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=seed))[2]
+
+    for even in (0, 42, 1000):
+        assert rand(even) != rand(even + 1)
 
 
 def test_without_now_the_clock_is_the_systems(volatile):

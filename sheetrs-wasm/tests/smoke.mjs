@@ -370,6 +370,10 @@ for (const extension of ["xlsx", "ods"]) {
     assert.ok(rand >= 0 && rand < 1);
     assert.equal(row({ seed: 42 })[2], rand);
     assert.notEqual(row({ seed: 44 })[2], rand);
+    // An even seed and the next odd one are distinct streams.
+    for (const even of [0, 42, 1000]) {
+      assert.notEqual(row({ seed: even })[2], row({ seed: even + 1 })[2], `seeds ${even} and ${even + 1}`);
+    }
     assert.ok(row(undefined)[0] > 45292, "without options the clock is the system's");
     assert.throws(() => row({ nowish: 1 }), /unknown key `nowish`/);
   });

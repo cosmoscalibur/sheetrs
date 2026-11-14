@@ -82,6 +82,21 @@ fn seed_fixes_rand() {
 }
 
 #[test]
+fn an_even_seed_and_the_next_odd_one_give_distinct_streams() {
+    for extension in EXTENSIONS {
+        for even in [0, 42, 1000] {
+            let (_, _, a) = calculate(extension, None, Some(even));
+            let (_, _, b) = calculate(extension, None, Some(even + 1));
+            assert!(
+                a.to_bits() != b.to_bits(),
+                "{extension}: seeds {even} and {}",
+                even + 1
+            );
+        }
+    }
+}
+
+#[test]
 fn without_now_and_seed_the_clock_is_the_systems() {
     for extension in EXTENSIONS {
         let (now, _, _) = calculate(extension, None, None);

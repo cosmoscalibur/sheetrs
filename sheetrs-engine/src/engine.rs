@@ -192,7 +192,7 @@ impl<'p> Engine<'p> {
             blank,
             state,
             at: CellRef::new(0, 0, 0),
-            rng: seed | 1,
+            rng: mix_seed(seed),
             array_depth: 0,
             range_cache: FastMap::default(),
             full_cache: FastMap::default(),
@@ -1291,4 +1291,16 @@ fn change(old: &Value, new: &Value) -> f64 {
         (a, b) if a == b => 0.0,
         _ => f64::INFINITY,
     }
+}
+
+/// The state of the generator of `RAND` for `seed`: the seed mixed with the finalizer of `SplitMix64`,
+/// so that distinct seeds give distinct states (and so distinct streams), and never zero (the
+/// xorshift generator would stay at zero). `seed | 1` made an even seed and the next odd one the same.
+fn mix_seed(seed: u64) -> u64 {
+    let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    // The finalizer is a bijection: a single seed maps to zero, and it takes a fixed non-zero state.
+    if z == 0 { 0x9E37_79B9_7F4A_7C15 } else { z }
 }

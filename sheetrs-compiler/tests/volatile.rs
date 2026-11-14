@@ -342,3 +342,24 @@ fn the_build_of_a_book_takes_its_volatile_too() {
         assert_eq!(program.options.rand_seed, Some(42), "{extension}");
     }
 }
+
+#[test]
+fn consecutive_seeds_give_distinct_streams_and_zero_is_a_seed() {
+    for extension in EXTENSIONS {
+        // An even seed and the odd one after it used to give the same stream.
+        let rand = |seed: &str| calculate(extension, &["--seed", seed])[2];
+        let seeds = ["0", "1", "2", "3", "42", "43", "44"];
+        let draws: Vec<f64> = seeds.iter().map(|seed| rand(seed)).collect();
+        for (i, a) in draws.iter().enumerate() {
+            assert!((0.0..1.0).contains(a), "{extension}: seed {}", seeds[i]);
+            for (j, b) in draws.iter().enumerate().skip(i + 1) {
+                assert!(
+                    !same(*a, *b),
+                    "{extension}: seeds {} and {}",
+                    seeds[i],
+                    seeds[j]
+                );
+            }
+        }
+    }
+}
