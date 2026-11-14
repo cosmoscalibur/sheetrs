@@ -103,12 +103,59 @@ fn oracle_dump(sheets: &Json) -> Dump {
         .collect()
 }
 
+/// The errors an XLSX caches in the cells of each sheet, as the file keeps them. The reader gives `#NAME?` to a
+/// cell whose formula holds a bare `#REF!` (`LibreOffice` reads that as a name it does not know and calculates
+/// it so, whatever the file caches), and what `LibreOffice` leaves after the edit is what it caches: `#REF!`.
+fn cached_errors(bytes: &[u8]) -> BTreeMap<String, BTreeMap<String, String>> {
+    use std::io::Read;
+    let Ok(mut zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) else {
+        return BTreeMap::new();
+    };
+    let mut text = |name: &str| {
+        let mut out = String::new();
+        zip.by_name(name).ok()?.read_to_string(&mut out).ok()?;
+        Some(out)
+    };
+    let attr = |tag: &str, key: &str| {
+        let at = tag.find(&format!(" {key}=\""))? + key.len() + 3;
+        Some(tag[at..at + tag[at..].find('"')?].to_string())
+    };
+    let (Some(rels), Some(workbook)) =
+        (text("xl/_rels/workbook.xml.rels"), text("xl/workbook.xml"))
+    else {
+        return BTreeMap::new(); // an ODS
+    };
+    let targets: BTreeMap<String, String> = rels
+        .split("<Relationship ")
+        .skip(1)
+        .filter_map(|r| Some((attr(r, "Id")?, attr(r, "Target")?)))
+        .collect();
+    let cell = regex::Regex::new(
+        r#"<c r="([A-Z]+[0-9]+)"[^>]*t="e"[^>]*>(?:<f[^>]*>[^<]*</f>)?<v>([^<]*)</v>"#,
+    )
+    .unwrap();
+    let mut out = BTreeMap::new();
+    for sheet in workbook.split("<sheet ").skip(1) {
+        let (name, id) = (attr(sheet, "name").unwrap(), attr(sheet, "r:id").unwrap());
+        let target = targets[&id].trim_start_matches('/');
+        let xml = text(&format!("xl/{}", target.trim_start_matches("xl/"))).unwrap();
+        out.insert(
+            name,
+            cell.captures_iter(&xml)
+                .map(|c| (c[1].to_string(), c[2].to_string()))
+                .collect(),
+        );
+    }
+    out
+}
+
 /// What the workbook `bytes` holds of the area the oracle compares.
 fn dump(bytes: &[u8]) -> Dump {
     let workbook = Book::from_bytes(bytes.to_vec())
         .unwrap()
         .workbook()
         .unwrap();
+    let cached = cached_errors(bytes);
     workbook
         .sheets
         .iter()
@@ -118,8 +165,12 @@ fn dump(bytes: &[u8]) -> Dump {
                 if row >= ROWS || col >= COLUMNS {
                     continue;
                 }
+                let raw = cached
+                    .get(&sheet.name)
+                    .and_then(|errors| errors.get(&name(row, col)));
                 let value = match &cell.value {
                     CellValue::Empty => continue,
+                    CellValue::Error(_) if raw.is_some() => Value::Error(raw.unwrap().clone()),
                     CellValue::Number(n) => Value::Number(*n),
                     CellValue::Boolean(b) => Value::Number(f64::from(u8::from(*b))),
                     CellValue::Text(t) => Value::Text(t.to_string()),
@@ -272,18 +323,6 @@ fn layout_differences(got: &Dump, expected: &Dump) -> Vec<String> {
     out
 }
 
-/// The values `write_to` leaves that are not the ones `LibreOffice` leaves, by edit: `fixture.extension: edit:
-/// cells that differ, first of them`. None is approved: they are for the maintainer to decide. An edit with no
-/// entry here gives `LibreOffice`'s values in every cell.
-///
-/// * XLSX, sheet deleted: `LibreOffice` calculates `#REF!` where the formulas read the sheet that went, and
-///   writes it as a bare `#REF!` that it reads back as `#NAME?`; the engine gives `#NAME?` (what `LibreOffice`
-///   shows of the file it writes) in the formulas that read it.
-const KNOWN_DIFFERENCES: [&str; 2] = [
-    "book.xlsx: delete sheet Data: 49 cells, first Calc!A1",
-    "refs.xlsx: delete sheet Data: 46 cells, first Calc!A1",
-];
-
 #[test]
 fn the_in_memory_write_is_the_file_write_and_gives_what_libreoffice_gives() {
     let mut found: Vec<String> = Vec::new();
@@ -358,7 +397,8 @@ fn the_in_memory_write_is_the_file_write_and_gives_what_libreoffice_gives() {
         }
     }
     assert_eq!(
-        found, KNOWN_DIFFERENCES,
+        found,
+        Vec::<String>::new(),
         "values that differ from LibreOffice's (none is approved)"
     );
 }

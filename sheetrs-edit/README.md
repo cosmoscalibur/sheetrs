@@ -177,8 +177,8 @@ byte. The rule is one canonical order:
    below it; in each sheet, columns deleted the same way; names deleted; sheets deleted (the
    deletions of a deleted sheet go with it);
 4. when the deletions left cached results stale, the formulas that are stale (see *Recalculation*
-   below) are given their new result as the last pass: `#REF!` written directly where it follows from
-   a deleted reference, the engine for the others; only if the engine cannot is the workbook marked
+   below) are given their new result as the last pass by the engine (a reference that went is `#REF!`
+   in the functions that read it, see *Delete rows and columns*); only if the engine cannot is the workbook marked
    to be recalculated when it is opened, and the run says why.
 
 **The planner takes as many passes as the operations need, and no plan fails because of how its
@@ -392,7 +392,16 @@ is no longer valid; one that does not change keeps it.
   approximation by the width of a digit of 7.4 pixels), the styles of the rows and columns of an ODS.
 - A bare `#REF!` in an XLSX formula is read by LibreOffice as an unknown name (`#NAME?`), also
   in the files it saves itself; a deleted cell is written `Sheet!#REF!`, which it reads as `#REF!`.
-  The references to a removed sheet have no sheet to write: they are the bare `#REF!`.
+  The references to a removed sheet have no sheet to write: they are the bare `#REF!`, as in the XLSX
+  LibreOffice saves after the same edit (`COUNT(#REF!)` with the error `#REF!` cached) and in the ones
+  Excel writes. The cached result is the edit's: `#REF!`, as LibreOffice calculates it (it was `#NAME?` in
+  the formulas that read the sheet, and 0 in `COUNT(Data!A:A)`). **What LibreOffice does when it opens that
+  file is another thing**, for the file it saved itself too: it reads the bare `#REF!` as an unknown name and
+  calculates `#NAME?` (`SUM`, `AVERAGE`, `MAX`, `COUNTIF`...), 0 (`COUNT`) or 1 (`COUNTA`). The two cannot be
+  reconciled without writing a form that Excel does not write (`#REF!!A3`, which LibreOffice reads as the
+  reference that went): the file keeps the spelling of both programs and the result of the edit, and
+  `sheetrs query` reads the cell as LibreOffice calculates it when it opens the file (`#NAME?`, see the
+  approved differences on cached errors of an XLSX).
 - **A reference that went is not an error written in the formula.** After the edit, a function that
   reads one gives `#REF!` whatever it does with errors (`COUNT(Data!A:A)` of a sheet that was deleted is
   `#REF!`, not 0; so are `COUNTA`, `COUNTBLANK`, `SUM`, `AVERAGE`, `MAX`, `MIN`, `COUNTIF`, `SUMIF`, `INDEX`,

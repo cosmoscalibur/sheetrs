@@ -594,6 +594,15 @@ what LibreOffice writes:
   argument unread take it as the error, and `IFERROR` catches a sheet that went and not cells that went (the
   oracle of `sheetrs-edit/tests/assets/write_to/make_oracle.py`, fixture `refs` of `use_cache/`, edits of
   LibreOffice 26.8 through UNO: load, edit, calculate).
+* **XLSX, a sheet that was deleted.** LibreOffice 26.8 (load, delete the sheet, calculate, save as XLSX, probed
+  with `refs.xlsx`) calculates `#REF!` in every formula that read it and saves `COUNT(#REF!)` with
+  `<v>#REF!</v>` (`t="e"`); opened again, that file gives `#NAME?` (the bare `#REF!` is the unknown name
+  `#ref!`), 0 in `COUNT` and 1 in `COUNTA`. The edit of `sheetrs edit` writes the same formula text and the
+  cached `#REF!` of the edit (`Removed` makes the bare `#REF!` of an XLSX the reference that went in that
+  recalculation, operands and calls alike); `Book` reads such a cell as `#NAME?` (the reader of a bare
+  `#REF!`, as LibreOffice shows it when it opens the file), so a test that wants what the file caches reads
+  the XML (`write_to_libreoffice.rs`). A form that LibreOffice reads back as `#REF!` exists (`#REF!!A3`,
+  `'#REF!'!A3`) and Excel does not write it: it is not used (unverified in Excel).
 * A shared formula whose cell would read a column past `XFD` or a row past 1,048,576 (or before
   the first) reads `Sheet!#REF!` for that reference. LibreOffice 26.8 opens such an XLSX with the
   cell as `#REF!` (formula `=#REF!1+1` for a column past `XFD`), not `#NAME?`. The workbook

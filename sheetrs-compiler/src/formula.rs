@@ -291,6 +291,10 @@ impl Lowering<'_, '_> {
                 ErrorKind::Name
             };
         }
+        // After an edit that removed something, a bare `#REF!` is the reference that went, in an XLSX too.
+        if text == "#REF!" && !self.ctx.removed.is_none() {
+            return ErrorKind::Ref;
+        }
         if text != text.to_ascii_uppercase() || (self.ctx.xlsx && text == "#REF!") {
             return ErrorKind::Name;
         }
@@ -1172,6 +1176,16 @@ mod tests {
             after_edit("#REF!+1", true, none),
             after_edit("#NAME?+1", true, none)
         );
+    }
+
+    #[test]
+    fn an_operand_that_went_is_ref_in_an_xlsx_after_an_edit() {
+        let (a, b) = (
+            after_edit("#REF!+1", true, SHEETS),
+            after_edit("#REF!+1", false, SHEETS),
+        );
+        assert_eq!(a, b);
+        assert_ne!(a, after_edit("#NAME?+1", true, SHEETS));
     }
 
     #[test]
