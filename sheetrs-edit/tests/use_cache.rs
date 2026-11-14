@@ -537,6 +537,39 @@ fn a_deleted_sheet_reaches_positions_and_names() {
     }
 }
 
+/// `ISFORMULA` and `FORMULATEXT` of a cell are answered when the formula is lowered, so the formula
+/// keeps no reference to the cell: what it says is stale when the cell is replaced or moves.
+#[test]
+fn formulas_that_ask_what_a_cell_holds_are_calculated_when_a_cell_changes_or_moves() {
+    type Edit = fn(&mut Book);
+    let edits: [Edit; 3] = [
+        |book| replace_in(book, &["Data!A2"], "20", "25"),
+        |book| {
+            book.delete_columns(["Data!D".parse().unwrap()]);
+        },
+        |book| {
+            book.delete_rows(["Data!6".parse().unwrap()]);
+        },
+    ];
+    for extension in EXTENSIONS {
+        for edit in edits {
+            let outcome = Outcome::of("rules", extension, edit);
+            outcome.calculated("A7", extension);
+            // LibreOffice caches `#N/A` for `FORMULATEXT` of a constant, as the engine gives.
+            assert_eq!(
+                at(&outcome.kept, "A8"),
+                at(&outcome.full, "A8"),
+                "{extension}"
+            );
+            assert_eq!(
+                *at(&outcome.kept, "A7"),
+                CellValue::Boolean(false),
+                "{extension}"
+            );
+        }
+    }
+}
+
 /// Where a quarter of the formulas or less is stale (a replacement reaches ten of the forty) the cache
 /// is used; where more is, the walk would only add its cost and every formula is calculated again, as
 /// without the option.

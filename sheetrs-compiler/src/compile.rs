@@ -2197,19 +2197,13 @@ impl Lazy<'_> {
 }
 
 /// The functions whose result depends on where cells are, not on what they hold.
-const POSITIONAL: [&str; 11] = [
-    "ROW",
-    "ROWS",
-    "COLUMN",
-    "COLUMNS",
-    "ADDRESS",
-    "CELL",
-    "SHEET",
-    "SHEETS",
-    "AREAS",
-    "FORMULA",
-    "ISFORMULA",
+const POSITIONAL: [&str; 9] = [
+    "ROW", "ROWS", "COLUMN", "COLUMNS", "ADDRESS", "CELL", "SHEET", "SHEETS", "AREAS",
 ];
+
+/// What a formula asks of another cell that is answered while it is lowered (`FORMULA`, `ISFORMULA`,
+/// `FORMULATEXT` of a literal reference): the formula keeps no reference to the cell, so the text says it.
+const ABOUT_FORMULAS: [&str; 3] = ["formula", "isformula", "formulatext"];
 
 fn overlaps(a: &Rect, b: &Rect) -> bool {
     a.sheet == b.sheet && a.r0 <= b.r1 && b.r0 <= a.r1 && a.c0 <= b.c1 && b.c0 <= a.c1
@@ -2223,6 +2217,9 @@ fn mentions(text: &str, names: &HashSet<String>, buffer: &mut String) -> bool {
             buffer.clear();
             buffer.extend(word.chars().flat_map(char::to_lowercase));
             names.contains(buffer.as_str())
+                || buffer
+                    .strip_prefix("_xlfn.")
+                    .is_some_and(|word| names.contains(word))
         })
 }
 
@@ -2260,8 +2257,9 @@ fn keep_cached(
         sheet_ids(&cache.rows_deleted),
         sheet_ids(&cache.columns_deleted),
     );
-    // The names a formula may read through: the deleted ones, and the ones that stay when rows,
-    // columns or sheets were deleted (a name that points to a range that shrank).
+    // The words that make a formula stale by its text: the names it may read through (the deleted ones,
+    // and the ones that stay when rows, columns or sheets were deleted: a name that points to a range
+    // that shrank), and, whenever a cell changed or moved, the functions that ask what a cell holds.
     let mut names: HashSet<String> = cache
         .names_deleted
         .iter()
@@ -2269,6 +2267,9 @@ fn keep_cached(
         .collect();
     if cache.layout {
         names.extend(model.names.keys().map(|name| name.to_lowercase()));
+    }
+    if cache.layout || !changed.is_empty() {
+        names.extend(ABOUT_FORMULAS.map(String::from));
     }
     // The formulas the writer left with no result are the first to tell how much is stale: where
     // they are most of the workbook there is nothing to keep, and nothing else is looked at.

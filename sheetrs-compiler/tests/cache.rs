@@ -258,8 +258,6 @@ fn the_functions_of_position_are_calculated_when_the_layout_changed() {
         "SHEET()",
         "SHEETS()",
         "AREAS(Data!A1)",
-        // `FORMULA` and `ISFORMULA` of a literal reference are answered while the formula is lowered
-        // (they are a constant afterwards), so they are not here.
     ];
     let layout = Cache {
         layout: true,
@@ -520,4 +518,29 @@ fn the_options_of_json_have_no_cache() {
     let options = Options::from_json(&json!({"now": 45000.5})).unwrap();
     assert!(options.cache.is_none());
     assert_eq!(options.config.now, Some(45000.5));
+}
+
+/// `FORMULA`, `ISFORMULA` and `FORMULATEXT` of a literal reference are answered while the formula is
+/// lowered, so it keeps no reference to the cell: it is stale when any cell changes or moves.
+#[test]
+fn formulas_that_ask_what_a_cell_holds_are_calculated_when_a_cell_changes_or_moves() {
+    let mut model = model();
+    put(&mut model, "B1", "ISFORMULA(Data!A1)", cached());
+    put(&mut model, "B2", "FORMULA(Data!A1)", cached());
+    put(&mut model, "B3", "FORMULATEXT(Data!A1)", cached());
+    put(&mut model, "B4", "_xlfn.ISFORMULA(Data!A1)&\"\"", cached());
+    put(&mut model, "B5", "Data!A2*2", cached());
+    put(&mut model, "B6", "B1&\"\"", cached());
+    fillers(&mut model);
+    let expected = set(&["B1", "B2", "B3", "B4", "B6"]);
+    assert!(reached(&model, Cache::default()).is_empty());
+    let layout = Cache {
+        layout: true,
+        ..Cache::default()
+    };
+    assert_eq!(reached(&model, layout), expected.clone());
+    // A replaced cell, wherever it is: the formula does not say which cell it asks about.
+    let mut with_reader = expected;
+    with_reader.insert(calc("B5"));
+    assert_eq!(reached(&model, change("Data", 1, 0, 1, 0)), with_reader);
 }

@@ -15,7 +15,7 @@ XLSX caches: it does not recalculate a file on load by default):
   volatile  `TODAY()`, `NOW()` and `RAND()` in Calc!A1:A3, which no edit of the tests reaches, with a result
             that is not the one they give
   rules     what a deletion reaches without changing the text of the formula: a whole row of `Data`, `ROW()`,
-            `SHEET()`, a defined name; the sheet `Other` is the one the tests delete
+            `SHEET()`, a defined name, `ISFORMULA` and `FORMULATEXT` of a cell; the sheet `Other` is the one the tests delete
   quarter   40 formulas `=SUM(Data!A{k}:A{k+40})` of Calc, over `Data!A1:A80` (all 11): a quarter of them is the
             limit above which the cache is not used
   runs      300 formulas over `Data` that read the cells a replacement of 65 separate cells, and one of a run of
@@ -69,6 +69,8 @@ RULES = [
     ("A4", "=SHEET()", 99),
     ("A5", "=Data!A2*2", 777),
     ("A6", "=COUNT(Data!A:A)", 888),
+    ("A7", "=_xlfn.ISFORMULA(Data!A2)", 777),
+    ("A8", "=_xlfn.FORMULATEXT(Data!A2)", 778),
     *FILLER,
 ]
 QUARTER = [(f"A{k}", f"=SUM(Data!A{k}:A{k + 40})", 5000 + k) for k in range(1, 41)]
