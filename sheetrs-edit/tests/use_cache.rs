@@ -4,10 +4,10 @@
 //! the engine gives `t`, a `ROW()` that caches 99), so a formula that kept its cache is told from one
 //! that was calculated again, in each format.
 
-use sheetrs_edit::BookEdit;
-use sheetrs_io::Book;
+use sheetrs_edit::{BookEdit, CachedResult, Calculation, CellWrites};
 use sheetrs_io::reader::CellValue;
-use sheetrs_protocol::{Find, Replace};
+use sheetrs_io::{Book, Volatile};
+use sheetrs_protocol::{Find, Replace, SearchIn};
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -75,6 +75,17 @@ fn untouched(values: &Values, cached: &Values, extension: &str) {
         let cell = format!("C{k}");
         assert_eq!(at(values, &cell), at(cached, &cell), "{extension} {cell}");
     }
+}
+
+/// A replacement of the text `from` by `to` in the values of `scopes`.
+fn replace_in(book: &mut Book, scopes: &[&str], from: &str, to: &str) {
+    book.replace(
+        scopes.iter().map(|scope| (*scope).into()),
+        [Replace {
+            find: Find::literal(from),
+            with: to.into(),
+        }],
+    );
 }
 
 /// What the file caches, as the input has it.
@@ -252,11 +263,9 @@ fn an_edit_that_reaches_no_formula_leaves_every_result_as_the_file_has_it() {
     }
 }
 
-#[test]
-fn a_workbook_the_file_says_is_stale_is_calculated_whole() {
-    // An XLSX marked to be recalculated when it is opened caches nothing that is to be trusted.
-    let dir = tempfile::tempdir().unwrap();
-    let stale = dir.path().join("stale.xlsx");
+/// `book.xlsx` with the mark that makes the application that opens it recalculate every formula.
+fn stale_xlsx(dir: &Path) -> PathBuf {
+    let stale = dir.join("stale.xlsx");
     let mut archive =
         zip::ZipArchive::new(std::fs::File::open(asset("book", "xlsx")).unwrap()).unwrap();
     let mut out = zip::ZipWriter::new(std::fs::File::create(&stale).unwrap());
@@ -276,6 +285,14 @@ fn a_workbook_the_file_says_is_stale_is_calculated_whole() {
         std::io::Write::write_all(&mut out, &data).unwrap();
     }
     out.finish().unwrap();
+    stale
+}
+
+#[test]
+fn a_workbook_the_file_says_is_stale_is_calculated_whole() {
+    // An XLSX marked to be recalculated when it is opened caches nothing that is to be trusted.
+    let dir = tempfile::tempdir().unwrap();
+    let stale = stale_xlsx(dir.path());
     let run = |use_cache: bool| {
         let target = dir.path().join(format!("out{use_cache}.xlsx"));
         let mut book = Book::from_file(&stale).unwrap().with_use_cache(use_cache);
@@ -336,4 +353,380 @@ fn the_cells_of_an_array_formula_are_calculated_together() {
             assert_eq!(at(&kept, &cell), at(&cached, &cell), "{extension} {cell}");
         }
     }
+}
+
+// What follows pins each rule that decides which formulas an edit reaches: with one of them off, one
+// of these fails (see `sheetrs-compiler/tests/cache.rs` for the same rules on the compiler alone).
+
+/// What the tests below compare for a formula after an edit: with the cache, without it, and as the
+/// file has it.
+struct Outcome {
+    kept: Values,
+    full: Values,
+    cached: Values,
+}
+
+impl Outcome {
+    fn of(name: &str, extension: &str, edit: impl Fn(&mut Book)) -> Self {
+        Self {
+            kept: run(name, extension, true, &edit).0,
+            full: run(name, extension, false, &edit).0,
+            cached: input(extension, name),
+        }
+    }
+
+    /// The formula was calculated again: it is what a run without the cache gives, and not what the
+    /// file caches.
+    fn calculated(&self, cell: &str, extension: &str) {
+        let (kept, full, cached) = (
+            at(&self.kept, cell),
+            at(&self.full, cell),
+            at(&self.cached, cell),
+        );
+        assert_eq!(kept, full, "{extension} {cell}");
+        assert_ne!(kept, cached, "{extension} {cell}");
+    }
+
+    /// The formula kept the result of the file, which a run without the cache would not.
+    fn kept(&self, cell: &str, extension: &str) {
+        let (kept, full, cached) = (
+            at(&self.kept, cell),
+            at(&self.full, cell),
+            at(&self.cached, cell),
+        );
+        assert_eq!(kept, cached, "{extension} {cell}");
+        assert_ne!(kept, full, "{extension} {cell}");
+    }
+
+    /// The formulas `from..=to` of `A` keep what the file has.
+    fn keep_rows(&self, from: u32, to: u32, extension: &str) {
+        for row in from..=to {
+            self.kept(&format!("A{row}"), extension);
+        }
+    }
+}
+
+/// `NOW()`, `TODAY()` and `RAND()` that no edit reaches are volatile all the same: the file caches the
+/// number of another moment, and they are calculated again with the clock and the seed of the book.
+#[test]
+fn volatile_formulas_are_calculated_though_the_edit_reaches_nothing() {
+    for extension in EXTENSIONS {
+        let delete = |book: &mut Book| {
+            *book = book.clone().with_volatile(Volatile {
+                now: Some(50000.25),
+                seed: Some(7),
+            });
+            book.delete_columns(["Data!B".parse().unwrap()]);
+        };
+        let (kept, ..) = run("volatile", extension, true, delete);
+        let cached = input(extension, "volatile");
+        assert_eq!(*at(&kept, "A1"), number(50000.0), "{extension}");
+        assert_eq!(*at(&kept, "A2"), number(50000.25), "{extension}");
+        let CellValue::Number(random) = *at(&kept, "A3") else {
+            panic!("{extension}: RAND is a number")
+        };
+        assert!((0.0..1.0).contains(&random), "{extension}: {random}");
+        assert_ne!(at(&kept, "A3"), at(&cached, "A3"), "{extension}");
+        // The formulas that are not volatile keep what the file caches.
+        untouched(&kept, &cached, extension);
+    }
+}
+
+/// A replacement of the text of a formula rewrites the formula and not the result it cached: the cell
+/// is calculated again though no other formula reads it.
+#[test]
+fn a_replaced_formula_is_calculated_again() {
+    for extension in EXTENSIONS {
+        let replace = |book: &mut Book| {
+            book.replace(
+                ["Calc!A5".into()],
+                [Replace {
+                    find: Find {
+                        search_in: SearchIn::Formula,
+                        ..Find::literal("*2")
+                    },
+                    with: "*3".into(),
+                }],
+            );
+        };
+        let outcome = Outcome::of("rules", extension, replace);
+        outcome.calculated("A5", extension);
+        assert_eq!(*at(&outcome.kept, "A5"), number(60.0), "{extension}");
+        // No other formula is reached.
+        for cell in ["A1", "A2", "A3", "A4", "A6"] {
+            outcome.kept(cell, extension);
+        }
+        untouched(&outcome.kept, &outcome.cached, extension);
+    }
+}
+
+/// A result written into a formula (`write_cells`) is taken as current by the plan that only writes; where
+/// a replacement leaves results stale, the recalculation that ends the run calculates that formula as well,
+/// the same as a run without the cache, though the writer left it with the result it was given.
+#[test]
+fn a_formula_given_a_result_is_calculated_again_with_what_the_plan_leaves_stale() {
+    for extension in EXTENSIONS {
+        let write_and_replace = |book: &mut Book| {
+            let mut writes = CellWrites::new();
+            writes.result("Calc", 4, 0, CachedResult::Number(1234.0));
+            book.write_cells(writes);
+            replace_in(book, &["Data!B1"], "x", "y");
+        };
+        let outcome = Outcome::of("rules", extension, write_and_replace);
+        outcome.calculated("A5", extension);
+        assert_eq!(*at(&outcome.kept, "A5"), number(40.0), "{extension}");
+        // The formula that nothing reaches keeps what the file caches.
+        outcome.kept("A6", extension);
+    }
+}
+
+/// A formula that reads whole rows of a sheet reads every column of it: it keeps its text when a column
+/// goes, and its result is not the one the file caches. A whole column is not read by a column.
+#[test]
+fn a_deleted_column_reaches_the_formulas_that_read_whole_rows() {
+    for extension in EXTENSIONS {
+        let delete = |book: &mut Book| {
+            book.delete_columns(["Data!D".parse().unwrap()]);
+        };
+        let outcome = Outcome::of("rules", extension, delete);
+        outcome.calculated("A1", extension);
+        assert_eq!(*at(&outcome.kept, "A1"), number(17.0), "{extension}");
+        // A whole column, and what reads a cell: the file's results.
+        outcome.kept("A5", extension);
+        outcome.kept("A6", extension);
+    }
+}
+
+/// A formula that depends on where cells are (`ROW`, `SHEET`) or that reads through a name may give
+/// another result when columns go, whatever its text says.
+#[test]
+fn a_deleted_column_reaches_positions_and_names() {
+    for extension in EXTENSIONS {
+        let delete = |book: &mut Book| {
+            book.delete_columns(["Data!D".parse().unwrap()]);
+        };
+        let outcome = Outcome::of("rules", extension, delete);
+        for cell in ["A2", "A3", "A4"] {
+            outcome.calculated(cell, extension);
+        }
+        assert_eq!(*at(&outcome.kept, "A2"), number(2.0), "{extension}");
+        assert_eq!(*at(&outcome.kept, "A3"), number(14.0), "{extension}");
+        assert_eq!(*at(&outcome.kept, "A4"), number(2.0), "{extension}");
+        untouched(&outcome.kept, &outcome.cached, extension);
+    }
+}
+
+/// The same when a sheet goes: the sheets are numbered again and a name may point into it.
+#[test]
+fn a_deleted_sheet_reaches_positions_and_names() {
+    for extension in EXTENSIONS {
+        let delete = |book: &mut Book| {
+            book.delete_sheets(["Other"]);
+        };
+        let outcome = Outcome::of("rules", extension, delete);
+        for cell in ["A2", "A3", "A4"] {
+            outcome.calculated(cell, extension);
+        }
+        assert_eq!(*at(&outcome.kept, "A2"), number(2.0), "{extension}");
+        assert_eq!(*at(&outcome.kept, "A3"), number(14.0), "{extension}");
+        // What reads cells of a sheet that stays: the file's results.
+        for cell in ["A1", "A5", "A6"] {
+            outcome.kept(cell, extension);
+        }
+        untouched(&outcome.kept, &outcome.cached, extension);
+    }
+}
+
+/// Where a quarter of the formulas or less is stale (a replacement reaches ten of the forty) the cache
+/// is used; where more is, the walk would only add its cost and every formula is calculated again, as
+/// without the option.
+#[test]
+fn a_replacement_that_reaches_more_than_a_quarter_of_the_formulas_calculates_them_all() {
+    for extension in EXTENSIONS {
+        for cells in [9, 10, 11, 12] {
+            let replace = |book: &mut Book| {
+                replace_in(book, &[&format!("Data!A1:A{cells}")], "11", "12");
+            };
+            let outcome = Outcome::of("quarter", extension, replace);
+            // The formulas that read a replaced cell are the first `cells`.
+            for row in 1..=cells {
+                outcome.calculated(&format!("A{row}"), extension);
+            }
+            if cells <= 10 {
+                outcome.keep_rows(cells + 1, 40, extension);
+            } else {
+                for row in cells + 1..=40 {
+                    outcome.calculated(&format!("A{row}"), extension);
+                }
+            }
+        }
+    }
+}
+
+/// The same limit for the formulas the writer leaves with no result (a deletion that shortens the
+/// range they read): ten of the forty calculate what they reach and eleven calculate all.
+#[test]
+fn a_deletion_that_leaves_more_than_a_quarter_of_the_formulas_without_a_result_calculates_them_all()
+{
+    for extension in EXTENSIONS {
+        // The formula `k` reads `Data!A{k}:A{k+40}`: deleting the row `r` shortens the `81 - r` last ones.
+        for (without_result, row) in [(9, 72), (10, 71), (11, 70), (12, 69)] {
+            let delete = |book: &mut Book| {
+                book.delete_rows([format!("Data!{row}").parse().unwrap()]);
+            };
+            let outcome = Outcome::of("quarter", extension, delete);
+            for k in 41 - without_result..=40 {
+                outcome.calculated(&format!("A{k}"), extension);
+            }
+            if without_result <= 10 {
+                outcome.keep_rows(1, 40 - without_result, extension);
+            } else {
+                for k in 1..=40 - without_result {
+                    outcome.calculated(&format!("A{k}"), extension);
+                }
+            }
+        }
+    }
+}
+
+/// The cells a replacement rewrites go to the engine as rectangles, and more than 64 in a sheet are one
+/// rectangle that holds them all: the formulas that read a cell between them are calculated again too (and
+/// the result is what a run without the cache gives), the ones that read outside it are not.
+#[test]
+fn many_replaced_cells_in_a_sheet_are_one_rectangle() {
+    for extension in EXTENSIONS {
+        // A1, A3, ..., A129: 65 cells, no two adjacent.
+        let cells: Vec<String> = (1..=129).step_by(2).map(|r| format!("Data!A{r}")).collect();
+        assert_eq!(cells.len(), 65);
+        let replace = |book: &mut Book| {
+            let scopes: Vec<&str> = cells.iter().map(String::as_str).collect();
+            replace_in(book, &scopes, "11", "12");
+        };
+        let outcome = Outcome::of("runs", extension, replace);
+        // The formulas of the replaced cells (A1..A65 of Calc) and the two that read a cell between them.
+        for row in 1..=67 {
+            outcome.calculated(&format!("A{row}"), extension);
+        }
+        // `Data!A131` is below the last replaced cell: the file's result, and so are the others.
+        outcome.keep_rows(68, 301, extension);
+    }
+}
+
+/// A run of adjacent replaced cells is one rectangle: the 70 cells of a row and another far below make
+/// two, and what reads between them is not reached. Counted one by one they would be 71, more than 64,
+/// and the one rectangle that holds them would reach it.
+#[test]
+fn adjacent_replaced_cells_are_one_rectangle() {
+    for extension in EXTENSIONS {
+        let replace = |book: &mut Book| {
+            replace_in(book, &["Data!B1:BS1", "Data!B41"], "11", "12");
+        };
+        let outcome = Outcome::of("runs", extension, replace);
+        // `Data!B1:BS1` and `Data!B41`.
+        for row in 69..=139 {
+            outcome.calculated(&format!("A{row}"), extension);
+        }
+        // `Data!C20` and `Data!BR30` are inside the rectangle of both, and are replaced by neither.
+        outcome.keep_rows(140, 141, extension);
+        outcome.keep_rows(142, 301, extension);
+    }
+}
+
+/// An explicit `calculate` calculates every formula, with the cache or not: it is what was asked for,
+/// not an edit that leaves some results stale.
+#[test]
+fn a_calculate_step_calculates_every_formula_even_with_the_cache() {
+    for extension in EXTENSIONS {
+        let calculate = |book: &mut Book| {
+            book.calculate(Calculation::default());
+        };
+        let (kept, ..) = run("book", extension, true, calculate);
+        let (full, ..) = run("book", extension, false, calculate);
+        assert_eq!(kept, full, "{extension}");
+        // The engine's result, where the file caches one that the engine would not give.
+        assert_eq!(*at(&kept, "A7"), text("t"), "{extension}");
+    }
+}
+
+/// What a `calculate` step wrote is right, whatever the file cached: the edit that follows it calculates
+/// what it reaches and leaves the rest as the step left it, not as the file had it.
+#[test]
+fn a_calculation_makes_the_results_right_for_the_edit_that_follows() {
+    for extension in EXTENSIONS {
+        let both = |book: &mut Book| {
+            book.calculate(Calculation::default());
+            book.delete_rows(["Data!3".parse().unwrap()]);
+        };
+        let (kept, ..) = run("book", extension, true, both);
+        let (full, ..) = run("book", extension, false, both);
+        assert_eq!(kept, full, "{extension}");
+        assert_eq!(*at(&kept, "A7"), text("t"), "{extension}");
+    }
+}
+
+/// The workbook in memory (what Python and WebAssembly write) is the one a file gives, with the cache,
+/// from a file and from bytes.
+#[test]
+fn in_memory_runs_use_the_cache_as_files_do() {
+    type Edit = fn(&mut Book);
+    let edits: [Edit; 4] = [
+        |book| {
+            book.delete_rows(["Data!3".parse().unwrap()]);
+        },
+        |book| replace_in(book, &["Data!A2"], "20", "25"),
+        |book| {
+            book.hide_rows(["Data!2".parse().unwrap()]);
+        },
+        |book| {
+            book.calculate(Calculation::default());
+            book.delete_columns(["Data!B".parse().unwrap()]);
+        },
+    ];
+    for extension in EXTENSIONS {
+        let path = asset("book", extension);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join(format!("out.{extension}"));
+        for edit in edits {
+            let sources = [
+                Book::from_file(&path).unwrap(),
+                Book::from_bytes(std::fs::read(&path).unwrap()).unwrap(),
+            ];
+            for source in sources {
+                let mut book = source.with_use_cache(true);
+                edit(&mut book);
+                book.write(&out).unwrap();
+                let mut bytes = Vec::new();
+                book.write_to(&mut bytes).unwrap();
+                assert_eq!(bytes, std::fs::read(&out).unwrap(), "{extension}");
+            }
+        }
+        // And the cache was used: the formula nothing reaches is as the file has it.
+        let mut book = Book::from_bytes(std::fs::read(&path).unwrap())
+            .unwrap()
+            .with_use_cache(true);
+        book.delete_rows(["Data!3".parse().unwrap()]);
+        let mut bytes = Vec::new();
+        book.write_to(&mut bytes).unwrap();
+        std::fs::write(&out, bytes).unwrap();
+        assert_eq!(*at(&calc(&out), "A7"), text("from-excel"), "{extension}");
+    }
+}
+
+/// A workbook the file says is stale is calculated whole in memory too.
+#[test]
+fn a_stale_workbook_in_memory_is_calculated_whole() {
+    let dir = tempfile::tempdir().unwrap();
+    let stale = stale_xlsx(dir.path());
+    let run = |use_cache: bool| {
+        let mut book = Book::from_bytes(std::fs::read(&stale).unwrap())
+            .unwrap()
+            .with_use_cache(use_cache);
+        book.delete_rows(["Data!3".parse().unwrap()]);
+        let mut bytes = Vec::new();
+        book.write_to(&mut bytes).unwrap();
+        let out = dir.path().join(format!("memory{use_cache}.xlsx"));
+        std::fs::write(&out, bytes).unwrap();
+        calc(&out)
+    };
+    assert_eq!(run(true), run(false));
 }

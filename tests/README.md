@@ -86,3 +86,12 @@ standard library only, no application) holds `V!A1 =NOW()`, `V!B1 =TODAY()`, `V!
 to delete, with no cached result: the tests of `now` and `seed` of `calculate` (Rust, `sheetrs edit`,
 Python, WebAssembly) read what the engine writes into it. `sheetrs-compiler/tests/assets/volatile.{xlsx,ods}` are
 copies of the same two files (the tests of `sheetc` flags and of the `Book` in memory read them).
+
+`sheetrs-edit/tests/assets/use_cache/*.{xlsx,ods}` (`make_fixtures.py`: openpyxl builds the XLSX, LibreOffice
+makes the ODS, `fixture_determinism.normalize` fixes the bytes; run it twice and compare) are the workbooks of the
+tests of `use_cache` (`sheetrs-edit/tests/use_cache.rs`, `sheetrs-cli/tests/edit_use_cache.rs`). Their formulas cache
+a result the engine would not give, so that a formula that kept its cache is told from one calculated again:
+`book`, `indirect`, `repro` and `array` are the cases of the feature; `volatile` (`TODAY()`, `NOW()`, `RAND()`),
+`rules` (a whole row, `ROW()`, `SHEET()`, a defined name, a sheet to delete), `quarter` (40 formulas, the quarter
+above which the cache is not used) and `runs` (the rectangles of 65 separate and of 70 adjacent replaced cells)
+each pin a rule that decides which formulas an edit reaches (a test fails when the rule is off).

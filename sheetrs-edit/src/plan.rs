@@ -1102,4 +1102,196 @@ mod tests {
             Err(ScopeError::TrailingText { .. })
         ));
     }
+
+    /// What a run that uses the cache has to tell the engine (`Touched`): the changes the passes made,
+    /// as the engine reads them.
+    mod touched {
+        use super::*;
+        use sheetrs_io::write::CellEdit;
+
+        fn tracking() -> Touched {
+            Touched {
+                use_cache: true,
+                cache: Some(Cache::default()),
+            }
+        }
+
+        fn rows(sheet: &str, first: u32, last: u32) -> RowRange {
+            RowRange {
+                sheet: sheet.to_string(),
+                first,
+                last,
+            }
+        }
+
+        fn columns(sheet: &str, first: u32, last: u32) -> ColumnRange {
+            ColumnRange {
+                sheet: sheet.to_string(),
+                first,
+                last,
+            }
+        }
+
+        /// The cache after `pass` ran with `replacements`.
+        fn after(pass: &[Operation], replacements: &[(&str, &[(u32, u32)])]) -> Cache {
+            let mut touched = tracking();
+            touched.record(pass, &edits(replacements));
+            touched.cache.expect("the cache is still used")
+        }
+
+        fn edits(replacements: &[(&str, &[(u32, u32)])]) -> HashMap<String, SheetEdits> {
+            replacements
+                .iter()
+                .map(|(sheet, cells)| {
+                    let cells = cells
+                        .iter()
+                        .map(|at| (*at, CellEdit::Text("x".into())))
+                        .collect();
+                    ((*sheet).to_string(), cells)
+                })
+                .collect()
+        }
+
+        #[test]
+        fn hiding_or_showing_rows_is_noted_and_other_visibility_is_not() {
+            let rows_change = |visible| VisibilityChange::Rows {
+                range: rows("S", 1, 2),
+                visible,
+            };
+            for visible in [true, false] {
+                let cache = after(&[Operation::SetVisibility(vec![rows_change(visible)])], &[]);
+                assert!(cache.rows_hidden, "rows, visible {visible}");
+            }
+            let others = vec![
+                VisibilityChange::Columns {
+                    range: columns("S", 1, 2),
+                    visible: false,
+                },
+                VisibilityChange::Sheet {
+                    name: "S".into(),
+                    visible: false,
+                },
+            ];
+            let cache = after(&[Operation::SetVisibility(others)], &[]);
+            assert_eq!(cache, Cache::default());
+        }
+
+        #[test]
+        fn deletions_are_noted_with_the_sheets_they_cut() {
+            let cache = after(
+                &[Operation::DeleteRows(vec![
+                    rows("A", 0, 0),
+                    rows("B", 3, 4),
+                ])],
+                &[],
+            );
+            assert!(cache.layout);
+            assert_eq!(cache.rows_deleted, ["A", "B"]);
+            assert!(cache.columns_deleted.is_empty());
+
+            let cache = after(&[Operation::DeleteColumns(vec![columns("C", 1, 1)])], &[]);
+            assert!(cache.layout);
+            assert_eq!(cache.columns_deleted, ["C"]);
+            assert!(cache.rows_deleted.is_empty());
+
+            let cache = after(&[Operation::DeleteSheets(vec!["Gone".into()])], &[]);
+            assert!(cache.layout);
+            assert!(cache.rows_deleted.is_empty() && cache.columns_deleted.is_empty());
+
+            // A name that goes changes what the formulas that read it give, not where anything is.
+            let cache = after(&[Operation::DeleteNames(vec!["rate".into()])], &[]);
+            assert!(!cache.layout);
+            assert_eq!(cache.names_deleted, ["rate"]);
+        }
+
+        #[test]
+        fn what_changes_no_result_is_not_noted() {
+            let pass = vec![
+                Operation::FormulaToValue(scopes(&["S"])),
+                Operation::Calculate(Calculation::default()),
+                Operation::Recalculate,
+            ];
+            assert_eq!(after(&pass, &[]), Cache::default());
+        }
+
+        #[test]
+        fn a_calculation_leaves_nothing_to_reach() {
+            let mut touched = tracking();
+            let delete = [Operation::DeleteRows(vec![rows("A", 0, 0)])];
+            touched.record(&delete, &edits(&[("A", &[(0, 0)])]));
+            // The engine calculated every formula again: its results are right, whatever came before.
+            touched.calculated();
+            assert_eq!(touched.cache, Some(Cache::default()));
+
+            // A run that does not use the cache has no cache to start from again.
+            let mut off = Touched {
+                use_cache: false,
+                cache: None,
+            };
+            off.calculated();
+            assert_eq!(off.cache, None);
+        }
+
+        #[test]
+        fn a_run_with_no_cache_notes_nothing() {
+            let mut off = Touched {
+                use_cache: true,
+                cache: None,
+            };
+            off.record(
+                &[Operation::DeleteRows(vec![rows("A", 0, 0)])],
+                &edits(&[("A", &[(0, 0)])]),
+            );
+            assert_eq!(off.cache, None);
+        }
+
+        #[test]
+        fn adjacent_cells_of_a_row_are_one_rectangle() {
+            let cells = [(2, 1), (2, 2), (2, 3), (2, 5), (3, 5), (4, 1), (4, 2)];
+            let cache = after(&[], &[("S", &cells)]);
+            let rectangles: Vec<_> = cache.changed.iter().map(|c| (c.1, c.2, c.3, c.4)).collect();
+            // The run of three, the lone cell after a gap, the cell below it (rows do not merge) and
+            // the run of two.
+            assert_eq!(
+                rectangles,
+                [(2, 1, 2, 3), (2, 5, 2, 5), (3, 5, 3, 5), (4, 1, 4, 2)]
+            );
+            assert!(cache.changed.iter().all(|c| c.0 == "S"));
+        }
+
+        #[test]
+        fn more_than_the_most_changes_in_a_sheet_are_the_rectangle_that_holds_them() {
+            // 64 isolated cells stay as they are, one more makes them one rectangle.
+            let cells = |count: u32| -> Vec<(u32, u32)> {
+                (0..count).map(|i| (2 * i + 1, 3 + i % 2)).collect()
+            };
+            let sixty_four = after(&[], &[("S", &cells(64))]);
+            assert_eq!(sixty_four.changed.len(), 64);
+            let sixty_five = after(&[], &[("S", &cells(65))]);
+            assert_eq!(sixty_five.changed, [("S".to_string(), 1, 3, 129, 4)]);
+            // Each sheet is counted alone.
+            let two = after(&[], &[("S", &cells(64)), ("T", &cells(64))]);
+            assert_eq!(two.changed.len(), 128);
+        }
+
+        #[test]
+        fn a_change_and_a_deletion_together_leave_no_cache() {
+            let mut touched = tracking();
+            touched.record(&[], &edits(&[("S", &[(0, 0)])]));
+            assert!(touched.cache.is_some());
+            touched.record(
+                &[Operation::DeleteColumns(vec![columns("S", 5, 5)])],
+                &HashMap::new(),
+            );
+            assert_eq!(touched.cache, None);
+
+            // In the same pass, and the other way round.
+            let mut touched = tracking();
+            touched.record(
+                &[Operation::DeleteSheets(vec!["Gone".into()])],
+                &edits(&[("S", &[(0, 0)])]),
+            );
+            assert_eq!(touched.cache, None);
+        }
+    }
 }
