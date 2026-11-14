@@ -73,6 +73,102 @@ impl LookupIndex {
     }
 }
 
+/// Where each cell of the program is: a table per sheet and row, in place of a hash map keyed by
+/// address (the lookup was the largest cost of an evaluation). A row whose cells are packed holds the
+/// slots of the columns from its first to its last cell (`NONE` where it has none); a row whose cells
+/// are far apart (A and XFD) holds its `(column, slot)` pairs sorted, so that a wide sparse row does
+/// not reserve a slot per column.
+struct SlotIndex {
+    sheets: Vec<Vec<IndexRow>>,
+}
+
+#[derive(Default)]
+struct IndexRow {
+    first: u32,
+    dense: Box<[u32]>,
+    sparse: Box<[(u32, u32)]>,
+}
+
+impl SlotIndex {
+    const NONE: u32 = u32::MAX;
+    /// A row is dense when its span is at most this many columns per cell, plus `DENSE_SLACK`.
+    const DENSE_PER_CELL: u32 = 8;
+    const DENSE_SLACK: u32 = 32;
+
+    fn new(sheets: usize, cells: impl Iterator<Item = CellRef> + Clone) -> Self {
+        // Per sheet and row: first column, last column, number of cells.
+        let mut span: Vec<Vec<(u32, u32, u32)>> = vec![Vec::new(); sheets.max(1)];
+        for at in cells.clone() {
+            let rows = &mut span[at.sheet as usize];
+            let r = at.row as usize;
+            if rows.len() <= r {
+                rows.resize(r + 1, (u32::MAX, 0, 0));
+            }
+            let e = &mut rows[r];
+            e.0 = e.0.min(at.col);
+            e.1 = e.1.max(at.col);
+            e.2 += 1;
+        }
+        let mut sheets: Vec<Vec<IndexRow>> = span
+            .iter()
+            .map(|rows| {
+                rows.iter()
+                    .map(|&(lo, hi, n)| {
+                        if n == 0 {
+                            IndexRow::default()
+                        } else if hi - lo < n * Self::DENSE_PER_CELL + Self::DENSE_SLACK {
+                            IndexRow {
+                                first: lo,
+                                dense: vec![Self::NONE; (hi - lo + 1) as usize].into(),
+                                sparse: Box::default(),
+                            }
+                        } else {
+                            IndexRow {
+                                first: lo,
+                                dense: Box::default(),
+                                sparse: Box::default(),
+                            }
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        // The cells of a sparse row need not be consecutive in the program: gather, then sort.
+        let mut sparse: std::collections::HashMap<(u16, u32), Vec<(u32, u32)>> =
+            std::collections::HashMap::new();
+        for (i, at) in cells.enumerate() {
+            let row = &mut sheets[at.sheet as usize][at.row as usize];
+            if row.dense.is_empty() {
+                sparse
+                    .entry((at.sheet, at.row))
+                    .or_default()
+                    .push((at.col, i as u32));
+            } else {
+                row.dense[(at.col - row.first) as usize] = i as u32;
+            }
+        }
+        for ((s, r), mut v) in sparse {
+            v.sort_unstable();
+            sheets[s as usize][r as usize].sparse = v.into_boxed_slice();
+        }
+        Self { sheets }
+    }
+
+    #[inline]
+    fn get(&self, at: CellRef) -> Option<u32> {
+        let row = self.sheets.get(at.sheet as usize)?.get(at.row as usize)?;
+        if row.sparse.is_empty() {
+            let slot = *row.dense.get(at.col.checked_sub(row.first)? as usize)?;
+            (slot != Self::NONE).then_some(slot)
+        } else {
+            row.sparse
+                .binary_search_by_key(&at.col, |&(c, _)| c)
+                .ok()
+                .map(|i| row.sparse[i].1)
+        }
+    }
+}
+
 /// Ranges under this many cells are cheaper to rebuild than to remember.
 const SMALL_RANGE: u64 = 128;
 
@@ -87,7 +183,7 @@ pub struct Engine<'p> {
     prog: &'p Program,
     base: Option<&'p dyn ConstSource>,
     pub opts: EngineOptions,
-    index: FastMap<CellRef, u32>,
+    index: SlotIndex,
     by_sheet: Vec<Vec<u32>>,
     /// Per sheet: (rows, cols) spanned by its cells.
     extent: Vec<(u32, u32)>,
@@ -145,15 +241,13 @@ impl<'p> Engine<'p> {
 
     fn build(prog: &'p Program, opts: EngineOptions, base: Option<&'p dyn ConstSource>) -> Self {
         let n = prog.cells.len();
-        let mut index =
-            FastMap::with_capacity_and_hasher(n, std::hash::BuildHasherDefault::default());
+        let index = SlotIndex::new(prog.sheets.len(), prog.cells.iter().map(|c| c.at));
         let mut by_sheet = vec![Vec::new(); prog.sheets.len().max(1)];
         let mut extent = vec![(0u32, 0u32); prog.sheets.len().max(1)];
         let mut values = Vec::with_capacity(n);
         let mut state = Vec::with_capacity(n);
         let blank = vec![false; n];
         for (i, c) in prog.cells.iter().enumerate() {
-            index.insert(c.at, i as u32);
             let s = c.at.sheet as usize;
             by_sheet[s].push(i as u32);
             extent[s].0 = extent[s].0.max(c.at.row + 1);
@@ -212,14 +306,14 @@ impl<'p> Engine<'p> {
     #[must_use]
     pub fn is_input(&self, at: CellRef) -> bool {
         self.index
-            .get(&at)
-            .is_some_and(|&s| matches!(self.prog.cells[s as usize].kind, CellKind::Input(_)))
+            .get(at)
+            .is_some_and(|s| matches!(self.prog.cells[s as usize].kind, CellKind::Input(_)))
     }
 
     /// Overwrite an input cell. Returns `false` if the cell is not an input.
     pub fn set_input(&mut self, at: CellRef, v: Value) -> bool {
-        match self.index.get(&at) {
-            Some(&s) if matches!(self.prog.cells[s as usize].kind, CellKind::Input(_)) => {
+        match self.index.get(at) {
+            Some(s) if matches!(self.prog.cells[s as usize].kind, CellKind::Input(_)) => {
                 self.values[s as usize] = v;
                 true
             }
@@ -311,9 +405,9 @@ impl<'p> Engine<'p> {
 
     /// Value of a cell, evaluating it first if it is still pending.
     pub fn cell_value(&mut self, c: CellRef) -> Value {
-        match self.index.get(&c) {
+        match self.index.get(c) {
             None => self.base.and_then(|b| b.get(c)).unwrap_or(Value::Empty),
-            Some(&s) => {
+            Some(s) => {
                 match self.state[s as usize] {
                     St::Busy => {
                         self.unstable_reads += 1;
@@ -443,7 +537,7 @@ impl<'p> Engine<'p> {
             for rr in 0..rows {
                 for cc in 0..cols {
                     let at = CellRef::new(r.sheet, r.r0 + rr, r.c0 + cc);
-                    if self.index.contains_key(&at) {
+                    if self.index.get(at).is_some() {
                         data[(rr * cols + cc) as usize] = self.cell_value(at);
                     }
                 }
@@ -599,7 +693,7 @@ impl<'p> Engine<'p> {
     /// `finalize`).
     #[must_use]
     pub fn blank_result(&self, at: CellRef) -> bool {
-        self.index.get(&at).is_some_and(|&s| self.blank[s as usize])
+        self.index.get(at).is_some_and(|s| self.blank[s as usize])
     }
 
     /// [`operand`](Self::operand) for an operator. In a comparison an empty
@@ -1290,5 +1384,48 @@ fn change(old: &Value, new: &Value) -> f64 {
         (Value::Number(a), Value::Number(b)) => (a - b).abs(),
         (a, b) if a == b => 0.0,
         _ => f64::INFINITY,
+    }
+}
+
+#[cfg(test)]
+mod slot_index_tests {
+    use super::*;
+
+    fn cells() -> Vec<CellRef> {
+        vec![
+            CellRef::new(0, 5, 3),
+            CellRef::new(0, 5, 1),
+            CellRef::new(1, 0, 0),
+            // A wide sparse row: must not reserve a slot per column.
+            CellRef::new(0, 2, 0),
+            CellRef::new(0, 2, 16_383),
+            CellRef::new(0, 2, 9_000),
+        ]
+    }
+
+    #[test]
+    fn finds_every_cell_of_the_program_at_its_slot() {
+        let cs = cells();
+        let index = SlotIndex::new(2, cs.iter().copied());
+        for (i, c) in cs.iter().enumerate() {
+            assert_eq!(index.get(*c), Some(i as u32), "{c:?}");
+        }
+    }
+
+    #[test]
+    fn gives_nothing_for_an_address_that_holds_no_cell() {
+        let index = SlotIndex::new(2, cells().into_iter());
+        for at in [
+            CellRef::new(0, 5, 2),
+            CellRef::new(0, 5, 0),
+            CellRef::new(0, 2, 1),
+            CellRef::new(0, 2, 16_000),
+            CellRef::new(0, 4, 0),
+            CellRef::new(0, 1_000_000, 0),
+            CellRef::new(1, 0, 1),
+            CellRef::new(7, 0, 0),
+        ] {
+            assert_eq!(index.get(at), None, "{at:?}");
+        }
     }
 }

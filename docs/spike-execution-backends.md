@@ -6,7 +6,8 @@ build; (2) run a workbook directly and speed it up progressively in a service th
 template again and again; (3) cut time and peak memory of the run of a compiled workbook.
 
 Status: evaluation with measurements on one generated workbook and one profile of small sample size
-(limits in [What this does not show](#what-this-does-not-show)). Nothing here is implemented.
+(limits in [What this does not show](#what-this-does-not-show)). Only the dense index of Option 2 is
+implemented.
 
 ## Findings that change the question
 
@@ -92,12 +93,24 @@ the assembly are pure cost.
 
 Not in the request, but the profile points at it, and a JIT would need it anyway.
 
-- **Dense index instead of the hash.** `Engine` resolves `CellRef` through `FastMap<CellRef, u32>` for every
-  operand and builds it for every cell at start. The project already has a dense row-indexed `Grid`
-  (`cellstore.rs`). Replace the map by per-sheet grids of slots, or resolve the slot at lowering time
-  (`Expr::Cell(slot)`). Upper bound from the profile: up to 38 % of the evaluation and most of the 9 % of
-  start-up. This is the experiment to run first, with the alternating-run protocol of DESIGN.md,
-  *Measuring a change*.
+- **Dense index instead of the hash (done, measured).** `Engine` resolved `CellRef` through
+  `FastMap<CellRef, u32>` for every operand and built it for every cell at start. It is now a table per
+  sheet and row (`SlotIndex` in `engine.rs`): a row of packed cells holds a slice of slots by column; a row
+  whose cells are far apart (A and XFD) holds sorted `(column, slot)` pairs, so a wide sparse row does not
+  reserve a slot per column. Result on the 100 k-row fixture, executables run alternately 15 times each
+  (median, quartiles), same program and byte-identical output:
+
+  | | median | q1-q3 |
+  |---|--:|--:|
+  | before | 0.735 s | 0.714-0.761 |
+  | before, second copy (noise floor) | 0.737 s | 0.720-0.755 |
+  | dense index | 0.557 s | 0.553-0.573 |
+
+  That is -24 % of the run of the executable (criterion: 15 %). `sheetc calculate -i` (7 runs) went from
+  2.77 s to 2.41 s (-13 %), since the fold also runs the engine; peak memory did not rise (executable
+  175 to 165 MB, `calculate` 398 MB both). The workspace tests pass (1081) and clippy is clean. Not done:
+  the full `scripts/bench.py` run, so the tables of [performance.md](performance.md) are not updated; the
+  constant blocks (20 % of `calculate` in the profile) are untouched and are the next lookup to resolve.
 - **Compact program (memory and decode).** 21 % of an executable's run is decoding `Expr` trees and a node
   is 32 B plus a heap `Vec`/`Box` per call. If shapes repeat, store one tree per R1C1 shape plus
   `(shape, anchor)` per cell, and evaluate with offsets: this is how XLSX itself stores shared formulas.
@@ -160,8 +173,8 @@ cell address becomes a value), and the cheap lever serves all of them before any
 
 ## Proposed sequence, with exit criteria
 
-1. **Measure (days).** The index experiment (dense grid) on `formulas.xlsx`: go if the run drops 15 % or
-   more with identical output. The shape census over real models of the maintainer: go on compact
+1. **Measure (days).** The index experiment (dense grid) passed: -24 % with identical output (see
+   Option 2). Still to do on `formulas.xlsx` (2.4 M formulas). The shape census over real models of the maintainer: go on compact
    programs if the formulas-per-shape ratio is 10 or more. A per-request profile of `--serve`.
 2. **Direct mode.** Fallback to the compiled path on a cycle or on depth; equivalence tests: every
    fixture of `tests/semantics` and the oracle suites give identical values by both paths (`RAND`
