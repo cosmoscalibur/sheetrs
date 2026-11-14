@@ -163,3 +163,15 @@ def test_the_empty_search_text_finds_nothing_in_every_mode(texts):
         assert texts.find("", **options) == []
     # Nothing is read, so not even a sheet that is not there is an error.
     assert texts.find("", scope="Nowhere") == []
+
+
+def test_a_pattern_that_matches_the_empty_text_finds_the_cells_replace_would_change(texts):
+    # An empty match is a hit only at the very end of the text (compared with findAll).
+    # Every text ends somewhere (the formula cell is not searched by value).
+    assert cells(texts.find("$", regex=True)) == [
+        "S!A1", "S!B1", "S!C1", "S!A2", "S!A3", "S!B3", "S!C3", "R!A1", "R!B2",
+    ]
+    assert texts.find("^", regex=True) == []
+    assert cells(texts.find("x*", regex=True)) == ["S!B3"]
+    assert texts.find("$", regex=True, entire_cells=True) == []
+    assert cells(texts.find("a*$", regex=True, scope="S!A1:A3")) == ["S!A1", "S!A2", "S!A3"]

@@ -709,3 +709,13 @@ def test_replace_with_an_empty_mapping_key_replaces_nothing(tmp_path):
     saved = sheetrs.Book(source).replace({"": "X", "apple": "cherry"}).save(tmp_path / "m.xlsx")
     assert saved.report.replaced == 5
     assert saved.range("S!A1:C1")["S!A1:C1"].values == [["cherry", 1.5, "cherry"]]
+
+
+def test_replace_reads_the_patterns_that_match_the_empty_text(tmp_path):
+    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    # `$` adds at the end of the text; `^` and `x*` change nothing where they match no characters.
+    saved = sheetrs.Book(source).replace("$", "!", regex=True, scope="S!A1:A3").save(tmp_path / "d.xlsx")
+    assert saved.range("S!A1:A3")["S!A1:A3"].values == [["Apple!"], ["apple pie!"], ["Banana!"]]
+    assert saved.report.replaced == 3
+    saved = sheetrs.Book(source).replace("^", "!", regex=True).save(tmp_path / "c.xlsx")
+    assert saved.report.replaced == 0

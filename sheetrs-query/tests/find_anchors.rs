@@ -105,21 +105,3 @@ fn a_dot_still_leaves_out_a_line_break() {
     assert!(first.contains(&12) && !first.contains(&18));
     assert_eq!(rows("a.$", false, false), [2, 6]);
 }
-
-#[test]
-fn a_pattern_that_matches_the_empty_text_is_refused() {
-    for pattern in ["^", "$", "^$", "^a*", "a*$"] {
-        let query = Query {
-            find: Some(Find {
-                mode: Mode::Regex,
-                ..Find::literal(pattern)
-            }),
-            ..Query::default()
-        };
-        let book = Book::from_file(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/assets/anchors.xlsx"),
-        )
-        .unwrap();
-        assert!(book.query(&query).is_err(), "{pattern}");
-    }
-}

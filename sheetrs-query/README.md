@@ -137,17 +137,30 @@ The anchors `^` and `$` are in that subset for a search, as LibreOffice reads th
 the start of the text and `$` its end (or the place before the line terminator that ends it), never
 the start or the end of a line, so `^(Code|Resumen Contadia)$` finds the cells with exactly one of
 the two texts, in the middle of a pattern (`a^b`, `a$b`) they match nothing, and they work inside
-groups and alternations (`(^a|b$)`). `.` still leaves out the line breaks. A search refuses a pattern
-that can match the empty text (`^`, `$`, `^$`, `a*$`): what `findAll` does with it is not compared yet.
-`sheetrs edit --replace` reads the anchors and those patterns too, as LibreOffice replaces (see
-`sheetrs-edit/README.md`). The searches with anchors are compared with `findAll` of LibreOffice in
-`tests/libreoffice_find.rs` (workbooks `tests/assets/anchors.*`, made by
-`tests/assets/make_anchors_fixtures.py`).
+groups and alternations (`(^a|b$)`). `.` still leaves out the line breaks. The searches with anchors
+are compared with `findAll` of LibreOffice in `tests/libreoffice_find.rs` (workbooks
+`tests/assets/anchors.*`, made by `tests/assets/make_anchors_fixtures.py`).
+
+A pattern that can match the empty text (`^`, `$`, `^$`, `x*`, `a*$`, `(^|$)`) is read, and finds
+the cells that `sheetrs edit --replace` would change, which are the ones `findAll` reports: a match of
+no characters is a hit only at the very end of the text, and no search begins there. So `$` finds
+every cell whose text does not end in a line break (the empty match before that one is skipped, and
+so is the end), `^` and `x*` find only what they match with characters (`x*` the cells with an `x`),
+and with `--entire-cells` an empty first match is not the whole text (`$`, `^$` find nothing). Compared
+with `findAll` in XLSX and ODS for 119 patterns with `match_case` and `entire_cells` on and off
+(`tests/find_empty.rs`; oracle `tests/assets/find_empty/oracle.json`, made by
+`make_find_empty_oracle.py` from the patterns of the replace oracle).
 
 The empty search text (`--find ''`) matches nothing, in every mode, as `findAll` reports no cell for
-it (probed in XLSX and ODS, with `entire_cells` on and off: `tests/assets/probe_empty_search.py`): the
-answer is `{"cells": []}` at once, with no error and nothing read (not even a sheet in `--scope`
-that is not there).
+it (probed in XLSX and ODS: `tests/assets/probe_empty_search.py`): the answer is `{"cells": []}` at once, with no error and nothing read (not even a sheet in
+`--scope` that is not there).
+
+What a regular expression search still refuses, because it was not compared (not an approved
+difference): a repetition of something that can match the empty text (`(a*)*`, `^*`, `(^)+a`,
+`(^|$)*`), `\b` and the other escapes of ICU (`\B`, `\A`, `\z`, `\h`, `\p{..}`, `\1`), look-around
+and groups with options or names (`(?=a)`, `(?i)`, `(?<n>a)`), possessive quantifiers (`a++`),
+POSIX classes and set operations in a set (`[[:alpha:]]`, `[a-z&&[^b]]`, `[a--b]`), a set inside a
+set, and a pattern that is not valid. It is the subset of `sheetrs_engine::regex_subset`.
 
 ## The format of a formula cell
 

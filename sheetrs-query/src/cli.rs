@@ -74,7 +74,7 @@ pub struct Args {
     #[arg(long, value_name = "TEXT")]
     pub find: Option<String>,
 
-    /// The search is a regular expression (ICU, the subset that is reproduced; `^` and `$` anchor the text of the cell)
+    /// The search is a regular expression (ICU, the subset that is reproduced; `^` and `$` anchor the text of the cell, and the pattern may match the empty text: that match is a hit only at the end of the text)
     #[arg(long, conflicts_with = "wildcards")]
     pub regex: bool,
 

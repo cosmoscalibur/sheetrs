@@ -158,7 +158,7 @@ for (const file of [book, bookOds]) {
     assert.equal(cells.length, cli.cells.length);
     assert.deepEqual(cells.map((c) => c.cell), cli.cells.map((c) => c.cell));
   });
-  check(`query (find: the empty text matches nothing) ${ext(file)}`, () => {
+  check(`query (find: the empty text matches nothing, an empty match is a hit at the end) ${ext(file)}`, () => {
     // LibreOffice: an empty search string finds nothing, in every mode.
     for (const [flags, options] of [
       [[], {}],
@@ -171,6 +171,13 @@ for (const file of [book, bookOds]) {
       assert.deepEqual(open(file).find("", options), []);
       assert.deepEqual(open(file).query({ find: { text: "", mode: options.mode ?? "literal" } }), { cells: [] });
     }
+    // A pattern that matches the empty text: the cells `findAll` reports, as the command finds them.
+    for (const pattern of ["$", "^", "x*", "a*$", "(^|$)"]) {
+      const cli = JSON.parse(text(run("query", ["-i", file, "--find", pattern, "--regex", "--workbook"])));
+      const cells = open(file).find(pattern, { mode: "regex" });
+      assert.deepEqual(cells.map((c) => c.cell), cli.cells.map((c) => c.cell), pattern);
+    }
+    assert.equal(open(file).find("^", { mode: "regex" }).length, 0);
     // The empty text replaces nothing, with no error even for a sheet that is not there.
     const edited = open(file);
     edited.replace([["", "Z"]], { scope: "Nowhere" });

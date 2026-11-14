@@ -12,15 +12,17 @@
 //! `* + ? {n} {n,} {n,m}` with their lazy forms. Nothing that repeats may match the empty text.
 //!
 //! The anchors `^` and `$` are read by the searches of the Find & Replace of `LibreOffice`
-//! ([`translate_find`], [`translate_replace`]) and refused by the functions ([`translate`],
+//! ([`translate_find`]) and refused by the functions ([`translate`],
 //! [`translate_capturing`]: `REGEX`, `COUNTIF`...), whose semantics are another matter. They mean
 //! what `LibreOffice` gives them in a cell: the start of the text, and its end or the place before
 //! a line terminator that ends it; never the start or end of a line.
 //!
-//! A pattern that can match the empty text is refused by all of them but [`translate_replace`]:
-//! what a replacement does with an empty match is the loop of `LibreOffice` (an empty match is
-//! not a hit, except one at the very end of the text, and no search starts at the end), which the
-//! caller of that translation runs (`sheetrs_query::Matcher`).
+//! A pattern that can match the empty text (`^`, `$`, `x*`, `a*$`) is refused by the functions and
+//! read by [`translate_find`]: what a search or a replacement does with an empty match is the loop of
+//! `LibreOffice` (an empty match is not a hit, except one at the very end of the text, and no search
+//! starts at the end), which the caller of that translation runs (`sheetrs_query::Matcher`). The
+//! empty pattern itself matches nothing in `LibreOffice` and never reaches a translation: the search
+//! and the replacement that carry it are answered before (nothing found, nothing replaced).
 
 use std::fmt::Write as _;
 
@@ -423,25 +425,16 @@ pub fn translate_capturing(pattern: &str) -> R<String> {
     translate_with(pattern, true, false, false)
 }
 
-/// Like [`translate_capturing`], and reading the anchors `^` and `$`, for a search that only asks
-/// whether a text holds a hit. The result needs an engine with look-around (`fancy_regex`) when it
-/// has a `$`.
+/// Like [`translate_capturing`], and reading the anchors `^` and `$`, for the searches of Find &
+/// Replace (`find` and `replace`). The pattern may match the empty text (`x*`, `^`, `$`, `a*$`),
+/// which the caller handles as `LibreOffice` does (an empty match is a hit only at the end of the
+/// text, and a search never starts there). The result needs an engine with look-around
+/// (`fancy_regex`) when it has a `$`. The empty pattern is refused: the caller answers it before.
 ///
 /// # Errors
 ///
 /// When `pattern` uses a construct outside the subset.
 pub fn translate_find(pattern: &str) -> R<String> {
-    translate_with(pattern, true, true, false)
-}
-
-/// Like [`translate_find`], for a replacement: the pattern may match the empty text (`x*`, `^`,
-/// `$`, `a*$`), which the caller handles as `LibreOffice` does (an empty match is replaced only at
-/// the end of the text, and a search never starts there). The empty pattern is still refused.
-///
-/// # Errors
-///
-/// When `pattern` uses a construct outside the subset.
-pub fn translate_replace(pattern: &str) -> R<String> {
     if pattern.is_empty() {
         return Err("an empty pattern".into());
     }
@@ -528,27 +521,21 @@ mod tests {
     }
 
     #[test]
-    fn an_anchor_alone_is_an_empty_match_and_is_refused_in_a_search() {
-        for bad in ["^", "$", "^$", "^a*", "a*$", "(^|$)", "^*", "(^)+a", "^+"] {
-            assert!(translate_find(bad).is_err(), "{bad}");
-        }
-    }
-
-    #[test]
-    fn a_replacement_reads_the_anchors_and_the_patterns_that_match_the_empty_text() {
+    fn a_search_reads_the_anchors_and_the_patterns_that_match_the_empty_text() {
         for ok in [
             "^a", "a$", "^", "$", "^$", "a*$", "^a*", "x*", "(^|x)a", "(a|)", "a|", "(|a)$", "a?",
+            "(^|$)",
         ] {
-            assert!(translate_replace(ok).is_ok(), "{ok}");
+            assert!(translate_find(ok).is_ok(), "{ok}");
         }
     }
 
     #[test]
-    fn a_replacement_still_refuses_what_is_not_reproduced() {
+    fn a_search_still_refuses_what_is_not_reproduced() {
         for bad in [
             "", "^*", "(^)+a", "^+", "(a*)*", "(^|$)*", "\\b", "(?=a)", "a**",
         ] {
-            assert!(translate_replace(bad).is_err(), "{bad}");
+            assert!(translate_find(bad).is_err(), "{bad}");
         }
     }
 }

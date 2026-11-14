@@ -11,22 +11,22 @@
 //!   `sheetrs_engine::regex_subset`, and a pattern outside it is refused instead of giving another
 //!   result. `.` does not match a line break.
 //! - `^` and `$` anchor the text of the cell, not its lines: `^` is its start, `$` its end or the
-//!   place before a line terminator that ends it. A search ([`Matcher::for_find`]) and a
-//!   replacement ([`Matcher::new`]) read them.
+//!   place before a line terminator that ends it. A search and a replacement read them alike.
 //! - The empty search text matches nothing, in every mode: `findAll` reports no cell and
 //!   `replaceAll` changes none (probed on an XLSX and an ODS, `entire_cells` on and off, every mode,
-//!   an empty and a non-empty replacement; `tests/assets/probe_empty_search.py`). Nothing is
-//!   translated or compiled for it, and the callers answer it before any cell is read
-//!   ([`sheetrs_protocol::Find::matches_nothing`]).
+//!   an empty and a non-empty replacement; `tests/assets/probe_empty_search.py`). Nothing is translated or compiled for it, and the
+//!   callers answer it before any cell is read ([`sheetrs_protocol::Find::matches_nothing`]).
 //! - A match of no characters is not a hit, with one exception: at the very end of the text it is
-//!   (`abc` with `$` replaced by `X` gives `abcX`, with `^` or `x*` nothing changes). The hits are
+//!   (`abc` with `$` replaced by `X` gives `abcX`, with `^` or `x*` nothing changes). `findAll`
+//!   reports the cells that `replaceAll` would change: the cell is found when the first search of
+//!   that loop has a hit (`$` finds every text that does not end in a line break, `^` and `x*`
+//!   only what they match with characters; compared in both formats, `tests/find_empty.rs`). The hits are
 //!   found as `LibreOffice` finds them: from the start of the text, each search begins where the
 //!   replacement of the last hit ended (the replacement is made in the text itself, so `^a` replaced
 //!   by nothing empties `aa`), or one character after an empty match that was skipped, and none
 //!   begins at the end of the text (`a` with `a*` replaced by `X` gives `X`, not `XX`; `a` and a line break with
 //!   `$` is not changed: the one empty match, before the line break, is skipped, and the end is
-//!   not searched). A search ([`Matcher::for_find`]) refuses a pattern that can match the empty
-//!   text; a replacement reads it.
+//!   not searched).
 //! - Every hit of a cell is replaced. In a regular expression the replacement reads `&` as the
 //!   whole match, `$0` to `$9` as the groups, `\t` as a tab, and `\&`, `\$` and `\\` as the
 //!   character they escape; in the other modes the replacement is taken as it is.
@@ -74,27 +74,14 @@ fn wildcards(text: &str) -> String {
 }
 
 impl Matcher {
-    /// A matcher to replace with: a regular expression may have the anchors `^` and `$` and may
-    /// match the empty text.
+    /// A matcher for a search (`find`) or a replacement (`replace`): a regular expression may have
+    /// the anchors `^` and `$` and may match the empty text (`x*`, `^`, `$`, `a*$`). The empty
+    /// search text matches nothing, in every mode.
     ///
     /// # Errors
     ///
     /// When the regular expression is outside what is reproduced, or does not compile.
     pub fn new(find: &Find) -> Result<Self> {
-        Self::build(find, true)
-    }
-
-    /// A matcher to find the cells with a hit: a regular expression may have the anchors `^` and
-    /// `$`, but not match the empty text (what `findAll` does with those is not reproduced yet).
-    ///
-    /// # Errors
-    ///
-    /// When the regular expression is outside what is reproduced, or does not compile.
-    pub fn for_find(find: &Find) -> Result<Self> {
-        Self::build(find, false)
-    }
-
-    fn build(find: &Find, replacing: bool) -> Result<Self> {
         if find.text.is_empty() {
             // `LibreOffice` finds nothing and replaces nothing with the empty text, in every mode:
             // nothing is translated or compiled.
@@ -108,14 +95,8 @@ impl Matcher {
         let body = match find.mode {
             Mode::Literal => escape(&find.text),
             Mode::Wildcards => wildcards(&find.text),
-            Mode::Regex => {
-                let translated = if replacing {
-                    sheetrs_engine::regex_subset::translate_replace(&find.text)
-                } else {
-                    sheetrs_engine::regex_subset::translate_find(&find.text)
-                };
-                translated.map_err(|e| Error::Unsupported(e.to_string()))?
-            }
+            Mode::Regex => sheetrs_engine::regex_subset::translate_find(&find.text)
+                .map_err(|e| Error::Unsupported(e.to_string()))?,
         };
         let flags = if find.match_case { "" } else { "(?i)" };
         let re =
@@ -134,6 +115,15 @@ impl Matcher {
             entire: find.entire_cells,
             empty_inside,
         })
+    }
+
+    /// The same as [`Matcher::new`]: a search and a replacement read a pattern alike.
+    ///
+    /// # Errors
+    ///
+    /// When the regular expression is outside what is reproduced, or does not compile.
+    pub fn for_find(find: &Find) -> Result<Self> {
+        Self::new(find)
     }
 
     /// Whether the text holds a hit.
@@ -403,25 +393,8 @@ mod tests {
     }
 
     #[test]
-    fn the_empty_search_text_matches_nothing_in_every_mode() {
-        for mode in [Mode::Literal, Mode::Regex, Mode::Wildcards] {
-            for entire_cells in [false, true] {
-                let f = Find {
-                    mode,
-                    entire_cells,
-                    ..find("", mode)
-                };
-                let m = Matcher::new(&f).unwrap();
-                assert!(!m.is_match("abc") && !m.is_match(""), "{mode:?}");
-                assert_eq!(m.replace_all("abc", "X"), None, "{mode:?}");
-                assert!(Matcher::for_find(&f).unwrap().re.is_none());
-            }
-        }
-    }
-
-    #[test]
-    fn a_replacement_refuses_what_is_not_reproduced() {
-        for pattern in ["^*", "\\b", "(a*)*"] {
+    fn a_search_and_a_replacement_refuse_what_is_not_reproduced() {
+        for pattern in ["^*", "\\b", "(a*)*", "(^)+a", "^+", "(^|$)*"] {
             assert!(
                 matches!(
                     Matcher::new(&find(pattern, Mode::Regex)),
@@ -473,15 +446,22 @@ mod tests {
     }
 
     #[test]
-    fn a_search_refuses_a_pattern_that_can_match_the_empty_text() {
-        for pattern in ["^", "$", "^$", "^a*", "a*$", "(^|$)"] {
-            assert!(
-                matches!(
-                    Matcher::for_find(&find(pattern, Mode::Regex)),
-                    Err(Error::Unsupported(_))
-                ),
-                "{pattern}"
-            );
-        }
+    fn a_search_reads_a_pattern_that_can_match_the_empty_text_as_a_replacement_does() {
+        // `findAll` reports the cells that `replaceAll` would change: an empty match is a hit only
+        // at the very end of the text.
+        assert!(found("$", false, "abc"));
+        assert!(!found("^", false, "abc"));
+        assert!(!found("x*", false, "abc"));
+        assert!(found("x*", false, "axc"));
+        assert!(found("a*$", false, "bba"));
+        assert!(found("a*$", false, "bb"));
+        assert!(!found("^$", false, "abc"));
+        assert!(!found("(^|$)", false, "a"));
+        // The empty match before the line break that ends the text is skipped, and so is the end.
+        assert!(!found("$", false, "a\n"));
+        // The first match must be the whole text with `entire_cells`: an empty one is not.
+        assert!(!found("$", true, "abc"));
+        assert!(!found("x*", true, "abc"));
+        assert!(found("a*", true, "aaa"));
     }
 }
