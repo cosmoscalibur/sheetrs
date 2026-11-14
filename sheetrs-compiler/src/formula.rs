@@ -17,6 +17,46 @@ use std::sync::Arc;
 
 pub use sheetrs_formula::ParseError;
 
+/// A reference that an edit removed, as the formula says it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Gone {
+    /// The cells of a row or a column that was deleted: `Sheet!#REF!` of an XLSX. `IFERROR` does not catch it.
+    Cells,
+    /// The sheet that was deleted: `IFERROR` catches it.
+    Sheet,
+}
+
+/// Whether the function takes a reference that went as the error it is (`#REF!`) instead of answering
+/// `#REF!` itself: the ones that look at an error, and the ones that evaluate only some of their arguments
+/// (the argument that goes unread is not read, whatever it is). `IFERROR` does not catch the error of a
+/// reference to cells that went, and does catch the one of a sheet that went (compared with
+/// `LibreOffice`, which opens the file, makes the edit and calculates).
+fn reads_gone_reference_as_error(name: &str, gone: &[Option<Gone>]) -> bool {
+    if name == "IFERROR" {
+        return gone.first() != Some(&Some(Gone::Cells));
+    }
+    matches!(
+        name,
+        "IF" | "IFS"
+            | "IFNA"
+            | "CHOOSE"
+            | "SWITCH"
+            | "ISERROR"
+            | "ISERR"
+            | "ISNA"
+            | "ISREF"
+            | "ISBLANK"
+            | "ISNUMBER"
+            | "ISTEXT"
+            | "ISNONTEXT"
+            | "ISLOGICAL"
+            | "ISFORMULA"
+            | "ERROR.TYPE"
+            | "SHEETS"
+            | "LET"
+    )
+}
+
 /// Name resolution context of a formula.
 #[derive(Debug)]
 pub struct ParseCtx<'a> {
@@ -36,6 +76,9 @@ pub struct ParseCtx<'a> {
     pub calc: sheetrs_formula::calc_print::CalcSyntax,
     /// `_xlfn._LONGTEXT(…)` of constant text is one literal (feature `LONGTEXT`).
     pub longtext: bool,
+    /// What the edit that is calculated removed: a `#REF!` is then a reference that went (see
+    /// [`Removed`](crate::Removed)).
+    pub removed: crate::compile::Removed,
 }
 
 impl ParseCtx<'_> {
@@ -678,10 +721,46 @@ impl Lowering<'_, '_> {
         }
     }
 
+    /// The reference that went an argument stands for, when it is one (see [`Gone`]).
+    fn gone_reference(&self, a: &ast::Expr) -> Option<Gone> {
+        let ast::Expr::Error(text) = a else {
+            return None;
+        };
+        // `Sheet!#REF!`: what the writer leaves in an XLSX where cells went, and `LibreOffice` reads it as
+        // the reference that went, whatever the file says about the edit.
+        if let Some(qualifier) = text.strip_suffix("#REF!").filter(|q| q.ends_with('!')) {
+            let (sheet, _) = sheetrs_formula::addr::split_sheet(&format!("{qualifier}A1"));
+            return sheet
+                .is_some_and(|name| self.ctx.sheet_id(&name).is_some())
+                .then_some(Gone::Cells);
+        }
+        // A bare one is the reference that went only after an edit that removed something.
+        if text == "#REF!" && !self.ctx.removed.is_none() {
+            return Some(if self.ctx.removed.cells {
+                Gone::Cells
+            } else {
+                Gone::Sheet
+            });
+        }
+        None
+    }
+
     fn call(&mut self, c: &ast::Call) -> Expr {
         let name = split_function_name(&c.name);
         if name == "LET" {
             return self.let_call(c);
+        }
+        // A reference that went is not an error value that the function reads: `LibreOffice` finds no cell
+        // when the function asks for the reference, and the call is `#REF!` whatever it does with errors
+        // (`COUNT`, `COUNTA`, `COUNTBLANK`, `SUMIF`, `INDEX`... all of them), but for the ones that look at
+        // an error or leave an argument alone (`ISERROR`, `IF`...), which take it as the error it is.
+        let gone: Vec<Option<Gone>> = c
+            .args
+            .iter()
+            .map(|a| a.as_ref().and_then(|a| self.gone_reference(a)))
+            .collect();
+        if gone.iter().any(Option::is_some) && !reads_gone_reference_as_error(&name, &gone) {
+            return Expr::Const(Value::Error(ErrorKind::Ref));
         }
         if let Some(e) = self.formula_info(c, &name) {
             return e;
@@ -1006,6 +1085,7 @@ mod tests {
             names,
             cells: None,
             xlsx: false,
+            removed: crate::compile::Removed::default(),
             ods: false,
             calc: sheetrs_formula::calc_print::CalcSyntax::for_decimal('.'),
             longtext: false,
@@ -1029,6 +1109,90 @@ mod tests {
         let mut c = ctx(&sheets, &names);
         c.xlsx = xlsx;
         parse(f, &c, &mut vec![]).unwrap()
+    }
+
+    /// The formula `f` lowered after an edit that removed `removed`.
+    fn after_edit(f: &str, xlsx: bool, removed: crate::compile::Removed) -> Expr {
+        let (sheets, names) = (vec!["Data".to_string()], HashMap::new());
+        let mut c = ctx(&sheets, &names);
+        c.xlsx = xlsx;
+        c.ods = !xlsx;
+        c.removed = removed;
+        parse(f, &c, &mut vec![]).unwrap()
+    }
+
+    const CELLS: crate::compile::Removed = crate::compile::Removed {
+        cells: true,
+        sheets: false,
+    };
+    const SHEETS: crate::compile::Removed = crate::compile::Removed {
+        cells: false,
+        sheets: true,
+    };
+
+    #[test]
+    fn a_reference_that_went_makes_the_call_ref_whatever_it_does_with_errors() {
+        let gone = Expr::Const(Value::Error(ErrorKind::Ref));
+        for xlsx in [false, true] {
+            for removed in [CELLS, SHEETS] {
+                // `COUNT` and `COUNTA` do not count an error, `COUNTBLANK` and `SUMIF` refuse it:
+                // none of them is asked for a value, the reference is what is not there.
+                for call in [
+                    "COUNT(#REF!)",
+                    "COUNTA(#REF!)",
+                    "COUNTBLANK(#REF!)",
+                    "SUMIF(#REF!,\">1\")",
+                    "SUM(#REF!,5)",
+                    "INDEX(#REF!,2)",
+                ] {
+                    assert_eq!(after_edit(call, xlsx, removed), gone, "{call}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_reference_to_cells_that_went_is_ref_in_an_xlsx_after_any_edit() {
+        // `Data!#REF!` is what `LibreOffice` reads as the reference that went, so the file need not say it.
+        let none = crate::compile::Removed::default();
+        assert_eq!(
+            after_edit("COUNT(Data!#REF!)", true, none),
+            Expr::Const(Value::Error(ErrorKind::Ref))
+        );
+    }
+
+    #[test]
+    fn without_an_edit_a_bare_ref_is_the_error_written_in_the_formula() {
+        let none = crate::compile::Removed::default();
+        let gone = Expr::Const(Value::Error(ErrorKind::Ref));
+        // An ODS reads `COUNT(#REF!)` as an error written (`COUNT` skips it), an XLSX as an unknown name.
+        assert_ne!(after_edit("COUNT(#REF!)", false, none), gone);
+        assert_ne!(after_edit("COUNT(#REF!)", true, none), gone);
+        assert_eq!(
+            after_edit("#REF!+1", true, none),
+            after_edit("#NAME?+1", true, none)
+        );
+    }
+
+    #[test]
+    fn functions_that_look_at_an_error_take_the_reference_that_went_as_the_error_it_is() {
+        let gone = Expr::Const(Value::Error(ErrorKind::Ref));
+        for call in [
+            "ISERROR(#REF!)",
+            "ISREF(#REF!)",
+            "IF(TRUE,1,#REF!)",
+            "IFNA(#REF!,7)",
+        ] {
+            assert_ne!(after_edit(call, false, CELLS), gone, "{call}");
+        }
+    }
+
+    #[test]
+    fn iferror_catches_a_sheet_that_went_and_not_the_cells() {
+        let gone = Expr::Const(Value::Error(ErrorKind::Ref));
+        assert_eq!(after_edit("IFERROR(#REF!,7)", false, CELLS), gone);
+        assert_ne!(after_edit("IFERROR(#REF!,7)", false, SHEETS), gone);
+        assert_eq!(after_edit("IFERROR(Data!#REF!,7)", true, SHEETS), gone);
     }
 
     #[test]

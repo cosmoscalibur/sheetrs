@@ -92,14 +92,15 @@ makes the ODS, `fixture_determinism.normalize` fixes the bytes; run it twice and
 tests of `use_cache` (`sheetrs-edit/tests/use_cache.rs`, `sheetrs-cli/tests/edit_use_cache.rs`). Their formulas cache
 a result the engine would not give, so that a formula that kept its cache is told from one calculated again:
 `book`, `indirect`, `repro` and `array` are the cases of the feature; `volatile` (`TODAY()`, `NOW()`, `RAND()`),
-`rules` (a whole row, `ROW()`, `SHEET()`, a defined name, a sheet to delete), `quarter` (40 formulas, the quarter
+`rules` (a whole row, `ROW()`, `SHEET()`, a defined name, a sheet to delete), `refs` (every function of a family over
+a reference that an edit removes: whole column, whole row, range, one cell), `quarter` (40 formulas, the quarter
 above which the cache is not used) and `runs` (the rectangles of 65 separate and of 70 adjacent replaced cells)
 each pin a rule that decides which formulas an edit reaches (a test fails when the rule is off).
 
 `sheetrs-edit/tests/assets/write_to/oracle.json` (`make_oracle.py`, run with the Python of LibreOffice and a
 `scripts/libreoffice-server.sh` listening) is what `sheetrs-edit/tests/write_to_libreoffice.rs` compares the in-memory
-write (`BookEdit::write_to`, Python and WebAssembly) with: for `book` and `rules` of `use_cache/`, in both formats, the
+write (`BookEdit::write_to`, Python and WebAssembly) with: for `book`, `rules` and `refs` of `use_cache/`, in both formats, the
 cells, hidden rows and columns and sheet visibility after LibreOffice itself made each edit (rows, columns, sheets and
 names deleted, replacements with anchors, rows, columns and sheets hidden and shown, formulas converted to values) and
 calculated every formula, and the differences it finds when it opens the file `sheetrs edit` writes. The values that
-differ are listed in the test (none is approved: they wait for the maintainer).
+differ are listed in the test (none is approved: they wait for the maintainer); there are none now.

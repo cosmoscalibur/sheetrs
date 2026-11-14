@@ -105,6 +105,31 @@ pub struct Spec {
     /// A recalculation that uses the results the workbook caches (see [`Cache`]); only
     /// `Mode::Recalculate` reads it.
     pub cache: Option<Cache>,
+    /// What the passes before the recalculation removed from the workbook (see [`Removed`]).
+    pub removed: Removed,
+}
+
+/// What an edit removed from the workbook before it is calculated: the cells of rows and columns, and
+/// sheets. The text of a formula that read them says `#REF!` where the reference was (a bare one in an
+/// ODS and in an XLSX when the sheet went, `Sheet!#REF!` in an XLSX when cells did), and that text does
+/// not tell a reference that went from an error written in the formula: `COUNT(#REF!)` is 0 when it is
+/// typed or read from a file, and `#REF!` when the reference went in the edit that is calculated (the
+/// spreadsheet program does not forget that it was a reference). The recalculation that follows an
+/// edit reads `#REF!` as the reference that went when this says that something was removed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Removed {
+    /// Rows or columns were deleted: a reference to their cells went.
+    pub cells: bool,
+    /// Sheets were deleted: a reference to them went.
+    pub sheets: bool,
+}
+
+impl Removed {
+    /// Whether nothing was removed: a `#REF!` is the error written in the formula.
+    #[must_use]
+    pub const fn is_none(self) -> bool {
+        !self.cells && !self.sheets
+    }
 }
 
 /// What a recalculation that uses the results a workbook caches is told, besides the workbook: the
@@ -194,6 +219,7 @@ impl Default for Spec {
             notes: Vec::new(),
             features: Features::default(),
             cache: None,
+            removed: Removed::default(),
         }
     }
 }
@@ -399,6 +425,7 @@ fn lower_chunk(
     part: &[(CellRef, &ModelCell)],
     calc: sheetrs_formula::calc_print::CalcSyntax,
     features: Features,
+    removed: Removed,
 ) -> Lowered {
     let mut out = Lowered::default();
     for &(at, c) in part {
@@ -412,6 +439,7 @@ fn lower_chunk(
             ods: model.from_file && !model.from_xlsx,
             calc,
             longtext: features.longtext,
+            removed,
         };
         let before = out.diags.len();
         match formula::parse(f, &ctx, &mut out.diags) {
@@ -620,13 +648,16 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             &formula_cells,
             calc_syntax,
             spec.features,
+            spec.removed,
         )]
     } else {
         std::thread::scope(|scope| {
             let handles: Vec<_> = formula_cells
                 .chunks(chunk)
                 .map(|part| {
-                    scope.spawn(move || lower_chunk(model, part, calc_syntax, spec.features))
+                    scope.spawn(move || {
+                        lower_chunk(model, part, calc_syntax, spec.features, spec.removed)
+                    })
                 })
                 .collect();
             handles

@@ -1,5 +1,5 @@
 """Makes `oracle.json`, what `tests/write_to_libreoffice.rs` compares the in-memory write (`BookEdit::write_to`,
-the one Python and WebAssembly use) with: for each workbook of `tests/assets/use_cache/` (`book`, `rules`), in each
+the one Python and WebAssembly use) with: for each workbook of `tests/assets/use_cache/` (`book`, `rules`, `refs`), in each
 format, and for each edit of `EDITS`,
 
   expected   the cells (formula and value), the hidden rows and columns and the visibility of each sheet after
@@ -31,7 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(HERE, "..", "use_cache")
 SHEETRS = os.environ.get("SHEETRS", os.path.join(HERE, "..", "..", "..", "..", "target", "debug", "sheetrs"))
 FILTERS = {"xlsx": "Calc MS Excel 2007 XML", "ods": "calc8"}
-ROWS, COLUMNS = 45, 6  # the area of each sheet that is compared: A1:F45
+ROWS, COLUMNS = 80, 6  # the area of each sheet that is compared: A1:F80
 
 # (label, the operations). An operation is `[name, ...arguments]`:
 #   delete_rows / hide_rows / show_rows "S!3:5"      delete_columns / hide_columns / show_columns "S!B:D"
@@ -72,7 +72,15 @@ RULES = [
     ("hide rows Data!2:4", [["hide_rows", "Data!2:4"]]),
     ("hide columns Data!D", [["hide_columns", "Data!D"]]),
 ]
-FIXTURES = [("book", BOOK), ("rules", RULES)]
+REFS = [
+    ("delete sheet Data", [["delete_sheets", "Data"]]),
+    ("delete rows Data!3", [["delete_rows", "Data!3"]]),
+    ("delete rows Data!1:6", [["delete_rows", "Data!1:6"]]),
+    ("delete rows Data!2:3", [["delete_rows", "Data!2:3"]]),
+    ("delete columns Data!A", [["delete_columns", "Data!A"]]),
+    ("delete columns Data!A:B", [["delete_columns", "Data!A:B"]]),
+]
+FIXTURES = [("book", BOOK), ("rules", RULES), ("refs", REFS)]
 
 
 def pv(name, value):

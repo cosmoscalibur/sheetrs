@@ -15,7 +15,7 @@
 //! | `sheetc verify -i FILE` (`--reference cache`) | [`BookCompile::verify`] |
 //! | `sheetc evaluate FORMULA` | [`evaluate`] |
 
-use crate::compile::{Cache, Report, compile};
+use crate::compile::{Cache, Removed, Report, compile};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::loader;
@@ -40,6 +40,10 @@ pub struct Options {
     /// For [`Mode::Recalculate`]: calculate only what these changes reach, and keep the results the
     /// workbook caches for the rest (see [`Cache`]).
     pub cache: Option<Cache>,
+    /// For [`Mode::Recalculate`]: what the edit that precedes the calculation removed, so that a
+    /// `#REF!` in a formula is the reference that went and not an error written in it (see
+    /// [`Removed`]).
+    pub removed: Removed,
 }
 
 impl Options {
@@ -73,6 +77,7 @@ impl Options {
             config,
             declarations,
             cache: None,
+            removed: Removed::default(),
         })
     }
 
@@ -83,6 +88,7 @@ impl Options {
         };
         spec.mode = mode;
         spec.cache.clone_from(&self.cache);
+        spec.removed = self.removed;
         Ok(spec)
     }
 

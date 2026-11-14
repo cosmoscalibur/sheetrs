@@ -16,6 +16,7 @@ XLSX caches: it does not recalculate a file on load by default):
             that is not the one they give
   rules     what a deletion reaches without changing the text of the formula: a whole row of `Data`, `ROW()`,
             `SHEET()`, a defined name, `ISFORMULA` and `FORMULATEXT` of a cell; the sheet `Other` is the one the tests delete
+  refs      every function of a family over a reference that an edit removes (whole column, whole row, range, cell)
   empty     three formulas that cache an empty result (<v></v>, office:value="") and the forty fillers
   quarter   40 formulas `=SUM(Data!A{k}:A{k+40})` of Calc, over `Data!A1:A80` (all 11): a quarter of them is the
             limit above which the cache is not used
@@ -77,6 +78,17 @@ RULES = [
 # Formulas whose cached result is empty (`<v></v>` of an XLSX, `office:value=""` of an ODS: what a program that
 # writes no results leaves), written as a number first and blanked by `blank`.
 EMPTY = [(f"A{k}", f"=Data!A{k + 1}*2", 123456) for k in range(1, 4)] + FILLER
+# What each function does with a reference that goes: the functions of the family, over whole columns, whole
+# rows, a range, a range of two columns and one cell of `Data`, and some others (results are not the ones they
+# give).
+REFS = []
+for _fn in ("COUNT", "SUM", "COUNTA", "AVERAGE", "MAX", "MIN", "COUNTBLANK"):
+    for _ref in ("Data!A:A", "Data!1:1", "Data!A1:A6", "Data!A2:B3", "Data!A3"):
+        REFS.append((f"A{len(REFS) + 1}", f"={_fn}({_ref})", 777))
+for _text in ('COUNTIF(Data!A:A,">1")', 'COUNTIF(Data!A1:A6,">1")', 'SUMIF(Data!A1:A6,">1")', "Data!A3+1", "Data!A3",
+              "ROWS(Data!A1:A6)", "ISREF(Data!A3)", "ISERROR(Data!A3)", "IFERROR(Data!A3,7)", "SUM(Data!A1:A3)",
+              "INDEX(Data!A1:A6,2)", "SUMPRODUCT(Data!A1:A6)", "COUNT(Data!A3,5)", "SUM(Data!A3,5)"):
+    REFS.append((f"A{len(REFS) + 1}", "=" + _text, 777))
 QUARTER = [(f"A{k}", f"=SUM(Data!A{k}:A{k + 40})", 5000 + k) for k in range(1, 41)]
 # Replacements: column A is rewritten at the odd rows 1..129 (65 separate cells), row 1 from B to BS (70 adjacent
 # ones) and B41. A formula for each of those cells, formulas that read a cell between them, and some that nothing
@@ -222,6 +234,7 @@ def main():
         ("repro", REPRO, book_data, (), False),
         ("volatile", VOLATILE, book_data, (), True),
         ("rules", RULES, rules_data, ("Other",), False),
+        ("refs", REFS, book_data, (), False),
         ("empty", EMPTY, book_data, (), False),
         ("quarter", QUARTER, eleven(80), (), False),
         ("runs", RUNS, runs_data, (), False),

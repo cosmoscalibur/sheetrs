@@ -1,9 +1,9 @@
 //! The in-memory write (`BookEdit::write_to`, what Python and WebAssembly use) against `LibreOffice` 26.8.
 //!
-//! `tests/assets/write_to/oracle.json` (`make_oracle.py`) holds, for the workbooks `book` and `rules` of
+//! `tests/assets/write_to/oracle.json` (`make_oracle.py`) holds, for the workbooks `book`, `rules` and `refs` of
 //! `tests/assets/use_cache/` in both formats and for each edit of its list, what `LibreOffice` itself leaves
 //! when it makes the edit through UNO and calculates every formula (`expected`): the value of each cell of
-//! `A1:F45`, the hidden rows and columns and the visibility of each sheet. For each edit this test checks that
+//! `A1:F80`, the hidden rows and columns and the visibility of each sheet. For each edit this test checks that
 //!
 //! * the bytes of `write_to` are the bytes of `write`, with the cache and without it;
 //! * what `write_to` leaves is what `LibreOffice` left: the values, the hidden rows and columns and the
@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-const ROWS: u32 = 45;
+const ROWS: u32 = 80;
 const COLUMNS: u32 = 6;
 
 fn asset(name: &str, extension: &str) -> PathBuf {
@@ -278,13 +278,10 @@ fn layout_differences(got: &Dump, expected: &Dump) -> Vec<String> {
 ///
 /// * XLSX, sheet deleted: `LibreOffice` calculates `#REF!` where the formulas read the sheet that went, and
 ///   writes it as a bare `#REF!` that it reads back as `#NAME?`; the engine gives `#NAME?` (what `LibreOffice`
-///   shows of the file it writes) in the formulas that read it, and 0 in `COUNT(Data!A:A)` (`#REF!` for
-///   `LibreOffice`), as for the ODS.
-/// * ODS, sheet deleted: `COUNT` of a whole column of the sheet that went is `#REF!` for `LibreOffice` and 0 for
-///   the engine.
+///   shows of the file it writes) in the formulas that read it.
 const KNOWN_DIFFERENCES: [&str; 2] = [
-    "book.ods: delete sheet Data: 1 cells, first Calc!A5",
-    "book.xlsx: delete sheet Data: 50 cells, first Calc!A1",
+    "book.xlsx: delete sheet Data: 49 cells, first Calc!A1",
+    "refs.xlsx: delete sheet Data: 46 cells, first Calc!A1",
 ];
 
 #[test]

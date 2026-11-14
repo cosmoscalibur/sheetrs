@@ -268,7 +268,7 @@ fn reading_a_range(e: &str) -> Vec<(&'static str, Vec<Cell>)> {
 }
 
 #[test]
-fn a_range_that_shrinks_and_a_formula_that_traps_the_error_give_the_new_results() {
+fn a_range_that_shrinks_gives_its_new_result_and_iferror_does_not_trap_a_deleted_reference() {
     for extension in EXTENSIONS {
         let dir = tempfile::tempdir().unwrap();
         let input = workbook(dir.path(), extension, &reading_a_range(extension));
@@ -277,10 +277,11 @@ fn a_range_that_shrinks_and_a_formula_that_traps_the_error_give_the_new_results(
         book.delete_rows(["D!2".parse().unwrap()]);
         book.write(&output).unwrap();
         assert!(is_ref_error(&output, "F", 0), "{extension}");
-        // The range is now the cells 10 and 30, and the formula that traps the error gives 0: the
-        // error is not what its value is.
+        // The range is now the cells 10 and 30. `IFERROR` does not trap the reference to deleted cells: it
+        // is no error value but a reference with no cell, and LibreOffice answers `#REF!` (the oracle of
+        // `write_to_libreoffice.rs`, `refs`: `IFERROR(Data!A3,7)` after deleting the row).
         assert!((number(&output, "F", 1) - 40.0).abs() < 1e-9, "{extension}");
-        assert!((number(&output, "F", 2) - 0.0).abs() < 1e-9, "{extension}");
+        assert!(is_ref_error(&output, "F", 2), "{extension}");
     }
 }
 

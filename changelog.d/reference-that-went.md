@@ -1,0 +1,3 @@
+### Fixed
+
+- After an edit that deletes rows, columns or sheets, a function that reads a reference that went gives `#REF!` as LibreOffice does, instead of treating it as an error written in the formula: `COUNT(Data!A:A)` of a deleted sheet was 0, `COUNTA` 1, `COUNTBLANK` and `SUMIF` `Err:504`, `IFERROR(Data!A3,7)` 7 (and so on for `AVERAGE`, `MAX`, `INDEX`, `ROWS`... over a whole column, a whole row, a range or one cell, in an XLSX and in an ODS). `ISERROR`, `ISREF`, `IF` and `IFNA` still read it as the error, and `IFERROR` catches a deleted sheet and not deleted cells, as in LibreOffice. Checked against the edits LibreOffice 26.8 makes itself (`sheetrs-edit/tests/write_to_libreoffice.rs`, 56 edits and 12 more over every function of the family).

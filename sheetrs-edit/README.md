@@ -393,6 +393,18 @@ is no longer valid; one that does not change keeps it.
 - A bare `#REF!` in an XLSX formula is read by LibreOffice as an unknown name (`#NAME?`), also
   in the files it saves itself; a deleted cell is written `Sheet!#REF!`, which it reads as `#REF!`.
   The references to a removed sheet have no sheet to write: they are the bare `#REF!`.
+- **A reference that went is not an error written in the formula.** After the edit, a function that
+  reads one gives `#REF!` whatever it does with errors (`COUNT(Data!A:A)` of a sheet that was deleted is
+  `#REF!`, not 0; so are `COUNTA`, `COUNTBLANK`, `SUM`, `AVERAGE`, `MAX`, `MIN`, `COUNTIF`, `SUMIF`, `INDEX`,
+  `ROWS`... over a whole column, a whole row, a range or one cell), as in LibreOffice, which finds no cell
+  where the function asks for the reference. Only the functions that look at an error or leave an argument
+  unread take it as the error it is (`ISERROR`, `ISREF`, `IF`, `IFNA`...), and `IFERROR` catches it when a sheet
+  went and gives `#REF!` when cells did (compared with what LibreOffice does when it opens the file, makes the
+  edit and calculates). The text of the formula does not say so (`COUNT(#REF!)` typed, or read from a file, is
+  0 in an ODS and `#NAME?`-like in an XLSX), so the recalculation that follows an edit that deleted rows,
+  columns or sheets reads a `#REF!` as the reference that went (`sheetrs_compiler::Removed`). A `#REF!` the
+  workbook already had, written by a program that deleted a reference long ago, is read the same way in a run
+  that deletes something: it was a reference that went, too.
 
 #### Convert formulas to values
 

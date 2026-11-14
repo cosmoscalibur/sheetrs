@@ -80,7 +80,7 @@ use crate::calculate::CalculateError;
 use crate::diagnostics::not_calculated;
 use crate::error::{Context, Error, Result};
 use crate::replace::Report;
-use sheetrs_compiler::Cache;
+use sheetrs_compiler::{Cache, Removed};
 use sheetrs_io::reader::Format;
 use sheetrs_io::write::{
     self as writer, Bands, Calculation, ColumnRange, Operation, RowRange, SheetEdits, ValueScope,
@@ -112,6 +112,7 @@ impl Engine {
         operation: &str,
         volatile: Volatile,
         cache: Option<&Cache>,
+        removed: Removed,
     ) -> Result<Vec<u8>> {
         #[cfg(test)]
         if let Some(recalculate) = self.recalculate {
@@ -120,7 +121,7 @@ impl Engine {
                 reason,
             });
         }
-        crate::calculate::recalculate(workbook, volatile, cache).map_err(|reason| {
+        crate::calculate::recalculate(workbook, volatile, cache, removed).map_err(|reason| {
             Error::Recalculation {
                 operation: operation.to_string(),
                 reason,
@@ -137,6 +138,9 @@ struct Touched {
     /// `None`: every formula is calculated (the run does not use the cache, or the file says its
     /// results are stale, or the changes cannot be placed).
     cache: Option<Cache>,
+    /// What the passes so far removed (rows, columns, sheets): the references to it are `#REF!` in the
+    /// text, and the engine reads them as references that went.
+    removed: Removed,
 }
 
 /// Replacements beyond this many rectangles in a sheet are one rectangle that holds them all.
@@ -152,6 +156,7 @@ impl Touched {
         Ok(Self {
             use_cache,
             cache: (use_cache && !marked).then(Cache::default),
+            removed: Removed::default(),
         })
     }
 
@@ -162,6 +167,13 @@ impl Touched {
 
     /// A pass ran, with these replacements in it.
     fn record(&mut self, pass: &[Operation], replacements: &HashMap<String, SheetEdits>) {
+        for operation in pass {
+            match operation {
+                Operation::DeleteRows(_) | Operation::DeleteColumns(_) => self.removed.cells = true,
+                Operation::DeleteSheets(_) => self.removed.sheets = true,
+                _ => {}
+            }
+        }
         let Some(cache) = &mut self.cache else {
             return;
         };
@@ -553,6 +565,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                     engine,
                     volatile,
                     touched.cache.as_ref(),
+                    touched.removed,
                     &mut report,
                 )
                 .with_context(said)?
@@ -654,6 +667,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
                     engine,
                     volatile,
                     touched.cache.as_ref(),
+                    touched.removed,
                     &mut report,
                 )
                 .with_context(said)?
@@ -720,9 +734,10 @@ fn recalculate_pass(
     engine: &Engine,
     volatile: Volatile,
     cache: Option<&Cache>,
+    removed: Removed,
     report: &mut Report,
 ) -> Result<Option<Vec<u8>>> {
-    match engine.recalculate(workbook, operation, volatile, cache) {
+    match engine.recalculate(workbook, operation, volatile, cache, removed) {
         Ok(bytes) => Ok(Some(fresh(bytes, workbook.format())?)),
         Err(Error::Recalculation { reason, .. }) if last => {
             // The recalculation that ends a run is the planner's own; a conversion that asks for it names itself.
@@ -755,7 +770,7 @@ fn calculate_pass(
         seed: calculation.seed.or(volatile.seed),
         ..calculation.clone()
     };
-    match crate::calculate::calculate(workbook, calculation, None) {
+    match crate::calculate::calculate(workbook, calculation, None, Removed::default()) {
         Ok(done) => {
             if calculation.answer {
                 report.value_ranges = done.answer;
@@ -1113,6 +1128,7 @@ mod tests {
             Touched {
                 use_cache: true,
                 cache: Some(Cache::default()),
+                removed: Removed::default(),
             }
         }
 
@@ -1227,6 +1243,7 @@ mod tests {
             let mut off = Touched {
                 use_cache: false,
                 cache: None,
+                removed: Removed::default(),
             };
             off.calculated();
             assert_eq!(off.cache, None);
@@ -1237,6 +1254,7 @@ mod tests {
             let mut off = Touched {
                 use_cache: true,
                 cache: None,
+                removed: Removed::default(),
             };
             off.record(
                 &[Operation::DeleteRows(vec![rows("A", 0, 0)])],

@@ -583,6 +583,17 @@ what LibreOffice writes:
   `#REF!` (what is left of a reference to a removed sheet, and what Excel writes for it) is the
   unknown name `#NAME?` in LibreOffice, **also in an XLSX it saved itself**.
 * In an ODS: `[#REF!]` in a formula and `#REF!` as the `table:cell-range-address` of a name.
+* **What a function does with a reference that went.** LibreOffice keeps the deleted reference as a
+  token that has no cell: a function that asks for it answers `#REF!` (`COUNT`, `COUNTA`, `COUNTBLANK`,
+  `SUM`, `AVERAGE`, `MAX`, `MIN`, `COUNTIF`, `SUMIF`, `INDEX`, `ROWS`... over a whole column, a whole row, a
+  range or one cell, and a calculation with it), while `COUNT(#REF!)` of a formula written or read from a
+  file is 0 (an error written in the formula, which `COUNT` skips). The saved file cannot tell them apart (an
+  ODS says `[#REF!]` and an XLSX `#REF!`, with the error cached), so the engine reads a `#REF!` as the reference
+  that went only in the recalculation that follows an edit that deleted rows, columns or sheets
+  (`Spec::removed`); `ISERROR`, `ISREF`, `IF`, `IFNA` and the other functions that look at an error or leave an
+  argument unread take it as the error, and `IFERROR` catches a sheet that went and not cells that went (the
+  oracle of `sheetrs-edit/tests/assets/write_to/make_oracle.py`, fixture `refs` of `use_cache/`, edits of
+  LibreOffice 26.8 through UNO: load, edit, calculate).
 * A shared formula whose cell would read a column past `XFD` or a row past 1,048,576 (or before
   the first) reads `Sheet!#REF!` for that reference. LibreOffice 26.8 opens such an XLSX with the
   cell as `#REF!` (formula `=#REF!1+1` for a column past `XFD`), not `#NAME?`. The workbook

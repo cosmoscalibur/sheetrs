@@ -1,5 +1,5 @@
 {
- "area": "A1:F45",
+ "area": "A1:F80",
  "fixtures": {
   "book": {
    "ods": {
@@ -17046,6 +17046,5798 @@
        ]
       ],
       "written_differences": []
+     }
+    ]
+   }
+  },
+  "refs": {
+   "ods": {
+    "edits": [
+     {
+      "differences": [
+       "Calc!A1 formula: =COUNT($#REF!.A:A) -> =COUNT(#REF!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A2 formula: =COUNT($#REF!.1:1) -> =COUNT(#REF!)",
+       "Calc!A2 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($#REF!.A1:A6) -> =COUNT(#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($#REF!.A2:B3) -> =COUNT(#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($#REF!.A3) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($#REF!.A:A) -> =SUM(#REF!)",
+       "Calc!A7 formula: =SUM($#REF!.1:1) -> =SUM(#REF!)",
+       "Calc!A8 formula: =SUM($#REF!.A1:A6) -> =SUM(#REF!)",
+       "Calc!A9 formula: =SUM($#REF!.A2:B3) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($#REF!.A3) -> =SUM(#REF!)",
+       "Calc!A11 formula: =COUNTA($#REF!.A:A) -> =COUNTA(#REF!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A12 formula: =COUNTA($#REF!.1:1) -> =COUNTA(#REF!)",
+       "Calc!A12 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($#REF!.A1:A6) -> =COUNTA(#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($#REF!.A2:B3) -> =COUNTA(#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($#REF!.A3) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($#REF!.A:A) -> =AVERAGE(#REF!)",
+       "Calc!A17 formula: =AVERAGE($#REF!.1:1) -> =AVERAGE(#REF!)",
+       "Calc!A18 formula: =AVERAGE($#REF!.A1:A6) -> =AVERAGE(#REF!)",
+       "Calc!A19 formula: =AVERAGE($#REF!.A2:B3) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($#REF!.A3) -> =AVERAGE(#REF!)",
+       "Calc!A21 formula: =MAX($#REF!.A:A) -> =MAX(#REF!)",
+       "Calc!A22 formula: =MAX($#REF!.1:1) -> =MAX(#REF!)",
+       "Calc!A23 formula: =MAX($#REF!.A1:A6) -> =MAX(#REF!)",
+       "Calc!A24 formula: =MAX($#REF!.A2:B3) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($#REF!.A3) -> =MAX(#REF!)",
+       "Calc!A26 formula: =MIN($#REF!.A:A) -> =MIN(#REF!)",
+       "Calc!A27 formula: =MIN($#REF!.1:1) -> =MIN(#REF!)",
+       "Calc!A28 formula: =MIN($#REF!.A1:A6) -> =MIN(#REF!)",
+       "Calc!A29 formula: =MIN($#REF!.A2:B3) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($#REF!.A3) -> =MIN(#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($#REF!.A:A) -> =COUNTBLANK(#REF!)",
+       "Calc!A31 value: '#REF!' -> 'Err:504'",
+       "Calc!A32 formula: =COUNTBLANK($#REF!.1:1) -> =COUNTBLANK(#REF!)",
+       "Calc!A32 value: '#REF!' -> 'Err:504'",
+       "Calc!A33 formula: =COUNTBLANK($#REF!.A1:A6) -> =COUNTBLANK(#REF!)",
+       "Calc!A33 value: '#REF!' -> 'Err:504'",
+       "Calc!A34 formula: =COUNTBLANK($#REF!.A2:B3) -> =COUNTBLANK(#REF!)",
+       "Calc!A34 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($#REF!.A3) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A36 formula: =COUNTIF($#REF!.A:A;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($#REF!.A1:A6;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($#REF!.A1:A6;\">1\") -> =SUMIF(#REF!;\">1\")",
+       "Calc!A38 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$#REF!.A3+1 -> =#REF!+1",
+       "Calc!A40 formula: =$#REF!.A3 -> =#REF!",
+       "Calc!A41 formula: =ROWS($#REF!.A1:A6) -> =ROWS(#REF!)",
+       "Calc!A42 formula: =ISREF($#REF!.A3) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($#REF!.A3) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($#REF!.A3;7) -> =IFERROR(#REF!;7)",
+       "Calc!A45 formula: =SUM($#REF!.A1:A3) -> =SUM(#REF!)",
+       "Calc!A46 formula: =INDEX($#REF!.A1:A6;2) -> =INDEX(#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($#REF!.A1:A6) -> =SUMPRODUCT(#REF!)",
+       "Calc!A48 formula: =COUNT($#REF!.A3;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($#REF!.A3;5) -> =SUM(#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A10": {
+          "f": "=SUM($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A22": {
+          "f": "=MAX($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A23": {
+          "f": "=MAX($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A24": {
+          "f": "=MAX($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A25": {
+          "f": "=MAX($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A27": {
+          "f": "=MIN($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A28": {
+          "f": "=MIN($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A29": {
+          "f": "=MIN($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A3": {
+          "f": "=COUNT($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A30": {
+          "f": "=MIN($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($#REF!.A:A;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($#REF!.A1:A6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($#REF!.A1:A6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A39": {
+          "f": "=$#REF!.A3+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A40": {
+          "f": "=$#REF!.A3",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A42": {
+          "f": "=ISREF($#REF!.A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($#REF!.A3)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($#REF!.A3;7)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A45": {
+          "f": "=SUM($#REF!.A1:A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A46": {
+          "f": "=INDEX($#REF!.A1:A6;2)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A48": {
+          "f": "=COUNT($#REF!.A3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($#REF!.A3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A7": {
+          "f": "=SUM($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A8": {
+          "f": "=SUM($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A9": {
+          "f": "=SUM($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete sheet Data",
+      "operations": [
+       [
+        "delete_sheets",
+        "Data"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A1 formula: =COUNT($#REF!.A:A) -> =COUNT(#REF!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A2 formula: =COUNT($#REF!.1:1) -> =COUNT(#REF!)",
+       "Calc!A2 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($#REF!.A1:A6) -> =COUNT(#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($#REF!.A2:B3) -> =COUNT(#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($#REF!.A3) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($#REF!.A:A) -> =SUM(#REF!)",
+       "Calc!A7 formula: =SUM($#REF!.1:1) -> =SUM(#REF!)",
+       "Calc!A8 formula: =SUM($#REF!.A1:A6) -> =SUM(#REF!)",
+       "Calc!A9 formula: =SUM($#REF!.A2:B3) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($#REF!.A3) -> =SUM(#REF!)",
+       "Calc!A11 formula: =COUNTA($#REF!.A:A) -> =COUNTA(#REF!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A12 formula: =COUNTA($#REF!.1:1) -> =COUNTA(#REF!)",
+       "Calc!A12 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($#REF!.A1:A6) -> =COUNTA(#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($#REF!.A2:B3) -> =COUNTA(#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($#REF!.A3) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($#REF!.A:A) -> =AVERAGE(#REF!)",
+       "Calc!A17 formula: =AVERAGE($#REF!.1:1) -> =AVERAGE(#REF!)",
+       "Calc!A18 formula: =AVERAGE($#REF!.A1:A6) -> =AVERAGE(#REF!)",
+       "Calc!A19 formula: =AVERAGE($#REF!.A2:B3) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($#REF!.A3) -> =AVERAGE(#REF!)",
+       "Calc!A21 formula: =MAX($#REF!.A:A) -> =MAX(#REF!)",
+       "Calc!A22 formula: =MAX($#REF!.1:1) -> =MAX(#REF!)",
+       "Calc!A23 formula: =MAX($#REF!.A1:A6) -> =MAX(#REF!)",
+       "Calc!A24 formula: =MAX($#REF!.A2:B3) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($#REF!.A3) -> =MAX(#REF!)",
+       "Calc!A26 formula: =MIN($#REF!.A:A) -> =MIN(#REF!)",
+       "Calc!A27 formula: =MIN($#REF!.1:1) -> =MIN(#REF!)",
+       "Calc!A28 formula: =MIN($#REF!.A1:A6) -> =MIN(#REF!)",
+       "Calc!A29 formula: =MIN($#REF!.A2:B3) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($#REF!.A3) -> =MIN(#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($#REF!.A:A) -> =COUNTBLANK(#REF!)",
+       "Calc!A31 value: '#REF!' -> 'Err:504'",
+       "Calc!A32 formula: =COUNTBLANK($#REF!.1:1) -> =COUNTBLANK(#REF!)",
+       "Calc!A32 value: '#REF!' -> 'Err:504'",
+       "Calc!A33 formula: =COUNTBLANK($#REF!.A1:A6) -> =COUNTBLANK(#REF!)",
+       "Calc!A33 value: '#REF!' -> 'Err:504'",
+       "Calc!A34 formula: =COUNTBLANK($#REF!.A2:B3) -> =COUNTBLANK(#REF!)",
+       "Calc!A34 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($#REF!.A3) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A36 formula: =COUNTIF($#REF!.A:A;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($#REF!.A1:A6;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($#REF!.A1:A6;\">1\") -> =SUMIF(#REF!;\">1\")",
+       "Calc!A38 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$#REF!.A3+1 -> =#REF!+1",
+       "Calc!A40 formula: =$#REF!.A3 -> =#REF!",
+       "Calc!A41 formula: =ROWS($#REF!.A1:A6) -> =ROWS(#REF!)",
+       "Calc!A42 formula: =ISREF($#REF!.A3) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($#REF!.A3) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($#REF!.A3;7) -> =IFERROR(#REF!;7)",
+       "Calc!A45 formula: =SUM($#REF!.A1:A3) -> =SUM(#REF!)",
+       "Calc!A46 formula: =INDEX($#REF!.A1:A6;2) -> =INDEX(#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($#REF!.A1:A6) -> =SUMPRODUCT(#REF!)",
+       "Calc!A48 formula: =COUNT($#REF!.A3;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($#REF!.A3;5) -> =SUM(#REF!;5)"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(#REF!)",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =#REF!",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A2": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A3": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A4": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 50.0
+          }
+         },
+         "A5": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "B1": {
+          "f": "",
+          "v": {
+           "t": "s",
+           "v": "x"
+          }
+         },
+         "C1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 3.0
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 36.0
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 8.5
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 36.0
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 2.0
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 1048571.0
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 16381.0
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.A:A;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.A1:A5;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.A1:A5;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 180.0
+          }
+         },
+         "A39": {
+          "f": "=$Data.A#REF!+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A40": {
+          "f": "=$Data.A#REF!",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.A#REF!;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.A1:A2)",
+          "v": {
+           "t": "n",
+           "v": 30.0
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.A1:A5;2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 180.0
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 180.0
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 17.0
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 180.0
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete rows Data!3",
+      "operations": [
+       [
+        "delete_rows",
+        "Data!3"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(#REF!)",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =#REF!",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(#REF!;5)"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A2 formula: =COUNT($Data.$A#REF!:$XFD#REF!) -> =COUNT(#REF!)",
+       "Calc!A2 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($Data.A#REF!:A#REF!) -> =COUNT(#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A7 formula: =SUM($Data.$A#REF!:$XFD#REF!) -> =SUM(#REF!)",
+       "Calc!A8 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(#REF!)",
+       "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(#REF!)",
+       "Calc!A12 formula: =COUNTA($Data.$A#REF!:$XFD#REF!) -> =COUNTA(#REF!)",
+       "Calc!A12 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($Data.A#REF!:A#REF!) -> =COUNTA(#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A17 formula: =AVERAGE($Data.$A#REF!:$XFD#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.A#REF!:A#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A22 formula: =MAX($Data.$A#REF!:$XFD#REF!) -> =MAX(#REF!)",
+       "Calc!A23 formula: =MAX($Data.A#REF!:A#REF!) -> =MAX(#REF!)",
+       "Calc!A24 formula: =MAX($Data.A#REF!:B#REF!) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(#REF!)",
+       "Calc!A27 formula: =MIN($Data.$A#REF!:$XFD#REF!) -> =MIN(#REF!)",
+       "Calc!A28 formula: =MIN($Data.A#REF!:A#REF!) -> =MIN(#REF!)",
+       "Calc!A29 formula: =MIN($Data.A#REF!:B#REF!) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(#REF!)",
+       "Calc!A32 formula: =COUNTBLANK($Data.$A#REF!:$XFD#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A32 value: '#REF!' -> 'Err:504'",
+       "Calc!A33 formula: =COUNTBLANK($Data.A#REF!:A#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A33 value: '#REF!' -> 'Err:504'",
+       "Calc!A34 formula: =COUNTBLANK($Data.A#REF!:B#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A34 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A37 formula: =COUNTIF($Data.A#REF!:A#REF!;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.A#REF!:A#REF!;\">1\") -> =SUMIF(#REF!;\">1\")",
+       "Calc!A38 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =#REF!",
+       "Calc!A41 formula: =ROWS($Data.A#REF!:A#REF!) -> =ROWS(#REF!)",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A45 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(#REF!)",
+       "Calc!A46 formula: =INDEX($Data.A#REF!:A#REF!;2) -> =INDEX(#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.A#REF!:A#REF!) -> =SUMPRODUCT(#REF!)",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {},
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#DIV/0!"
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 1048576.0
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.A:A;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.A#REF!:A#REF!;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.A#REF!:A#REF!;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A39": {
+          "f": "=$Data.A#REF!+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A40": {
+          "f": "=$Data.A#REF!",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.A#REF!;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.A#REF!:A#REF!;2)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete rows Data!1:6",
+      "operations": [
+       [
+        "delete_rows",
+        "Data!1:6"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A2 formula: =COUNT($Data.$A#REF!:$XFD#REF!) -> =COUNT(#REF!)",
+       "Calc!A2 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($Data.A#REF!:A#REF!) -> =COUNT(#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A7 formula: =SUM($Data.$A#REF!:$XFD#REF!) -> =SUM(#REF!)",
+       "Calc!A8 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(#REF!)",
+       "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(#REF!)",
+       "Calc!A12 formula: =COUNTA($Data.$A#REF!:$XFD#REF!) -> =COUNTA(#REF!)",
+       "Calc!A12 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($Data.A#REF!:A#REF!) -> =COUNTA(#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A17 formula: =AVERAGE($Data.$A#REF!:$XFD#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.A#REF!:A#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A22 formula: =MAX($Data.$A#REF!:$XFD#REF!) -> =MAX(#REF!)",
+       "Calc!A23 formula: =MAX($Data.A#REF!:A#REF!) -> =MAX(#REF!)",
+       "Calc!A24 formula: =MAX($Data.A#REF!:B#REF!) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(#REF!)",
+       "Calc!A27 formula: =MIN($Data.$A#REF!:$XFD#REF!) -> =MIN(#REF!)",
+       "Calc!A28 formula: =MIN($Data.A#REF!:A#REF!) -> =MIN(#REF!)",
+       "Calc!A29 formula: =MIN($Data.A#REF!:B#REF!) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(#REF!)",
+       "Calc!A32 formula: =COUNTBLANK($Data.$A#REF!:$XFD#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A32 value: '#REF!' -> 'Err:504'",
+       "Calc!A33 formula: =COUNTBLANK($Data.A#REF!:A#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A33 value: '#REF!' -> 'Err:504'",
+       "Calc!A34 formula: =COUNTBLANK($Data.A#REF!:B#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A34 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A37 formula: =COUNTIF($Data.A#REF!:A#REF!;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.A#REF!:A#REF!;\">1\") -> =SUMIF(#REF!;\">1\")",
+       "Calc!A38 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =#REF!",
+       "Calc!A41 formula: =ROWS($Data.A#REF!:A#REF!) -> =ROWS(#REF!)",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A45 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(#REF!)",
+       "Calc!A46 formula: =INDEX($Data.A#REF!:A#REF!;2) -> =INDEX(#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.A#REF!:A#REF!) -> =SUMPRODUCT(#REF!)",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(#REF!;5)"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(#REF!)",
+       "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A24 formula: =MAX($Data.A#REF!:B#REF!) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(#REF!)",
+       "Calc!A29 formula: =MIN($Data.A#REF!:B#REF!) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(#REF!)",
+       "Calc!A34 formula: =COUNTBLANK($Data.A#REF!:B#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A34 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =#REF!",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A2": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A3": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 50.0
+          }
+         },
+         "A4": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "B1": {
+          "f": "",
+          "v": {
+           "t": "s",
+           "v": "x"
+          }
+         },
+         "C1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 3.0
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 8.5
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 2.0
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 1048572.0
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 16381.0
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.A:A;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.A1:A4;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.A1:A4;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 160.0
+          }
+         },
+         "A39": {
+          "f": "=$Data.A#REF!+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A40": {
+          "f": "=$Data.A#REF!",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.A#REF!;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.A1:A1)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.A1:A4;2)",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 160.0
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 160.0
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 17.0
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 160.0
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete rows Data!2:3",
+      "operations": [
+       [
+        "delete_rows",
+        "Data!2:3"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(#REF!)",
+       "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(#REF!)",
+       "Calc!A24 formula: =MAX($Data.A#REF!:B#REF!) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(#REF!)",
+       "Calc!A29 formula: =MIN($Data.A#REF!:B#REF!) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(#REF!)",
+       "Calc!A34 formula: =COUNTBLANK($Data.A#REF!:B#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A34 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =#REF!",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(#REF!;5)"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(#REF!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(#REF!)",
+       "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(#REF!)",
+       "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(#REF!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.#REF!3) -> =AVERAGE(#REF!)",
+       "Calc!A21 formula: =MAX($Data.#REF!$1:#REF!$1048576) -> =MAX(#REF!)",
+       "Calc!A23 formula: =MAX($Data.#REF!1:#REF!6) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($Data.#REF!3) -> =MAX(#REF!)",
+       "Calc!A26 formula: =MIN($Data.#REF!$1:#REF!$1048576) -> =MIN(#REF!)",
+       "Calc!A28 formula: =MIN($Data.#REF!1:#REF!6) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($Data.#REF!3) -> =MIN(#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($Data.#REF!$1:#REF!$1048576) -> =COUNTBLANK(#REF!)",
+       "Calc!A31 value: '#REF!' -> 'Err:504'",
+       "Calc!A33 formula: =COUNTBLANK($Data.#REF!1:#REF!6) -> =COUNTBLANK(#REF!)",
+       "Calc!A33 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($Data.#REF!3) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A36 formula: =COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($Data.#REF!1:#REF!6;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.#REF!1:#REF!6;\">1\") -> =SUMIF(#REF!;\">1\")",
+       "Calc!A38 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.#REF!3+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.#REF!3 -> =#REF!",
+       "Calc!A41 formula: =ROWS($Data.#REF!1:#REF!6) -> =ROWS(#REF!)",
+       "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(#REF!)",
+       "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(#REF!)",
+       "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "",
+          "v": {
+           "t": "s",
+           "v": "x"
+          }
+         },
+         "B1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 2.0
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.A2:A3)",
+          "v": {
+           "t": "e",
+           "v": "#DIV/0!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 16382.0
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 2.0
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.#REF!1:#REF!6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.#REF!1:#REF!6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A39": {
+          "f": "=$Data.#REF!3+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A40": {
+          "f": "=$Data.#REF!3",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.#REF!3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.#REF!3)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.#REF!3;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.#REF!1:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.#REF!1:#REF!6;2)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.#REF!3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.#REF!3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete columns Data!A",
+      "operations": [
+       [
+        "delete_columns",
+        "Data!A"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(#REF!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(#REF!)",
+       "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(#REF!)",
+       "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(#REF!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.#REF!3) -> =AVERAGE(#REF!)",
+       "Calc!A21 formula: =MAX($Data.#REF!$1:#REF!$1048576) -> =MAX(#REF!)",
+       "Calc!A23 formula: =MAX($Data.#REF!1:#REF!6) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($Data.#REF!3) -> =MAX(#REF!)",
+       "Calc!A26 formula: =MIN($Data.#REF!$1:#REF!$1048576) -> =MIN(#REF!)",
+       "Calc!A28 formula: =MIN($Data.#REF!1:#REF!6) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($Data.#REF!3) -> =MIN(#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($Data.#REF!$1:#REF!$1048576) -> =COUNTBLANK(#REF!)",
+       "Calc!A31 value: '#REF!' -> 'Err:504'",
+       "Calc!A33 formula: =COUNTBLANK($Data.#REF!1:#REF!6) -> =COUNTBLANK(#REF!)",
+       "Calc!A33 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($Data.#REF!3) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A36 formula: =COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($Data.#REF!1:#REF!6;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.#REF!1:#REF!6;\">1\") -> =SUMIF(#REF!;\">1\")",
+       "Calc!A38 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.#REF!3+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.#REF!3 -> =#REF!",
+       "Calc!A41 formula: =ROWS($Data.#REF!1:#REF!6) -> =ROWS(#REF!)",
+       "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(#REF!)",
+       "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(#REF!)",
+       "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(#REF!;5)"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(#REF!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($Data.#REF!2:#REF!3) -> =COUNT(#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(#REF!)",
+       "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(#REF!)",
+       "Calc!A9 formula: =SUM($Data.#REF!2:#REF!3) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(#REF!)",
+       "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(#REF!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($Data.#REF!2:#REF!3) -> =COUNTA(#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(#REF!)",
+       "Calc!A19 formula: =AVERAGE($Data.#REF!2:#REF!3) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.#REF!3) -> =AVERAGE(#REF!)",
+       "Calc!A21 formula: =MAX($Data.#REF!$1:#REF!$1048576) -> =MAX(#REF!)",
+       "Calc!A23 formula: =MAX($Data.#REF!1:#REF!6) -> =MAX(#REF!)",
+       "Calc!A24 formula: =MAX($Data.#REF!2:#REF!3) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($Data.#REF!3) -> =MAX(#REF!)",
+       "Calc!A26 formula: =MIN($Data.#REF!$1:#REF!$1048576) -> =MIN(#REF!)",
+       "Calc!A28 formula: =MIN($Data.#REF!1:#REF!6) -> =MIN(#REF!)",
+       "Calc!A29 formula: =MIN($Data.#REF!2:#REF!3) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($Data.#REF!3) -> =MIN(#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($Data.#REF!$1:#REF!$1048576) -> =COUNTBLANK(#REF!)",
+       "Calc!A31 value: '#REF!' -> 'Err:504'",
+       "Calc!A33 formula: =COUNTBLANK($Data.#REF!1:#REF!6) -> =COUNTBLANK(#REF!)",
+       "Calc!A33 value: '#REF!' -> 'Err:504'",
+       "Calc!A34 formula: =COUNTBLANK($Data.#REF!2:#REF!3) -> =COUNTBLANK(#REF!)",
+       "Calc!A34 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($Data.#REF!3) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A36 formula: =COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($Data.#REF!1:#REF!6;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.#REF!1:#REF!6;\">1\") -> =SUMIF(#REF!;\">1\")",
+       "Calc!A38 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.#REF!3+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.#REF!3 -> =#REF!",
+       "Calc!A41 formula: =ROWS($Data.#REF!1:#REF!6) -> =ROWS(#REF!)",
+       "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(#REF!)",
+       "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(#REF!)",
+       "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 16383.0
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.#REF!1:#REF!6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.#REF!1:#REF!6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A39": {
+          "f": "=$Data.#REF!3+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A40": {
+          "f": "=$Data.#REF!3",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.#REF!3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.#REF!3)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.#REF!3;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.#REF!1:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.#REF!1:#REF!6;2)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.#REF!3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.#REF!3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete columns Data!A:B",
+      "operations": [
+       [
+        "delete_columns",
+        "Data!A:B"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(#REF!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($Data.#REF!2:#REF!3) -> =COUNT(#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(#REF!)",
+       "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(#REF!)",
+       "Calc!A9 formula: =SUM($Data.#REF!2:#REF!3) -> =SUM(#REF!)",
+       "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(#REF!)",
+       "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(#REF!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($Data.#REF!2:#REF!3) -> =COUNTA(#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(#REF!)",
+       "Calc!A19 formula: =AVERAGE($Data.#REF!2:#REF!3) -> =AVERAGE(#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.#REF!3) -> =AVERAGE(#REF!)",
+       "Calc!A21 formula: =MAX($Data.#REF!$1:#REF!$1048576) -> =MAX(#REF!)",
+       "Calc!A23 formula: =MAX($Data.#REF!1:#REF!6) -> =MAX(#REF!)",
+       "Calc!A24 formula: =MAX($Data.#REF!2:#REF!3) -> =MAX(#REF!)",
+       "Calc!A25 formula: =MAX($Data.#REF!3) -> =MAX(#REF!)",
+       "Calc!A26 formula: =MIN($Data.#REF!$1:#REF!$1048576) -> =MIN(#REF!)",
+       "Calc!A28 formula: =MIN($Data.#REF!1:#REF!6) -> =MIN(#REF!)",
+       "Calc!A29 formula: =MIN($Data.#REF!2:#REF!3) -> =MIN(#REF!)",
+       "Calc!A30 formula: =MIN($Data.#REF!3) -> =MIN(#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($Data.#REF!$1:#REF!$1048576) -> =COUNTBLANK(#REF!)",
+       "Calc!A31 value: '#REF!' -> 'Err:504'",
+       "Calc!A33 formula: =COUNTBLANK($Data.#REF!1:#REF!6) -> =COUNTBLANK(#REF!)",
+       "Calc!A33 value: '#REF!' -> 'Err:504'",
+       "Calc!A34 formula: =COUNTBLANK($Data.#REF!2:#REF!3) -> =COUNTBLANK(#REF!)",
+       "Calc!A34 value: '#REF!' -> 'Err:504'",
+       "Calc!A35 formula: =COUNTBLANK($Data.#REF!3) -> =COUNTBLANK(#REF!)",
+       "Calc!A35 value: '#REF!' -> 'Err:504'",
+       "Calc!A36 formula: =COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($Data.#REF!1:#REF!6;\">1\") -> =COUNTIF(#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.#REF!1:#REF!6;\">1\") -> =SUMIF(#REF!;\">1\")",
+       "Calc!A38 value: '#REF!' -> 'Err:504'",
+       "Calc!A39 formula: =$Data.#REF!3+1 -> =#REF!+1",
+       "Calc!A40 formula: =$Data.#REF!3 -> =#REF!",
+       "Calc!A41 formula: =ROWS($Data.#REF!1:#REF!6) -> =ROWS(#REF!)",
+       "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(#REF!)",
+       "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(#REF!)",
+       "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(#REF!;5)"
+      ]
+     }
+    ]
+   },
+   "xlsx": {
+    "edits": [
+     {
+      "differences": [
+       "Calc!A1 formula: =COUNT($#REF!.A:A) -> =COUNT(#ref!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A2 formula: =COUNT($#REF!.1:1) -> =COUNT(#ref!)",
+       "Calc!A2 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($#REF!.A1:A6) -> =COUNT(#ref!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($#REF!.A2:B3) -> =COUNT(#ref!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($#REF!.A3) -> =COUNT(#ref!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($#REF!.A:A) -> =SUM(#ref!)",
+       "Calc!A6 value: '#REF!' -> '#NAME?'",
+       "Calc!A7 formula: =SUM($#REF!.1:1) -> =SUM(#ref!)",
+       "Calc!A7 value: '#REF!' -> '#NAME?'",
+       "Calc!A8 formula: =SUM($#REF!.A1:A6) -> =SUM(#ref!)",
+       "Calc!A8 value: '#REF!' -> '#NAME?'",
+       "Calc!A9 formula: =SUM($#REF!.A2:B3) -> =SUM(#ref!)",
+       "Calc!A9 value: '#REF!' -> '#NAME?'",
+       "Calc!A10 formula: =SUM($#REF!.A3) -> =SUM(#ref!)",
+       "Calc!A10 value: '#REF!' -> '#NAME?'",
+       "Calc!A11 formula: =COUNTA($#REF!.A:A) -> =COUNTA(#ref!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A12 formula: =COUNTA($#REF!.1:1) -> =COUNTA(#ref!)",
+       "Calc!A12 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($#REF!.A1:A6) -> =COUNTA(#ref!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($#REF!.A2:B3) -> =COUNTA(#ref!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($#REF!.A3) -> =COUNTA(#ref!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($#REF!.A:A) -> =AVERAGE(#ref!)",
+       "Calc!A16 value: '#REF!' -> '#NAME?'",
+       "Calc!A17 formula: =AVERAGE($#REF!.1:1) -> =AVERAGE(#ref!)",
+       "Calc!A17 value: '#REF!' -> '#NAME?'",
+       "Calc!A18 formula: =AVERAGE($#REF!.A1:A6) -> =AVERAGE(#ref!)",
+       "Calc!A18 value: '#REF!' -> '#NAME?'",
+       "Calc!A19 formula: =AVERAGE($#REF!.A2:B3) -> =AVERAGE(#ref!)",
+       "Calc!A19 value: '#REF!' -> '#NAME?'",
+       "Calc!A20 formula: =AVERAGE($#REF!.A3) -> =AVERAGE(#ref!)",
+       "Calc!A20 value: '#REF!' -> '#NAME?'",
+       "Calc!A21 formula: =MAX($#REF!.A:A) -> =MAX(#ref!)",
+       "Calc!A21 value: '#REF!' -> '#NAME?'",
+       "Calc!A22 formula: =MAX($#REF!.1:1) -> =MAX(#ref!)",
+       "Calc!A22 value: '#REF!' -> '#NAME?'",
+       "Calc!A23 formula: =MAX($#REF!.A1:A6) -> =MAX(#ref!)",
+       "Calc!A23 value: '#REF!' -> '#NAME?'",
+       "Calc!A24 formula: =MAX($#REF!.A2:B3) -> =MAX(#ref!)",
+       "Calc!A24 value: '#REF!' -> '#NAME?'",
+       "Calc!A25 formula: =MAX($#REF!.A3) -> =MAX(#ref!)",
+       "Calc!A25 value: '#REF!' -> '#NAME?'",
+       "Calc!A26 formula: =MIN($#REF!.A:A) -> =MIN(#ref!)",
+       "Calc!A26 value: '#REF!' -> '#NAME?'",
+       "Calc!A27 formula: =MIN($#REF!.1:1) -> =MIN(#ref!)",
+       "Calc!A27 value: '#REF!' -> '#NAME?'",
+       "Calc!A28 formula: =MIN($#REF!.A1:A6) -> =MIN(#ref!)",
+       "Calc!A28 value: '#REF!' -> '#NAME?'",
+       "Calc!A29 formula: =MIN($#REF!.A2:B3) -> =MIN(#ref!)",
+       "Calc!A29 value: '#REF!' -> '#NAME?'",
+       "Calc!A30 formula: =MIN($#REF!.A3) -> =MIN(#ref!)",
+       "Calc!A30 value: '#REF!' -> '#NAME?'",
+       "Calc!A31 formula: =COUNTBLANK($#REF!.A:A) -> =COUNTBLANK(#ref!)",
+       "Calc!A31 value: '#REF!' -> '#NAME?'",
+       "Calc!A32 formula: =COUNTBLANK($#REF!.1:1) -> =COUNTBLANK(#ref!)",
+       "Calc!A32 value: '#REF!' -> '#NAME?'",
+       "Calc!A33 formula: =COUNTBLANK($#REF!.A1:A6) -> =COUNTBLANK(#ref!)",
+       "Calc!A33 value: '#REF!' -> '#NAME?'",
+       "Calc!A34 formula: =COUNTBLANK($#REF!.A2:B3) -> =COUNTBLANK(#ref!)",
+       "Calc!A34 value: '#REF!' -> '#NAME?'",
+       "Calc!A35 formula: =COUNTBLANK($#REF!.A3) -> =COUNTBLANK(#ref!)",
+       "Calc!A35 value: '#REF!' -> '#NAME?'",
+       "Calc!A36 formula: =COUNTIF($#REF!.A:A;\">1\") -> =COUNTIF(#ref!;\">1\")",
+       "Calc!A36 value: '#REF!' -> '#NAME?'",
+       "Calc!A37 formula: =COUNTIF($#REF!.A1:A6;\">1\") -> =COUNTIF(#ref!;\">1\")",
+       "Calc!A37 value: '#REF!' -> '#NAME?'",
+       "Calc!A38 formula: =SUMIF($#REF!.A1:A6;\">1\") -> =SUMIF(#ref!;\">1\")",
+       "Calc!A38 value: '#REF!' -> '#NAME?'",
+       "Calc!A39 formula: =$#REF!.A3+1 -> =#ref!+1",
+       "Calc!A39 value: '#REF!' -> '#NAME?'",
+       "Calc!A40 formula: =$#REF!.A3 -> =#ref!",
+       "Calc!A40 value: '#REF!' -> '#NAME?'",
+       "Calc!A41 formula: =ROWS($#REF!.A1:A6) -> =ROWS(#ref!)",
+       "Calc!A41 value: '#REF!' -> '#NAME?'",
+       "Calc!A42 formula: =ISREF($#REF!.A3) -> =ISREF(#ref!)",
+       "Calc!A43 formula: =ISERROR($#REF!.A3) -> =ISERROR(#ref!)",
+       "Calc!A44 formula: =IFERROR($#REF!.A3;7) -> =IFERROR(#ref!;7)",
+       "Calc!A45 formula: =SUM($#REF!.A1:A3) -> =SUM(#ref!)",
+       "Calc!A45 value: '#REF!' -> '#NAME?'",
+       "Calc!A46 formula: =INDEX($#REF!.A1:A6;2) -> =INDEX(#ref!;2)",
+       "Calc!A46 value: '#REF!' -> '#NAME?'",
+       "Calc!A47 formula: =SUMPRODUCT($#REF!.A1:A6) -> =SUMPRODUCT(#ref!)",
+       "Calc!A47 value: '#REF!' -> '#NAME?'",
+       "Calc!A48 formula: =COUNT($#REF!.A3;5) -> =COUNT(#ref!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($#REF!.A3;5) -> =SUM(#ref!;5)",
+       "Calc!A49 value: '#REF!' -> '#NAME?'"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A10": {
+          "f": "=SUM($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A22": {
+          "f": "=MAX($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A23": {
+          "f": "=MAX($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A24": {
+          "f": "=MAX($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A25": {
+          "f": "=MAX($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A27": {
+          "f": "=MIN($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A28": {
+          "f": "=MIN($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A29": {
+          "f": "=MIN($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A3": {
+          "f": "=COUNT($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A30": {
+          "f": "=MIN($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($#REF!.A:A;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($#REF!.A1:A6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($#REF!.A1:A6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A39": {
+          "f": "=$#REF!.A3+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A40": {
+          "f": "=$#REF!.A3",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A42": {
+          "f": "=ISREF($#REF!.A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($#REF!.A3)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($#REF!.A3;7)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A45": {
+          "f": "=SUM($#REF!.A1:A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A46": {
+          "f": "=INDEX($#REF!.A1:A6;2)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A48": {
+          "f": "=COUNT($#REF!.A3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($#REF!.A3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($#REF!.A3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($#REF!.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A7": {
+          "f": "=SUM($#REF!.1:1)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A8": {
+          "f": "=SUM($#REF!.A1:A6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A9": {
+          "f": "=SUM($#REF!.A2:B3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete sheet Data",
+      "operations": [
+       [
+        "delete_sheets",
+        "Data"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A1 formula: =COUNT($#REF!.A:A) -> =COUNT(#ref!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A2 formula: =COUNT($#REF!.1:1) -> =COUNT(#ref!)",
+       "Calc!A2 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($#REF!.A1:A6) -> =COUNT(#ref!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($#REF!.A2:B3) -> =COUNT(#ref!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($#REF!.A3) -> =COUNT(#ref!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($#REF!.A:A) -> =SUM(#ref!)",
+       "Calc!A6 value: '#REF!' -> '#NAME?'",
+       "Calc!A7 formula: =SUM($#REF!.1:1) -> =SUM(#ref!)",
+       "Calc!A7 value: '#REF!' -> '#NAME?'",
+       "Calc!A8 formula: =SUM($#REF!.A1:A6) -> =SUM(#ref!)",
+       "Calc!A8 value: '#REF!' -> '#NAME?'",
+       "Calc!A9 formula: =SUM($#REF!.A2:B3) -> =SUM(#ref!)",
+       "Calc!A9 value: '#REF!' -> '#NAME?'",
+       "Calc!A10 formula: =SUM($#REF!.A3) -> =SUM(#ref!)",
+       "Calc!A10 value: '#REF!' -> '#NAME?'",
+       "Calc!A11 formula: =COUNTA($#REF!.A:A) -> =COUNTA(#ref!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A12 formula: =COUNTA($#REF!.1:1) -> =COUNTA(#ref!)",
+       "Calc!A12 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($#REF!.A1:A6) -> =COUNTA(#ref!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($#REF!.A2:B3) -> =COUNTA(#ref!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($#REF!.A3) -> =COUNTA(#ref!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($#REF!.A:A) -> =AVERAGE(#ref!)",
+       "Calc!A16 value: '#REF!' -> '#NAME?'",
+       "Calc!A17 formula: =AVERAGE($#REF!.1:1) -> =AVERAGE(#ref!)",
+       "Calc!A17 value: '#REF!' -> '#NAME?'",
+       "Calc!A18 formula: =AVERAGE($#REF!.A1:A6) -> =AVERAGE(#ref!)",
+       "Calc!A18 value: '#REF!' -> '#NAME?'",
+       "Calc!A19 formula: =AVERAGE($#REF!.A2:B3) -> =AVERAGE(#ref!)",
+       "Calc!A19 value: '#REF!' -> '#NAME?'",
+       "Calc!A20 formula: =AVERAGE($#REF!.A3) -> =AVERAGE(#ref!)",
+       "Calc!A20 value: '#REF!' -> '#NAME?'",
+       "Calc!A21 formula: =MAX($#REF!.A:A) -> =MAX(#ref!)",
+       "Calc!A21 value: '#REF!' -> '#NAME?'",
+       "Calc!A22 formula: =MAX($#REF!.1:1) -> =MAX(#ref!)",
+       "Calc!A22 value: '#REF!' -> '#NAME?'",
+       "Calc!A23 formula: =MAX($#REF!.A1:A6) -> =MAX(#ref!)",
+       "Calc!A23 value: '#REF!' -> '#NAME?'",
+       "Calc!A24 formula: =MAX($#REF!.A2:B3) -> =MAX(#ref!)",
+       "Calc!A24 value: '#REF!' -> '#NAME?'",
+       "Calc!A25 formula: =MAX($#REF!.A3) -> =MAX(#ref!)",
+       "Calc!A25 value: '#REF!' -> '#NAME?'",
+       "Calc!A26 formula: =MIN($#REF!.A:A) -> =MIN(#ref!)",
+       "Calc!A26 value: '#REF!' -> '#NAME?'",
+       "Calc!A27 formula: =MIN($#REF!.1:1) -> =MIN(#ref!)",
+       "Calc!A27 value: '#REF!' -> '#NAME?'",
+       "Calc!A28 formula: =MIN($#REF!.A1:A6) -> =MIN(#ref!)",
+       "Calc!A28 value: '#REF!' -> '#NAME?'",
+       "Calc!A29 formula: =MIN($#REF!.A2:B3) -> =MIN(#ref!)",
+       "Calc!A29 value: '#REF!' -> '#NAME?'",
+       "Calc!A30 formula: =MIN($#REF!.A3) -> =MIN(#ref!)",
+       "Calc!A30 value: '#REF!' -> '#NAME?'",
+       "Calc!A31 formula: =COUNTBLANK($#REF!.A:A) -> =COUNTBLANK(#ref!)",
+       "Calc!A31 value: '#REF!' -> '#NAME?'",
+       "Calc!A32 formula: =COUNTBLANK($#REF!.1:1) -> =COUNTBLANK(#ref!)",
+       "Calc!A32 value: '#REF!' -> '#NAME?'",
+       "Calc!A33 formula: =COUNTBLANK($#REF!.A1:A6) -> =COUNTBLANK(#ref!)",
+       "Calc!A33 value: '#REF!' -> '#NAME?'",
+       "Calc!A34 formula: =COUNTBLANK($#REF!.A2:B3) -> =COUNTBLANK(#ref!)",
+       "Calc!A34 value: '#REF!' -> '#NAME?'",
+       "Calc!A35 formula: =COUNTBLANK($#REF!.A3) -> =COUNTBLANK(#ref!)",
+       "Calc!A35 value: '#REF!' -> '#NAME?'",
+       "Calc!A36 formula: =COUNTIF($#REF!.A:A;\">1\") -> =COUNTIF(#ref!;\">1\")",
+       "Calc!A36 value: '#REF!' -> '#NAME?'",
+       "Calc!A37 formula: =COUNTIF($#REF!.A1:A6;\">1\") -> =COUNTIF(#ref!;\">1\")",
+       "Calc!A37 value: '#REF!' -> '#NAME?'",
+       "Calc!A38 formula: =SUMIF($#REF!.A1:A6;\">1\") -> =SUMIF(#ref!;\">1\")",
+       "Calc!A38 value: '#REF!' -> '#NAME?'",
+       "Calc!A39 formula: =$#REF!.A3+1 -> =#ref!+1",
+       "Calc!A39 value: '#REF!' -> '#NAME?'",
+       "Calc!A40 formula: =$#REF!.A3 -> =#ref!",
+       "Calc!A40 value: '#REF!' -> '#NAME?'",
+       "Calc!A41 formula: =ROWS($#REF!.A1:A6) -> =ROWS(#ref!)",
+       "Calc!A41 value: '#REF!' -> '#NAME?'",
+       "Calc!A42 formula: =ISREF($#REF!.A3) -> =ISREF(#ref!)",
+       "Calc!A43 formula: =ISERROR($#REF!.A3) -> =ISERROR(#ref!)",
+       "Calc!A44 formula: =IFERROR($#REF!.A3;7) -> =IFERROR(#ref!;7)",
+       "Calc!A45 formula: =SUM($#REF!.A1:A3) -> =SUM(#ref!)",
+       "Calc!A45 value: '#REF!' -> '#NAME?'",
+       "Calc!A46 formula: =INDEX($#REF!.A1:A6;2) -> =INDEX(#ref!;2)",
+       "Calc!A46 value: '#REF!' -> '#NAME?'",
+       "Calc!A47 formula: =SUMPRODUCT($#REF!.A1:A6) -> =SUMPRODUCT(#ref!)",
+       "Calc!A47 value: '#REF!' -> '#NAME?'",
+       "Calc!A48 formula: =COUNT($#REF!.A3;5) -> =COUNT(#ref!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($#REF!.A3;5) -> =SUM(#ref!;5)",
+       "Calc!A49 value: '#REF!' -> '#NAME?'"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =Data.$#REF!$#REF!",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A2": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A3": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A4": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 50.0
+          }
+         },
+         "A5": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "B1": {
+          "f": "",
+          "v": {
+           "t": "s",
+           "v": "x"
+          }
+         },
+         "C1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 3.0
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 36.0
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 8.5
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 36.0
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 2.0
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 1048571.0
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 16381.0
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.A:A;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.A1:A5;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.A1:A5;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 180.0
+          }
+         },
+         "A39": {
+          "f": "=$Data.A#REF!+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A40": {
+          "f": "=$Data.A#REF!",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 5.0
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.A#REF!;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.A1:A2)",
+          "v": {
+           "t": "n",
+           "v": 30.0
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.A1:A5;2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 180.0
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 180.0
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 17.0
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.A1:A5)",
+          "v": {
+           "t": "n",
+           "v": 180.0
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.A2:B2)",
+          "v": {
+           "t": "n",
+           "v": 20.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete rows Data!3",
+      "operations": [
+       [
+        "delete_rows",
+        "Data!3"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =Data.$#REF!$#REF!",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A2 formula: =COUNT($Data.$A#REF!:$XFD#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A3 formula: =COUNT($Data.A#REF!:A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A7 formula: =SUM($Data.$A#REF!:$XFD#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A8 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A12 formula: =COUNTA($Data.$A#REF!:$XFD#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A13 formula: =COUNTA($Data.A#REF!:A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A17 formula: =AVERAGE($Data.$A#REF!:$XFD#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.A#REF!:A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A22 formula: =MAX($Data.$A#REF!:$XFD#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A23 formula: =MAX($Data.A#REF!:A#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A24 formula: =MAX($Data.A#REF!:B#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A27 formula: =MIN($Data.$A#REF!:$XFD#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A28 formula: =MIN($Data.A#REF!:A#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A29 formula: =MIN($Data.A#REF!:B#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A32 formula: =COUNTBLANK($Data.$A#REF!:$XFD#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A33 formula: =COUNTBLANK($Data.A#REF!:A#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A34 formula: =COUNTBLANK($Data.A#REF!:B#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A37 formula: =COUNTIF($Data.A#REF!:A#REF!;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.A#REF!:A#REF!;\">1\") -> =SUMIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =Data.$#REF!$#REF!",
+       "Calc!A41 formula: =ROWS($Data.A#REF!:A#REF!) -> =ROWS(Data.$#REF!$#REF!)",
+       "Calc!A41 value: '#REF!' -> 1.0",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A45 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A46 formula: =INDEX($Data.A#REF!:A#REF!;2) -> =INDEX(Data.$#REF!$#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.A#REF!:A#REF!) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {},
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.A:A)",
+          "v": {
+           "t": "e",
+           "v": "#DIV/0!"
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 1048576.0
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.A:A;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.A#REF!:A#REF!;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.A#REF!:A#REF!;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A39": {
+          "f": "=$Data.A#REF!+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A40": {
+          "f": "=$Data.A#REF!",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.A#REF!;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.A#REF!:A#REF!;2)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.$A#REF!:$XFD#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.A#REF!:A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete rows Data!1:6",
+      "operations": [
+       [
+        "delete_rows",
+        "Data!1:6"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A2 formula: =COUNT($Data.$A#REF!:$XFD#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A2 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($Data.A#REF!:A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A7 formula: =SUM($Data.$A#REF!:$XFD#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A8 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A12 formula: =COUNTA($Data.$A#REF!:$XFD#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A12 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($Data.A#REF!:A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A17 formula: =AVERAGE($Data.$A#REF!:$XFD#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.A#REF!:A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A22 formula: =MAX($Data.$A#REF!:$XFD#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A23 formula: =MAX($Data.A#REF!:A#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A24 formula: =MAX($Data.A#REF!:B#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A27 formula: =MIN($Data.$A#REF!:$XFD#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A28 formula: =MIN($Data.A#REF!:A#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A29 formula: =MIN($Data.A#REF!:B#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A32 formula: =COUNTBLANK($Data.$A#REF!:$XFD#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A33 formula: =COUNTBLANK($Data.A#REF!:A#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A34 formula: =COUNTBLANK($Data.A#REF!:B#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A37 formula: =COUNTIF($Data.A#REF!:A#REF!;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.A#REF!:A#REF!;\">1\") -> =SUMIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =Data.$#REF!$#REF!",
+       "Calc!A41 formula: =ROWS($Data.A#REF!:A#REF!) -> =ROWS(Data.$#REF!$#REF!)",
+       "Calc!A41 value: '#REF!' -> 1.0",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A45 formula: =SUM($Data.A#REF!:A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A46 formula: =INDEX($Data.A#REF!:A#REF!;2) -> =INDEX(Data.$#REF!$#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.A#REF!:A#REF!) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A24 formula: =MAX($Data.A#REF!:B#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A29 formula: =MIN($Data.A#REF!:B#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A34 formula: =COUNTBLANK($Data.A#REF!:B#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =Data.$#REF!$#REF!",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A2": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A3": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 50.0
+          }
+         },
+         "A4": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "B1": {
+          "f": "",
+          "v": {
+           "t": "s",
+           "v": "x"
+          }
+         },
+         "C1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 3.0
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 8.5
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 2.0
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 60.0
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 1048572.0
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 16381.0
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.A:A;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.A1:A4;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.A1:A4;\">1\")",
+          "v": {
+           "t": "n",
+           "v": 160.0
+          }
+         },
+         "A39": {
+          "f": "=$Data.A#REF!+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A40": {
+          "f": "=$Data.A#REF!",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 4.0
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.A#REF!)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.A#REF!;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.A1:A1)",
+          "v": {
+           "t": "n",
+           "v": 10.0
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.A1:A4;2)",
+          "v": {
+           "t": "n",
+           "v": 40.0
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 160.0
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.A#REF!;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.A#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.A:A)",
+          "v": {
+           "t": "n",
+           "v": 160.0
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 17.0
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.A1:A4)",
+          "v": {
+           "t": "n",
+           "v": 160.0
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.A#REF!:B#REF!)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete rows Data!2:3",
+      "operations": [
+       [
+        "delete_rows",
+        "Data!2:3"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A4 formula: =COUNT($Data.A#REF!:B#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.A#REF!) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A9 formula: =SUM($Data.A#REF!:B#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 formula: =SUM($Data.A#REF!) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A14 formula: =COUNTA($Data.A#REF!:B#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.A#REF!) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A19 formula: =AVERAGE($Data.A#REF!:B#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.A#REF!) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A24 formula: =MAX($Data.A#REF!:B#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.A#REF!) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A29 formula: =MIN($Data.A#REF!:B#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.A#REF!) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A34 formula: =COUNTBLANK($Data.A#REF!:B#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.A#REF!) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A39 formula: =$Data.A#REF!+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.A#REF! -> =Data.$#REF!$#REF!",
+       "Calc!A42 formula: =ISREF($Data.A#REF!) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.A#REF!) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.A#REF!;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A48 formula: =COUNT($Data.A#REF!;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.A#REF!;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.#REF!3) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A21 formula: =MAX($Data.#REF!$1:#REF!$1048576) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A23 formula: =MAX($Data.#REF!1:#REF!6) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.#REF!3) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A26 formula: =MIN($Data.#REF!$1:#REF!$1048576) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A28 formula: =MIN($Data.#REF!1:#REF!6) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.#REF!3) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($Data.#REF!$1:#REF!$1048576) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A33 formula: =COUNTBLANK($Data.#REF!1:#REF!6) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.#REF!3) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A36 formula: =COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($Data.#REF!1:#REF!6;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.#REF!1:#REF!6;\">1\") -> =SUMIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A39 formula: =$Data.#REF!3+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.#REF!3 -> =Data.$#REF!$#REF!",
+       "Calc!A41 formula: =ROWS($Data.#REF!1:#REF!6) -> =ROWS(Data.$#REF!$#REF!)",
+       "Calc!A41 value: '#REF!' -> 1.0",
+       "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(Data.$#REF!$#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
+       "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "",
+          "v": {
+           "t": "s",
+           "v": "x"
+          }
+         },
+         "B1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 2.0
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.A2:A3)",
+          "v": {
+           "t": "e",
+           "v": "#DIV/0!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 16382.0
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 2.0
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.#REF!1:#REF!6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.#REF!1:#REF!6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A39": {
+          "f": "=$Data.#REF!3+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A40": {
+          "f": "=$Data.#REF!3",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.#REF!3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.#REF!3)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.#REF!3;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.#REF!1:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.#REF!1:#REF!6;2)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.#REF!3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.#REF!3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.A2:A3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete columns Data!A",
+      "operations": [
+       [
+        "delete_columns",
+        "Data!A"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.#REF!3) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A21 formula: =MAX($Data.#REF!$1:#REF!$1048576) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A23 formula: =MAX($Data.#REF!1:#REF!6) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.#REF!3) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A26 formula: =MIN($Data.#REF!$1:#REF!$1048576) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A28 formula: =MIN($Data.#REF!1:#REF!6) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.#REF!3) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($Data.#REF!$1:#REF!$1048576) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A33 formula: =COUNTBLANK($Data.#REF!1:#REF!6) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.#REF!3) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A36 formula: =COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($Data.#REF!1:#REF!6;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.#REF!1:#REF!6;\">1\") -> =SUMIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A39 formula: =$Data.#REF!3+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.#REF!3 -> =Data.$#REF!$#REF!",
+       "Calc!A41 formula: =ROWS($Data.#REF!1:#REF!6) -> =ROWS(Data.$#REF!$#REF!)",
+       "Calc!A41 value: '#REF!' -> 1.0",
+       "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(Data.$#REF!$#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
+       "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ]
+     },
+     {
+      "differences": [
+       "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A4 formula: =COUNT($Data.#REF!2:#REF!3) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A9 formula: =SUM($Data.#REF!2:#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A14 formula: =COUNTA($Data.#REF!2:#REF!3) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A19 formula: =AVERAGE($Data.#REF!2:#REF!3) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.#REF!3) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A21 formula: =MAX($Data.#REF!$1:#REF!$1048576) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A23 formula: =MAX($Data.#REF!1:#REF!6) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A24 formula: =MAX($Data.#REF!2:#REF!3) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.#REF!3) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A26 formula: =MIN($Data.#REF!$1:#REF!$1048576) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A28 formula: =MIN($Data.#REF!1:#REF!6) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A29 formula: =MIN($Data.#REF!2:#REF!3) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.#REF!3) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($Data.#REF!$1:#REF!$1048576) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A33 formula: =COUNTBLANK($Data.#REF!1:#REF!6) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A34 formula: =COUNTBLANK($Data.#REF!2:#REF!3) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.#REF!3) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A36 formula: =COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($Data.#REF!1:#REF!6;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.#REF!1:#REF!6;\">1\") -> =SUMIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A39 formula: =$Data.#REF!3+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.#REF!3 -> =Data.$#REF!$#REF!",
+       "Calc!A41 formula: =ROWS($Data.#REF!1:#REF!6) -> =ROWS(Data.$#REF!$#REF!)",
+       "Calc!A41 value: '#REF!' -> 1.0",
+       "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(Data.$#REF!$#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
+       "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ],
+      "expected": [
+       {
+        "cells": {
+         "A1": {
+          "f": "",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Data",
+        "visible": true
+       },
+       {
+        "cells": {
+         "A1": {
+          "f": "=COUNT($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A10": {
+          "f": "=SUM($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A11": {
+          "f": "=COUNTA($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A12": {
+          "f": "=COUNTA($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A13": {
+          "f": "=COUNTA($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A14": {
+          "f": "=COUNTA($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A15": {
+          "f": "=COUNTA($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A16": {
+          "f": "=AVERAGE($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A17": {
+          "f": "=AVERAGE($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A18": {
+          "f": "=AVERAGE($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A19": {
+          "f": "=AVERAGE($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A2": {
+          "f": "=COUNT($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A20": {
+          "f": "=AVERAGE($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A21": {
+          "f": "=MAX($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A22": {
+          "f": "=MAX($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A23": {
+          "f": "=MAX($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A24": {
+          "f": "=MAX($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A25": {
+          "f": "=MAX($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A26": {
+          "f": "=MIN($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A27": {
+          "f": "=MIN($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A28": {
+          "f": "=MIN($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A29": {
+          "f": "=MIN($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A3": {
+          "f": "=COUNT($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A30": {
+          "f": "=MIN($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A31": {
+          "f": "=COUNTBLANK($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A32": {
+          "f": "=COUNTBLANK($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 16383.0
+          }
+         },
+         "A33": {
+          "f": "=COUNTBLANK($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A34": {
+          "f": "=COUNTBLANK($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A35": {
+          "f": "=COUNTBLANK($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A36": {
+          "f": "=COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A37": {
+          "f": "=COUNTIF($Data.#REF!1:#REF!6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A38": {
+          "f": "=SUMIF($Data.#REF!1:#REF!6;\">1\")",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A39": {
+          "f": "=$Data.#REF!3+1",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A4": {
+          "f": "=COUNT($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A40": {
+          "f": "=$Data.#REF!3",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A41": {
+          "f": "=ROWS($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A42": {
+          "f": "=ISREF($Data.#REF!3)",
+          "v": {
+           "t": "n",
+           "v": 0.0
+          }
+         },
+         "A43": {
+          "f": "=ISERROR($Data.#REF!3)",
+          "v": {
+           "t": "n",
+           "v": 1.0
+          }
+         },
+         "A44": {
+          "f": "=IFERROR($Data.#REF!3;7)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A45": {
+          "f": "=SUM($Data.#REF!1:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A46": {
+          "f": "=INDEX($Data.#REF!1:#REF!6;2)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A47": {
+          "f": "=SUMPRODUCT($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A48": {
+          "f": "=COUNT($Data.#REF!3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A49": {
+          "f": "=SUM($Data.#REF!3;5)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A5": {
+          "f": "=COUNT($Data.#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A6": {
+          "f": "=SUM($Data.#REF!$1:#REF!$1048576)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A7": {
+          "f": "=SUM($Data.1:1)",
+          "v": {
+           "t": "n",
+           "v": 7.0
+          }
+         },
+         "A8": {
+          "f": "=SUM($Data.#REF!1:#REF!6)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         },
+         "A9": {
+          "f": "=SUM($Data.#REF!2:#REF!3)",
+          "v": {
+           "t": "e",
+           "v": "#REF!"
+          }
+         }
+        },
+        "hidden_columns": [],
+        "hidden_rows": [],
+        "name": "Calc",
+        "visible": true
+       }
+      ],
+      "label": "delete columns Data!A:B",
+      "operations": [
+       [
+        "delete_columns",
+        "Data!A:B"
+       ]
+      ],
+      "written_differences": [
+       "Calc!A1 formula: =COUNT($Data.#REF!$1:#REF!$1048576) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A1 value: '#REF!' -> 0.0",
+       "Calc!A3 formula: =COUNT($Data.#REF!1:#REF!6) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A3 value: '#REF!' -> 0.0",
+       "Calc!A4 formula: =COUNT($Data.#REF!2:#REF!3) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A4 value: '#REF!' -> 0.0",
+       "Calc!A5 formula: =COUNT($Data.#REF!3) -> =COUNT(Data.$#REF!$#REF!)",
+       "Calc!A5 value: '#REF!' -> 0.0",
+       "Calc!A6 formula: =SUM($Data.#REF!$1:#REF!$1048576) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A8 formula: =SUM($Data.#REF!1:#REF!6) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A9 formula: =SUM($Data.#REF!2:#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A10 formula: =SUM($Data.#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A11 formula: =COUNTA($Data.#REF!$1:#REF!$1048576) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A11 value: '#REF!' -> 1.0",
+       "Calc!A13 formula: =COUNTA($Data.#REF!1:#REF!6) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A13 value: '#REF!' -> 1.0",
+       "Calc!A14 formula: =COUNTA($Data.#REF!2:#REF!3) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A14 value: '#REF!' -> 1.0",
+       "Calc!A15 formula: =COUNTA($Data.#REF!3) -> =COUNTA(Data.$#REF!$#REF!)",
+       "Calc!A15 value: '#REF!' -> 1.0",
+       "Calc!A16 formula: =AVERAGE($Data.#REF!$1:#REF!$1048576) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A18 formula: =AVERAGE($Data.#REF!1:#REF!6) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A19 formula: =AVERAGE($Data.#REF!2:#REF!3) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A20 formula: =AVERAGE($Data.#REF!3) -> =AVERAGE(Data.$#REF!$#REF!)",
+       "Calc!A21 formula: =MAX($Data.#REF!$1:#REF!$1048576) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A23 formula: =MAX($Data.#REF!1:#REF!6) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A24 formula: =MAX($Data.#REF!2:#REF!3) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A25 formula: =MAX($Data.#REF!3) -> =MAX(Data.$#REF!$#REF!)",
+       "Calc!A26 formula: =MIN($Data.#REF!$1:#REF!$1048576) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A28 formula: =MIN($Data.#REF!1:#REF!6) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A29 formula: =MIN($Data.#REF!2:#REF!3) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A30 formula: =MIN($Data.#REF!3) -> =MIN(Data.$#REF!$#REF!)",
+       "Calc!A31 formula: =COUNTBLANK($Data.#REF!$1:#REF!$1048576) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A33 formula: =COUNTBLANK($Data.#REF!1:#REF!6) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A34 formula: =COUNTBLANK($Data.#REF!2:#REF!3) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A35 formula: =COUNTBLANK($Data.#REF!3) -> =COUNTBLANK(Data.$#REF!$#REF!)",
+       "Calc!A36 formula: =COUNTIF($Data.#REF!$1:#REF!$1048576;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A37 formula: =COUNTIF($Data.#REF!1:#REF!6;\">1\") -> =COUNTIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A38 formula: =SUMIF($Data.#REF!1:#REF!6;\">1\") -> =SUMIF(Data.$#REF!$#REF!;\">1\")",
+       "Calc!A39 formula: =$Data.#REF!3+1 -> =Data.$#REF!$#REF!+1",
+       "Calc!A40 formula: =$Data.#REF!3 -> =Data.$#REF!$#REF!",
+       "Calc!A41 formula: =ROWS($Data.#REF!1:#REF!6) -> =ROWS(Data.$#REF!$#REF!)",
+       "Calc!A41 value: '#REF!' -> 1.0",
+       "Calc!A42 formula: =ISREF($Data.#REF!3) -> =ISREF(Data.$#REF!$#REF!)",
+       "Calc!A43 formula: =ISERROR($Data.#REF!3) -> =ISERROR(Data.$#REF!$#REF!)",
+       "Calc!A44 formula: =IFERROR($Data.#REF!3;7) -> =IFERROR(Data.$#REF!$#REF!;7)",
+       "Calc!A44 value: '#REF!' -> 7.0",
+       "Calc!A45 formula: =SUM($Data.#REF!1:#REF!3) -> =SUM(Data.$#REF!$#REF!)",
+       "Calc!A46 formula: =INDEX($Data.#REF!1:#REF!6;2) -> =INDEX(Data.$#REF!$#REF!;2)",
+       "Calc!A47 formula: =SUMPRODUCT($Data.#REF!1:#REF!6) -> =SUMPRODUCT(Data.$#REF!$#REF!)",
+       "Calc!A48 formula: =COUNT($Data.#REF!3;5) -> =COUNT(Data.$#REF!$#REF!;5)",
+       "Calc!A48 value: '#REF!' -> 1.0",
+       "Calc!A49 formula: =SUM($Data.#REF!3;5) -> =SUM(Data.$#REF!$#REF!;5)"
+      ]
      }
     ]
    }
