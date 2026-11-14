@@ -82,6 +82,19 @@ impl Options {
         Ok(spec)
     }
 
+    /// These options with the clock and the seed of `book` ([`Book::with_volatile`]) where they leave
+    /// them open: the `now` and `seed` of the options win, the book's come next, and what neither
+    /// fixes is the clock. Every function of this module that builds or calculates a [`Book`]
+    /// applies it, so the book is the one place to initialise them.
+    #[must_use]
+    pub fn with_book(&self, book: &Book) -> Self {
+        let volatile = book.volatile();
+        let mut options = self.clone();
+        options.config.now = options.config.now.or(volatile.now);
+        options.config.seed = options.config.seed.or(volatile.seed);
+        options
+    }
+
     /// The values the run overrides: the clock, the seed and the host the options fix.
     #[must_use]
     pub fn overrides(&self) -> Overrides {
@@ -233,7 +246,7 @@ impl BookCompile for Book {
 /// When the workbook cannot be read or compiled.
 fn build(source: &Book, options: &Options, mode: Mode) -> Result<(Program, Report)> {
     let model = loader::load(source)?;
-    let spec = options.spec(&model, mode)?;
+    let spec = options.with_book(source).spec(&model, mode)?;
     let (mut program, report) = compile(model, &spec)?;
     program.build.built_at = crate::compile::build_time()?;
     Ok((program, report))
@@ -330,7 +343,7 @@ fn calculate(
     with_json: bool,
 ) -> Result<Calculated> {
     let (program, _) = build(source, options, mode)?;
-    let overrides = options.overrides();
+    let overrides = options.with_book(source).overrides();
     let diagnostics = program.diagnostics.clone();
     if !mode.is_workbook() {
         let answer = program.handle(request, &overrides)?;
@@ -588,7 +601,7 @@ pub struct FunctionUse {
 /// When the workbook cannot be read or compiled.
 fn inspect(source: &Book, options: &Options) -> Result<Inspection> {
     let model = loader::load(source)?;
-    let mut config = options.config.clone();
+    let mut config = options.with_book(source).config;
     config.strict = Some(false);
     let mut spec = match &options.declarations {
         Some(text) => config.spec_with_declarations(&model, text)?,
@@ -634,7 +647,7 @@ fn verify(
     abs_tolerance: Option<f64>,
 ) -> Result<Json> {
     let model = loader::load(source)?;
-    let mut config = options.config.clone();
+    let mut config = options.with_book(source).config;
     config.strict = Some(false);
     let spec = match &options.declarations {
         Some(text) => config.spec_with_declarations(&model, text)?,

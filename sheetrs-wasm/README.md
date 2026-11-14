@@ -32,14 +32,20 @@ workbook.
 
 ## `Book`
 
-`new Book(bytes, locale?)` detects the format from the content and reads nothing else, and a `Book` keeps nothing of
+`new Book(bytes, locale?, options?)` detects the format from the content and reads nothing else, and a `Book` keeps nothing of
 the workbook but its bytes and the operations to make to it. `locale` (a tag such as `"es-CO"`; an error when
 it is not one) is the locale of the workbook: the regional settings that give a text to a number and read a
 number from a text, in `calculate`, in the recalculation that follows an edit and in `query`, `range` and
 `find` (`display`); `book.locale` says it. Without it the workbook has `en-US`, because WebAssembly has
 no system to take the locale from (the language an ODS stores in its default cell style is not read, as in
 LibreOffice). The `locale` of a single call (`evaluateFormula`, the `locale` of a query, the
-options of `inspect` and `compile`) wins over it. What it says about the workbook is the
+options of `inspect` and `compile`) wins over it. `options` is `{now, seed}` (an error for any other key): the
+serial number that `NOW()` and `TODAY()` give and the seed of `RAND()` and its relatives (an integer from 0 up
+to 2^53, or a `BigInt`), the `now` and `seed` of `sheetc`, in every calculation of the workbook (`calculate`, the
+recalculation that follows an edit, `inspect`, `compile`); `book.now` and `book.seed` say them. The `now` and `seed`
+of a single call (the options of `calculate`, `inspect`, `compile` and `evaluateFormula`) win over them, field by
+field. Distinct seeds give distinct streams; `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of
+SheetRS. What it says about the workbook is the
 statistics, which are a tool like the others: `stats()` reads it.
 
 | | Member | Gives |
@@ -57,7 +63,7 @@ statistics, which are a tool like the others: `stats()` reads it.
 | | `valueRanges()` | `ValueRanges` of the calculation (`toJSON()` is the answer of the protocol, `{valueRanges: [{range, name, values}]}`, `toObject()` is `{name: rows}`); runs the operations in memory and writes nothing |
 | | `report` | `Report` of the last `save` or `valueRanges`: `replaced`, `written`, `skipped` (`{sheet, cell, reason}`), `diagnostics`, `valueRanges`; `undefined` before |
 | **compile** | `compile(options?)` | `{module, cells, reachable, formulas, folded, kept, cycles, diagnostics}`: `module` is a `Uint8Array`, the WebAssembly module of the workbook (`sheetc build --target wasm`) |
-| **settings** | `locale` (read only), `dates`, `onDiagnostic` | `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
+| **settings** | `locale`, `now`, `seed` (read only), `dates`, `onDiagnostic` | `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
 
 Free functions: `lintRules()` (array of `{id, name, category, is_default}`), `evaluateFormula(formula,
 locale, options)` (the value of one formula, `sheetc evaluate`) and `initPanicHook()`.
@@ -110,10 +116,10 @@ text of the cell). A pattern that can match the empty text (`x*`, `^`, `$`, `a*$
 
 ### `calculate` and `valueRanges`
 
-The clock of `NOW()`, `TODAY()` and `RAND()` is `Date.now()`. The options of a `sheetc.toml` (`strict`, `now`, `seed`, `host`, `locale`, ...) and `declarations` (the JSON of a `settings_file`: the
+The clock of `NOW()`, `TODAY()` and `RAND()` is `Date.now()`, unless the `Book` was given a `now` and a `seed` (`new Book(bytes, locale, {now, seed})`), which every tool below takes. The options of a `sheetc.toml` (`strict`, `now`, `seed`, `host`, `locale`, ...) and `declarations` (the JSON of a `settings_file`: the
 inputs and outputs of a workbook with no settings sheet) apply to `inspect(options)`, `compile(options)`
 and `evaluateFormula`. The calculation of a plan takes the request and, as the options of the call, `now`
-and `seed` (see `calculate(request?, options?)` above); `locale` is the one of the `Book`.
+and `seed` (see `calculate(request?, options?)` above), which win over the ones of the `Book`; `locale` is the one of the `Book`.
 
 ### `compile`
 

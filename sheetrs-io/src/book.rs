@@ -48,12 +48,97 @@ enum Origin {
 /// `NOW()` and `TODAY()` and the seed of `RAND()` and its relatives. A field that is `None` is the
 /// system clock (the seed is taken from it). The names are those of `sheetc` (`--now`, `--seed`) and
 /// of a `calculate` step.
+///
+/// It is a property of the [`Book`], like its locale ([`Book::with_volatile`]), and every tool that
+/// builds or calculates takes it from there. The order, from the one that wins: the `now` and
+/// `seed` of a single call (a `calculate` step, the options of a call), those of the book, the
+/// configuration file (`now` and `seed` in `[global]` of `sheetrs.toml`,
+/// [`Volatile::configured`]) and the clock. [`Volatile::or`] applies the order to two of them.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Volatile {
     /// The serial number of `NOW()`; `TODAY()` is its integer part.
     pub now: Option<f64>,
-    /// The seed of `RAND()`.
+    /// The seed of `RAND()`. Distinct seeds give distinct streams; `RAND` of `LibreOffice` cannot be
+    /// seeded, so the seed is an extension of `SheetRS` with no `LibreOffice` counterpart.
     pub seed: Option<u64>,
+}
+
+impl Volatile {
+    /// What `self` leaves open is taken from `base`: the fields of `self` win.
+    ///
+    /// ```
+    /// use sheetrs_io::Volatile;
+    ///
+    /// let call = Volatile { now: Some(45000.0), seed: None };
+    /// let book = Volatile { now: Some(1.0), seed: Some(7) };
+    /// assert_eq!(call.or(book), Volatile { now: Some(45000.0), seed: Some(7) });
+    /// ```
+    #[must_use]
+    pub fn or(self, base: Self) -> Self {
+        Self {
+            now: self.now.or(base.now),
+            seed: self.seed.or(base.seed),
+        }
+    }
+
+    /// The `now` and `seed` of the text of a configuration file (`sheetrs.toml`): the keys of
+    /// `[global]`; absent, `None`.
+    ///
+    /// ```
+    /// use sheetrs_io::Volatile;
+    ///
+    /// let text = "[global]\nnow = 45366.75\nseed = 7\n";
+    /// let volatile = Volatile::from_config(text).unwrap();
+    /// assert_eq!(volatile, Volatile { now: Some(45366.75), seed: Some(7) });
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Config`] when the text is not TOML or a key has a value of the wrong type (`seed` is a
+    /// non-negative integer, `now` a number).
+    #[cfg(feature = "config")]
+    pub fn from_config(text: &str) -> Result<Self> {
+        #[derive(serde::Deserialize, Default)]
+        struct Global {
+            now: Option<f64>,
+            seed: Option<u64>,
+        }
+        #[derive(serde::Deserialize, Default)]
+        struct File {
+            #[serde(default)]
+            global: Global,
+        }
+        let file: File = toml::from_str(text).map_err(|e| Error::Config(e.to_string()))?;
+        Ok(Self {
+            now: file.global.now,
+            seed: file.global.seed,
+        })
+    }
+
+    /// The `now` and `seed` the configuration of a command line gives: the file `config` when the
+    /// command names one (it must exist), else `sheetrs.toml` in the working directory when there is
+    /// one; nothing when there is no file.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Open`] when the file cannot be read, and as [`from_config`](Self::from_config).
+    #[cfg(feature = "config")]
+    pub fn configured(config: Option<&Path>) -> Result<Self> {
+        let default = Path::new(locale::CONFIG_FILE);
+        let path = match config {
+            Some(path) => path,
+            None if default.is_file() => default,
+            None => return Ok(Self::default()),
+        };
+        let text = std::fs::read_to_string(path).map_err(|source| Error::Open {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Self::from_config(&text).map_err(|error| Error::Context {
+            message: path.display().to_string(),
+            source: Box::new(error),
+        })
+    }
 }
 
 /// A workbook: where it comes from, its format, its locale and, with the feature `write`, the
@@ -124,12 +209,34 @@ impl Book {
         }
     }
 
-    /// The same workbook with these values for the volatile functions in the recalculation that an
-    /// edit leaves to do (the one `sheetrs edit --now --seed` fixes). A `calculate` step of the
-    /// plan has its own `now` and `seed`, which win over these for that step.
+    /// The same workbook with these values for the volatile functions (`NOW`, `TODAY`, `RAND` and its
+    /// relatives) in every calculation that a tool makes of it: `calculate`, the recalculation that an
+    /// edit leaves to do, the build of a program, `inspect` and `verify`. It is the way to initialise
+    /// them, as [`with_locale`](Self::with_locale) is for the locale: `Book(..., now=, seed=)` in
+    /// Python, `new Book(bytes, locale, {now, seed})` in WebAssembly, `--now` and `--seed` of
+    /// `sheetrs edit`. The `now` and `seed` of a single call (a `calculate` step, the options of
+    /// `inspect`) win over these, field by field.
+    ///
+    /// ```
+    /// use sheetrs_io::{Book, Volatile};
+    ///
+    /// # fn main() -> sheetrs_io::Result<()> {
+    /// # let bytes = include_bytes!("../../tests/lint_book.xlsx").to_vec();
+    /// let book = Book::from_bytes(bytes)?.with_volatile(Volatile { now: Some(45366.75), seed: Some(7) });
+    /// assert_eq!(book.volatile().seed, Some(7));
+    /// # Ok(()) }
+    /// ```
     #[must_use]
     pub fn with_volatile(mut self, volatile: Volatile) -> Self {
         self.volatile = volatile;
+        self
+    }
+
+    /// The same workbook with the values of `other` for the volatile functions: for a book made from
+    /// the result of an operation on `other`, which is the same workbook.
+    #[must_use]
+    pub fn with_volatile_of(mut self, other: &Self) -> Self {
+        self.volatile = other.volatile;
         self
     }
 
@@ -532,6 +639,81 @@ mod tests {
         let next = Book::from_bytes(XLSX).unwrap().with_locale_of(&book);
         assert_eq!(next.locale(), book.locale());
         assert_ne!(next, Book::from_bytes(XLSX).unwrap());
+    }
+
+    #[test]
+    fn the_volatile_given_to_a_book_is_kept_by_the_book_made_from_it() {
+        let given = Volatile {
+            now: Some(45366.75),
+            seed: Some(7),
+        };
+        let book = Book::from_bytes(XLSX).unwrap();
+        assert_eq!(book.volatile(), Volatile::default());
+        let book = book.with_volatile(given);
+        assert_eq!(book.clone().volatile(), given);
+        let next = Book::from_bytes(XLSX).unwrap().with_volatile_of(&book);
+        assert_eq!(next.volatile(), given);
+    }
+
+    #[test]
+    fn what_a_call_leaves_open_is_the_books() {
+        let call = Volatile {
+            now: Some(1.0),
+            seed: None,
+        };
+        let book = Volatile {
+            now: Some(2.0),
+            seed: Some(7),
+        };
+        assert_eq!(
+            call.or(book),
+            Volatile {
+                now: Some(1.0),
+                seed: Some(7)
+            }
+        );
+        assert_eq!(
+            Volatile::default().or(Volatile::default()),
+            Volatile::default()
+        );
+    }
+
+    #[cfg(feature = "config")]
+    #[test]
+    fn now_and_seed_are_read_from_global_of_a_configuration() {
+        let read = |text: &str| Volatile::from_config(text);
+        assert_eq!(
+            read("[global]\nnow = 45366\nseed = 7\n").unwrap(),
+            Volatile {
+                now: Some(45366.0),
+                seed: Some(7)
+            }
+        );
+        assert_eq!(read("[global]\n").unwrap(), Volatile::default());
+        assert_eq!(read("").unwrap(), Volatile::default());
+        for bad in ["seed = -1", "seed = 1.5", "seed = \"7\"", "now = \"today\""] {
+            assert!(
+                matches!(
+                    read(format!("[global]\n{bad}\n").as_str()),
+                    Err(Error::Config(_))
+                ),
+                "{bad}"
+            );
+        }
+    }
+
+    #[cfg(feature = "config")]
+    #[test]
+    fn a_configuration_file_that_is_named_must_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("none.toml");
+        assert!(matches!(
+            Volatile::configured(Some(&missing)),
+            Err(Error::Open { .. })
+        ));
+        let file = dir.path().join("sheetrs.toml");
+        std::fs::write(&file, "[global]\nseed = 3\n").unwrap();
+        assert_eq!(Volatile::configured(Some(&file)).unwrap().seed, Some(3));
     }
 
     #[test]

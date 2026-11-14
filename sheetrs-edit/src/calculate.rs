@@ -52,10 +52,10 @@ pub(crate) fn calculate(
     calculation: &Calculation,
 ) -> Result<Calculated, CalculateError> {
     // The clock and the seed reach the engine as the options of the build and of the run, as the
-    // `--now` and `--seed` of `sheetc` do.
-    let mut options = Options::default();
-    options.config.now = calculation.now;
-    options.config.seed = calculation.seed;
+    // `--now` and `--seed` of `sheetc` do: the step's own, else the ones given to the book.
+    let mut options = Options::default().with_book(source);
+    options.config.now = calculation.now.or(options.config.now);
+    options.config.seed = calculation.seed.or(options.config.seed);
     // Inputs, ranges or an answer are the embedded mode (the workbook is its own template, inputs
     // and outputs declared or deduced); with none of them the workbook is calculated as it is.
     let embedded =

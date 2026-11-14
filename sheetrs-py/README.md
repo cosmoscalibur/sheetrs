@@ -11,6 +11,7 @@ import sheetrs
 
 book = sheetrs.Book("book.xlsx")          # a path, bytes or a binary stream (io.BytesIO)
 book = sheetrs.Book("book.xlsx", locale="es-CO")   # the regional settings of the workbook (below)
+book = sheetrs.Book("book.xlsx", now=45366.75, seed=7)   # NOW() and RAND() fixed in every calculation (below)
 
 # Opening reads nothing. The statistics are a tool, like the others: `stats()` reads the workbook.
 stats = book.stats()
@@ -56,10 +57,11 @@ objects, and what a query does not ask for is neither read nor kept.
 | | Members | What they do |
 | --- | --- | --- |
 | **Format** | `format` | A property: `"xlsx"`, `"xlsm"` or `"ods"`, from the content. |
+| **Settings** | `locale`, `now`, `seed` | Read only properties of what was given to `Book(...)`: the locale, the serial number of `NOW()` and the seed of `RAND()`; `None` when not given. |
 | **Operations** | `delete_sheets`, `delete_names`, `formula_to_value`, `delete_rows`, `delete_columns`, `hide_rows`, `show_rows`, `hide_columns`, `show_columns`, `hide_sheets`, `show_sheets`, `replace`, `calculate(inputs=None, ranges=None, major="rows", now=None, seed=None)` | Accumulate on the same `Book`, which each one returns, so the calls chain. Each takes the **array of its targets** (one `str`, or any iterable of `str`; an empty one does nothing; anything else in it is a `TypeError`). |
 | **The cut** | `save(dest=None, *, json=None)`, `to_bytes()`, `value_ranges()`, `explain()` | `save` plans all the operations in the fewest passes over the file and runs them, and writes the workbook: `save(dest)` a new one to a path or a binary stream, `save()` over the original (the file, or the stream the `Book` was made from); `json=` a path or stream for the value ranges of `calculate`. `to_bytes()` runs them in memory and returns the workbook as `bytes`. `value_ranges()` runs them in memory and gives the value ranges. `explain` says what it will do. |
 | **Queries** | `range`, `find`, `lint`, `inspect`, `stats` | Read what they need; `stats()` reads the workbook in a single streaming pass and gives a `Stats` (the eleven `total_*`, `sheets[name]` with `name`, `used_range` (the rectangle of the used cells, `"D10:GV5439"`, not anchored at `A1`; `None` for a sheet with no cells), `state` and the counts, `has_macros`, `defined_names`). They raise `PendingOperationsError` with operations pending. |
-| **Free functions** | `evaluate(formula, locale=...)`, `lint_rules()` | The value of one formula (`en` unless `locale` says another); the rules of the linter. |
+| **Free functions** | `evaluate(formula, locale=..., now=..., seed=...)`, `lint_rules()` | The value of one formula (`en` unless `locale` says another; `now` and `seed` fix `NOW()` and `RAND()`); the rules of the linter. |
 
 Names are those of the LibreOffice Calc interface (*Delete Sheet*, *Manage Names ▸ Delete*,
 *Formula to Value*, *Calculate*, *Find & Replace*).
@@ -111,8 +113,8 @@ content as Python dicts and lists, `to_json()` as JSON text (and, for the lint r
   up to date. `ranges` (a range or a list of them) are the ranges the answer holds, listed as `major` says
   (`"rows"` or `"columns"`, the `majorDimension` of the request); without them, the outputs the
   workbook declares or, with none, its formula cells. `now` (the serial number that `NOW()` and `TODAY()`
-  give) and `seed` (the seed of `RAND()`) fix the volatile functions, as `--now` and `--seed` of `sheetc` do;
-  without them the engine reads the clock. They also fix the recalculation that the same `save` runs after
+  give) and `seed` (the seed of `RAND()`) fix the volatile functions, as `--now` and `--seed` of `sheetc` do,
+  and win over the `now` and `seed` of the `Book` (below); without either the engine reads the clock. They also fix the recalculation that the same `save` runs after
   an edit that leaves results stale (a deletion, a replacement).
 - **The value ranges** are read where the user decides: `value_ranges()` gives a `ValueRanges` in memory (a mapping
   from the name of each one to a `Block`; `value_ranges().to_dict()` is `{name: list[list]}`; it runs the
@@ -190,6 +192,17 @@ given). Without it the workbook, an XLSX or an ODS, has the locale of the system
 ODS stores in its default cell style is not read, as in LibreOffice. The `locale` of a single call (`evaluate(formula,
 locale=...)`) wins over it. The engine has `en-US`, `en-GB`, `es-ES`, `es-CO`, `es-MX` and `de-DE`; the
 others are an error when the engine needs them (see the `sheetrs-compiler` README).
+
+### The clock and the seed of a workbook
+
+`Book(source, now=45366.75, seed=7)` fixes the volatile functions in every calculation of the workbook, as
+`--now` and `--seed` of `sheetc` do: `now` is the serial number that `NOW()` and `TODAY()` give (`TODAY()` is its
+integer part) and `seed` the seed of `RAND()` and its relatives (a non-negative integer; distinct seeds give
+distinct streams). They reach `calculate`, the recalculation that follows an edit and `inspect`; the `Book` that
+`save` returns keeps them, and `book.now` and `book.seed` say them (`None` when not given, and the engine reads
+the clock). The `now` and `seed` of a single call (`calculate(now=..., seed=...)`, `evaluate(formula, now=...)`)
+win over them, field by field. `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of SheetRS with
+no LibreOffice counterpart to match (`sheetrs-compiler/docs/FIDELITY.md`).
 
 ### Diagnostics
 

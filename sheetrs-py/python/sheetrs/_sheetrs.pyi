@@ -292,18 +292,38 @@ class Book:
     `inspect`, `stats`) raise `PendingOperationsError` while operations are pending.
     """
 
-    def __init__(self, source: Source, *, locale: str | None = None) -> None:
+    def __init__(
+        self,
+        source: Source,
+        *,
+        locale: str | None = None,
+        now: float | None = None,
+        seed: int | None = None,
+    ) -> None:
         """`locale` is the locale of the workbook (a tag such as `"es-CO"`): the regional settings that
         give a text to a number (`TEXT`, the conversion of a number to text, `display`) and read a number
         from a text, in `calculate`, in the recalculation that follows an edit and in the queries. Without
         it the workbook, an XLSX or an ODS, has the locale of the system (`LC_ALL`, `LC_CTYPE` or `LANG`,
         read when it is needed; `en-US` when there is none). The `locale` of a single call
-        (`evaluate`) wins over it. Raises `ValueError` when it is not a locale tag."""
+        (`evaluate`) wins over it. Raises `ValueError` when it is not a locale tag.
+
+        `now` (the serial number that `NOW()` and `TODAY()` give) and `seed` (the seed of `RAND()` and its
+        relatives, a non-negative integer) fix the volatile functions in every calculation of the
+        workbook (`calculate`, the recalculation that follows an edit, `inspect`), as `--now` and
+        `--seed` of `sheetc` do; without them the engine reads the clock. The `now` and `seed` of a single
+        call (`calculate(now=, seed=)`) win over them. Distinct seeds give distinct streams; `RAND` of
+        LibreOffice cannot be seeded, so `seed` is an extension of SheetRS."""
     @property
     def format(self) -> Literal["xlsx", "xlsm", "ods"]: ...
     @property
     def locale(self) -> str | None:
         """The locale given to the workbook, normalized (`"es-CO"`); `None` when it was not given one."""
+    @property
+    def now(self) -> float | None:
+        """The serial number of `NOW()` and `TODAY()` given to the workbook; `None` when it was not given one."""
+    @property
+    def seed(self) -> int | None:
+        """The seed of `RAND()` given to the workbook; `None` when it was not given one."""
     def stats(self) -> Stats:
         """The statistics of the workbook, as `sheetrs stats` reports them: the totals, the sheets, the
         macros and the defined names. It reads the workbook each time it is called; the `Book` keeps
@@ -446,8 +466,15 @@ class Book:
         """What `sheetc inspect` says: the sheets, the cells and formulas, the functions used and
         which of them the engine lacks. Compiles the workbook in memory; calculates nothing."""
 
-def evaluate(formula: str, *, locale: str | None = None) -> Cell:
-    """The value of one formula, as `sheetc evaluate` gives it."""
+def evaluate(
+    formula: str,
+    *,
+    locale: str | None = None,
+    now: float | None = None,
+    seed: int | None = None,
+) -> Cell:
+    """The value of one formula, as `sheetc evaluate` gives it. `now` and `seed` fix `NOW()`, `TODAY()`
+    and `RAND()`; without them the clock decides."""
 
 def lint_rules(config_path: Path | None = None) -> list[Rule]:
     """The rules ordered by id; `enabled` tells whether the configuration runs each one."""

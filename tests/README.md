@@ -84,4 +84,5 @@ itself on the same file.
 `sheetrs-edit/tests/assets/volatile/volatile.{xlsx,ods}` (`sheetrs-edit/scripts/gen_volatile_fixtures.py`, the
 standard library only, no application) holds `V!A1 =NOW()`, `V!B1 =TODAY()`, `V!C1 =RAND()` and a few rows
 to delete, with no cached result: the tests of `now` and `seed` of `calculate` (Rust, `sheetrs edit`,
-Python, WebAssembly) read what the engine writes into it.
+Python, WebAssembly) read what the engine writes into it. `sheetrs-compiler/tests/assets/volatile.{xlsx,ods}` are
+copies of the same two files (the tests of `sheetc` flags and of the `Book` in memory read them).

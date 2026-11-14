@@ -191,6 +191,26 @@ impl LinterConfig {
                 value: value.to_string(),
             });
         }
+        for (key, expected, valid) in [
+            (
+                "now",
+                "a number (the serial number of NOW())",
+                (|v: &toml::Value| v.is_integer() || v.is_float()) as fn(&toml::Value) -> bool,
+            ),
+            ("seed", "a non-negative integer", |v: &toml::Value| {
+                v.as_integer().is_some_and(|n| n >= 0)
+            }),
+        ] {
+            if let Some(value) = self.global.params.get(key)
+                && !valid(value)
+            {
+                return Err(Error::Volatile {
+                    key,
+                    expected,
+                    value: value.to_string(),
+                });
+            }
+        }
         for key in Self::FEATURE_KEYS {
             let Some(value) = self.global.params.get(*key) else {
                 continue;
@@ -481,6 +501,16 @@ mod tests {
             );
         }
         assert!(LinterConfig::from_toml("[global]\nlocale = \"es-CO\"\n").is_ok());
+        for bad in ["now = \"today\"", "seed = -1", "seed = 1.5", "seed = \"7\""] {
+            assert!(
+                matches!(
+                    LinterConfig::from_toml(&format!("[global]\n{bad}\n")),
+                    Err(Error::Volatile { .. })
+                ),
+                "{bad}"
+            );
+        }
+        assert!(LinterConfig::from_toml("[global]\nnow = 45366.75\nseed = 7\n").is_ok());
         assert!(matches!(
             LinterConfig::from_toml("global = 3"),
             Err(Error::Syntax(_))

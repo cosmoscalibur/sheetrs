@@ -40,6 +40,15 @@ pub enum Error {
     /// not ignored.
     #[error("Configuration error: 'locale' must be a locale tag such as \"es-CO\", got {value}")]
     Locale { value: String },
+    /// A `now` or a `seed` that is not a number, or a `seed` that is not a non-negative integer: they
+    /// are read by `sheetrs edit` (the clock and the seed of its recalculation), and a misspelled one
+    /// is not ignored.
+    #[error("Configuration error: '{key}' must be {expected}, got {value}")]
+    Volatile {
+        key: &'static str,
+        expected: &'static str,
+        value: String,
+    },
     /// A compatibility feature that does not exist.
     #[error("Configuration error: unknown feature '{name}' in '{key}' (known: {known})")]
     UnknownFeature {

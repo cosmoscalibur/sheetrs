@@ -63,3 +63,47 @@ fn now_and_seed_fix_the_recalculation_an_edit_leaves() {
         assert!((first[2] - other[2]).abs() > 1e-12, "{extension}");
     }
 }
+
+fn config(text: &str) -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("sheetrs.toml");
+    std::fs::write(&path, text).unwrap();
+    let path = path.to_str().unwrap().to_owned();
+    (dir, path)
+}
+
+#[test]
+fn now_and_seed_of_the_configuration_file_are_the_defaults_of_the_flags() {
+    let (_dir, path) = config("[global]\nnow = 45366.75\nseed = 7\n");
+    for extension in ["xlsx", "ods"] {
+        let by_file = after_deleting(extension, &["--config", &path]);
+        let by_flags = after_deleting(extension, &["--now", "45366.75", "--seed", "7"]);
+        assert_eq!(by_file, by_flags, "{extension}");
+        // A flag wins over the file, field by field.
+        let seed = after_deleting(extension, &["--config", &path, "--seed", "8"]);
+        assert!((seed[0] - 45366.75).abs() < 1e-9, "{extension}: {seed:?}");
+        assert!((seed[2] - by_file[2]).abs() > 1e-12, "{extension}");
+        let now = after_deleting(extension, &["--config", &path, "--now", "40000"]);
+        assert!((now[0] - 40000.0).abs() < 1e-9, "{extension}: {now:?}");
+        assert!((now[2] - by_file[2]).abs() < 1e-12, "{extension}");
+    }
+}
+
+#[test]
+fn a_seed_that_is_not_a_non_negative_integer_in_the_configuration_is_refused() {
+    let (_dir, path) = config("[global]\nseed = -1\n");
+    let dir = tempfile::tempdir().unwrap();
+    let edit = Command::new(env!("CARGO_BIN_EXE_sheetrs"))
+        .args(["edit", "-i"])
+        .arg(fixture("xlsx"))
+        .args(["--delete-rows", "V!3", "--config", &path, "-o"])
+        .arg(dir.path().join("out.xlsx"))
+        .output()
+        .unwrap();
+    assert!(!edit.status.success());
+    assert!(
+        String::from_utf8_lossy(&edit.stderr).contains("seed"),
+        "{}",
+        String::from_utf8_lossy(&edit.stderr)
+    );
+}

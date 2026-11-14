@@ -385,6 +385,48 @@ for (const extension of ["xlsx", "ods"]) {
     alone.calculate({ ranges: ["V!A1:C1"] }, { now: 45366.75, seed: 7 });
     assert.equal(cells[2], alone.valueRanges().toObject()["V!A1:C1"][0][2]);
   });
+  // `now` and `seed` are properties of the Book: `new Book(bytes, locale, {now, seed})`.
+  const openWith = (options) => new wasm.Book(read(volatileBook(extension)), undefined, options);
+  const rowOf = (book, options) => {
+    book.calculate({ ranges: ["V!A1:C1"] }, options);
+    return book.valueRanges().toObject()["V!A1:C1"][0];
+  };
+  check(`Book (now and seed given to the Book fix the calculation) ${extension}`, () => {
+    const given = openWith({ now: 45366.75, seed: 42 });
+    assert.equal(given.now, 45366.75);
+    assert.equal(given.seed, 42);
+    assert.equal(open(volatileBook(extension)).now, undefined);
+    assert.equal(open(volatileBook(extension)).seed, undefined);
+    const [now, today, rand] = rowOf(given, undefined);
+    assert.equal(now, 45366.75);
+    assert.equal(today, 45366);
+    assert.equal(rand, rowOf(open(volatileBook(extension)), { seed: 42 })[2]);
+    // A BigInt is a seed too.
+    assert.equal(rowOf(openWith({ seed: 42n }), undefined)[2], rand);
+  });
+  check(`Book (the options of a call win over the ones of the Book, field by field) ${extension}`, () => {
+    const [now, , rand] = rowOf(openWith({ now: 40000, seed: 42 }), { now: 45366.75 });
+    assert.equal(now, 45366.75);
+    assert.equal(rand, rowOf(open(volatileBook(extension)), { seed: 42 })[2]);
+    const [kept, , other] = rowOf(openWith({ now: 40000, seed: 42 }), { seed: 44 });
+    assert.equal(kept, 40000);
+    assert.equal(other, rowOf(open(volatileBook(extension)), { seed: 44 })[2]);
+  });
+  check(`Book (now and seed of the Book fix the recalculation an edit leaves) ${extension}`, () => {
+    const edited = openWith({ now: 45366.75, seed: 7 });
+    edited.deleteRows("V!3");
+    const cells = new wasm.Book(edited.save()).range("V!A1:C1")[0].values[0];
+    assert.equal(cells[0], 45366.75);
+    assert.equal(cells[1], 45366);
+    assert.equal(cells[2], rowOf(open(volatileBook(extension)), { now: 45366.75, seed: 7 })[2]);
+  });
+  check(`Book (now and seed that are not valid are refused) ${extension}`, () => {
+    const data = read(volatileBook(extension));
+    assert.throws(() => new wasm.Book(data, undefined, { nowish: 1 }), /unknown key `nowish`/);
+    assert.throws(() => new wasm.Book(data, undefined, { seed: -1 }), /`seed`/);
+    assert.throws(() => new wasm.Book(data, undefined, { seed: 1.5 }), /`seed`/);
+    assert.throws(() => new wasm.Book(data, undefined, { now: "today" }), /`now`/);
+  });
 }
 check("edit (calculate with inputs and the ranges asked for)", () => {
   const edited = open(structure("xlsx"));

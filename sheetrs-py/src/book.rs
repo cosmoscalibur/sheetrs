@@ -354,20 +354,35 @@ impl PyBook {
     /// `LANG`, read when it is needed; `en-US` when there is none). The `locale` of a single
     /// call (`evaluate`) wins over it.
     ///
+    /// `now` (the serial number that `NOW()` and `TODAY()` give) and `seed` (the seed of `RAND()` and
+    /// its relatives, a non-negative integer) fix the volatile functions in every calculation of the
+    /// workbook: `calculate`, the recalculation that follows an edit and `inspect`; they are the
+    /// `--now` and `--seed` of `sheetc`. Without them the engine reads the clock. The `now` and
+    /// `seed` of a single call (`calculate(now=, seed=)`) win over them. Distinct seeds give distinct
+    /// streams; `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of SheetRS.
+    ///
     /// Raises `FileNotFoundError` for a path that is not a file, `FormatError` for a workbook
     /// that is not an XLSX, XLSM or ODS one and `ValueError` for a `locale` that is not a locale tag.
     #[new]
-    #[pyo3(signature = (source, *, locale=None))]
-    fn new(source: &Bound<'_, PyAny>, locale: Option<&str>) -> PyResult<Self> {
+    #[pyo3(signature = (source, *, locale=None, now=None, seed=None))]
+    fn new(
+        source: &Bound<'_, PyAny>,
+        locale: Option<&str>,
+        now: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
         let locale = locale
             .map(|tag| {
                 tag.parse::<sheetrs_io::locale::LocaleTag>()
                     .map_err(|error| PyValueError::new_err(error.to_string()))
             })
             .transpose()?;
-        let with_locale = |book: Book| match &locale {
-            Some(tag) => book.with_locale(tag.clone()),
-            None => book,
+        let with_locale = |book: Book| {
+            let book = book.with_volatile(sheetrs_io::Volatile { now, seed });
+            match &locale {
+                Some(tag) => book.with_locale(tag.clone()),
+                None => book,
+            }
         };
         let mut book = if let Ok(bytes) = source.cast::<PyBytes>() {
             Self::from_source(with_locale(
@@ -407,6 +422,20 @@ impl PyBook {
     #[getter]
     fn locale(&self) -> Option<String> {
         self.source.locale().map(ToString::to_string)
+    }
+
+    /// The serial number of `NOW()` and `TODAY()` given to the workbook (`Book(..., now=...)`); `None`
+    /// when it was not given one and the engine reads the clock.
+    #[getter]
+    fn now(&self) -> Option<f64> {
+        self.source.volatile().now
+    }
+
+    /// The seed of `RAND()` given to the workbook (`Book(..., seed=...)`); `None` when it was not
+    /// given one and the engine seeds from the clock.
+    #[getter]
+    fn seed(&self) -> Option<u64> {
+        self.source.volatile().seed
     }
 
     /// `"xlsx"`, `"xlsm"` or `"ods"`.
@@ -798,7 +827,8 @@ impl PyBook {
             let mut saved = Self::from_source(
                 Book::from_bytes(bytes)
                     .map_err(to_py_err)?
-                    .with_locale_of(&source),
+                    .with_locale_of(&source)
+                    .with_volatile_of(&source),
             );
             saved.stream = Some(stream.clone().unbind());
             saved.report = Some(report);
@@ -806,7 +836,8 @@ impl PyBook {
         } else if let Some(path) = path_dest {
             let saved_source = Book::from_file(path)
                 .map_err(to_py_err)?
-                .with_locale_of(&source);
+                .with_locale_of(&source)
+                .with_volatile_of(&source);
             let mut saved = Self::from_source(saved_source);
             saved.report = Some(report);
             Bound::new(py, saved)?.into_any()
@@ -818,7 +849,8 @@ impl PyBook {
                 rewrite_stream(py, stream, &bytes)?;
                 slf.source = Book::from_bytes(bytes)
                     .map_err(to_py_err)?
-                    .with_locale_of(&source);
+                    .with_locale_of(&source)
+                    .with_volatile_of(&source);
             }
             slf.steps.clear();
             slf.report = Some(report);
@@ -1105,10 +1137,19 @@ fn find_of(
 }
 
 /// The value of one formula, with the regional settings of `locale` (a BCP-47 tag, `"en"` by
-/// default).
-pub(crate) fn evaluate(py: Python<'_>, formula: &str, locale: Option<&str>) -> PyResult<Py<PyAny>> {
+/// default), and `now` and `seed` for the volatile functions.
+pub(crate) fn evaluate(
+    py: Python<'_>,
+    formula: &str,
+    locale: Option<&str>,
+    now: Option<f64>,
+    seed: Option<u64>,
+) -> PyResult<Py<PyAny>> {
+    let mut options = Options::default();
+    options.config.now = now;
+    options.config.seed = seed;
     let value = py
-        .detach(|| memory::evaluate(formula, locale, &Options::default()))
+        .detach(|| memory::evaluate(formula, locale, &options))
         .map_err(to_py_err)?;
     json_to_py(py, &value)
 }

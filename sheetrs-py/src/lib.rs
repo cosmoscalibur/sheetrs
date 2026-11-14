@@ -27,10 +27,18 @@ use pyo3::prelude::*;
 
 /// The value of one formula, as `sheetc evaluate` gives it, with the regional settings of `locale`
 /// (a BCP-47 tag, `"en"` by default): `evaluate("=SUM(1,2)")` is `3`. An error is a `CellError`.
+/// `now` (the serial number of `NOW()` and `TODAY()`) and `seed` (the seed of `RAND()`) fix the
+/// volatile functions; without them the clock decides.
 #[pyfunction]
-#[pyo3(name = "evaluate", signature = (formula, *, locale=None))]
-fn evaluate_formula(py: Python<'_>, formula: &str, locale: Option<&str>) -> PyResult<Py<PyAny>> {
-    book::evaluate(py, formula, locale)
+#[pyo3(name = "evaluate", signature = (formula, *, locale=None, now=None, seed=None))]
+fn evaluate_formula(
+    py: Python<'_>,
+    formula: &str,
+    locale: Option<&str>,
+    now: Option<f64>,
+    seed: Option<u64>,
+) -> PyResult<Py<PyAny>> {
+    book::evaluate(py, formula, locale, now, seed)
 }
 
 /// The rules of the linter, ordered by id: a list of dicts with `id`, `name`, `category`,

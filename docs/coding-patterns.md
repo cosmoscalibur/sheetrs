@@ -163,6 +163,10 @@ Rules may accept configuration parameters via `LinterConfig`:
   workbook for the tools that read the same file (`sheetrs query`, `sheetrs edit`; the lint rules do
   not use it). A value that is not a tag is a configuration error. In `sheetc.toml` the key is
   `tag` of the `[locale]` table. The resolution order is in *The locale of a `Book`*.
+- `now` (a number, in `[global]`; not set by default) and `seed` (a non-negative integer) — The serial
+  number of `NOW()`/`TODAY()` and the seed of `RAND()` in the recalculation of `sheetrs edit`, under its
+  `--now` and `--seed` flags (the lint rules do not use them). A value of another type is a configuration
+  error. In `sheetc.toml` they are the keys `now` and `seed`.
 - `enable_features` (array of names, default empty) — Compatibility features,
   all off unless listed; known: `LONGTEXT` (ERR102 accepts the `#NAME?` of
   `_xlfn._LONGTEXT(…)`). Unknown names make the configuration invalid.
@@ -300,6 +304,17 @@ idiomatic Rust where that differs (`write` and not Save, `io::Write` sinks, cons
   (Rust), of `Book.calculate(now=, seed=)` (Python) and of the options of `calculate(request, {now, seed})`
   (WebAssembly), and `--now`/`--seed` of `sheetrs edit` (`Book::with_volatile`) for the recalculation an
   edit leaves to do.
+- **The clock and the seed are properties of the `Book`, like its locale.** Every tool that builds or
+  calculates (`calculate`, the recalculation of an edit, `build`, `inspect`, `verify`) takes them from the
+  book: `Book::with_volatile(Volatile { now, seed })` in Rust (`sheetrs_compiler::memory::Options::with_book`
+  applies it under the options of a call), `Book(..., now=, seed=)` in Python, `new Book(bytes, locale,
+  {now, seed})` in WebAssembly. The order, from the one that wins: the `now`/`seed` of a single call (a
+  `calculate` step, the options of `inspect`, `compile` and `evaluate`), those of the book, the configuration
+  file (`now` and `seed` in `[global]` of `sheetrs.toml`, `Volatile::configured`; `sheetc` has its own
+  `sheetc.toml`) and the clock. A command line has its own flags that feed the book internally
+  (`--now`/`--seed` of `sheetrs edit`) or the build configuration (`sheetc build`, `calculate`, `evaluate`,
+  `verify`, and the executables it makes), and a new tool that evaluates volatile functions gets the same two
+  flags and the same order. The seed is a SheetRS extension: `RAND` of LibreOffice cannot be seeded.
 
 ### The locale of a `Book`
 

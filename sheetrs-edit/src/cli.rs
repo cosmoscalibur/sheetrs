@@ -139,17 +139,19 @@ pub struct Args {
     pub locale: Option<String>,
 
     /// Serial number that `NOW()` and `TODAY()` give in the recalculation that an edit leaves to do
-    /// (the `now` of `sheetc` and of a `calculate` step); default: the system clock
+    /// (the `now` of `sheetc` and of a `calculate` step); default: the `now` of `--config`, else the
+    /// system clock
     #[arg(long, value_name = "SERIAL")]
     pub now: Option<f64>,
 
     /// Seed of `RAND()` and its relatives in that recalculation (the `seed` of `sheetc` and of a
-    /// `calculate` step); default: seeded from the clock
+    /// `calculate` step); default: the `seed` of `--config`, else seeded from the clock
     #[arg(long, value_name = "N")]
     pub seed: Option<u64>,
 
-    /// Configuration file (TOML) whose `locale` in `[global]` is the default of `--locale` (default:
-    /// `sheetrs.toml` in the current directory, when there is one)
+    /// Configuration file (TOML) whose `locale`, `now` and `seed` in `[global]` are the defaults of
+    /// `--locale`, `--now` and `--seed` (default: `sheetrs.toml` in the current directory, when there
+    /// is one)
     #[arg(short = 'c', long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
@@ -218,10 +220,13 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
     {
         book = book.with_locale(tag);
     }
-    book = book.with_volatile(sheetrs_io::Volatile {
-        now: cli.now,
-        seed: cli.seed,
-    });
+    book = book.with_volatile(
+        sheetrs_io::Volatile {
+            now: cli.now,
+            seed: cli.seed,
+        }
+        .or(sheetrs_io::Volatile::configured(cli.config.as_deref())?),
+    );
     if !cli.replace.is_empty() {
         let mode = if cli.regex {
             Mode::Regex

@@ -438,6 +438,64 @@ def test_now_must_be_a_number_and_seed_a_non_negative_integer(volatile):
         sheetrs.Book(volatile).calculate(seed=-1)
 
 
+def test_now_and_seed_are_properties_of_the_book(volatile):
+    book = sheetrs.Book(volatile, now=NOW, seed=42)
+    assert (book.now, book.seed) == (NOW, 42)
+    assert (sheetrs.Book(volatile).now, sheetrs.Book(volatile).seed) == (None, None)
+    now, today, rand = volatile_row(book.calculate(ranges="V!A1:C1"))
+    assert now == pytest.approx(NOW)
+    assert today == 45366
+    same = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=42))
+    assert rand == same[2]
+
+
+def test_now_and_seed_of_the_book_fix_the_recalculation_an_edit_leaves(volatile, tmp_path):
+    saved = (
+        sheetrs.Book(volatile, now=NOW, seed=7)
+        .delete_rows("V!3")
+        .save(tmp_path / f"out{volatile.suffix}")
+    )
+    now, today, rand = saved.range("V!A1:C1")["V!A1:C1"].values[0]
+    assert now == pytest.approx(NOW)
+    assert today == 45366
+    alone = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", now=NOW, seed=7))
+    assert rand == alone[2]
+    # The book that save returns keeps them.
+    assert (saved.now, saved.seed) == (NOW, 7)
+
+
+def test_now_and_seed_of_a_call_win_over_the_ones_of_the_book_field_by_field(volatile):
+    book = sheetrs.Book(volatile, now=40000, seed=42)
+    now, _, rand = volatile_row(book.calculate(ranges="V!A1:C1", now=NOW))
+    assert now == pytest.approx(NOW)
+    assert rand == volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=42))[2]
+    other = volatile_row(sheetrs.Book(volatile, now=40000, seed=42).calculate(ranges="V!A1:C1", seed=44))
+    assert other[0] == pytest.approx(40000)
+    assert other[2] == volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=44))[2]
+
+
+def test_the_book_takes_now_and_seed_from_bytes_and_streams_too(volatile):
+    import io
+
+    data = volatile.read_bytes()
+    for source in (data, bytearray(data), io.BytesIO(data)):
+        book = sheetrs.Book(source, now=NOW, seed=42)
+        assert volatile_row(book.calculate(ranges="V!A1:C1"))[0] == pytest.approx(NOW)
+
+
+def test_now_and_seed_of_the_book_must_be_a_number_and_a_non_negative_integer(volatile):
+    with pytest.raises(TypeError):
+        sheetrs.Book(volatile, now="today")
+    with pytest.raises((TypeError, OverflowError)):
+        sheetrs.Book(volatile, seed=-1)
+
+
+def test_evaluate_takes_now_and_seed():
+    assert sheetrs.evaluate("=NOW()", now=NOW) == pytest.approx(NOW)
+    assert sheetrs.evaluate("=RAND()", seed=42) == sheetrs.evaluate("=RAND()", seed=42)
+    assert sheetrs.evaluate("=RAND()", seed=42) != sheetrs.evaluate("=RAND()", seed=44)
+
+
 # ---- the ranges of a calculation: the declared outputs, and what lies outside them ---------------
 
 LOANS = [ROOT / "sheetrs-compiler/tests/assets/loan.xlsx", ROOT / "sheetrs-compiler/tests/assets/loan.ods"]

@@ -203,7 +203,7 @@ second step, which finds its results stale and calculates them again. There is n
 
 Operations on different sheets do not depend on each other, because a reference moves only with the
 rows and columns of the sheet it names. That holds because references across sheets are not
-supported (below). `--dry-run` prints the passes. `--locale TAG` (and `--config FILE`, whose `locale` in `[global]` is its default; `sheetrs.toml` of the current directory when there is one) is the locale of the calculation that an edit leaves to do (`TEXT`, the conversion of a number to text): by default the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none), for an XLSX and an ODS alike. The typed replacement of `--replace` still reads its text in `en-US` (issue #84). `--now SERIAL` and `--seed N` fix `NOW()`/`TODAY()` and `RAND()` in that calculation (the `now` and `seed` of `sheetc`, and of a `calculate` step of the library); without them the engine reads the clock, as a spreadsheet does.
+supported (below). `--dry-run` prints the passes. `--locale TAG` (and `--config FILE`, whose `locale`, `now` and `seed` in `[global]` are the defaults of `--locale`, `--now` and `--seed`; `sheetrs.toml` of the current directory when there is one) is the locale of the calculation that an edit leaves to do (`TEXT`, the conversion of a number to text): by default the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none), for an XLSX and an ODS alike. The typed replacement of `--replace` still reads its text in `en-US` (issue #84). `--now SERIAL` and `--seed N` fix `NOW()`/`TODAY()` and `RAND()` in that calculation (the `now` and `seed` of `sheetc`, and of a `calculate` step of the library; their defaults are the `now` and `seed` of `[global]` in the configuration file); without any the engine reads the clock, as a spreadsheet does.
 
 **As a library** (`sheetrs_edit::BookEdit`, a trait for `sheetrs_io::Book`), the changes are collected
 in the `Book` (`Book::from_file(..)?`, `Book::from_bytes(..)?`; its operations are `book.operations()`)
@@ -279,8 +279,9 @@ of the step: the recalculation that the planner adds after what leaves results s
 replacement) takes the `now` and `seed` of the last `calculate` step that sets them, so a plan that fixes the
 clock gives the same workbook whichever pass calculates. Where a plan has no `calculate` step the recalculation
 takes the ones given to the book (`Book::with_volatile`, `sheetrs_io::Volatile`; `sheetrs edit --now --seed`
-set it), and a step's own value wins over the book's. The seed is the engine's: an even seed and the odd one
-after it give the same sequence.
+set it, with `now` and `seed` of `[global]` in `sheetrs.toml` as their defaults), and a step's own value wins
+over the book's. The book's `now` and `seed` also reach the engine in `sheetrs_compiler::memory`
+(`Options::with_book`), where the options of a call win over them.
 
 **Which ranges.** `calculate` is the embedded mode of the engine (the workbook is its own template: inputs,
 `ranges` or the `answer` need no compiled program). With no output declared (a settings sheet named `settings`

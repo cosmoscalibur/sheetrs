@@ -45,9 +45,9 @@ pub struct Config {
     /// Refuse what the compiler cannot reproduce (macros); default true. When
     /// false they are reported and the build goes on.
     pub strict: Option<bool>,
-    /// Fixed value of `NOW()`, as a serial number.
-    /// Engine whose behavior is reproduced: `libreoffice` (default) or `excel`.
+    /// Fixed value of `NOW()`, as a serial number (`TODAY()` is its integer part); absent, the clock.
     pub now: Option<f64>,
+    /// Seed of `RAND()` and its relatives; absent, seeded from the clock.
     pub seed: Option<u64>,
     /// What `INFO` (`system`, `osversion`, `release`) and `CELL("filename")` (`directory`,
     /// `filename`) say; absent, the machine the program runs on.
