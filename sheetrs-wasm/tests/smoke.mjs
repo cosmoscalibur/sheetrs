@@ -269,6 +269,82 @@ for (const file of [book, bookOds]) {
     sameBytes(cached.save(), readFileSync(out));
   });
 }
+// The workbooks of the tests of `use_cache`: `Calc!A7` caches `from-excel`, which the engine would not give
+// (it gives `t`), and nothing the edits below reach reads it.
+const cacheBook = (extension) => join(root, `sheetrs-edit/tests/assets/use_cache/book.${extension}`);
+const cell = (data, range) => new wasm.Book(data).range(range)[0].values.flat()[0];
+for (const extension of ["xlsx", "ods"]) {
+  const file = cacheBook(extension);
+  check(`edit (useCache keeps what the file caches where the edit reaches nothing, as --use-cache) ${extension}`, () => {
+    const out = join(work, `cache-kept.${extension}`);
+    run("edit", ["-i", file, "--delete-rows", "Data!3", "--use-cache", "-o", out]);
+    const kept = open(file);
+    kept.useCache = true;
+    kept.deleteRows("Data!3");
+    const saved = kept.save();
+    sameBytes(saved, readFileSync(out));
+    assert.equal(cell(saved, "Calc!A7"), "from-excel");
+    // What the deletion reaches is calculated again: the range that shrank.
+    assert.equal(cell(saved, "Calc!A1"), 180);
+    // Without the option every formula is calculated again, as the command does.
+    run("edit", ["-i", file, "--delete-rows", "Data!3", "-o", out]);
+    const whole = open(file);
+    whole.deleteRows("Data!3");
+    const all = whole.save();
+    sameBytes(all, readFileSync(out));
+    assert.equal(cell(all, "Calc!A7"), "t");
+  });
+  check(`edit (useCache: hiding and showing rows reach SUBTOTAL, as --use-cache) ${extension}`, () => {
+    const out = join(work, `cache-hidden.${extension}`);
+    run("edit", ["-i", file, "--hide-rows", "Data!2", "--use-cache", "-o", out]);
+    const hidden = open(file);
+    hidden.useCache = true;
+    hidden.hideRows("Data!2");
+    const saved = hidden.save();
+    sameBytes(saved, readFileSync(out));
+    assert.equal(cell(saved, "Calc!B2"), 190);
+    assert.equal(cell(saved, "Calc!A7"), "from-excel");
+    // And the rows shown again: the sum of every row.
+    const shownOut = join(work, `cache-shown.${extension}`);
+    run("edit", ["-i", out, "--show-rows", "Data!2", "--use-cache", "-o", shownOut]);
+    const shown = new wasm.Book(saved);
+    shown.useCache = true;
+    shown.showRows("Data!2");
+    const again = shown.save();
+    sameBytes(again, readFileSync(shownOut));
+    assert.equal(cell(again, "Calc!B2"), 210);
+  });
+  check(`edit (replace with anchors and the empty pattern, as the command) ${extension}`, () => {
+    const out = join(work, `anchors.${extension}`);
+    run("edit", ["-i", file, "--replace", "^x$", "--with", "y", "--regex", "--scope", "Data!B1", "-o", out]);
+    const anchored = open(file);
+    anchored.replace([["^x$", "y"]], { mode: "regex", scope: ["Data!B1"] });
+    const saved = anchored.save();
+    sameBytes(saved, readFileSync(out));
+    assert.equal(cell(saved, "Data!B1"), "y");
+    // The empty text matches nothing, in every mode: no cell is replaced.
+    const empty = open(file);
+    empty.replace([["", "z"]], { mode: "regex" });
+    empty.save();
+    assert.equal(empty.report.replaced, 0);
+    // A match of no characters is replaced only at the very end of the text (as LibreOffice does): `^` leaves
+    // the cell, `$` adds to it.
+    const start = join(work, `start.${extension}`);
+    run("edit", ["-i", file, "--replace", "^", "--with", ">", "--regex", "--scope", "Data!B1", "-o", start]);
+    const prefixed = open(file);
+    prefixed.replace([["^", ">"]], { mode: "regex", scope: ["Data!B1"] });
+    const text = prefixed.save();
+    sameBytes(text, readFileSync(start));
+    assert.equal(cell(text, "Data!B1"), "x");
+    const endOut = join(work, `end.${extension}`);
+    run("edit", ["-i", file, "--replace", "$", "--with", "!", "--regex", "--scope", "Data!B1", "-o", endOut]);
+    const suffixed = open(file);
+    suffixed.replace([["$", "!"]], { mode: "regex", scope: ["Data!B1"] });
+    const end = suffixed.save();
+    sameBytes(end, readFileSync(endOut));
+    assert.equal(cell(end, "Data!B1"), "x!");
+  });
+}
 // A sweep: arrays of targets and a replace with pairs, the same as the command with its flags repeated.
 for (const file of [book, bookOds]) {
   check(`edit (arrays: a sweep is one operation) ${ext(file)}`, () => {
