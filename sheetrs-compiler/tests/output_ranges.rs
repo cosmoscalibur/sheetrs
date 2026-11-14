@@ -5,8 +5,8 @@
 //! - The compiled program (`Mode::Values`): the declared outputs are all it answers; `ranges` selects
 //!   among them and a range outside is an error that lists them. With none declared the outputs are the
 //!   formula cells.
-//! - The embedded mode (the workbook is its own template): a range outside the outputs is answered
-//!   from the workbook as it was written.
+//! - The embedded mode (the workbook is its own template): a range outside the outputs is read, in
+//!   memory and with no recalculation, from the workbook just written, as `query` reads any workbook.
 
 use serde_json::{Value as Json, json};
 use sheetrs_compiler::memory::{BookCompile, Options};
@@ -124,33 +124,52 @@ fn with_no_output_declared_the_ranges_are_among_the_formula_cells() {
 }
 
 #[test]
-fn embedded_and_declared_a_range_outside_the_outputs_is_answered_from_the_written_workbook() {
+fn embedded_and_declared_a_range_outside_the_outputs_is_read_from_the_written_workbook() {
     for file in FILES {
-        // A formula nothing declares (`Total paid`, with the principal of the request), a constant
-        // (`Annual rate`), and a declared output between them: the answer keeps the order asked.
+        // A formula nothing declares (`Total paid`), a constant (`Annual rate`) and the input given
+        // (`Principal`), with a declared output between them: the answer keeps the order asked.
         let asked = json!({
             "inputs": {"principal": 1000},
-            "ranges": ["Loan!B5", "payment", "Loan!B2"],
+            "ranges": ["Loan!B5", "payment", "Loan!B2", "Loan!B1"],
         });
         let answer = answer(&loan(file), &asked, &Options::default(), Mode::Embedded).unwrap();
         let got = values(&answer);
-        let payment = got[1].1[0][0].as_f64().unwrap();
         assert_eq!(
             got.iter().map(|g| g.0.as_str()).collect::<Vec<_>>(),
-            ["Loan!B5", "Loan!B4", "Loan!B2"],
+            ["Loan!B5", "Loan!B4", "Loan!B2", "Loan!B1"],
             "{file}: {answer}"
         );
+        let payment = got[1].1[0][0].as_f64().unwrap();
         assert!(
             (payment - 5.368_216_230_121_398).abs() < 1e-9,
             "{file}: {payment}"
         );
-        // Total paid = payment * 30 * 12 with the new principal: calculated, not the cached value.
-        let total = got[0].1[0][0].as_f64().unwrap();
-        assert!((total - payment * 360.0).abs() < 1e-6, "{file}: {total}");
         assert!(
             (got[2].1[0][0].as_f64().unwrap() - 0.05).abs() < 1e-12,
             "{file}"
         );
+        assert_eq!(
+            got[3].1[0][0].as_f64(),
+            Some(1000.0),
+            "{file}: the input is in the workbook"
+        );
+        // Read, not calculated again: the formula the outputs left out holds what the template stored.
+        let total = got[0].1[0][0].as_f64().unwrap();
+        assert!((total - 386_511.5).abs() < 1.0, "{file}: {total}");
+    }
+}
+
+#[test]
+fn compiled_and_declared_a_range_outside_the_outputs_is_still_the_typed_error() {
+    for file in FILES {
+        let asked = json!({"ranges": ["payment", "Loan!B5"]});
+        let error = answer(&loan(file), &asked, &Options::default(), Mode::Values).unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("`Loan!B5` is outside the outputs"),
+            "{file}: {message}"
+        );
+        assert!(message.contains("payment (Loan!B4)"), "{file}: {message}");
     }
 }
 
@@ -173,6 +192,18 @@ fn embedded_with_none_declared_a_range_of_constants_is_read_from_the_workbook() 
         assert_eq!(got[0].1[0][0], json!("Principal"), "{file}: {answer}");
         assert_eq!(got[0].1[0][1].as_f64(), Some(200_000.0), "{file}");
         assert_eq!(got[0].1[2][1].as_f64(), Some(30.0), "{file}");
+    }
+}
+
+#[test]
+fn embedded_columns_are_listed_by_column_for_a_range_read_from_the_workbook() {
+    for file in FILES {
+        let asked = json!({"ranges": ["Loan!A1:B2"], "majorDimension": "COLUMNS"});
+        let answer = answer(&loan(file), &asked, &undeclared(), Mode::Embedded).unwrap();
+        let got = values(&answer);
+        assert_eq!(got[0].1[0][0], json!("Principal"), "{file}");
+        assert_eq!(got[0].1[0][1], json!("Annual rate"), "{file}: {answer}");
+        assert_eq!(got[0].1[1][0].as_f64(), Some(200_000.0), "{file}");
     }
 }
 

@@ -1,7 +1,7 @@
 //! The `ranges` of a `calculate` step, in an XLSX and in an ODS. The workbook is its own template here (the
-//! embedded mode): the outputs it declares are a selection for `ranges`, and a range outside them is
-//! answered from the workbook as it was written instead of refused (the compiled program, which has no
-//! workbook to fall back on, refuses it: see `sheetrs-compiler/tests/output_ranges.rs`).
+//! embedded mode): the outputs it declares are a selection for `ranges`, and a range outside them is read, in
+//! memory and with no recalculation, from the workbook just written, as `query` reads any workbook (the
+//! compiled program, which writes none, refuses it: see `sheetrs-compiler/tests/output_ranges.rs`).
 //!
 //! `loan.*` declares `payment` = `Loan!B4`, `interest` = `Loan!B6` and `balance` = `Loan!B8` as outputs;
 //! `Loan!B5` is a formula nothing declares and `Loan!B2` a constant. `structure/book.*` declares nothing.
@@ -9,6 +9,7 @@
 use serde_json::{Value as Json, json};
 use sheetrs_edit::{BookEdit, Calculation, Error};
 use sheetrs_io::Book;
+use sheetrs_query::{BookQuery, RangeOptions};
 use std::path::{Path, PathBuf};
 
 const EXTENSIONS: [&str; 2] = ["xlsx", "ods"];
@@ -68,26 +69,34 @@ fn declared_and_inside_the_outputs_is_a_selection() {
 #[test]
 fn declared_and_outside_the_outputs_is_read_from_the_written_workbook() {
     for extension in EXTENSIONS {
-        // The formula nothing declares is calculated with the input given; the constant is the one it holds.
+        // The formula nothing declares keeps the result the template stored; the constant and the input
+        // given are in the workbook as written.
         let got = ask(
             &loan(extension),
             &json!({"principal": 1000}),
-            &["Loan!B5", "payment", "Loan!B2"],
+            &["Loan!B5", "payment", "Loan!B2", "Loan!B1"],
         )
         .unwrap();
         let ranges: Vec<_> = got.iter().map(|g| g.0.as_str()).collect();
-        assert_eq!(ranges, ["Loan!B5", "Loan!B4", "Loan!B2"], "{extension}");
-        let payment = number(&got[1].1, 0, 0);
-        assert!(
-            (payment - 5.368_216_230_121_398).abs() < 1e-9,
+        assert_eq!(
+            ranges,
+            ["Loan!B5", "Loan!B4", "Loan!B2", "Loan!B1"],
             "{extension}"
         );
         assert!(
-            (number(&got[0].1, 0, 0) - payment * 360.0).abs() < 1e-6,
+            (number(&got[1].1, 0, 0) - 5.368_216_230_121_398).abs() < 1e-9,
+            "{extension}"
+        );
+        assert!(
+            (number(&got[0].1, 0, 0) - 386_511.5).abs() < 1.0,
             "{extension}"
         );
         assert!(
             (number(&got[2].1, 0, 0) - 0.05).abs() < 1e-12,
+            "{extension}"
+        );
+        assert!(
+            (number(&got[3].1, 0, 0) - 1000.0).abs() < 1e-12,
             "{extension}"
         );
     }
@@ -104,8 +113,7 @@ fn declared_a_range_that_is_not_one_of_the_workbook_is_an_error() {
 #[test]
 fn none_declared_the_ranges_are_the_formula_cells_and_the_constants_the_workbook_holds() {
     for extension in EXTENSIONS {
-        // F!A5:A6 are formula cells; T!A1:A3 constants: the outputs are the formula cells, the
-        // workbook as written answers the rest.
+        // F!A5:A6 are formula cells (the outputs); T!A1:A3 constants, read from the workbook as written.
         let got = ask(&structure(extension), &json!({}), &["F!A5:A6", "T!A1:A3"]).unwrap();
         assert_eq!(got[0].1, json!([[5], [9]]), "{extension}");
         assert_eq!(got[1].0, "T!A1:A3", "{extension}");
@@ -114,9 +122,51 @@ fn none_declared_the_ranges_are_the_formula_cells_and_the_constants_the_workbook
 }
 
 #[test]
+fn a_range_outside_the_outputs_is_read_from_the_workbook_written_in_memory() {
+    for extension in EXTENSIONS {
+        // The calculation writes the workbook (inputs in it, declared outputs calculated); what lies
+        // outside the outputs is read from those bytes with `query`, with no recalculation.
+        let mut book = Book::from_file(loan(extension)).unwrap();
+        book.calculate(Calculation {
+            inputs: json!({"principal": 1000}).as_object().cloned().unwrap(),
+            ..Calculation::default()
+        });
+        let mut bytes = Vec::new();
+        book.write_to(&mut bytes).unwrap();
+        let written = Book::from_bytes(bytes).unwrap();
+        let blocks = written
+            .range(["Loan!B1", "Loan!B2", "Loan!B4"], &RangeOptions::default())
+            .unwrap();
+        let value = |block: usize| {
+            blocks[block].values.as_ref().unwrap()[0][0]
+                .as_ref()
+                .and_then(Json::as_f64)
+                .unwrap()
+        };
+        assert!((value(0) - 1000.0).abs() < 1e-12, "{extension}: the input");
+        assert!((value(1) - 0.05).abs() < 1e-12, "{extension}: a constant");
+        assert!(
+            (value(2) - 5.368_216_230_121_398).abs() < 1e-9,
+            "{extension}: an output, calculated"
+        );
+    }
+}
+
+#[test]
 fn an_input_is_in_the_workbook_a_range_outside_the_outputs_reads() {
     for extension in EXTENSIONS {
-        let got = ask(&structure(extension), &json!({"T!A1": 10}), &["T!A1"]).unwrap();
-        assert_eq!(got[0].1[0][0].as_f64(), Some(10.0), "{extension}");
+        let mut book = Book::from_file(structure(extension)).unwrap();
+        book.calculate(Calculation {
+            inputs: json!({"T!A1": 10}).as_object().cloned().unwrap(),
+            ..Calculation::default()
+        });
+        let mut bytes = Vec::new();
+        book.write_to(&mut bytes).unwrap();
+        let blocks = Book::from_bytes(bytes)
+            .unwrap()
+            .range(["T!A1"], &RangeOptions::default())
+            .unwrap();
+        let first = blocks[0].values.as_ref().unwrap()[0][0].as_ref();
+        assert_eq!(first.and_then(Json::as_f64), Some(10.0), "{extension}");
     }
 }

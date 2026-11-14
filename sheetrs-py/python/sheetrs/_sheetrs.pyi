@@ -408,8 +408,8 @@ class Book:
         `save` writes the results and no mark to recalculate unless a deletion after leaves some stale.
         `ranges` are the ranges `value_ranges()` gives and `save(json=...)` writes, listed as `major` says
         (`"rows"`, the default, or `"columns"`, the `majorDimension` of the request); a range outside the
-        outputs the workbook declares is answered from the workbook as it was written (the workbook is
-        its own template), calculated again with that range as the output. Where the engine
+        outputs the workbook declares is read, in memory and with no recalculation, from the workbook just
+        written (the workbook is its own template). Where the engine
         cannot calculate the workbook it is written marked to be recalculated, with a
         `RecalculationWarning`. `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
         (the seed of `RAND()`) fix the volatile functions, as `--now` and `--seed` of `sheetc` do

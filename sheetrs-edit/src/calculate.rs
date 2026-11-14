@@ -5,7 +5,7 @@
 //! `LibreOffice`): [`recalculate`] is a calculation with nothing written and nothing asked for.
 
 use serde_json::{Map, Value as Json};
-use sheetrs_compiler::memory::{BookCompile, Options, fill_workbook};
+use sheetrs_compiler::memory::{BookCompile, Options};
 use sheetrs_engine::ir::Mode;
 use sheetrs_io::write::Calculation;
 use sheetrs_io::{Book, Volatile};
@@ -96,23 +96,36 @@ pub(crate) fn calculate(
             answer: None,
         });
     }
-    // The workbook is its own template here (the embedded mode): a range outside the outputs it
-    // declares is answered from the workbook as written, not refused (see `fill_workbook`).
+    // The workbook is its own template here (the embedded mode). A range outside the outputs it
+    // declares is an error (`OutsideOutputs`): it is not an answer of `calculate`, it is read from the
+    // workbook that is written, with `query`.
+    let overrides = options.overrides();
+    let failed = |e: sheetrs_answer::Error| CalculateError::Failed(e.to_string());
     let mut workbook = Vec::new();
-    let (_, answer) = fill_workbook(
-        source,
-        &program,
-        None,
-        &request,
-        &options.overrides(),
-        calculation.answer,
-        &mut workbook,
-    )
-    .map_err(|e| CalculateError::Failed(e.to_string()))?;
-    Ok(Calculated {
-        workbook,
-        answer: answer.map(|answer| answer.with_major(calculation.major)),
-    })
+    let answer = if calculation.answer {
+        let (_, answer) = sheetrs_answer::fill_template_to_with_answer(
+            source,
+            &program,
+            None,
+            &request,
+            &overrides,
+            &mut workbook,
+        )
+        .map_err(failed)?;
+        Some(answer.with_major(calculation.major))
+    } else {
+        sheetrs_answer::fill_template_to(
+            source,
+            &program,
+            None,
+            &request,
+            &overrides,
+            &mut workbook,
+        )
+        .map_err(failed)?;
+        None
+    };
+    Ok(Calculated { workbook, answer })
 }
 
 /// Every formula of the workbook calculated again, as it is: the bytes of the workbook with fresh

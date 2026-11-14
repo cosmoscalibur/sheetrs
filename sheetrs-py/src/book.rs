@@ -652,9 +652,9 @@ impl PyBook {
     ///
     /// `ranges` (a range, or a list of them: `["Summary!B2:B5"]`) are the ranges whose values
     /// `value_ranges()` gives and `save(json=...)` writes; without them, the outputs the workbook declares
-    /// or, with none declared, its formula cells. A range outside the declared outputs is answered
-    /// from the workbook as it was written (the workbook is its own template here), calculated again
-    /// with that range as the output. `major` is `"rows"` (the default) or `"columns"`: how each
+    /// or, with none declared, its formula cells. A range outside the declared outputs is read,
+    /// in memory and with no recalculation, from the workbook just written (the workbook is its own
+    /// template here). `major` is `"rows"` (the default) or `"columns"`: how each
     /// range is listed, as the `majorDimension` of the request.
     ///
     /// `now` (the serial number that `NOW()` and `TODAY()` give) and `seed` (the seed of `RAND()`)

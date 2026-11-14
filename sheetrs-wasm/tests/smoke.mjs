@@ -501,8 +501,8 @@ check("calculate (an input the workbook does not have is an error; the layout of
   assert.deepEqual(columns.valueRanges().toJSON().valueRanges[0].values, [[2, 3]]);
 });
 // The loan declares `payment` (Loan!B4), `interest` and `balance`; Loan!B5 is a formula nothing declares and
-// Loan!B2 a constant. The workbook is its own template here: a range outside the declared outputs is
-// answered from the workbook as written, in the order asked.
+// Loan!B2 a constant. The workbook is its own template here: a range outside the declared outputs is read, in
+// memory and with no recalculation, from the workbook just written, in the order asked.
 for (const file of [loan, loanOds]) {
   check(`calculate (ranges: the declared outputs are a selection, the rest is read from the written workbook) ${ext(file)}`, () => {
     const inside = open(file);
@@ -512,15 +512,28 @@ for (const file of [loan, loanOds]) {
       ["Loan!B6", "Loan!B4"],
     );
     const outside = open(file);
-    outside.calculate({ inputs: { principal: 1000 }, ranges: ["Loan!B5", "payment", "Loan!B2"] });
-    const [total, payment, rate] = outside.valueRanges().toJSON().valueRanges;
-    assert.deepEqual([total.range, payment.range, rate.range], ["Loan!B5", "Loan!B4", "Loan!B2"]);
+    outside.calculate({ inputs: { principal: 1000 }, ranges: ["Loan!B5", "payment", "Loan!B2", "Loan!B1"] });
+    const [total, payment, rate, principal] = outside.valueRanges().toJSON().valueRanges;
+    assert.deepEqual(
+      [total.range, payment.range, rate.range, principal.range],
+      ["Loan!B5", "Loan!B4", "Loan!B2", "Loan!B1"],
+    );
     assert.ok(Math.abs(payment.values[0][0] - 5.368216230121398) < 1e-9);
-    assert.ok(Math.abs(total.values[0][0] - payment.values[0][0] * 360) < 1e-6);
     assert.equal(rate.values[0][0], 0.05);
+    assert.equal(principal.values[0][0], 1000);
+    // Read, not calculated again: the formula the outputs left out holds what the template stored.
+    assert.ok(Math.abs(total.values[0][0] - 386511.5) < 1);
     const nowhere = open(file);
     nowhere.calculate({ ranges: ["Nowhere!A1"] });
     assert.throws(() => nowhere.valueRanges(), /Nowhere!A1/);
+  });
+  check(`calculate (a workbook written in memory is read with range) ${ext(file)}`, () => {
+    const written = open(file);
+    written.calculate({ inputs: { principal: 1000 } });
+    const [principal, rate, payment] = new wasm.Book(written.save()).range(["Loan!B1", "Loan!B2", "Loan!B4"]);
+    assert.equal(principal.values[0][0], 1000);
+    assert.equal(rate.values[0][0], 0.05);
+    assert.ok(Math.abs(payment.values[0][0] - 5.368216230121398) < 1e-9);
   });
 }
 check("calculate (the clock is Date.now(): NOW() is not the epoch)", () => {

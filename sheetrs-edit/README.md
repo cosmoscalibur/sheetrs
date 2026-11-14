@@ -288,10 +288,11 @@ over the book's. The book's `now` and `seed` also reach the engine in `sheetrs_c
 with `output` rows; the library takes no `settings_file`) the outputs are the formula cells, and with some
 declared they are those; `ranges` is a selection among them when it lies inside, and a range **outside** them is
 not refused as it is in a compiled program (`sheetc calculate` without `-o`, which lists the declared outputs in its
-error): it is answered from the workbook as it was written, with the `inputs` in it, which the engine calculates again
-with that range as the output. A formula the outputs left out has the value its formula gives, a constant the one it
-holds, in the order of the request. A range that is no range or name of the workbook, or whose cells are all empty,
-is an error (`Error::Calculation`). Details and the table of the three cases: [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for).
+error): it is read, in memory and with no recalculation, from the workbook just written, with the machinery of
+`query` (`sheetrs_answer` does it for every path that writes a workbook). A constant has the value it holds, the
+`inputs` are in it, and a formula the outputs left out has the result the template stored (declare it as an output to
+have it calculated); the answer keeps the order of the request. A text that is no range or name of the workbook is an
+error (`Error::Calculation`). Details and the table of the cases: [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for).
 
 `sheetrs edit` has no `--calculate` flag: calculating is a step the planner inserts where a conversion needs fresh results (`BookEdit::calculate` is the explicit step in the library). To calculate a file with inputs and ranges, `sheetc calculate -i FILE -o OUT` (with `--request` to give them).
 

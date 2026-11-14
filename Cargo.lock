@@ -2249,6 +2249,7 @@ dependencies = [
  "serde_json",
  "sheetrs-engine",
  "sheetrs-io",
+ "sheetrs-query",
  "thiserror",
 ]
 
@@ -2300,6 +2301,7 @@ dependencies = [
  "quick-xml 0.42.0",
  "regex",
  "serde_json",
+ "sheetrs-answer",
  "sheetrs-compiler",
  "sheetrs-engine",
  "sheetrs-formula",

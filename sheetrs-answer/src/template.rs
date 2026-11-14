@@ -23,12 +23,13 @@ use crate::error::{Error, Result};
 use serde_json::{Map, Value as Json};
 use sheetrs_engine::Overrides;
 use sheetrs_engine::addr::Rect;
-use sheetrs_engine::calculate::ValueRanges;
+use sheetrs_engine::calculate::{ValueRange, ValueRanges};
 use sheetrs_engine::engine::ConstSource;
 use sheetrs_engine::ir::Program;
 use sheetrs_io::Book;
 use sheetrs_io::reader::Format;
 use sheetrs_io::write::{CachedResult, CellWrites, Constant, WorkbookModifications};
+use sheetrs_query::{BookQuery, Major, RangeOptions};
 use std::path::Path;
 
 /// An error of the program written as the format of the file has it: Excel's names in an XLSX, and
@@ -149,6 +150,9 @@ pub fn fill_template(
 /// [`ValueRanges`]: the `ranges` the request asks for, or the declared outputs), from the same
 /// calculation. The request is then the whole of the protocol, not only `inputs`.
 ///
+/// A range outside the outputs of the program is read from the workbook written (see
+/// [`fill_template_to_with_answer`]).
+///
 /// # Errors
 ///
 /// As [`fill_template`], and when the request is not a valid one for the program.
@@ -160,6 +164,15 @@ pub fn fill_template_with_answer(
     overrides: &Overrides,
     output: &Path,
 ) -> Result<(Written, ValueRanges)> {
+    let outside = ranges_outside_outputs(program, base, request)?;
+    if outside.contains(&true) {
+        let mut bytes = Vec::new();
+        let (report, answer) = fill_with_outside(
+            template, program, base, request, overrides, &outside, &mut bytes,
+        )?;
+        std::fs::write(output, bytes).map_err(sheetrs_io::write::Error::from)?;
+        return Ok((report, answer));
+    }
     let filled = fill(template, program, base, request, overrides, true)?;
     let report = write_cells(&filled.writes, template, output)?;
     Ok((report, answer_of(filled.answer)))
@@ -185,20 +198,182 @@ pub fn fill_template_to(
 
 /// [`fill_template_with_answer`] that writes the bytes of the workbook to `out`, in memory.
 ///
+/// **Ranges outside the outputs.** In the embedded mode (the workbook is its own template) the
+/// answer holds the `ranges` that lie inside the outputs of the program (the declared ones, or the
+/// formula cells) from its own run; a range outside them is read, in memory, from the workbook just
+/// written, as `query` reads any workbook (no recalculation: a formula the outputs left out holds the
+/// result the template stored, and a constant the value it has). The answer keeps the order of the
+/// request, and an outside range is named as it was asked.
+///
 /// # Errors
 ///
-/// As [`fill_template_to`], and when the request is not a valid one for the program.
+/// As [`fill_template_to`], and when the request is not a valid one for the program or a range is
+/// no range or name of the workbook.
 pub fn fill_template_to_with_answer(
     template: &Book,
     program: &Program,
     base: Option<&dyn ConstSource>,
     request: &Json,
     overrides: &Overrides,
-    out: impl std::io::Write,
+    mut out: impl std::io::Write,
 ) -> Result<(Written, ValueRanges)> {
+    let outside = ranges_outside_outputs(program, base, request)?;
+    if outside.contains(&true) {
+        let mut bytes = Vec::new();
+        let (report, answer) = fill_with_outside(
+            template, program, base, request, overrides, &outside, &mut bytes,
+        )?;
+        out.write_all(&bytes)
+            .map_err(sheetrs_io::write::Error::from)?;
+        return Ok((report, answer));
+    }
     let filled = fill(template, program, base, request, overrides, true)?;
     let report = write_cells_to(&filled.writes, template, out)?;
     Ok((report, answer_of(filled.answer)))
+}
+
+/// For each `ranges` entry of `request`, whether it lies outside the outputs of `program`, when the
+/// program is of the embedded mode; empty otherwise (a program of another mode refuses such a range
+/// with [`sheetrs_engine::Error::OutsideOutputs`]).
+fn ranges_outside_outputs(
+    program: &Program,
+    base: Option<&dyn ConstSource>,
+    request: &Json,
+) -> Result<Vec<bool>> {
+    let Some(Json::Array(items)) = request.get("ranges") else {
+        return Ok(Vec::new());
+    };
+    if program.mode != sheetrs_engine::ir::Mode::Embedded {
+        return Ok(Vec::new());
+    }
+    items
+        .iter()
+        .filter_map(Json::as_str)
+        .map(|text| {
+            program
+                .reads(base, text)
+                .map(|inside| !inside)
+                .map_err(|e| Error::Template(e.to_string()))
+        })
+        .collect()
+}
+
+/// The workbook written to `out` and the answer, when some `ranges` of the request lie outside the
+/// outputs (`outside`, one flag per entry): the others are answered by the run, those are read from
+/// the bytes written.
+fn fill_with_outside(
+    template: &Book,
+    program: &Program,
+    base: Option<&dyn ConstSource>,
+    request: &Json,
+    overrides: &Overrides,
+    outside: &[bool],
+    out: &mut Vec<u8>,
+) -> Result<(Written, ValueRanges)> {
+    let fail = |m: String| Error::Template(m);
+    let asked: Vec<&str> = request["ranges"]
+        .as_array()
+        .map(|items| items.iter().filter_map(Json::as_str).collect())
+        .unwrap_or_default();
+    let inside: Vec<Json> = asked
+        .iter()
+        .zip(outside)
+        .filter(|(_, outside)| !**outside)
+        .map(|(text, _)| Json::from(*text))
+        .collect();
+    let inputs = request.get("inputs").cloned().filter(|i| !i.is_null());
+
+    // What the program answers itself, and the workbook it writes.
+    let (written, mut own) = if !inside.is_empty() {
+        let mut first = request.as_object().cloned().unwrap_or_default();
+        first.insert("ranges".into(), Json::Array(inside));
+        let filled = fill(
+            template,
+            program,
+            base,
+            &Json::Object(first),
+            overrides,
+            true,
+        )?;
+        *out = template.modify_to_bytes(&modifications(&filled.writes))?;
+        (filled.writes.len(), answer_of(filled.answer).value_ranges)
+    } else if program.formula_cells.is_empty() && inputs.is_none() {
+        // Nothing to write: the workbook is as it is.
+        *out = match (template.bytes(), template.path()) {
+            (Some(data), _) => data.to_vec(),
+            (None, Some(path)) => std::fs::read(path).map_err(sheetrs_io::write::Error::from)?,
+            (None, None) => unreachable!("a book is a file or bytes"),
+        };
+        (0, Vec::new())
+    } else {
+        let mut only_inputs = Map::new();
+        if let Some(inputs) = inputs {
+            only_inputs.insert("inputs".into(), inputs);
+        }
+        let filled = fill(
+            template,
+            program,
+            base,
+            &Json::Object(only_inputs),
+            overrides,
+            false,
+        )?;
+        *out = template.modify_to_bytes(&modifications(&filled.writes))?;
+        (filled.writes.len(), Vec::new())
+    };
+
+    // The rest is read from the workbook just written, as a query reads it.
+    let texts: Vec<&str> = asked
+        .iter()
+        .zip(outside)
+        .filter(|(_, outside)| **outside)
+        .map(|(text, _)| *text)
+        .collect();
+    let major = match request.get("majorDimension").and_then(Json::as_str) {
+        Some(m) if m.eq_ignore_ascii_case("COLUMNS") => Major::Columns,
+        _ => Major::Rows,
+    };
+    let book = Book::from_bytes(out.clone())
+        .map_err(|e| fail(format!("the workbook as it was written: {e}")))?
+        .with_locale_of(template);
+    let blocks = book
+        .range(
+            &texts,
+            &RangeOptions {
+                major,
+                ..RangeOptions::default()
+            },
+        )
+        .map_err(|e| fail(e.to_string()))?;
+
+    let mut read = blocks.into_iter();
+    let mut own = own.drain(..);
+    let mut merged = Vec::with_capacity(asked.len());
+    for flag in outside {
+        if *flag {
+            let block = read
+                .next()
+                .ok_or_else(|| fail("a range was not read".into()))?;
+            merged.push(ValueRange {
+                name: None,
+                range: block.range,
+                values: block
+                    .values
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|row| row.into_iter().map(|v| v.unwrap_or(Json::Null)).collect())
+                    .collect(),
+            });
+        } else if let Some(entry) = own.next() {
+            merged.push(entry);
+        }
+    }
+    Ok((
+        Written { cells: written },
+        ValueRanges {
+            value_ranges: merged,
+        },
+    ))
 }
 
 /// The answer of a run that was asked for it (no value ranges when it was not).

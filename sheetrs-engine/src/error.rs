@@ -55,11 +55,11 @@ pub enum Error {
 fn outside_message(range: &str, declared: Option<&[String]>) -> String {
     match declared {
         Some(outputs) => format!(
-            "`{range}` is outside the outputs this program declares: a range can only be one of them or lie inside one ({}; see --meta)",
+            "`{range}` is outside the outputs this program declares: a range can only be one of them or lie inside one ({}; see --meta). A range outside them is not an answer of the calculation: write the workbook and read the range with `query`",
             outputs.join(", ")
         ),
         None => format!(
-            "`{range}` cannot be read: it is not inside the outputs of this program, which are the formula cells of the workbook as none were declared (see --meta)"
+            "`{range}` cannot be read: it is not inside the outputs of this program, which are the formula cells of the workbook as none were declared (see --meta). A range outside them is not an answer of the calculation: write the workbook and read the range with `query`"
         ),
     }
 }

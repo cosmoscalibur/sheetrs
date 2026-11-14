@@ -80,8 +80,8 @@ def test_an_error_in_the_values_is_a_cell_error(tmp_path):
 
 def test_what_is_not_an_output_or_an_input_is_an_error(structure):
     # Each case on a Book of its own: a calculation that was asked stays in the plan.
-    with pytest.raises(sheetrs.Error, match="is empty"):
-        value_ranges(sheetrs.Book(structure), ranges="F!B1")
+    # An empty cell outside the outputs is read as the workbook has it: empty.
+    assert value_ranges(sheetrs.Book(structure), ranges="F!B1") == {"F!B1": [[None]]}
     with pytest.raises(sheetrs.Error, match="not an input"):
         value_ranges(sheetrs.Book(structure), inputs={"T!C1": 1}, ranges="F!A1")
     with pytest.raises(sheetrs.Error, match="Nowhere"):
@@ -515,18 +515,30 @@ def test_declared_and_inside_the_outputs_the_ranges_are_a_selection(loan):
 
 
 def test_declared_and_outside_the_outputs_the_range_is_read_from_the_written_workbook(loan):
-    # Embedded: the workbook is its own template, so a range that is not an output is answered from
-    # the workbook as written (the input is in it), in the order asked.
+    # Embedded: the workbook is its own template, so a range that is not an output is read, in memory and
+    # with no recalculation, from the workbook just written (the input is in it), in the order asked.
     answer = (
         sheetrs.Book(loan)
-        .calculate({"principal": 1000}, ranges=["Loan!B5", "payment", "Loan!B2"])
+        .calculate({"principal": 1000}, ranges=["Loan!B5", "payment", "Loan!B2", "Loan!B1"])
         .value_ranges()
     )
-    assert [block.range for block in answer.values()] == ["Loan!B5", "Loan!B4", "Loan!B2"]
-    payment = answer["payment"].values[0][0]
-    assert payment == pytest.approx(5.368216230121398)
-    assert answer["Loan!B5"].values[0][0] == pytest.approx(payment * 360)
+    assert [block.range for block in answer.values()] == ["Loan!B5", "Loan!B4", "Loan!B2", "Loan!B1"]
+    assert answer["payment"].values[0][0] == pytest.approx(5.368216230121398)
     assert answer["Loan!B2"].values[0][0] == pytest.approx(0.05)
+    assert answer["Loan!B1"].values[0][0] == 1000
+    # A formula the outputs left out keeps the result the template stored: it is read, not calculated.
+    assert answer["Loan!B5"].values[0][0] == pytest.approx(386511.5, abs=1)
+
+
+def test_a_range_outside_the_outputs_is_read_from_the_written_workbook_in_memory(loan):
+    # The calculation writes the workbook (the input is in it, the outputs are calculated) and `range`
+    # reads it from those bytes, with no recalculation and no file.
+    data = sheetrs.Book(loan).calculate({"principal": 1000}).to_bytes()
+    blocks = sheetrs.Book(data).range(["Loan!B1", "Loan!B2", "Loan!B4"])
+    assert blocks["Loan!B1"].values[0][0] == 1000
+    assert blocks["Loan!B2"].values[0][0] == pytest.approx(0.05)
+    assert blocks["Loan!B4"].values[0][0] == pytest.approx(5.368216230121398)
+    assert "Loan!A1" in [cell.sheet + "!" + cell.cell for cell in sheetrs.Book(data).find("Principal")]
 
 
 def test_a_range_that_is_not_one_of_the_workbook_is_an_error(loan):
