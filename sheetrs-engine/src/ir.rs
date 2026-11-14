@@ -227,6 +227,9 @@ pub struct Program {
     /// How and from what the program was built.
     #[serde(default)]
     pub build: BuildInfo,
+    /// What the engines that run this program share between them; not part of it.
+    #[serde(skip)]
+    pub layout: crate::engine::Layout,
 }
 
 /// A run of consecutive cells of one row: `first..=last` columns of `row` in `sheet` (0-based).

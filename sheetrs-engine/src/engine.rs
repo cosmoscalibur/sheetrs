@@ -73,6 +73,45 @@ impl LookupIndex {
     }
 }
 
+/// What a program lets an engine know about it without running: the index of its cells, kept for
+/// the engines that follow (a service builds one per request over the same program). It is not part
+/// of the program: it is not serialized, two programs are equal with or without it, and a copy of
+/// a program starts without it.
+#[derive(Default)]
+pub struct Layout(std::sync::OnceLock<Arc<SlotIndex>>);
+
+impl Layout {
+    fn index(&self, prog: &Program) -> Arc<SlotIndex> {
+        let cached = self
+            .0
+            .get_or_init(|| Arc::new(SlotIndex::from_program(prog)));
+        if cached.cells == prog.cells.len() {
+            Arc::clone(cached)
+        } else {
+            // The cells changed after the index was made (nothing does that once a program runs).
+            Arc::new(SlotIndex::from_program(prog))
+        }
+    }
+}
+
+impl Clone for Layout {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl PartialEq for Layout {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for Layout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Layout")
+    }
+}
+
 /// Where each cell of the program is: a table per sheet and row, in place of a hash map keyed by
 /// address (the lookup was the largest cost of an evaluation). A row whose cells are packed holds the
 /// slots of the columns from its first to its last cell (`NONE` where it has none); a row whose cells
@@ -80,6 +119,8 @@ impl LookupIndex {
 /// not reserve a slot per column.
 struct SlotIndex {
     sheets: Vec<Vec<IndexRow>>,
+    /// The number of cells it was built for.
+    cells: usize,
 }
 
 #[derive(Default)]
@@ -94,6 +135,10 @@ impl SlotIndex {
     /// A row is dense when its span is at most this many columns per cell, plus `DENSE_SLACK`.
     const DENSE_PER_CELL: u32 = 8;
     const DENSE_SLACK: u32 = 32;
+
+    fn from_program(prog: &Program) -> Self {
+        Self::new(prog.sheets.len(), prog.cells.iter().map(|c| c.at))
+    }
 
     fn new(sheets: usize, cells: impl Iterator<Item = CellRef> + Clone) -> Self {
         // Per sheet and row: first column, last column, number of cells.
@@ -136,7 +181,9 @@ impl SlotIndex {
         // The cells of a sparse row need not be consecutive in the program: gather, then sort.
         let mut sparse: std::collections::HashMap<(u16, u32), Vec<(u32, u32)>> =
             std::collections::HashMap::new();
+        let mut slots = 0;
         for (i, at) in cells.enumerate() {
+            slots = i + 1;
             let row = &mut sheets[at.sheet as usize][at.row as usize];
             if row.dense.is_empty() {
                 sparse
@@ -151,7 +198,10 @@ impl SlotIndex {
             v.sort_unstable();
             sheets[s as usize][r as usize].sparse = v.into_boxed_slice();
         }
-        Self { sheets }
+        Self {
+            sheets,
+            cells: slots,
+        }
     }
 
     #[inline]
@@ -183,7 +233,7 @@ pub struct Engine<'p> {
     prog: &'p Program,
     base: Option<&'p dyn ConstSource>,
     pub opts: EngineOptions,
-    index: SlotIndex,
+    index: Arc<SlotIndex>,
     by_sheet: Vec<Vec<u32>>,
     /// Per sheet: (rows, cols) spanned by its cells.
     extent: Vec<(u32, u32)>,
@@ -241,7 +291,7 @@ impl<'p> Engine<'p> {
 
     fn build(prog: &'p Program, opts: EngineOptions, base: Option<&'p dyn ConstSource>) -> Self {
         let n = prog.cells.len();
-        let index = SlotIndex::new(prog.sheets.len(), prog.cells.iter().map(|c| c.at));
+        let index = prog.layout.index(prog);
         let mut by_sheet = vec![Vec::new(); prog.sheets.len().max(1)];
         let mut extent = vec![(0u32, 0u32); prog.sheets.len().max(1)];
         let mut values = Vec::with_capacity(n);

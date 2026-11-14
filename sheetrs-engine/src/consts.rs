@@ -8,7 +8,6 @@
 
 use crate::addr::CellRef;
 use crate::engine::ConstSource;
-use crate::fastmap::FastMap;
 use crate::ir::{CellDef, CellKind, Program};
 use crate::value::Value;
 use serde::{Deserialize, Serialize};
@@ -55,6 +54,48 @@ struct BlockRef {
 
 /// Cells `(row, col, value)` sorted by position.
 type Block = Vec<(u32, u32, Value)>;
+
+/// A decoded block with where each of its rows starts, so that a cell is found by its row and then by
+/// its column among the few its row holds, not by a search over the whole block.
+#[derive(Debug)]
+struct Decoded {
+    row0: u32,
+    /// `starts[r]` is the position of the first cell of row `row0 + r`; one more entry ends the last.
+    starts: Vec<u32>,
+    cells: Block,
+}
+
+impl Decoded {
+    fn new(cells: Block) -> Self {
+        let row0 = cells.first().map_or(0, |c| c.0);
+        let last = cells.last().map_or(0, |c| c.0);
+        let mut starts = Vec::with_capacity((last - row0) as usize + 2);
+        let mut at = 0u32;
+        for row in row0..=last {
+            starts.push(at);
+            while (at as usize) < cells.len() && cells[at as usize].0 == row {
+                at += 1;
+            }
+        }
+        starts.push(at);
+        Self {
+            row0,
+            starts,
+            cells,
+        }
+    }
+
+    fn get(&self, row: u32, col: u32) -> Option<&Value> {
+        let r = row.checked_sub(self.row0)? as usize;
+        let (from, to) = (
+            *self.starts.get(r)? as usize,
+            *self.starts.get(r + 1)? as usize,
+        );
+        let cells = &self.cells[from..to];
+        let i = cells.binary_search_by_key(&col, |c| c.1).ok()?;
+        Some(&cells[i].2)
+    }
+}
 
 /// Move the constants of `program` out of its cells, returning their index and encoded blocks.
 /// With fewer than `min` constants the program is left as it is and the index is empty. The slots
@@ -145,7 +186,8 @@ pub struct StoredConsts {
     backing: Backing,
     /// Where the blocks start in the backing.
     start: u64,
-    decoded: RefCell<FastMap<(u16, u32), Block>>,
+    /// Per sheet, per block of the sheet: decoded on the first read of a cell of it.
+    decoded: RefCell<Vec<Vec<Option<Decoded>>>>,
 }
 
 /// Where the blocks are read from: the executable's file, or memory (a module that carries its
@@ -225,13 +267,15 @@ impl ConstSource for StoredConsts {
             .partition_point(|b| b.row0 <= at.row)
             .checked_sub(1)?;
         let mut decoded = self.decoded.borrow_mut();
-        let block = decoded
-            .entry((at.sheet, b as u32))
-            .or_insert_with(|| self.load(&sh.blocks[b]));
-        let i = block
-            .binary_search_by_key(&(at.row, at.col), |(r, c, _)| (*r, *c))
-            .ok()?;
-        Some(block[i].2.clone())
+        if decoded.len() <= at.sheet as usize {
+            decoded.resize_with(self.index.sheets.len().max(at.sheet as usize + 1), Vec::new);
+        }
+        let blocks = &mut decoded[at.sheet as usize];
+        if blocks.is_empty() {
+            blocks.resize_with(sh.blocks.len(), || None);
+        }
+        let block = blocks[b].get_or_insert_with(|| Decoded::new(self.load(&sh.blocks[b])));
+        block.get(at.row, at.col).cloned()
     }
 
     fn extent(&self, sheet: u16) -> (u32, u32) {
