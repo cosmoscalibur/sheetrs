@@ -1719,7 +1719,9 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 }
                                 // An empty `office:string-value` is no content: `LibreOffice` reads
                                 // the cell as blank unless a paragraph is there (see `saw_paragraph`).
-                                "office:string-value" if attr.value.is_empty() => {}
+                                // An empty `office:value` is no number, as no `office:value` is.
+                                "office:string-value" | "office:value" if attr.value.is_empty() => {
+                                }
                                 "office:value"
                                 | "office:string-value"
                                 | "office:boolean-value"

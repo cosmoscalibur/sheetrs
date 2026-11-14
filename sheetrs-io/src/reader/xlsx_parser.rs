@@ -1926,6 +1926,10 @@ fn parse_cell_contents<R: std::io::BufRead>(
                                 // LibreOffice (text is `t="s"`/`t="str"`).
                                 if let Ok(n) = v_typed.parse::<f64>() {
                                     CellValue::Number(n)
+                                } else if v_typed.is_empty() {
+                                    // `<v></v>` and `<v/>` hold nothing, as no `<v>` does (a text
+                                    // result is `t="str"`).
+                                    CellValue::Empty
                                 } else {
                                     CellValue::Text(Arc::from(v_text))
                                 }

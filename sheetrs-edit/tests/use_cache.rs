@@ -570,6 +570,32 @@ fn formulas_that_ask_what_a_cell_holds_are_calculated_when_a_cell_changes_or_mov
     }
 }
 
+/// A formula that caches an empty result (`<v></v>` in an XLSX, `office:value=""` in an ODS) has no result,
+/// as one with no `<v>` has: it is calculated, and the other formulas keep what the file caches.
+#[test]
+fn a_formula_that_caches_an_empty_result_is_calculated() {
+    for extension in EXTENSIONS {
+        let delete = |book: &mut Book| {
+            book.delete_columns(["Data!D".parse().unwrap()]);
+        };
+        let outcome = Outcome::of("empty", extension, delete);
+        for (cell, result) in [("A1", 40.0), ("A2", 60.0), ("A3", 80.0)] {
+            assert_eq!(
+                *at(&outcome.cached, cell),
+                CellValue::Empty,
+                "{extension} {cell}"
+            );
+            outcome.calculated(cell, extension);
+            assert_eq!(
+                *at(&outcome.kept, cell),
+                number(result),
+                "{extension} {cell}"
+            );
+        }
+        untouched(&outcome.kept, &outcome.cached, extension);
+    }
+}
+
 /// Where a quarter of the formulas or less is stale (a replacement reaches ten of the forty) the cache
 /// is used; where more is, the walk would only add its cost and every formula is calculated again, as
 /// without the option.

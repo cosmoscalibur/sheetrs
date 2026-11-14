@@ -84,10 +84,28 @@ fn tag_end(bytes: &[u8], from: usize) -> Option<usize> {
     None
 }
 
+/// Whether a formula cell with this value type and value holds no cached result: no value type, or a
+/// type other than a string (whose result may be a paragraph) with no value attribute or an empty one.
+fn without_result(formula: bool, value_type: Option<&[u8]>, has_value: bool) -> bool {
+    formula
+        && match value_type {
+            None => true,
+            Some(b"string") => false,
+            Some(_) => !has_value,
+        }
+}
+
+fn is_value_attribute(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"office:value" | b"office:boolean-value" | b"office:date-value" | b"office:time-value"
+    )
+}
+
 /// Whether the attributes of a cell (`attributes`, the bytes after its name up to the `>`) name a
-/// formula and no value type.
-fn formula_without_value_type_in(attributes: &[u8]) -> bool {
-    let (mut formula, mut value_type) = (false, false);
+/// formula and no result.
+fn formula_without_result_in(attributes: &[u8]) -> bool {
+    let (mut formula, mut value_type, mut has_value) = (false, None, false);
     let mut i = 0;
     while i < attributes.len() {
         while i < attributes.len() && (attributes[i].is_ascii_whitespace() || attributes[i] == b'/')
@@ -109,14 +127,19 @@ fn formula_without_value_type_in(attributes: &[u8]) -> bool {
         };
         // The value runs to the matching quote.
         i += 1;
+        let value_start = i;
         while i < attributes.len() && attributes[i] != quote {
             i += 1;
         }
+        let value = &attributes[value_start..i.min(attributes.len())];
         i += 1;
         formula |= name == b"table:formula";
-        value_type |= name == b"office:value-type";
+        if name == b"office:value-type" {
+            value_type = Some(value);
+        }
+        has_value |= !value.is_empty() && is_value_attribute(name);
     }
-    formula && !value_type
+    without_result(formula, value_type, has_value)
 }
 
 /// Whether `content.xml` may hold a formula cell with no cached result, looking only at the bytes of
@@ -145,7 +168,7 @@ fn ods_may_have_a_formula_without_result<R: Read>(mut input: R) -> Result<bool> 
             };
             // `<table:table-cell-range-source` is not a cell.
             if matches!(window[name_end], b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'/')
-                && formula_without_value_type_in(&window[name_end..end - 1])
+                && formula_without_result_in(&window[name_end..end - 1])
             {
                 return Ok(true);
             }
@@ -169,10 +192,13 @@ fn ods_has_a_formula_without_result<R: std::io::BufRead>(input: R) -> Result<boo
     loop {
         match reader.read_event_into(&mut buffer)? {
             Event::Start(e) if e.name().as_ref() == "table:table-cell" => {
+                if formula_with_an_empty_value(&e) {
+                    return Ok(true);
+                }
                 waiting = formula_without_value_type(&e)?;
             }
             Event::Empty(e) if e.name().as_ref() == "table:table-cell" => {
-                if formula_without_value_type(&e)? {
+                if formula_without_value_type(&e)? || formula_with_an_empty_value(&e) {
                     return Ok(true);
                 }
             }
@@ -191,9 +217,25 @@ fn ods_has_a_formula_without_result<R: std::io::BufRead>(input: R) -> Result<boo
     }
 }
 
+/// Whether a cell has a formula and no value type: its result, if it has one, is a paragraph.
 fn formula_without_value_type(cell: &quick_xml::events::BytesStart<'_>) -> Result<bool> {
     Ok(cell.try_get_attribute("table:formula")?.is_some()
         && cell.try_get_attribute("office:value-type")?.is_none())
+}
+
+/// Whether a cell has a formula and a value type that is not a string, with no value or an empty one:
+/// there is no paragraph to wait for.
+fn formula_with_an_empty_value(cell: &quick_xml::events::BytesStart<'_>) -> bool {
+    let (mut formula, mut value_type, mut has_value) = (false, None, false);
+    for attribute in cell.attributes().with_checks(false).flatten() {
+        let key = attribute.key.as_ref().as_bytes();
+        formula |= key == b"table:formula";
+        if key == b"office:value-type" {
+            value_type = Some(attribute.value.as_bytes().to_vec());
+        }
+        has_value |= !attribute.value.is_empty() && is_value_attribute(key);
+    }
+    value_type.is_some() && without_result(formula, value_type.as_deref(), has_value)
 }
 
 #[cfg(test)]
@@ -269,6 +311,30 @@ mod tests {
                 assert_eq!(got, expected, "{cells} in pieces of {piece}");
             }
         }
+    }
+
+    #[test]
+    fn an_ods_formula_with_an_empty_number_is_stale() {
+        for cell in [
+            r#"<table:table-cell table:formula="of:=1+1" office:value-type="float" office:value=""/>"#,
+            r#"<table:table-cell table:formula="of:=1+1" office:value-type="float"/>"#,
+            r#"<table:table-cell table:formula="of:=1+1" office:value-type="float" office:value=""><text:p/></table:table-cell>"#,
+            r#"<table:table-cell table:formula="of:=A1" office:value-type="boolean" office:boolean-value=""/>"#,
+        ] {
+            assert!(ods(cell), "{cell}");
+            let xml = format!("<table:table-row>{cell}</table:table-row>");
+            assert!(
+                ods_may_have_a_formula_without_result(xml.as_bytes()).unwrap(),
+                "{cell}"
+            );
+        }
+        // A string result may be a paragraph, a number with a value is a result.
+        assert!(!ods(
+            r#"<table:table-cell table:formula="of:=A1" office:value-type="string"><text:p/></table:table-cell>"#
+        ));
+        assert!(!ods(
+            r#"<table:table-cell table:formula="of:=A1" office:value-type="boolean" office:boolean-value="true"/>"#
+        ));
     }
 
     #[test]

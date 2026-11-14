@@ -1,3 +1,7 @@
 ### Added
 
 - An edit can use the results the file caches (issue #126): `sheetrs edit --use-cache`, `Book::with_use_cache(true)`, `save(..., use_cache=True)` in Python and `book.useCache = true` in WebAssembly. The recalculation that ends an edit then calculates only the formulas the plan reaches (a formula the writer rewrote and left with no result, one that reads a replaced cell, a `SUBTOTAL` when rows are hidden or shown, a function of position, `ISFORMULA`/`FORMULATEXT` of a cell or a defined name when rows, columns, sheets or names are deleted) and the ones that depend on them, found with the dependency graph the compiler builds; every other formula is a constant that holds its cached result, and the writer leaves its cell as the file has it. A workbook that reads cells at run time (`INDIRECT`, `OFFSET`), one the file says is stale, one where a replacement and a deletion meet, and one where more than a quarter of the formulas have no result are calculated whole, as without the option. It is never the default: the cache is not a goal of the project. `docs/performance.md` has the time and memory it saves and what it does not.
+
+### Fixed
+
+- A formula cell whose cached result is empty (`<v></v>` or `<v/>` in an XLSX, `office:value=""` in an ODS) holds no result, as one with no `<v>` or no value does: the readers give an empty value (it was an empty text) and the stale check of an ODS counts it.

@@ -16,6 +16,7 @@ XLSX caches: it does not recalculate a file on load by default):
             that is not the one they give
   rules     what a deletion reaches without changing the text of the formula: a whole row of `Data`, `ROW()`,
             `SHEET()`, a defined name, `ISFORMULA` and `FORMULATEXT` of a cell; the sheet `Other` is the one the tests delete
+  empty     three formulas that cache an empty result (<v></v>, office:value="") and the forty fillers
   quarter   40 formulas `=SUM(Data!A{k}:A{k+40})` of Calc, over `Data!A1:A80` (all 11): a quarter of them is the
             limit above which the cache is not used
   runs      300 formulas over `Data` that read the cells a replacement of 65 separate cells, and one of a run of
@@ -73,6 +74,9 @@ RULES = [
     ("A8", "=_xlfn.FORMULATEXT(Data!A2)", 778),
     *FILLER,
 ]
+# Formulas whose cached result is empty (`<v></v>` of an XLSX, `office:value=""` of an ODS: what a program that
+# writes no results leaves), written as a number first and blanked by `blank`.
+EMPTY = [(f"A{k}", f"=Data!A{k + 1}*2", 123456) for k in range(1, 4)] + FILLER
 QUARTER = [(f"A{k}", f"=SUM(Data!A{k}:A{k + 40})", 5000 + k) for k in range(1, 41)]
 # Replacements: column A is rewritten at the odd rows 1..129 (65 separate cells), row 1 from B to BS (70 adjacent
 # ones) and B41. A formula for each of those cells, formulas that read a cell between them, and some that nothing
@@ -154,6 +158,27 @@ def to_ods(path):
                         "--outdir", HERE, path], check=True, capture_output=True)
 
 
+def blank(name):
+    """Empties the results that `build` cached as 123456, in the XLSX and in the ODS."""
+    for extension, entry, edit in (
+        ("xlsx", "xl/worksheets/sheet2.xml", lambda x: x.replace("<v>123456</v>", "<v></v>")),
+        ("ods", "content.xml", lambda x: re.sub(r'office:value="123456"([^>]*)><text:p>123456</text:p>',
+                                                r'office:value=""\1><text:p/>', x)),
+    ):
+        path = os.path.join(HERE, f"{name}.{extension}")
+        tmp = path + ".tmp"
+        with zipfile.ZipFile(path) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename == entry:
+                    text = data.decode()
+                    changed = edit(text)
+                    assert changed != text, (name, extension)
+                    data = changed.encode()
+                zout.writestr(item, data)
+        os.replace(tmp, path)
+
+
 def finish(name, freeze_volatile=False):
     for extension in ("xlsx", "ods"):
         fixture_determinism.normalize(os.path.join(HERE, f"{name}.{extension}"), freeze_volatile=freeze_volatile)
@@ -197,6 +222,7 @@ def main():
         ("repro", REPRO, book_data, (), False),
         ("volatile", VOLATILE, book_data, (), True),
         ("rules", RULES, rules_data, ("Other",), False),
+        ("empty", EMPTY, book_data, (), False),
         ("quarter", QUARTER, eleven(80), (), False),
         ("runs", RUNS, runs_data, (), False),
     )
@@ -204,6 +230,8 @@ def main():
         path = os.path.join(HERE, f"{name}.xlsx")
         build(path, formulas, populate, others)
         to_ods(path)
+        if name == "empty":
+            blank(name)
         finish(name, freeze)
     array_book()
 
