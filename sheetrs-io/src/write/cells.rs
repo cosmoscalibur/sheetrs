@@ -76,6 +76,13 @@ impl CellWrites {
         &self.sheets
     }
 
+    /// The cells written, by sheet name, handed over: a writer given a million cells takes them
+    /// without copying them.
+    #[must_use]
+    pub fn into_sheets(self) -> HashMap<String, SheetEdits> {
+        self.sheets
+    }
+
     /// How many cells are written.
     #[must_use]
     pub fn len(&self) -> usize {

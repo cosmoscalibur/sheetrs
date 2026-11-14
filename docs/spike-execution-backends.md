@@ -5,53 +5,171 @@ they viable? Three goals, not simultaneous: (1) cut the time of `calculate` (and
 build; (2) run a workbook directly and speed it up progressively in a service that evaluates the same
 template again and again; (3) cut time and peak memory of the run of a compiled workbook.
 
-Status: evaluation with measurements on one generated workbook and one profile of small sample size
-(limits in [What this does not show](#what-this-does-not-show)). Only the dense index of Option 2 is
-implemented.
+Status: the data of the matrix below is collected. Four small changes found on the way are
+implemented (they are not one of the three options and pay for themselves); the three options are not.
+Limits of the data: [What this does not show](#what-this-does-not-show).
+
+## The matrix
+
+| | Goal 1: `calculate` / `edit` | Goal 2: services (`--serve`) | Goal 3: run of a compiled workbook | One engine | Cost | Verdict |
+|---|---|---|---|---|---|---|
+| **Direct interpreter** (skip compile stages) | 9-11 % of a full recalculation at 2.4 M formulas; 16-22 % of a declared one-shot calculation at 0.8 M | none | none (peak: the graph is already freed) | yes | low-medium; needs a fallback on depth and cycles | worth doing, modest; not first |
+| **JIT** (Cranelift, native only) | none | ceiling about 3-4× per request on numeric shapes, and only with `ROUND` fixed first; unproven | request time only | no (guarded) | high | defer: does not meet its own stop criterion today |
+| **LLVM, ahead of time** | none | as the JIT | request time only | no | very high | no-go |
+| *Implemented, not an option:* dense index, constants by row, index kept in the program, no copy of the writes | `calculate -i` -11 %; `calculate -o` -19 % time, -12 % peak | request -60 % (1.5 → 0.65 s) | request -32 %, first request -35 % | yes | done | keep |
+
+The three options are not independent: they share one lever, how a cell address becomes a value, and that
+lever was served first with no code generation. After it, what is left per request is the exact `ROUND`
+and the setup of an engine per request, not tree dispatch.
 
 ## Findings that change the question
 
 1. **The engine is already an interpreter.** `Engine::eval` walks `Expr` trees over a demand-driven
    schedule ([DESIGN.md](../sheetrs-compiler/docs/DESIGN.md#hybrid-compile--run-time): "the JIT is not machine
    code: it is lazy resolution on the same interpreter"). `sheetc calculate` already builds in memory
-   and writes no executable. "Omitting build" therefore means skipping *compile stages* (cone, graph,
-   SCC, taint, fold, assembly), not skipping an executable.
-2. **The evaluation cost is address resolution, not dispatch.** In the profile of a run, 59 % of
-   `Engine::calculate` is `cell_value`; the hash lookup `CellRef → slot` alone is 38 %, the binary search in
-   the blocks of constants 20 %. Arithmetic and function bodies (`ROUND`, `MAX`, `IF`) are marginal.
-   A JIT that compiles the tree but keeps `CellRef` operands removes the part that costs little.
-3. **"No double execution engine" is an explicit requirement** (DESIGN.md, *One IR, one engine*), and
+   and writes no executable. "Omitting build" means skipping *compile stages* (cone, graph, SCC, taint,
+   fold, assembly), not an executable.
+2. **The cost of an evaluation was address resolution, not dispatch.** Before the changes below, 59 % of
+   `Engine::calculate` was `cell_value`: the hash lookup `CellRef → slot` 38 %, the search in the blocks
+   of constants 20 %. Arithmetic and the bodies of `IF`, `MAX` are marginal.
+3. **In a full recalculation the engine is not the bottleneck: writing the workbook is.** In
+   `calculate -o` of 2.4 M formulas (every formula an output), the profile of the run (inclusive shares,
+   which overlap) gives: the engine (`calculate` 14 %, `Engine::build` 3 %) about 17 %, and the writer of
+   the workbook (XML transform, quick-xml and deflate) about 60 %. A copy of the whole map of writes
+   sat in that path; removing it took 7 % of the time (12.17 → 11.28 s in a pair measured together) and
+   231 MB of the peak. A faster engine, an interpreter or a JIT, moves the smaller part.
+4. **`ROUND` is the exact cost of the numeric kernel.** `round_dec` reproduces the 15-digit decimal
+   rounding of spreadsheets by formatting the number as text and parsing it back
+   (`functions/math.rs`). It is 12-14 % of a request on the benchmark workbook, and 97 % of the floor of
+   a hand-written kernel (next section).
+5. **"No double execution engine" is an explicit requirement** (DESIGN.md, *One IR, one engine*), and
    fidelity to LibreOffice is the acceptance criterion ([CONTRIBUTING.md](../CONTRIBUTING.md#parity-and-fidelity)).
-   `eval` carries that fidelity in its control flow: `logical_fmt`, ghost arrays, element-wise lifting,
-   propagated errors, the `notes` violations, blank results. A second backend must reproduce all of it
-   or bail out to the interpreter; either way it is a decision for the maintainer, not a refactor.
-4. **Lazy functions take `Expr`, not values** (`Imp::Lazy(f)`: `IF`, `IFERROR`…). Compiled code cannot
-   evaluate them without calling back into the interpreter on a tree that must still exist.
+   `eval` carries it in its control flow: `logical_fmt`, ghost arrays, element-wise lifting, propagated
+   errors, `notes`, blank results. A second backend must reproduce all of it or bail out to the interpreter:
+   a decision for the maintainer, not a refactor. Lazy functions (`IF`, `IFERROR`) take `Expr`, not values,
+   so compiled code still needs the trees.
 
-## Measurements
+## Changes implemented (same engine, same results)
 
-`gen_large_fixture.py … 100000`: 800 005 formulas, 9.7 MB, one declared input and five declared outputs.
-`dist` build, 4-core VM, `SHEETC_TRACE=1`, one machine and a few runs: indicative, not a benchmark
-(the benchmark protocol is in [performance.md](performance.md#method)).
+All of them format-agnostic (the engine is the one of XLSX and ODS). Measured with the executables run
+alternately (median of 5-7 runs), the stubs built with the same profile, on the workbook of
+`gen_large_fixture.py … 300000` (2.4 M formulas, the one of [performance.md](performance.md#fixtures)), against
+the state before this branch, in one session. The values and the written workbooks are identical
+(`cmp` of the executable's output; every entry of the zip of the workbook equal). 1081 tests pass and
+clippy is clean.
 
-`sheetc calculate -i` takes 2.49 s (JSON) and 2.67 s (`-o`):
+| Change | Where |
+|---|---|
+| A table per sheet and row replaces `FastMap<CellRef, u32>`; a row whose cells are far apart (A and XFD) keeps sorted pairs, so it does not reserve a slot per column | `SlotIndex`, `engine.rs` |
+| A decoded block of constants knows where each row starts, and is found by sheet and block without a hash | `Decoded`, `consts.rs` |
+| The index is kept in the program (`Program::layout`, not serialized, ignored by `==`) for the engines that follow: a service builds one engine per request | `Layout`, `engine.rs`, `ir.rs` |
+| The writer takes the map of writes instead of a copy of it | `into_sheets`, `template.rs` |
+
+| Flow (2.4 M formulas) | Before | Now | Change |
+|---|--:|--:|--:|
+| Executable, one request (declared) | 2.50 s, 496 MB | 1.69 s, 489 MB | -32 % |
+| `--serve`, first request | 2.29-2.34 s | 1.49-1.53 s | -35 % |
+| `--serve`, each next request | 1.51-1.63 s | 0.65 s | -60 % |
+| `sheetc calculate -i` (declared, JSON) | 9.65 s, 1153 MB | 8.57 s, 1153 MB | -11 % |
+| Executable `-o`, every formula recalculated and written | 13.49 s, 1537 MB | 10.99 s, 1352 MB | -19 %, peak -12 % |
+
+At 0.8 M formulas the dense index alone took the run of the executable from 0.735 s to 0.557 s (-24 %;
+quartiles 0.714-0.761 and 0.553-0.573, with a second copy of the baseline at 0.737 s as the noise floor).
+A variant that also streamed the values of the answer cell by cell, to avoid the JSON matrices, saved 4 % of
+the peak and no time, and was dropped. `performance.md` is not updated: the full `scripts/bench.py` run
+was not done, and its tables are of another session.
+
+## Measurements behind the options
+
+### Stages of `calculate`
+
+`gen_large_fixture.py … 100000` (800 005 formulas, declared input and outputs), `SHEETC_TRACE=1`, before the
+changes: `calculate -i` 2.49 s.
 
 | Stage | Time | Share | Skipped by a direct mode? |
 |---|--:|--:|---|
 | read workbook into the `Model` | 0.69 s | 28 % | no |
-| parse and lower formulas | 0.27 s | 11 % | no (lazy parse only of what outputs demand) |
+| parse and lower formulas | 0.27 s | 11 % | no |
 | bindings, constants that start a path, index | 0.06 s | 2 % | partly |
 | cone + CSR graph | 0.17 s | 7 % | yes |
-| SCC + taint | 0.04 s | 2 % | yes (needed only for cycles) |
+| SCC + taint | 0.04 s | 2 % | yes (needed for cycles only) |
 | fold (evaluates input-independent cells) | 0.35 s | 14 % | no: the same evaluation happens in the run |
 | assembly of the `Program` and the rest | 0.51 s | 20 % | in part (about 0.3 s) |
 | run | ≈0.40 s | 16 % | no |
 
-Profile of the run of the compiled executable (`--features profile`, 126 samples at 100 Hz, so about ±8 %):
-`calculate` 67 %, decoding the `postcard` payload 21 %, building the `CellRef → slot` index in
-`Engine::build` 9 %. Inside `calculate`: `cell_value` 59 % (hash lookup 38 %, constant blocks 20 %).
+For `edit`, the recalculation is the mode that matters: every formula is an output and the inputs are
+deduced, so nothing is pruned and nothing folds. The same fixture without the settings sheet, 2.4 M
+formulas, `sheetc build --embed-template` (stage trace): read the workbook 2.62 s; compile 4.16 s, of which
+parse and constants 1.9 s, index 0.2 s, cone + CSR 0.6 s, SCC + taint 0.1 s, assembly 0.9 s. The stages a
+direct mode skips (index, graph, SCC, taint and most of the assembly) are 1.5-1.9 s, 9-11 % of a
+`sheetc calculate -o` that takes about 17 s. The rest of that time is the workbook writer (finding 3).
 
-Formula shapes (cells whose formula is the same after R1C1 normalization):
+### Risk of the direct mode: depth
+
+A direct mode evaluates on demand, which is recursive for a chain the schedule did not order. The engine
+already runs on a thread with a 512 MB stack (`cli::with_big_stack`). A chain of `A1 = A2 + 1 … = An + 1`
+evaluated with no schedule: overflows at 10 000 levels with 8 MB, 100 000 with 64 MB and 1 000 000 with
+512 MB; completes 300 000 with 512 MB. That is about 0.8-1.7 KB per level: a workbook of 1 048 576 rows
+can overflow, so the direct mode needs a depth limit with fallback to the compiled path (which handles
+both the forward and the reversed chain of 300 000 in 0.6-0.7 s). Cycles and iterative calculation
+need the SCC the same way.
+
+### Ceiling of a JIT
+
+Profile of one `--serve` request on 2.4 M formulas (after the dense index, before the other changes; share of
+self time): engine glue 66 %, constants 13.5 %, `ROUND` and number formatting 12 %, other functions
+3 %, decode and start 6 %.
+
+A hand-written typed kernel for the five columns that depend on the input (1.5 M live formulas: `IF`,
+product, `ROUND(…,2)`, running total, `IFERROR` of a division, `MAX - MIN`), `rustc -O`, best of 7:
+
+| Kernel | Time | Per formula |
+|---|--:|--:|
+| rounding as `(x*100).round()/100` | 3.7 ms | 2.5 ns |
+| rounding with the project's `round_dec` (copied as is) | 113 ms | 76 ns |
+
+A request takes 0.65 s today. A numeric JIT cannot go below the exact rounding: the ceiling on this workload
+is about 0.15-0.2 s per request (3-4×), reached only if everything else in the request (engine setup,
+reading the answer) also disappears, and for numeric shapes only; shapes with `VLOOKUP`, text or `COUNTIF`
+stay bound by their functions. The ceiling is not a prototype. The stop criterion proposed before (3× per
+request over the interpreter) is therefore met, if at all, at the ceiling: the next gains are in
+`round_dec` and in not building an engine for every request, both cheaper than code generation.
+
+### Cost of the backends
+
+| | Size | Notes |
+|---|--:|---|
+| Cranelift (`cranelift-jit` 0.120, pure Rust) | +2.85 MB on a stripped binary with one JIT function | compiles and sets up a function with an `IF` in 0.4 ms; no system library |
+| LLVM 18 (`libLLVM.so`) | 123 MB shared library | a matching system installation for every wheel (linux x86_64 and aarch64) and for the build of an executable; no wasm host JIT |
+
+Neither works in the WebAssembly modules (no JIT in a module), and a build of an executable with LLVM would
+need a toolchain where today it needs none ([DESIGN.md](../sheetrs-compiler/docs/DESIGN.md#executable-format)).
+
+## Options
+
+**Direct interpreter.** Same `Engine` with a different schedule: lowered cells in row-major order and
+demand-driven for the rest, a fallback to the compiled path on a cycle or beyond the depth limit (so
+fidelity is kept). `RAND` draws in evaluation order, so its values would differ between paths.
+Dynamic references (`INDIRECT`, `OFFSET`) become simpler than today, where one makes the whole workbook
+reachable. Gain: 9-11 % of a full recalculation, 16-22 % of a declared one-shot calculation; no gain in
+a service. Memory: the graph is freed before the peak already. It is worth doing for what it is, after
+the writer.
+
+**JIT.** Formula shapes repeat in a copied-across model, so the unit of compilation is the shape (tens),
+not the cell (millions), and compile latency is not the obstacle. The cost is fidelity: dynamic
+types need guards and a path back to the interpreter, and blank, error propagation and `logical_fmt` must
+be reproduced in the fast path or the shape must bail out. Only native binaries and the Python wheel could
+carry it. Defer until `round_dec` and the engine per request are fixed and a profile of `--serve` still
+shows the glue.
+
+**LLVM, ahead of time.** Conflicts with no toolchain and a single file, with the WebAssembly target,
+with the CI of the wheels, and with the single engine; the runtime functions (hundreds, with quirks of
+LibreOffice, ICU4X, formats) stay Rust behind an ABI; peak memory does not drop. No-go.
+
+**Compact program (not an option of the request, and not decided).** One tree per R1C1 shape plus
+`(shape, anchor)` per cell would cut memory and decode time (about 480 B per formula at 2.4 M; decode
+is 21 % of a cold run of the executable and 6 % of a `--serve` session). It stands or falls with how
+much real models repeat, and that census is missing.
 
 | Workbook | Formulas | Shapes |
 |---|--:|--:|
@@ -59,143 +177,36 @@ Formula shapes (cells whose formula is the same after R1C1 normalization):
 | `loan.xlsx` | 1 086 | 9 |
 | `semantics.xlsx` (the oracle: distinct by design) | 34 295 | 33 998 |
 
-Only the first two say anything about real models, and both are synthetic or tiny. **The shape census of
-real workbooks is missing and is the data that decides the memory proposals below.**
+Only the first two say anything about real models, and both are synthetic or tiny.
 
-## Option 1: direct mode (interpret without compile stages)
+## Sequence
 
-For `calculate` and for the recalculation that ends an `edit` plan. In the latter every formula is an
-output and the inputs are deduced, so the cone prunes nothing and nothing folds: the graph, the fold and
-the assembly are pure cost.
-
-- **Gain.** Skipping cone, graph, SCC, taint and part of the assembly: about 0.4-0.55 s of 2.49 s
-  (16-22 %) here. The floor is reading plus parsing (about 40 %). For `edit` on 2.4 M formulas, graph +
-  fold + assembly are 2.95 s of a 6.85 s build ([performance.md](performance.md#sheetc-calculate-and-sheetc-build)),
-  while the edit scenarios take 17-44 s: **at most 7-17 % of `edit`**, because its time is in the
-  deletion pass, the second read and the write. The goal "benefits `edit`" holds, but the gain is bounded.
-- **Peak memory: little.** The graph is already built into compressed rows and freed before assembly;
-  the peak is the cells and the `Expr` trees (about 480 B per formula at 2.4 M: 1152 MB).
-- **One engine.** It is the same `Engine` with a different schedule: lowered cells in row-major order,
-  demand-driven for the rest (the engine's `Pending/Busy/Done` states). Dynamic references (`INDIRECT`,
-  `OFFSET`) become simpler than today, where one makes the whole workbook reachable.
-- **Risks, with their guard.**
-  - Recursion depth: a chain of 300 000 cells evaluated on demand overflows the stack. Row-major order
-    avoids it for backward references; forward chains need an explicit stack or a depth limit.
-  - Cycles and iterative calculation need the SCC and give LibreOffice's `Err:522`/`Err:523`. On the first
-    `Busy` read or a depth beyond the limit, **fall back to the compiled path** (same engine, so fidelity
-    is kept).
-  - `RAND`/`RANDBETWEEN` draw from one generator in evaluation order, so a different order gives other
-    draws: acceptable for a non-deterministic function, but the equivalence test must exclude it.
-- **Verdict: viable, low risk, modest gain.** Do it second, after the index of the next section, because
-  that is cheaper and larger.
-
-## Option 2: the cheap structural step that every other option needs
-
-Not in the request, but the profile points at it, and a JIT would need it anyway.
-
-- **Dense index instead of the hash (done, measured).** `Engine` resolved `CellRef` through
-  `FastMap<CellRef, u32>` for every operand and built it for every cell at start. It is now a table per
-  sheet and row (`SlotIndex` in `engine.rs`): a row of packed cells holds a slice of slots by column; a row
-  whose cells are far apart (A and XFD) holds sorted `(column, slot)` pairs, so a wide sparse row does not
-  reserve a slot per column. Result on the 100 k-row fixture, executables run alternately 15 times each
-  (median, quartiles), same program and byte-identical output:
-
-  | | median | q1-q3 |
-  |---|--:|--:|
-  | before | 0.735 s | 0.714-0.761 |
-  | before, second copy (noise floor) | 0.737 s | 0.720-0.755 |
-  | dense index | 0.557 s | 0.553-0.573 |
-
-  That is -24 % of the run of the executable (criterion: 15 %). `sheetc calculate -i` (7 runs) went from
-  2.77 s to 2.41 s (-13 %), since the fold also runs the engine; peak memory did not rise (executable
-  175 to 165 MB, `calculate` 398 MB both). The workspace tests pass (1081) and clippy is clean. Not done:
-  the full `scripts/bench.py` run, so the tables of [performance.md](performance.md) are not updated; the
-  constant blocks (20 % of `calculate` in the profile) are untouched and are the next lookup to resolve.
-- **Compact program (memory and decode).** 21 % of an executable's run is decoding `Expr` trees and a node
-  is 32 B plus a heap `Vec`/`Box` per call. If shapes repeat, store one tree per R1C1 shape plus
-  `(shape, anchor)` per cell, and evaluate with offsets: this is how XLSX itself stores shared formulas.
-  It attacks goals (3) and (1) together and does not touch semantics (same `eval`, relative operands).
-  It stands or falls with the shape census.
-
-## Option 3: JIT for services that evaluate the same template
-
-Where it matters: `--serve` and the Python/WebAssembly use, not the cold run. In a cold `calculate`
-the evaluation is 16 % of the time, so even infinitely fast code saves at most 16 %. In `--serve`
-evaluation is 100 % of each request: 1.14 s per call on `formulas.xlsx`, because the input moves a column
-of 300 000 rows and a running total ([performance.md](performance.md#the-model-use-inputs-calculate-ranges)).
-
-- **What compilation can win.** Formula shapes repeat, so the unit of compilation is the shape (tens),
-  not the cell (millions): compile latency stops being the problem of other JITs. A numeric shape such
-  as `=Data!A2*Data!B2` or `=ROUND(B2*C2,2)` becomes a loop over the rows: nanoseconds per cell against
-  hundreds in the tree walker. Shapes that call `VLOOKUP`, text or `COUNTIF` stay bound by the runtime
-  functions.
-- **What it costs.** Cell types are dynamic (number, text, error, empty, boolean), so compiled code needs
-  type guards and a deoptimization path to the interpreter, and must reproduce `blank`, error propagation
-  and `logical_fmt` in the fast path or bail out. That is the double engine of finding 3. Containment:
-  compile only shapes whose operands are all numeric and whose functions are on an allowed list,
-  guard on the input types, fall back per shape.
-- **Where it cannot run.** WebAssembly (no JIT in the module), and any build that must stay a single
-  file without a toolchain. A JIT is a feature of the native binary and the Python wheel only.
-- **Backend.** Cranelift (pure Rust, no system library, compile in milliseconds) over LLVM for a JIT:
-  LLVM needs a system installation of a matching version (a CI burden for the linux x86_64 and aarch64
-  wheels) and its latency is wasted on shapes of two operations. Size impact of either on `sheetc` and
-  the wheel: to measure.
-- **Expected value.** Unknown until measured. The per-request profile of `--serve` has not been taken;
-  the constants stay decoded there, but the address resolution of finding 2 stays too. Resolving the slot
-  (Option 2) may already take a large part of what a JIT would show.
-
-## Option 4: LLVM compiler (ahead of time)
-
-`sheetc build --backend llvm`: machine code for the static part of the program.
-
-- It conflicts with four properties the project states: no toolchain to build and one file as artifact
-  ([DESIGN.md](../sheetrs-compiler/docs/DESIGN.md#executable-format)), the WebAssembly target (a stub plus a payload; a
-  native object cannot be one), the wheels that build in CI, and the single engine.
-- The runtime functions (hundreds, with LibreOffice quirks, ICU4X collation, text formats) remain Rust
-  and are called through an ABI; LLVM can inline only the numeric glue. Peak memory does not drop: values
-  stay in the same stores.
-- For `--serve` it can do what Option 3 does, at a build step the user must run with a toolchain.
-- **Verdict: no-go for the main line.** Revisit only if the prototype of Option 3 passes its criterion and
-  Cranelift's code is the measured limit (column vectorization), and then as an optional,
-  feature-gated artifact.
-
-## Comparison
-
-| | Goal 1: `calculate`/`edit` time | Goal 2: services | Goal 3: run time and memory | One engine | Cost | Verdict |
-|---|---|---|---|---|---|---|
-| Direct mode | 16-22 % of `calculate`; ≤ 7-17 % of `edit` | none | none | yes | low | do, after the index |
-| Dense index / compact program | start-up and run | per request | memory if shapes repeat | yes | low-medium | do first, measure |
-| JIT (Cranelift) | none | large on numeric shapes, unmeasured | request time only | no (guarded) | high | prototype with a stop criterion |
-| LLVM AOT | none | as the JIT | request time only | no | very high | no-go |
-
-The three are not "complementary and orthogonal" as proposed: the goals overlap on the same lever (how a
-cell address becomes a value), and the cheap lever serves all of them before any code generation.
-
-## Proposed sequence, with exit criteria
-
-1. **Measure (days).** The index experiment (dense grid) passed: -24 % with identical output (see
-   Option 2). Still to do on `formulas.xlsx` (2.4 M formulas). The shape census over real models of the maintainer: go on compact
-   programs if the formulas-per-shape ratio is 10 or more. A per-request profile of `--serve`.
-2. **Direct mode.** Fallback to the compiled path on a cycle or on depth; equivalence tests: every
-   fixture of `tests/semantics` and the oracle suites give identical values by both paths (`RAND`
-   excluded). Report the stage table above again, and update [performance.md](performance.md).
-3. **Compact program**, if step 1 allows it. Goal: memory per formula and decode time.
-4. **JIT prototype** (feature `jit`, native only, numeric shapes only), only if step 1 shows that address
-   resolution is not already most of the gain. Stop criterion: less than 3× on the per-request time of
-   `formulas.xlsx --serve`, or any difference from the interpreter on the oracle suites or on a
-   differential fuzz of the shapes.
-5. **LLVM:** not started.
+1. **Done** (this branch): the four changes above.
+2. **Writer of the workbook**, the largest cost of `calculate -o` and `edit` (finding 3): the XML transform,
+   the deflate and the construction of the values to write. Profile first; this is where goal 1 is.
+3. **`round_dec` without text**, with a differential test against the current function over many
+   values, modes and digits (the rounding is a fidelity rule, so identity is the criterion), and an
+   engine kept between the requests of `--serve`. Measure again; this decides the JIT.
+4. **Direct mode**, with the depth limit and the fallback, and the equivalence tests of every
+   fixture of `tests/semantics` between the two paths (`RAND` excluded).
+5. **Shape census** on real workbooks of the maintainer; compact program only if the ratio of formulas
+   per shape is 10 or more.
+6. **JIT prototype** only if step 3 leaves the glue as the main cost of `--serve`. **LLVM:** not started.
 
 ## What this does not show
 
-- One generated workbook of 800 k formulas; real models differ in function mix, shape repetition and
-  size. The shape census on the private workbooks is the main gap.
-- A flamegraph of 126 samples: the order of magnitude of the shares is solid, the exact percentages are not.
-- The gains of Option 1 are estimates from the stage trace, not from a prototype; the ones of Options 2-4
-  are bounds or hypotheses, marked as such.
-- The cold `calculate` and the run of an executable are different programs (the second decodes a payload);
-  their profile shares are not additive.
+- One generated workbook family (`gen_large_fixture.py`) in two sizes; real models differ in function mix,
+  repetition and size. The shape census is the main gap, and the JIT ceiling depends on how numeric the
+  real models are.
+- Flamegraphs of 126 to 1700 samples: the order of magnitude of the shares is sound, the exact
+  percentages are not. The stubs carry the `profile` feature, the same for both sides of every comparison.
+- The ceiling of the JIT comes from a hand-written kernel, not from generated code; the gain of the direct
+  mode, from the stage trace, not from a prototype.
+- One 4-core virtual machine; times move 10-20 % between sessions, so only the pairs measured together
+  are compared.
+- The 100 k-row stage table predates the changes; the 2.4 M recalculation trace is after the first of them.
 
-Reproduce: `SHEETC_TRACE=1 sheetc calculate -i FILE`; the profile with `cargo build --release -p
-sheetrs-compiler --features profile`, `sheetc build --runtime` that binary, and `SHEETC_FLAMEGRAPH=out.svg`
-on the executable.
+Reproduce: `SHEETC_TRACE=1 sheetc calculate -i FILE` (stages); `cargo build --release -p sheetrs-compiler
+--features profile`, `sheetc build --runtime` that binary, and `SHEETC_FLAMEGRAPH=out.svg` on the
+executable (profile); the executables of two builds run alternately for the comparison, as in
+[DESIGN.md](../sheetrs-compiler/docs/DESIGN.md#measuring-a-change).
