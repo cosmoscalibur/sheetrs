@@ -12,7 +12,8 @@ mod template;
 
 pub use error::{Error, Result};
 pub use template::{
-    fill_template, fill_template_to, fill_template_to_with_answer, fill_template_with_answer,
+    fill_template, fill_template_to, fill_template_to_also, fill_template_to_with_answer,
+    fill_template_with_answer,
 };
 
 /// What a template was filled with: the number of cells written.

@@ -6,9 +6,9 @@
 
 use serde_json::{Map, Value as Json};
 use sheetrs_compiler::memory::{BookCompile, Options};
-use sheetrs_compiler::{Cache, Removed};
+use sheetrs_compiler::{Cache, Only, Removed};
 use sheetrs_engine::ir::Mode;
-use sheetrs_io::write::Calculation;
+use sheetrs_io::write::{Calculation, ValueScope, ValueTarget, WorkbookModifications};
 use sheetrs_io::{Book, Volatile};
 use sheetrs_protocol::ValueRanges;
 use std::fmt;
@@ -152,4 +152,93 @@ pub(crate) fn recalculate(
     calculate(source, &calculation, cache, removed)
         .map(|calculated| calculated.workbook)
         .map_err(|error| error.to_string())
+}
+
+/// Why a conversion with the engine did not give a workbook.
+#[derive(Debug)]
+pub(crate) enum ConvertError {
+    /// The engine cannot calculate what the conversion asks for (a function it does not have, a
+    /// reference it does not read).
+    Engine(String),
+    /// The writer of the workbook failed (a sheet that is not there, a deletion that cannot be made).
+    Write(sheetrs_io::write::Error),
+    /// The cells could not be written.
+    Other(String),
+}
+
+impl From<sheetrs_io::write::Error> for ConvertError {
+    fn from(error: sheetrs_io::write::Error) -> Self {
+        Self::Write(error)
+    }
+}
+
+/// A pass over the file that converts formulas to values with the engine, in the one step: the cells
+/// the conversion asks for are what the engine is asked for (it calculates them and what they read, and
+/// nothing else of the workbook), and the writer, as it applies `pass` (the conversions and the
+/// deletions, against the workbook as it is), writes each of them as the value the engine calculated
+/// and not the one the file cached. The bytes of the workbook that comes out, in its own format.
+///
+/// A workbook with no formula inside the cells asked for has nothing to calculate: `pass` is applied
+/// as it is. The error is why the engine cannot, as in [`calculate`].
+pub(crate) fn convert(
+    source: &Book,
+    pass: &WorkbookModifications,
+    volatile: Volatile,
+    removed: Removed,
+) -> Result<Vec<u8>, ConvertError> {
+    let mut options = Options::default().with_book(source);
+    options.config.now = volatile.now.or(options.config.now);
+    options.config.seed = volatile.seed.or(options.config.seed);
+    options.removed = removed;
+    // A sheet the pass deletes takes its conversion with it: nothing is asked of it.
+    options.only = pass
+        .formula_to_value
+        .iter()
+        .filter(|scope| {
+            !pass
+                .delete_sheets
+                .as_ref()
+                .is_some_and(|gone| gone.contains(&scope.sheet))
+        })
+        .map(only_of)
+        .collect();
+    let write_as_it_is = || Ok(source.modify_to_bytes(pass)?);
+    if options.only.is_empty() {
+        return write_as_it_is();
+    }
+    let (program, _) = source
+        .compile(&options, Mode::Recalculate)
+        .map_err(|e| ConvertError::Engine(e.to_string()))?;
+    if program.formula_cells.is_empty() {
+        return write_as_it_is();
+    }
+    let mut workbook = Vec::new();
+    sheetrs_answer::fill_template_to_also(
+        source,
+        &program,
+        None,
+        &Json::Null,
+        &options.overrides(),
+        pass,
+        &mut workbook,
+    )
+    .map_err(|e| match e {
+        sheetrs_answer::Error::Write(e) => ConvertError::Write(e),
+        e => ConvertError::Other(e.to_string()),
+    })?;
+    Ok(workbook)
+}
+
+/// The cells a conversion names, as what the engine is asked for.
+fn only_of(scope: &ValueScope) -> Only {
+    let (rows, columns) = match scope.target {
+        ValueTarget::Sheet => (None, None),
+        ValueTarget::Columns(first, last) => (None, Some((first, last))),
+        ValueTarget::Rows(first, last) => (Some((first, last)), None),
+    };
+    Only {
+        sheet: scope.sheet.clone(),
+        rows,
+        columns,
+    }
 }

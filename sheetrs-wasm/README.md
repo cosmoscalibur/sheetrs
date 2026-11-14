@@ -105,9 +105,12 @@ the ones that depend on them, and every other formula keeps the value the applic
 computed. A workbook that reads cells at run time (`INDIRECT`), or whose file says its results are stale, is
 calculated whole, as without it (see `sheetrs-edit/README.md`, *Using the cache*).
 
-A `formulaToValue` that follows a change which leaves results stale (rows, columns, sheets or names
-deleted) converts the results calculated again by the engine, as an application that calculates as it goes
-shows them. If the engine cannot calculate the workbook, the call throws with the reason.
+A `formulaToValue` converts what the formulas calculate, not what the file caches: the engine calculates the
+cells of its scopes (and what they read) in the pass that writes them as values, so it also converts what a
+replacement pushed with it gave. With `useCache = true` the values are the results the file caches for the
+formulas the plan does not reach. If the engine cannot calculate the workbook, the cached results are
+converted and the report holds a warning with the code `CONVERTED_FROM_CACHE`, unless the plan leaves them
+stale: then the call throws with the reason.
 
 ### `query`
 

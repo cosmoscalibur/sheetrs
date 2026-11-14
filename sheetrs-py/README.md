@@ -136,7 +136,9 @@ content as Python dicts and lists, `to_json()` as JSON text (and, for the lint r
   or shown, a function of position or a name when rows, columns, sheets or names are deleted) and the ones that depend on
   them; every other formula keeps, as the file has it, the result the application that wrote it cached. It takes
   less time and memory the fewer formulas the edit reaches and is the same as without the option where it
-  reaches most of them (see `sheetrs-edit/README.md`, *Using the cache*).
+  reaches most of them (see `sheetrs-edit/README.md`, *Using the cache*). It also decides what
+  `formula_to_value` converts: what the formulas calculate (the engine calculates the cells of the scopes while the
+  file is written), or, with `use_cache=True`, the results the file caches for the formulas the edit does not reach.
 - **Recalculation on open**, with no option: a workbook whose results the changes leave stale (rows,
   columns, sheets or names deleted) and that no `calculate` calculated again is saved marked so that
   the application that opens it recalculates every formula. When the engine cannot calculate the

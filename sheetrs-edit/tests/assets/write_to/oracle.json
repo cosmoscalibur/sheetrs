@@ -7153,10 +7153,7 @@
       ]
      },
      {
-      "differences": [
-       "Calc!A6 value: 14.0 -> 140.0",
-       "Calc!A8 value: 8.0 -> 99.0"
-      ],
+      "differences": [],
       "expected": [
        {
         "cells": {
@@ -7270,7 +7267,7 @@
           "f": "",
           "v": {
            "t": "s",
-           "v": "from-excel"
+           "v": "t"
           }
          },
          "A8": {
@@ -7595,14 +7592,8 @@
         "Calc!A:A"
        ]
       ],
-      "reread_differences": [
-       "Calc!A6 value: 14.0 -> 140.0",
-       "Calc!A8 value: 8.0 -> 99.0"
-      ],
-      "written_differences": [
-       "Calc!A6 value: 14.0 -> 140.0",
-       "Calc!A8 value: 8.0 -> 99.0"
-      ]
+      "reread_differences": [],
+      "written_differences": []
      },
      {
       "differences": [
@@ -15868,21 +15859,21 @@
           "f": "",
           "v": {
            "t": "n",
-           "v": 140.0
+           "v": 14.0
           }
          },
          "A7": {
           "f": "",
           "v": {
            "t": "s",
-           "v": "from-excel"
+           "v": "t"
           }
          },
          "A8": {
           "f": "",
           "v": {
            "t": "n",
-           "v": 99.0
+           "v": 8.0
           }
          },
          "A9": {

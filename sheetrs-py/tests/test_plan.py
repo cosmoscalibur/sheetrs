@@ -275,8 +275,28 @@ def test_the_operations_that_cannot_share_a_pass_say_why_by_their_passes(structu
         .replace("9", "8", scope="U")
     )
     text = book.explain()
-    # Whatever order they were called in: the replacement, the results it left stale calculated
-    # again, then the conversion and the deletion together, written against the workbook as it is.
+    # Whatever order they were called in: the replacement, then the conversion and the deletion together,
+    # written against the workbook as it is (the engine calculates the cells to convert while the pass writes
+    # them as values: no calculation of its own comes first).
+    assert "pass 1 of 3" in text and "pass 3 of 3" in text
+    assert (
+        text.index("replace")
+        < text.index("formula to value")
+        < text.index("delete rows")
+        < text.index("recalculate every formula")
+    )
+    # And what the replacement and the deletion left stale is calculated again at the end.
+    assert text.count("recalculate every formula") == 1
+
+
+def test_a_conversion_that_uses_the_cache_has_the_results_calculated_first(structure):
+    book = (
+        sheetrs.Book(structure)
+        .delete_rows("T!2")
+        .formula_to_value("F")
+        .replace("9", "8", scope="U")
+    )
+    text = book.explain(use_cache=True)
     assert "pass 1 of 4" in text and "pass 4 of 4" in text
     assert (
         text.index("replace")
@@ -284,7 +304,6 @@ def test_the_operations_that_cannot_share_a_pass_say_why_by_their_passes(structu
         < text.index("formula to value")
         < text.index("delete rows")
     )
-    # And what the deletion left stale is calculated again at the end.
     assert text.rindex("recalculate every formula") > text.index("delete rows")
 
 

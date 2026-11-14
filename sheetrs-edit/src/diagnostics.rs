@@ -23,3 +23,22 @@ pub(crate) fn not_calculated(operation: &str, reason: &str) -> Diagnostic {
     .with("operation", operation)
     .with("reason", reason)
 }
+
+/// The code of the diagnostic of a conversion that took the results the file caches.
+pub const CONVERTED_FROM_CACHE: &str = "CONVERTED_FROM_CACHE";
+
+/// The diagnostic of a conversion of formulas to values (`operation`) that the engine could not calculate
+/// (`reason`: a function it does not have, a reference it does not read) and that took the results the
+/// file caches instead, because nothing the run did before it leaves them stale. They are the results of the
+/// program that wrote the file, which can differ from what `LibreOffice` calculates when it opens it.
+#[must_use]
+pub(crate) fn converted_from_cache(operation: &str, reason: &str) -> Diagnostic {
+    Diagnostic::warning(
+        CONVERTED_FROM_CACHE,
+        format!(
+            "the formulas were converted to the results the file caches, not to the ones calculated ({reason})"
+        ),
+    )
+    .with("operation", operation)
+    .with("reason", reason)
+}

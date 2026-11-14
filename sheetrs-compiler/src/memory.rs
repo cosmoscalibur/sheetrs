@@ -15,7 +15,7 @@
 //! | `sheetc verify -i FILE` (`--reference cache`) | [`BookCompile::verify`] |
 //! | `sheetc evaluate FORMULA` | [`evaluate`] |
 
-use crate::compile::{Cache, Removed, Report, compile};
+use crate::compile::{Cache, Only, Removed, Report, compile};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::loader;
@@ -44,6 +44,9 @@ pub struct Options {
     /// `#REF!` in a formula is the reference that went and not an error written in it (see
     /// [`Removed`]).
     pub removed: Removed,
+    /// For [`Mode::Recalculate`]: calculate only the formulas inside these cells and what they read, and
+    /// write only them (see [`Only`]).
+    pub only: Vec<Only>,
 }
 
 impl Options {
@@ -78,6 +81,7 @@ impl Options {
             declarations,
             cache: None,
             removed: Removed::default(),
+            only: Vec::new(),
         })
     }
 
@@ -89,6 +93,7 @@ impl Options {
         spec.mode = mode;
         spec.cache.clone_from(&self.cache);
         spec.removed = self.removed;
+        spec.only.clone_from(&self.only);
         Ok(spec)
     }
 

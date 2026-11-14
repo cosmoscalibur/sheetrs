@@ -171,8 +171,9 @@ byte. The rule is one canonical order:
    left);
 2. the calculation: the inputs are written and every formula calculated (one step; several keep
    their order);
-3. in one pass over the file: formulas converted to values, while every cached result is still there
-   (a conversion on a sheet that is removed goes with it); in each sheet, rows deleted **from the
+3. in one pass over the file: formulas converted to values (the cells they name are calculated by the
+   engine and written as values in that same pass; a conversion on a sheet that is removed goes with
+   it); in each sheet, rows deleted **from the
    last to the first**, overlapping or touching ranges merged, so a deletion shifts only what is
    below it; in each sheet, columns deleted the same way; names deleted; sheets deleted (the
    deletions of a deleted sheet go with it);
@@ -193,13 +194,23 @@ results are stale and are calculated again first). Two deletions that touch are 
 writer does for any band (the shapes in it are placed by the sizes of the rows and columns: see
 below), so they never need to be split.
 
-A conversion reads the results the workbook caches. When what runs before it (a replacement) left
-them stale, or the file itself says it is stale, they are calculated again first, with the engine of
-`LibreOffice`'s semantics, in a pass of its own. A conversion **does not** see a deletion pushed with
+A conversion converts **what the formulas calculate**, not what the file caches (the result a file caches is
+not a goal, and the application that wrote it may not have calculated it: `LibreOffice` calculates some formulas
+of an ODS when it loads it and keeps the cached results of the others, the XLSX of a program that writes no
+results caches 0). The cells it names are what the engine (the semantics of `LibreOffice`) is asked for: it
+calculates them and what they read, nothing else of the workbook, and the pass that writes the file writes them
+as values (so a conversion costs the engine's reading of the workbook, not a calculation of every formula
+followed by a pass of its own). What runs before it (a replacement) is seen. With `--use-cache`
+(`use_cache`, `useCache`) the conversion reads the results the file holds instead: the cached ones where the
+plan reaches nothing, the engine's where it does (the formulas it leaves stale are calculated first). When the
+engine cannot calculate the workbook (a function it does not have, a reference it does not read) the cached
+results are converted and the `Report` says so (a warning with the code `CONVERTED_FROM_CACHE`), if nothing
+before the conversion leaves them stale and the file does not say they are stale; otherwise the run stops with
+an error, since the values to convert do not exist. A conversion **does not** see a deletion pushed with
 it: the deletion runs after, as in `--formula-to-value F --delete-rows T!4`. To convert what a
 deletion leaves (what `LibreOffice` shows after deleting and then converting) make two cuts: save the
 deletion and convert in the next command or the next `write`; the saved workbook is the input of the
-second step, which finds its results stale and calculates them again. There is no sequential mode.
+second step. There is no sequential mode.
 
 Operations on different sheets do not depend on each other, because a reference moves only with the
 rows and columns of the sheet it names. That holds because references across sheets are not
@@ -280,8 +291,8 @@ the memory of the calculation shrink with what is not reached; the reading of th
 `BookEdit::calculate(Calculation { inputs, ranges, major, answer, now, seed })` writes the inputs and calculates every
 formula of the workbook as it is, before the conversions and the deletions (*Data ▸ Calculate* in
 LibreOffice). The engine is the one of `sheetrs-compiler` (the semantics of LibreOffice), which this
-crate depends on: nothing is handed in, and the same one recalculates the results that a conversion of
-formulas to values reads after a change that leaves them stale.
+crate depends on: nothing is handed in, and the same one calculates the cells that a conversion of
+formulas to values converts and recalculates what the deletions leave stale.
 
 - **The engine can calculate the workbook:** it is written with fresh results and **without** the mark
   to recalculate it when it is opened (unless a deletion that comes after it leaves results stale).
@@ -321,12 +332,12 @@ error): it is read, in memory and with no recalculation, from the workbook just 
 have it calculated); the answer keeps the order of the request. A text that is no range or name of the workbook is an
 error (`Error::Calculation`). Details and the table of the cases: [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for).
 
-`sheetrs edit` has no `--calculate` flag: calculating is a step the planner inserts where a conversion needs fresh results (`BookEdit::calculate` is the explicit step in the library). To calculate a file with inputs and ranges, `sheetc calculate -i FILE -o OUT` (with `--request` to give them).
+`sheetrs edit` has no `--calculate` flag: calculating is a step the planner inserts at the end of what leaves results stale and in a conversion (`BookEdit::calculate` is the explicit step in the library). To calculate a file with inputs and ranges, `sheetc calculate -i FILE -o OUT` (with `--request` to give them).
 
 A pass reads and writes each worksheet as a stream, one
 cell (XLSX) or row (ODS) at a time, and the plan is a handful of bands and names, so a plan with no recalculation
-(a conversion of an ODS, whose results are stored) keeps the memory flat; a plan that leaves formulas stale that only the engine can calculate ends with
-the engine running, which holds the formulas of the workbook (the times and the memory per scenario are in
+(a conversion with `--use-cache` of an ODS, whose results are stored) keeps the memory flat; a plan that leaves formulas stale, or converts without it, that only the engine can calculate ends with
+the engine running, which holds the formulas of the workbook it needs (the times and the memory per scenario are in
 [`docs/performance.md`](../docs/performance.md#sheetrs-edit)). Only the parts that are small by nature are read whole (the
 workbook part, its relationships and, for a sheet whose cells move, its notes and drawings). A
 plan of several passes keeps the file between them in a temporary folder.
@@ -434,15 +445,16 @@ sheetrs edit -i master.xlsx --formula-to-value "Inputs" "Model!B:D" "Model!3:10"
 sheetrs edit -i master.xlsx --formula-to-value "Model!F" "'R!D'!2" -o run.xlsx
 ```
 
-- Values are the results the spreadsheet application stored when it last saved the file, as long as
-  they are fresh. When they are not (an XLSX marked to recalculate when it is opened, an ODS with no
-  stored result in its formulas, or a change earlier in the same run that leaves results stale: a
-  deletion, a replacement), the results are calculated again with the engine before they are
-  converted, as an application that calculates as it goes shows them, so a run such as
-  `--replace A --with B --formula-to-value S` in one invocation converts what the formulas give
-  after the replacement. When the engine cannot calculate the workbook (a function or syntax it does
-  not have), the conversion is an error and nothing is written. A formula without a stored value
-  keeps its formula.
+- Values are what the formulas **calculate**: the engine calculates the cells to convert (and what they
+  read) in the pass that writes them, so a file that caches stale results (an XLSX that caches 0 and is
+  marked to recalculate, an ODS saved by a program that did not calculate) converts what the formulas
+  give, and `--replace A --with B --formula-to-value S` in one invocation converts what the formulas give
+  after the replacement. Only with `--use-cache` are the results the spreadsheet application stored the
+  values converted, for the formulas the plan does not reach. When the engine cannot calculate the
+  workbook (a function or syntax it does not have), the cached results are converted and the report
+  says so (`CONVERTED_FROM_CACHE`) if nothing before the conversion leaves them stale; if they may be
+  stale the conversion is an error and nothing is written. A formula without a stored value that
+  the engine does not calculate (it cannot) keeps its formula.
 - Formulas that return text become text cells. Error results become empty
   texts, as in LibreOffice's *Data ▸ Calculate ▸ Formula to Value* (checked on
   `=1/0`, `=NA()`, `=SQRT(-1)` and an error the file caches), in XLSX and in

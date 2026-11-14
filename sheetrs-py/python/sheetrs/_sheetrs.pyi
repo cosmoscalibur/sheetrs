@@ -339,7 +339,12 @@ class Book:
         """Delete defined names: one `str` or an iterable of them."""
     def formula_to_value(self, scopes: Targets) -> Self:
         """Replace the formulas of the scopes (`"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"`) by their
-        values: one `str` or an iterable of them."""
+        values: one `str` or an iterable of them. The values are what the formulas calculate (the
+        engine calculates the cells of the scopes, and what they read, while the file is written), not
+        what the file caches; with `use_cache=True` the results the file caches for the formulas the
+        edit does not reach. If the engine cannot calculate the workbook, the cached results are
+        converted and the report of the save says so (`CONVERTED_FROM_CACHE`), unless they may be
+        stale: then it raises."""
     def delete_rows(self, rows: Targets) -> Self:
         """Delete rows (`"Sheet!3:10"`, `"Sheet!3"`): one `str` or an iterable of them, simultaneous
         within the call."""

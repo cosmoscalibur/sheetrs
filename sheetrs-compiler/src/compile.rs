@@ -107,6 +107,20 @@ pub struct Spec {
     pub cache: Option<Cache>,
     /// What the passes before the recalculation removed from the workbook (see [`Removed`]).
     pub removed: Removed,
+    /// Only these cells are asked for: the outputs of the program are the formulas inside them (the
+    /// program is pruned to what they read, and only they are written), where none is given the outputs
+    /// are every formula. See [`Only`].
+    pub only: Vec<Only>,
+}
+
+/// The cells of a sheet that a calculation is asked for: the whole sheet, some columns of it or some rows
+/// (0-based, inclusive), as the conversion of formulas to values names them. A sheet that the workbook
+/// has not is no cell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Only {
+    pub sheet: String,
+    pub rows: Option<(u32, u32)>,
+    pub columns: Option<(u32, u32)>,
 }
 
 /// What an edit removed from the workbook before it is calculated: the cells of rows and columns, and
@@ -220,6 +234,7 @@ impl Default for Spec {
             features: Features::default(),
             cache: None,
             removed: Removed::default(),
+            only: Vec::new(),
         }
     }
 }
@@ -841,6 +856,20 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         merged.extend(rest);
         formulas = merged;
     }
+    // The cells a calculation is asked for, when it is (`Spec::only`).
+    let asked_areas: Vec<Rect> = spec
+        .only
+        .iter()
+        .filter_map(|o| only_area(model, o))
+        .collect();
+    let asked = |at: &CellRef| {
+        spec.only.is_empty()
+            || asked_areas.iter().any(|r| {
+                r.sheet == at.sheet
+                    && (r.r0..=r.r1).contains(&at.row)
+                    && (r.c0..=r.c1).contains(&at.col)
+            })
+    };
     let mut outputs = Vec::new();
     for b in &spec.outputs {
         let rect = resolve_target(model, &b.target)?;
@@ -861,7 +890,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         let positions: Vec<CellRef> = formula_positions
             .iter()
             .copied()
-            .filter(|at| Some(at.sheet) != spec.skip_sheet)
+            .filter(|at| Some(at.sheet) != spec.skip_sheet && asked(at))
             .collect();
         let rects = formula_rects(&positions);
         if rects.len() > MAX_FORMULA_OUTPUTS {
@@ -1600,6 +1629,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             .into_iter()
             .filter(|at| {
                 Some(at.sheet) != spec.skip_sheet
+                    && asked(at)
                     && (!declared
                         || outputs.iter().any(|b| {
                             let r = &b.rect;
@@ -1632,6 +1662,14 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         },
         report,
     ))
+}
+
+/// The area of the cells of `only`, `None` when the sheet is not in the workbook.
+fn only_area(model: &Model, only: &Only) -> Option<Rect> {
+    let sheet = model.sheet_id(&only.sheet)?;
+    let (r0, r1) = only.rows.unwrap_or((0, addr::MAX_ROWS - 1));
+    let (c0, c1) = only.columns.unwrap_or((0, addr::MAX_COLS - 1));
+    Some(Rect::new(sheet, r0, c0, r1, c1))
 }
 
 /// The moment of a build in UTC (`2026-10-30T12:00:00Z`): `SOURCE_DATE_EPOCH` (seconds since 1970)

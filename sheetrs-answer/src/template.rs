@@ -196,6 +196,35 @@ pub fn fill_template_to(
     write_cells_to(&filled.writes, template, out)
 }
 
+/// [`fill_template_to`] with what else the same pass over the file does: `also` are the modifications
+/// (formulas converted to values, rows, columns, sheets and names deleted) the writer applies as it
+/// writes the results, against the workbook as it is. A formula that `also` converts to its value
+/// becomes the result the program gave it, not the one the file cached. `also` holds no replacement
+/// of its own: the results are the replacements.
+///
+/// # Errors
+///
+/// As [`fill_template_to`], and what the writer finds in `also`.
+pub fn fill_template_to_also(
+    template: &Book,
+    program: &Program,
+    base: Option<&dyn ConstSource>,
+    request: &Json,
+    overrides: &Overrides,
+    also: &WorkbookModifications,
+    mut out: impl std::io::Write,
+) -> Result<Written> {
+    let filled = fill(template, program, base, request, overrides, false)?;
+    let mut mods = also.clone();
+    mods.replacements.clone_from(filled.writes.sheets());
+    let bytes = template.modify_to_bytes(&mods)?;
+    out.write_all(&bytes)
+        .map_err(sheetrs_io::write::Error::from)?;
+    Ok(Written {
+        cells: filled.writes.len(),
+    })
+}
+
 /// [`fill_template_with_answer`] that writes the bytes of the workbook to `out`, in memory.
 ///
 /// **Ranges outside the outputs.** In the embedded mode (the workbook is its own template) the

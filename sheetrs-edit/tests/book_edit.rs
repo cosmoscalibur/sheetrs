@@ -81,6 +81,18 @@ fn explain_says_what_write_will_do_without_touching_a_file() {
         text.ends_with("mark it to be recalculated when opened\n"),
         "{text}"
     );
+    // The conversion is of what the engine calculates for its cells, unless the run uses the cache.
+    assert!(
+        text.contains("calculated by the engine, for the cells they name"),
+        "{text}"
+    );
+    let mut cached = source.with_use_cache(true);
+    cached.formula_to_value(["F".parse().unwrap()]);
+    assert!(
+        !cached
+            .explain()
+            .contains("calculated by the engine, for the cells they name")
+    );
 }
 
 #[test]

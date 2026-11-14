@@ -16,11 +16,9 @@
 //! 3. the changes of visibility (rows, columns and sheets hidden or shown): a pass of their own,
 //!    against the input, so that they name the rows and columns of the workbook as it is and a
 //!    deletion that follows removes hidden rows like any other;
-//! 4. the conversion of formulas to values (it reads the results the workbook caches, so it comes
-//!    after what could have left them stale, and when something did, the formulas are calculated
-//!    again first), the deletions of rows and columns, of defined names and of sheets, all in one
-//!    pass over the file: they are written against that workbook, whose rows, columns and sheets are
-//!    those of the input.
+//! 4. the conversion of formulas to values (of what the formulas calculate, see below), the deletions
+//!    of rows and columns, of defined names and of sheets, all in one pass over the file: they are
+//!    written against that workbook, whose rows, columns and sheets are those of the input.
 //!
 //! Step by step is a different thing: one cut per step (`write`, or save, between operations) gives
 //! the workbook the first step leaves as the input of the next.
@@ -30,16 +28,32 @@
 //! columns deleted from the last to the first, then the named ranges deleted, then the sheets
 //! deleted. A reference that spans sheets (`Sheet1:Sheet3!A1`) is not supported: issue #75.
 //!
-//! A conversion reads the results the workbook caches, and a deletion (or a removal, or a
-//! replacement) leaves the cached results of the formulas that read what changed stale: their text
-//! may not change, and so their value is out of date. An application that calculates as it goes
-//! shows the new results, so the conversion that follows gives those. The writer streams the file
-//! and reads no results of its own; a conversion after such a change is a pass of its own preceded by
-//! another, [`Operation::Recalculate`], which the engine (the compiler's program, with the semantics
-//! of `LibreOffice`) runs over the workbook: every formula calculated again, so that stale values are
-//! never written; when the engine cannot, the run stops, since the values to convert do not exist.
+//! **A conversion converts what the formulas calculate**, not what the file caches (the result a file
+//! caches is not a goal of the project, see `docs/approved-differences.md`; `LibreOffice` itself
+//! calculates some formulas when it loads a file and keeps the cached results of the others). The cells
+//! the conversion names are the outputs of the engine: it calculates them and what they read (the
+//! compiler prunes the workbook to that, [`sheetrs_compiler::Only`]), and the writer, in the same pass
+//! over the file that applies the deletions, writes each as the value the engine gave, in place of the
+//! formula ([`sheetrs_io::write::CellEdit::Cached`] in a cell the pass converts). There is no pass of
+//! its own for the calculation and none for the conversion: the number of passes is that of a run that
+//! converts what the file caches, and the file is read once more, by the engine. The engine
+//! calculates the workbook as the passes before leave it, so a replacement or a calculation that comes
+//! first is seen, and the conversion is of the workbook as it is before the deletions of its own pass
+//! move any cell. When the engine cannot calculate the workbook (a function it does not have, a
+//! reference it does not read) the results the file caches are taken, and the run says so
+//! ([`CONVERTED_FROM_CACHE`](crate::CONVERTED_FROM_CACHE)), if nothing before the pass leaves them stale
+//! and the file does not say they are; when they may be stale the values to convert do not exist and
+//! the run stops.
+//!
+//! A deletion (or a removal, or a replacement) leaves the cached results of the formulas that read what
+//! changed stale: their text may not change, and so their value is out of date. The writer streams the
+//! file and reads no results of its own, so the plan ends with the engine calculating every formula
+//! again ([`Operation::Recalculate`]), with the semantics of `LibreOffice`: every formula calculated
+//! again, so that stale values are never written. After the deletions of the pass a `#REF!` in the
+//! text is a reference that went, and the engine reads it so ([`sheetrs_compiler::Removed`]).
 //! The same holds when the workbook says it is stale when the run starts (an XLSX marked to
-//! recalculate when it is opened; an ODS with no cached result in its formulas).
+//! recalculate when it is opened; an ODS with no cached result in its formulas) and a run that uses the
+//! cache converts.
 //!
 //! **The mark to recalculate is a consequence of the engine failing, never a decision taken
 //! before.** A plan that leaves results stale (rows, columns, sheets or names deleted, text replaced)
@@ -60,7 +74,10 @@
 //! depends on them, and every other formula keeps, byte for byte, the result the file caches. It is
 //! never the default, because the result a file caches is the one of the application that wrote it
 //! (it is not a goal, see `docs/approved-differences.md`), and it changes nothing about when the
-//! engine runs, only how much of the workbook it calculates. A formula is reached when the writer
+//! engine runs, only how much of the workbook it calculates. It is also what makes a conversion read
+//! the results the file caches: with it, a conversion that finds them stale has them calculated first
+//! (the cone of the plan, in a pass of its own) and converts the results the file holds, the cached
+//! ones for the formulas that nothing reaches and the engine's for the cone. A formula is reached when the writer
 //! left it with no cached result (it read a deleted cell or a range that shrank; the replaced
 //! formula), when it reads a cell a replacement wrote, when it is volatile, when it is a `SUBTOTAL`
 //! or `AGGREGATE` and rows were hidden or shown, when it calls a function of position (`ROW`,
@@ -76,8 +93,8 @@
 //! and names), and each pass streams the file once, rewriting each cell as it goes by. The memory
 //! of a pass does not depend on the size of the workbook.
 
-use crate::calculate::CalculateError;
-use crate::diagnostics::not_calculated;
+use crate::calculate::{CalculateError, ConvertError};
+use crate::diagnostics::{converted_from_cache, not_calculated};
 use crate::error::{Context, Error, Result};
 use crate::replace::Report;
 use sheetrs_compiler::{Cache, Removed};
@@ -126,6 +143,40 @@ impl Engine {
                 operation: operation.to_string(),
                 reason,
             }
+        })
+    }
+
+    /// The pass `pass` over `workbook`, whose conversions of formulas to values take the results the
+    /// engine calculates for the cells they name (see [`crate::calculate::convert`]).
+    #[cfg_attr(not(test), allow(clippy::unused_self))] // the tests give the engine a stand-in
+    fn convert(
+        &self,
+        workbook: &Book,
+        pass: &WorkbookModifications,
+        operation: &str,
+        volatile: Volatile,
+        removed: Removed,
+    ) -> Result<Vec<u8>> {
+        #[cfg(test)]
+        if let Some(recalculate) = self.recalculate {
+            // The stand-in leaves the results as the file has them: the conversion is of those.
+            let bytes = recalculate(workbook).map_err(|reason| Error::Recalculation {
+                operation: operation.to_string(),
+                reason,
+            })?;
+            return Ok(writer::modify_workbook_bytes(
+                workbook.format(),
+                &bytes,
+                pass,
+            )?);
+        }
+        crate::calculate::convert(workbook, pass, volatile, removed).map_err(|error| match error {
+            ConvertError::Engine(reason) => Error::Recalculation {
+                operation: operation.to_string(),
+                reason,
+            },
+            ConvertError::Write(error) => Error::Write(error),
+            ConvertError::Other(reason) => Error::Calculation { reason },
         })
     }
 }
@@ -366,17 +417,22 @@ pub(crate) fn reads_results(operations: &[Operation]) -> bool {
 /// of the file. The last is the engine calculating again what the operations left stale, when they
 /// did.
 pub(crate) fn passes(operations: &[Operation]) -> Vec<Vec<Operation>> {
-    passes_from(operations, false)
+    passes_from(operations, false, true)
 }
 
 /// As [`passes`], for a workbook whose cached results are stale when the run starts (`stale`) or
 /// not.
 ///
-/// A conversion of formulas to values reads the results the workbook caches. When what runs before
-/// it (or the file itself) left them stale, they are calculated again first: a pass of its own that
-/// no operation asks for ([`Operation::Recalculate`]). That is what running the operations one at
-/// a time gives in an application that calculates as it goes.
-pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<Operation>> {
+/// A conversion of formulas to values reads the results the workbook caches only when the run uses the
+/// cache (`engine_converts` is `false`): when what runs before it (or the file itself) left them
+/// stale, they are calculated again first, a pass of its own that no operation asks for
+/// ([`Operation::Recalculate`]). Otherwise (`engine_converts`) the engine calculates the cells the
+/// conversion names, in the pass that writes them as values.
+pub(crate) fn passes_from(
+    operations: &[Operation],
+    mut stale: bool,
+    engine_converts: bool,
+) -> Vec<Vec<Operation>> {
     let mut passes = Vec::new();
     let mut last: Vec<Operation> = Vec::new();
     for operation in canonical(operations) {
@@ -400,7 +456,9 @@ pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<
                 passes.push(vec![operation]);
             }
             Operation::FormulaToValue(_) => {
-                if stale {
+                // With the engine the conversion calculates the cells it names in the pass that writes
+                // them: no calculation of the whole workbook comes first, whatever the file caches.
+                if stale && !engine_converts {
                     passes.push(vec![Operation::Recalculate]);
                     stale = false;
                 }
@@ -461,6 +519,11 @@ pub(crate) fn explain_book(book: &Book) -> String {
         for operation in pass {
             let _ = writeln!(out, "  {operation}");
         }
+    }
+    if passes.iter().any(|pass| converts_with_engine(pass, book)) {
+        out.push_str(
+            "the formulas converted to values are calculated by the engine, for the cells they name, in the pass that writes them (the results the file caches are converted only if the engine cannot calculate the workbook and they are not stale)\n",
+        );
     }
     if book.use_cache() && passes.contains(&vec![Operation::Recalculate]) {
         out.push_str(
@@ -564,8 +627,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                     &first_conversion(operations),
                     engine,
                     volatile,
-                    touched.cache.as_ref(),
-                    touched.removed,
+                    &touched,
                     &mut report,
                 )
                 .with_context(said)?
@@ -596,16 +658,34 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
             }
             continue;
         }
-        let mut mods = modifications_for(
-            pass,
-            &Book::from_file(&current)?.with_locale_of(book),
-            last && failed,
-            &mut report,
-        )
-        .with_context(said)?;
+        let input = Book::from_file(&current)?.with_locale_of(book);
+        let mut mods =
+            modifications_for(pass, &input, last && failed, &mut report).with_context(said)?;
         mods.clear_recalculation_mark = false;
+        // The engine calculates the cells to convert and the writer writes them as values, with the
+        // deletions, in this one pass.
+        let converted = if converts_with_engine(pass, book) {
+            convert_pass(
+                engine,
+                &input,
+                &mods,
+                &first_conversion(operations),
+                volatile,
+                touched.removed,
+                || cache_is_current(book, &passes[..i]),
+                &mut report,
+            )
+            .with_context(said)?
+        } else {
+            None
+        };
         touched.record(pass, &mods.replacements);
-        writer::modify_workbook(&current, &target, &mods).with_context(said)?;
+        match converted {
+            Some(bytes) => {
+                std::fs::write(&target, bytes).context("Cannot write the converted workbook")?;
+            }
+            None => writer::modify_workbook(&current, &target, &mods).with_context(said)?,
+        }
         current = target;
     }
     Ok(report)
@@ -666,8 +746,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
                     &first_conversion(operations),
                     engine,
                     volatile,
-                    touched.cache.as_ref(),
-                    touched.removed,
+                    &touched,
                     &mut report,
                 )
                 .with_context(said)?
@@ -700,8 +779,26 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
         }
         let mods =
             modifications_for(pass, &current, last && failed, &mut report).with_context(said)?;
+        let converted = if converts_with_engine(pass, book) {
+            convert_pass(
+                engine,
+                &current,
+                &mods,
+                &first_conversion(operations),
+                volatile,
+                touched.removed,
+                || cache_is_current(book, &passes[..i]),
+                &mut report,
+            )
+            .with_context(said)?
+        } else {
+            None
+        };
         touched.record(pass, &mods.replacements);
-        result = writer::modify_workbook_bytes(format, &data, &mods).with_context(said)?;
+        result = match converted {
+            Some(bytes) => bytes,
+            None => writer::modify_workbook_bytes(format, &data, &mods).with_context(said)?,
+        };
         if !last {
             current = Book::from_bytes(result.clone())?.with_locale_of(book);
         }
@@ -722,6 +819,42 @@ fn fresh(bytes: Vec<u8>, format: Format) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// The pass `mods` over `workbook` with the conversions of formulas to values calculated by the engine
+/// (see [`Engine::convert`]): the bytes of the workbook. `None` when the engine cannot calculate the
+/// workbook and the results the file caches are right (`cache_is_current`: nothing before this pass
+/// left them stale and the file does not say they are): the pass is then the writer's, which converts
+/// those, and the run says so ([`CONVERTED_FROM_CACHE`](crate::CONVERTED_FROM_CACHE)). When they may be
+/// stale the values to convert do not exist, and it is an error.
+#[allow(clippy::too_many_arguments)] // what one pass is given, in the order the run has it
+fn convert_pass(
+    engine: &Engine,
+    workbook: &Book,
+    mods: &WorkbookModifications,
+    operation: &str,
+    volatile: Volatile,
+    removed: Removed,
+    cache_is_current: impl FnOnce() -> Result<bool>,
+    report: &mut Report,
+) -> Result<Option<Vec<u8>>> {
+    match engine.convert(workbook, mods, operation, volatile, removed) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(Error::Recalculation { reason, .. }) if cache_is_current()? => {
+            report
+                .diagnostics
+                .push(converted_from_cache(operation, &reason));
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether the results the workbook caches are right at the start of the pass that follows `earlier`:
+/// the file does not say they are stale, and no pass before leaves them so.
+fn cache_is_current(book: &Book, earlier: &[Vec<Operation>]) -> Result<bool> {
+    let before: Vec<Operation> = earlier.iter().flatten().cloned().collect();
+    Ok(!leaves_stale(&before) && !crate::stale::input_is_stale(book)?)
+}
+
 /// Calculates every formula of `workbook` again, for the results the operations left stale. The
 /// bytes of the workbook with fresh results, or `None` when the engine cannot and this is the last
 /// pass (`last`): nothing needs the values then, so the run says so ([`RECALC_NOT_SUPPORTED`](crate::RECALC_NOT_SUPPORTED)) and
@@ -733,11 +866,16 @@ fn recalculate_pass(
     operation: &str,
     engine: &Engine,
     volatile: Volatile,
-    cache: Option<&Cache>,
-    removed: Removed,
+    touched: &Touched,
     report: &mut Report,
 ) -> Result<Option<Vec<u8>>> {
-    match engine.recalculate(workbook, operation, volatile, cache, removed) {
+    match engine.recalculate(
+        workbook,
+        operation,
+        volatile,
+        touched.cache.as_ref(),
+        touched.removed,
+    ) {
         Ok(bytes) => Ok(Some(fresh(bytes, workbook.format())?)),
         Err(Error::Recalculation { reason, .. }) if last => {
             // The recalculation that ends a run is the planner's own; a conversion that asks for it names itself.
@@ -793,8 +931,19 @@ fn calculate_pass(
 /// workbook already holds stale results is looked at, and the results are calculated again before
 /// the conversion if so.
 fn passes_for(book: &Book, operations: &[Operation]) -> Result<Vec<Vec<Operation>>> {
-    let stale_start = reads_results(operations) && crate::stale::input_is_stale(book)?;
-    Ok(passes_from(operations, stale_start))
+    let engine_converts = !book.use_cache();
+    let stale_start =
+        reads_results(operations) && !engine_converts && crate::stale::input_is_stale(book)?;
+    Ok(passes_from(operations, stale_start, engine_converts))
+}
+
+/// Whether `pass` converts formulas to values with the engine: it does unless the run uses the cache,
+/// which keeps the results the file caches for the formulas the plan does not reach.
+fn converts_with_engine(pass: &[Operation], book: &Book) -> bool {
+    !book.use_cache()
+        && pass
+            .iter()
+            .any(|operation| matches!(operation, Operation::FormulaToValue(_)))
 }
 
 /// The first conversion of formulas to values, as text, for what is said about it.
@@ -1005,7 +1154,7 @@ mod tests {
     }
 
     #[test]
-    fn a_conversion_after_a_replacement_calculates_the_results_again_in_a_pass_of_its_own() {
+    fn a_conversion_after_a_replacement_is_calculated_by_the_engine_in_the_pass_that_writes_it() {
         // Pushed after the conversion, the replacement still runs before it.
         let operations = [
             Operation::FormulaToValue(scopes(&["F"])),
@@ -1013,6 +1162,27 @@ mod tests {
             replacement(),
         ];
         let described = described(&passes(&operations));
+        assert_eq!(described.len(), 3);
+        assert!(described[0][0].starts_with("replace"));
+        // The engine calculates the cells of `F` while the pass writes them as values: no calculation of
+        // the whole workbook comes first.
+        assert_eq!(described[1], ["formula to value in F", "delete rows T!1:1"]);
+        // What the replacement and the deletion leave stale is calculated again at the end.
+        assert_eq!(
+            described[2],
+            ["recalculate every formula (the results are stale)"]
+        );
+        assert!(explain(&operations).starts_with("pass 1 of 3:"));
+    }
+
+    #[test]
+    fn a_conversion_that_uses_the_cache_reads_the_results_of_a_calculation_of_its_own() {
+        let operations = [
+            Operation::FormulaToValue(scopes(&["F"])),
+            Operation::DeleteRows(rows(&["T!1"])),
+            replacement(),
+        ];
+        let described = described(&passes_from(&operations, false, false));
         assert_eq!(described.len(), 4);
         assert!(described[0][0].starts_with("replace"));
         assert_eq!(
@@ -1020,9 +1190,7 @@ mod tests {
             ["recalculate every formula (the results are stale)"]
         );
         assert_eq!(described[2], ["formula to value in F", "delete rows T!1:1"]);
-        // And what the deletion leaves stale is calculated again at the end.
         assert_eq!(described[3], described[1]);
-        assert!(explain(&operations).starts_with("pass 1 of 4:"));
     }
 
     #[test]
@@ -1080,7 +1248,23 @@ mod tests {
         );
         let converting = [Operation::FormulaToValue(scopes(&["F"]))];
         assert!(!explain(&converting).contains("recalculate"));
-        assert!(passes_from(&[], false).is_empty());
+        assert!(passes_from(&[], false, true).is_empty());
+    }
+
+    #[test]
+    fn a_conversion_is_calculated_by_the_pass_that_writes_it_unless_the_cache_is_used() {
+        // The results the file caches are stale (an XLSX marked to recalculate, a deletion before it).
+        let operations = [Operation::FormulaToValue(scopes(&["F"]))];
+        assert_eq!(
+            passes_from(&operations, false, true),
+            vec![operations.to_vec()],
+            "the engine calculates the cells the conversion names while it writes them"
+        );
+        assert_eq!(
+            passes_from(&operations, true, false),
+            vec![vec![Operation::Recalculate], operations.to_vec()],
+            "with the cache the results are calculated first, and the conversion reads them"
+        );
     }
 
     #[test]

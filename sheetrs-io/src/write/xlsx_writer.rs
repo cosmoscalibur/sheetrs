@@ -1188,7 +1188,32 @@ fn transform_sheet<R: BufRead, W: Write>(
                     .and_then(|m| m.get(&(row, col)))
                     .filter(|e| !matches!(e, CellEdit::Note(_)));
                 if let Some(CellEdit::Cached(result)) = edit_here {
-                    write_cached_cell(&mut writer, &start, &body, result)?;
+                    // A formula the pass converts to its value becomes the result it is given: the
+                    // value a program calculated for it, not the one the file cached.
+                    let converts = formula
+                        .as_ref()
+                        .is_some_and(|f| converts_to_value(scopes, row, col, f, true));
+                    if converts {
+                        if let Some(f) = &formula
+                            && f.is_shared()
+                            && let Some(si) = f.shared_index
+                            && !f.text.is_empty()
+                        {
+                            masters.insert(
+                                si,
+                                SharedMaster {
+                                    row,
+                                    col,
+                                    text: f.text.clone(),
+                                    converted: true,
+                                },
+                            );
+                        }
+                        let (cell, events) = cached_cell(&start, &body, result)?;
+                        write_value_cell(&mut writer, &cell, &events)?;
+                    } else {
+                        write_cached_cell(&mut writer, &start, &body, result)?;
+                    }
                     continue;
                 }
                 if let Some(edit) = edit_here
@@ -1731,6 +1756,23 @@ fn write_cached_cell<W: Write>(
     body: &[Event],
     result: &CachedResult,
 ) -> Result<()> {
+    let (cell, events) = cached_cell(start, body, result)?;
+    let end = cell.to_end().into_owned();
+    writer.write_event(Event::Start(cell))?;
+    for event in &events {
+        writer.write_event(event.borrow())?;
+    }
+    writer.write_event(Event::End(end))?;
+    Ok(())
+}
+
+/// The cell `start` and `body` with `result` as the result it shows: its element and what is inside
+/// it, the formula and the rest as they were.
+fn cached_cell(
+    start: &BytesStart,
+    body: &[Event],
+    result: &CachedResult,
+) -> Result<(BytesStart<'static>, Vec<Event<'static>>)> {
     let has_formula = body
         .iter()
         .any(|e| matches!(e, Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "f"));
@@ -1752,8 +1794,7 @@ fn write_cached_cell<W: Write>(
     if let Some(kind) = kind {
         cell.push_attribute(("t", kind));
     }
-    let end = cell.to_end().into_owned();
-    writer.write_event(Event::Start(cell))?;
+    let mut events: Vec<Event<'static>> = Vec::with_capacity(body.len() + 4);
     // What was there stays, but for the old result.
     let mut skipping = None;
     for event in body {
@@ -1764,24 +1805,23 @@ fn write_cached_cell<W: Write>(
             Event::End(e) if skipping.as_deref() == Some(e.name().as_ref()) => skipping = None,
             Event::Empty(e) if matches!(e.name().as_ref(), "v" | "is") => {}
             _ if skipping.is_some() => {}
-            event => writer.write_event(event.borrow())?,
+            event => events.push(event.clone().into_owned()),
         }
     }
     if kind == Some("inlineStr") {
-        writer.write_event(Event::Start(BytesStart::new("is")))?;
         let mut t = BytesStart::new("t");
         t.push_attribute(("xml:space", "preserve"));
-        writer.write_event(Event::Start(t))?;
-        writer.write_event(Event::Text(BytesText::new(&value)))?;
-        writer.write_event(Event::End(BytesEnd::new("t")))?;
-        writer.write_event(Event::End(BytesEnd::new("is")))?;
+        events.push(Event::Start(BytesStart::new("is")));
+        events.push(Event::Start(t));
+        events.push(Event::Text(BytesText::new(&value).into_owned()));
+        events.push(Event::End(BytesEnd::new("t")));
+        events.push(Event::End(BytesEnd::new("is")));
     } else {
-        writer.write_event(Event::Start(BytesStart::new("v")))?;
-        writer.write_event(Event::Text(BytesText::new(&value)))?;
-        writer.write_event(Event::End(BytesEnd::new("v")))?;
+        events.push(Event::Start(BytesStart::new("v")));
+        events.push(Event::Text(BytesText::new(&value).into_owned()));
+        events.push(Event::End(BytesEnd::new("v")));
     }
-    writer.write_event(Event::End(end))?;
-    Ok(())
+    Ok((cell, events))
 }
 
 /// Write a cell without its `<f>` element. A formula string result

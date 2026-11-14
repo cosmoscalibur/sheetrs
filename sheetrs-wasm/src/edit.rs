@@ -224,7 +224,9 @@ impl Book {
     }
 
     /// Replace the formulas by the values they have (*Data ▸ Calculate ▸ Formula to Value*):
-    /// `Sheet`, `Sheet!B:D` or `Sheet!3:10`, or a list of them.
+    /// `Sheet`, `Sheet!B:D` or `Sheet!3:10`, or a list of them. The values are what the formulas
+    /// calculate, not what the file caches (with `useCache` the cached results of the formulas the plan
+    /// does not reach).
     ///
     /// # Errors
     ///

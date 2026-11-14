@@ -112,27 +112,37 @@ its content part to know where the sheets are.
 
 A plan that deletes rows, columns, sheets or names (or replaces text) ends with the engine calculating every
 formula again; the workbook is marked to be recalculated only if the engine cannot (see the README of
-`sheetrs-edit`). A conversion alone streams and calculates nothing, unless the workbook says its results are
-stale. `formulas.xlsx` stores `0` as every cached result and says so (`fullCalcOnLoad`); in `formulas.ods` the
-results are stored. The table is the minimum and the maximum of 3 runs (`scripts/bench.py run DIR edit`); a row
-that deletes calculates the 2.4 M formulas.
+`sheetrs-edit`). A conversion converts what the formulas calculate, not what the file caches: the cells it names are
+what the engine is asked for (it calculates them and what they read, and nothing else of the workbook) and the pass
+that writes the file writes them as values, so it costs the engine's reading and compiling of the workbook and no
+pass of its own for the calculation. `formulas.xlsx` stores `0` as every cached result and says so (`fullCalcOnLoad`);
+in `formulas.ods` the results are stored (a conversion with `--use-cache` streams them as before). The table is the
+minimum and the maximum of 3 runs (`scripts/bench.py run DIR edit`); a row that deletes calculates the 2.4 M formulas.
 
 | Scenario (flags) | `formulas.xlsx` | `formulas.ods` |
 |---|---|---|
 | `--delete-sheets Lookup` | 20.58-21.22 s, 1799 MB | 33.35-35.20 s, 1882 MB |
 | `--delete-names base_rate` | 17.05-18.40 s, 1580 MB | 29.02-29.79 s, 1586 MB |
-| `--formula-to-value Calc` | 23.02-25.04 s, 1592 MB | 6.09-6.20 s, 17 MB |
-| `--formula-to-value Calc!B:D Calc!1:1000` | 23.13-23.53 s, 1582-1593 MB | 6.55-6.91 s, 17 MB |
-| delete sheet and name, convert `Calc` (one command) | 25.46-25.66 s, 1583-1592 MB | 12.42-12.78 s, 299 MB |
+| `--formula-to-value Calc` | 15.81-16.53 s, 1566 MB | 22.93-23.62 s, 1600 MB |
+| `--formula-to-value Calc!B:D Calc!1:1000` | 10.91-11.94 s, 1049 MB | 18.17-18.67 s, 1059 MB |
+| delete sheet and name, convert `Calc` (one command) | 17.80-18.71 s, 1566 MB | 30.70-31.29 s, 1600-1608 MB |
 | `--delete-rows Data!10:20` | 24.76-25.45 s, 1600 MB | 36.95-37.48 s, 1604 MB |
-| `--delete-rows Data!10:20 --formula-to-value Calc` | 26.76-27.22 s, 1583 MB | 16.17-16.87 s, 299 MB |
-| `--delete-rows Calc!3:10 --formula-to-value Summary` | 43.43-43.89 s, 1658-1660 MB | 38.05-39.77 s, 1603-1604 MB |
+| `--delete-rows Data!10:20 --formula-to-value Calc` | 19.11-19.94 s, 1562 MB | 33.01-33.83 s, 1600-1608 MB |
+| `--delete-rows Calc!3:10 --formula-to-value Summary` | 31.47-32.57 s, 1639 MB | 45.21-45.95 s, 1645 MB |
 | `--delete-columns Data!B:D` | 22.17-23.10 s, 2152 MB | 30.83-31.75 s, 2166-2167 MB |
 | rows and columns together | 23.07-24.03 s, 2152 MB | 31.50-32.34 s, 2167 MB |
 | sheet, name, rows and columns (one command) | 23.10-23.86 s, 2150 MB | 31.86-33.28 s, 2164-2165 MB |
 
-A conversion of an ODS streams (17 to 299 MB); what needs the engine holds the formulas of the workbook in memory,
-about 1.6-2.2 GB for 2.4 M formulas. The ODS rows that delete cost about 10 s more than the XLSX ones because
+What needs the engine holds the formulas of the workbook in memory, about 1.6-2.2 GB for 2.4 M formulas (a conversion
+of columns and rows only the cone of the cells it names: 1.05 GB for `Calc!B:D Calc!1:1000`). A conversion of an ODS
+used to stream the results it stores (17 to 299 MB; `--formula-to-value Calc` took 5.32-5.72 s and 17 MB,
+`Calc!B:D Calc!1:1000` 5.79-6.21 s and 17 MB, delete sheet and name with `Calc` 10.84-11.37 s and 300 MB, `--delete-rows
+Data!10:20 --formula-to-value Calc` 13.53-14.64 s and 300 MB, `Calc!3:10` with `Summary` 32.56-33.58 s and 1603 MB):
+it now calculates what it converts, which costs the engine's time and memory, and the XLSX that stores `0` and says so
+no longer pays for the calculation of every formula before it (before, same session, same machine:
+`--formula-to-value Calc` 18.96-19.90 s and 1583 MB, `Calc!B:D Calc!1:1000` 19.13-20.35 s and 1583 MB, with the plan
+and the deletions 21.98-22.98 s, 23.25-23.94 s and 37.32-38.08 s, 1583-1662 MB). `--use-cache` keeps the streaming
+conversion of the results an ODS stores. The ODS rows that delete cost about 10 s more than the XLSX ones because
 the ODS is read and compiled (6-9 s of reading) and the output of the deleting pass is read again by the engine.
 `--delete-columns` on an ODS took 136-160 s before the empty run that closes each row was kept up to the last
 column ([#107](https://github.com/cosmoscalibur/sheetrs/issues/107)): a reader that finds that run short of the
@@ -304,7 +314,7 @@ the contrast script in the same rounds as LibreOffice's.
 |---|---|---|
 | Load, calculate every formula, write the workbook | `sheetc calculate -o`: 10.8-11.1 s, 1598 MB | load, `calculateAll()`, store: 37.5-38.0 s, 2193 MB |
 | Delete rows `Calc!3:10`, calculate, write | `sheetrs edit --delete-rows`: 23.3 s, 1646 MB *; Python `Book.delete_rows(...).save(out)`: 24.83-25.46 s (the process 26.87-27.56 s), 1655 MB | load, `Rows.removeByIndex`, `calculateAll()`, store: 47.7-48.9 s, 3286-3288 MB |
-| The same plus formulas to values of `Summary` | `sheetrs edit --delete-rows … --formula-to-value Summary`: 41.0 s, 1890 MB * | the same steps with `.uno:ConvertFormulaToValue`: 47.7-49.5 s, 3293-3295 MB |
+| The same plus formulas to values of `Summary` | `sheetrs edit --delete-rows … --formula-to-value Summary`: 41.0 s, 1890 MB * (31.5-32.6 s, 1639 MB with the conversion that calculates what it converts, `scripts/bench.py`) | the same steps with `.uno:ConvertFormulaToValue`: 47.7-49.5 s, 3293-3295 MB |
 | Read the whole workbook (XLSX) | `sheetrs stats`: 1.73-1.77 s, 14 MB; Python `Book(path)`: 1.97-2.05 s, 17 MB | load: 10.2-10.6 s, 1348-1350 MB |
 | Find a text in every sheet (XLSX; 14 930 cells in both) | `sheetrs query --find K00`: 2.32-2.38 s, 17-18 MB; Python `find`: 2.34-2.39 s after the open, 24 MB | load and `findAll`: 11.8-12.6 s, 1348-1349 MB (the search alone 2.0-2.1 s) |
 | Read the whole workbook (ODS) | `sheetrs stats`: 2.90-2.95 s, 14 MB | load: 28.3-29.2 s, 1187 MB |

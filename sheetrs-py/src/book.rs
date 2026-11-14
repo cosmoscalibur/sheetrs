@@ -493,8 +493,9 @@ impl PyBook {
     }
 
     /// Replace the formulas of the scopes by the values they have (*Data ▸ Calculate ▸ Formula to
-    /// Value*). A scope is `"Sheet"`, `"Sheet!B:D"` (columns) or `"Sheet!3:10"` (rows); one or an
-    /// iterable of them.
+    /// Value*): what the formulas calculate, not what the file caches (with `use_cache=True` the cached
+    /// results of the formulas the edit does not reach). A scope is `"Sheet"`, `"Sheet!B:D"` (columns)
+    /// or `"Sheet!3:10"` (rows); one or an iterable of them.
     fn formula_to_value<'py>(
         slf: PyRefMut<'py, Self>,
         scopes: &Bound<'_, PyAny>,

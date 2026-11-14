@@ -1,6 +1,8 @@
 use crate::Book;
 use crate::reader::CellValue;
-use crate::write::{ValueScope, ValueTarget, WorkbookModifications, modify_workbook};
+use crate::write::{
+    CachedResult, CellEdit, ValueScope, ValueTarget, WorkbookModifications, modify_workbook,
+};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::fs::File;
@@ -371,6 +373,62 @@ fn test_formula_to_value_sheet() -> anyhow::Result<()> {
     assert_eq!(cells[&(0, 1)].value, CellValue::Text("Label".into()));
     let formulas: Vec<_> = cells.values().filter(|c| c.formula.is_some()).collect();
     assert_eq!(formulas.len(), 1, "only F2 keeps its formula");
+    Ok(())
+}
+
+/// The results a program calculated for formulas that a conversion covers are the values they become, not
+/// the ones the file cached (`B2` cached 4, `F2` cached nothing, `C2` is the first cell of a shared group
+/// that the rows leave `C4` out of; `E2` is an array that the rows cover).
+#[test]
+fn test_formula_to_value_takes_the_calculated_result_in_place_of_the_cached_one()
+-> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input_path = dir.path().join("formulas.xlsx");
+    let output_path = dir.path().join("values.xlsx");
+    create_formula_xlsx(&input_path, FORMULA_SHEET)?;
+    let mut edits = crate::write::SheetEdits::new();
+    edits.insert((1, 1), CellEdit::Cached(CachedResult::Number(40.0)));
+    edits.insert((1, 2), CellEdit::Cached(CachedResult::Number(30.0)));
+    edits.insert((2, 2), CellEdit::Cached(CachedResult::Number(31.0)));
+    edits.insert((1, 3), CellEdit::Cached(CachedResult::Text("calc".into())));
+    edits.insert((1, 5), CellEdit::Cached(CachedResult::Number(7.0)));
+    edits.insert(
+        (2, 3),
+        CellEdit::Cached(CachedResult::Error("#REF!".into())),
+    );
+    let mut mods = WorkbookModifications {
+        formula_to_value: vec!["Data!2:3".parse()?],
+        ..Default::default()
+    };
+    mods.replacements.insert("Data".into(), edits);
+    modify_workbook(&input_path, &output_path, &mods)?;
+    let sheet = read_part(&output_path, "xl/worksheets/sheet1.xml")?;
+    assert!(
+        sheet.contains(r#"<c r="B2" s="1"><v>40</v></c>"#),
+        "{sheet}"
+    );
+    assert!(sheet.contains(r#"<c r="C2"><v>30</v></c>"#), "{sheet}");
+    // The group of C2:C4 lost its first cell: the cell that has no result of its own keeps a formula of its
+    // own, and the one that has is a value.
+    assert!(sheet.contains(r#"<c r="C3"><v>31</v></c>"#), "{sheet}");
+    assert!(
+        sheet.contains(r#"<c r="C4"><f>A4+$A$1</f><v>5</v></c>"#),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains(r#"<c r="D2" t="inlineStr"><is><t xml:space="preserve">calc</t></is></c>"#),
+        "{sheet}"
+    );
+    // The error the calculation gave is an empty text, as when the cached one is converted.
+    assert!(
+        sheet.contains(r#"<c r="D3" t="inlineStr"><is><t xml:space="preserve"/></is></c>"#),
+        "{sheet}"
+    );
+    // `F2` cached nothing: the result it is given is its value now.
+    assert!(sheet.contains(r#"<c r="F2"><v>7</v></c>"#), "{sheet}");
+    // The array lies inside the rows: it is a value too, and the cell the rows leave out has its cached one.
+    assert!(sheet.contains(r#"<c r="E2"><v>20</v></c>"#), "{sheet}");
+    assert!(!sheet.contains(r#"t="array""#), "{sheet}");
     Ok(())
 }
 

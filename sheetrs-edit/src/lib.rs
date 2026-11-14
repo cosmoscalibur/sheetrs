@@ -37,7 +37,7 @@ mod stale;
 mod tests;
 
 pub use book_edit::BookEdit;
-pub use diagnostics::RECALC_NOT_SUPPORTED;
+pub use diagnostics::{CONVERTED_FROM_CACHE, RECALC_NOT_SUPPORTED};
 pub use error::{Error, Result, ScopeError};
 pub use plan::explain;
 pub use replace::{Report, Skipped};

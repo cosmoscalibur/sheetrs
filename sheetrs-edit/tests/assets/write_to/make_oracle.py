@@ -4,7 +4,7 @@ format, and for each edit of `EDITS`,
 
   expected   the cells (formula and value), the hidden rows and columns and the visibility of each sheet after
              LibreOffice 26.8 itself made the edit through UNO on the loaded file and calculated every formula
-             (`calculateAll`);
+             (`calculateAll`; before a conversion of formulas to values too, which converts what they give);
   opened     what LibreOffice shows of the file `sheetrs edit` writes for the same edit, with every formula
              calculated again (`calculateAll`), and
   differences  the cells, hidden rows and columns and sheets where `opened` is not `expected`, for the formulas
@@ -197,6 +197,11 @@ def apply_lo(doc, operations):
                 sheets.getByName(sheet).Columns.getByIndex(c).IsVisible = visible
         elif kind == "sheets":
             sheets.getByName(args[0]).IsVisible = visible
+    if by_name.get("formula_to_value"):
+        # A conversion is of what the formulas give, not of what the file caches (the result a file caches
+        # is not a goal of the project): LibreOffice calculates them first. Its own load calculates only
+        # some of them, and an ODS and an XLSX differ in which.
+        doc.calculateAll()
     for spec in by_name.get("formula_to_value", []):
         # What a conversion reads is what the cells hold now: the results the file caches.
         sheet = sheets.getByName(spec.split("!")[0])

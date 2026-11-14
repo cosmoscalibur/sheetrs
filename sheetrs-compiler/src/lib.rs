@@ -28,6 +28,6 @@ pub mod settings;
 pub mod verify;
 pub mod wasm_target;
 
-pub use compile::{BindingSpec, Cache, Features, ModelArg, Removed, Report, Spec, compile};
+pub use compile::{BindingSpec, Cache, Features, ModelArg, Only, Removed, Report, Spec, compile};
 pub use error::{Error, Result};
 pub use model::Model;

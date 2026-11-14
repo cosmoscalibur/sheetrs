@@ -1905,6 +1905,24 @@ mod tests {
     }
 
     #[test]
+    fn test_formula_to_value_takes_the_calculated_result_in_place_of_the_cached_one() {
+        // `B1` caches 2 and `C1` caches nothing; each is given the result a program calculated.
+        let xml = r#"<table:table table:name="Data"><table:table-row><table:table-cell office:value-type="float" office:value="1"><text:p>1</text:p></table:table-cell><table:table-cell table:formula="of:=[.A1]*2" office:value-type="float" office:value="2"><text:p>2</text:p></table:table-cell><table:table-cell table:formula="of:=[.A1]+1"/></table:table-row></table:table>"#;
+        let mut edits = SheetEdits::new();
+        edits.insert((0, 1), CellEdit::Cached(CachedResult::Number(20.0)));
+        edits.insert((0, 2), CellEdit::Cached(CachedResult::Text("t".into())));
+        let mut mods = WorkbookModifications {
+            formula_to_value: scopes(&["Data"]),
+            ..Default::default()
+        };
+        mods.replacements.insert("Data".into(), edits);
+        let out = modify_xml(xml, &mods).unwrap();
+        assert!(!out.contains("table:formula"), "{out}");
+        assert!(out.contains(r#"<table:table-cell office:value-type="float" office:value="20" calcext:value-type="float"><text:p>20</text:p></table:table-cell>"#), "{out}");
+        assert!(out.contains(r#"<table:table-cell office:value-type="string" office:string-value="t" calcext:value-type="string"><text:p>t</text:p></table:table-cell>"#), "{out}");
+    }
+
+    #[test]
     fn test_formula_to_value_splits_repeated_cells_and_rows() {
         let xml = r#"<table:table table:name="Data"><table:table-row table:number-rows-repeated="3"><table:table-cell table:number-columns-repeated="3" table:formula="of:=1+1" office:value-type="float" office:value="2"/></table:table-row></table:table>"#;
         let converted = formula_to_value(xml, &["Data!2", "Data!B"]);

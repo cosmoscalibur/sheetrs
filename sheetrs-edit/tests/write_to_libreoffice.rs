@@ -8,7 +8,9 @@
 //! * the bytes of `write_to` are the bytes of `write`, with the cache and without it;
 //! * what `write_to` leaves is what `LibreOffice` left: the values, the hidden rows and columns and the
 //!   sheets (an edit that leaves no result stale calculates nothing, and keeps what the file caches);
-//! * with `use_cache`, a formula keeps what the file caches or has what the full recalculation gives.
+//! * with `use_cache`, a formula keeps what the file caches or has what the full recalculation gives (a
+//!   conversion converts what the file caches where nothing reaches the formula, and what the engine
+//!   calculates in a run without it: the cells it names are what `LibreOffice` gives after calculating);
 //!
 //! The formulas are compared by the script (`differences` of the oracle: what `LibreOffice` shows of the file
 //! `sheetrs edit` writes, after calculating it) and are not asserted here: a reference that goes is spelled
@@ -249,6 +251,29 @@ fn apply(book: &mut Book, operations: &Json) {
     }
 }
 
+/// Whether a conversion of the edit names the cell `cell` (`B7`) of `sheet`: `Sheet`, `Sheet!B:D` or `Sheet!3:9`.
+fn converted(operations: &Json, sheet: &str, cell: &str) -> bool {
+    let at = cell.trim_start_matches(|c: char| c.is_ascii_uppercase());
+    let (column, row) = (&cell[..cell.len() - at.len()], at.parse::<u32>().unwrap());
+    operations.as_array().unwrap().iter().any(|operation| {
+        let operation = operation.as_array().unwrap();
+        if operation[0].as_str() != Some("formula_to_value") {
+            return false;
+        }
+        let scope = operation[1].as_str().unwrap();
+        let (name, area) = scope.split_once('!').unwrap_or((scope, ""));
+        let (first, last) = area.split_once(':').unwrap_or((area, area));
+        name == sheet
+            && (area.is_empty()
+                || if first.chars().all(|c| c.is_ascii_digit()) {
+                    (first.parse().unwrap()..=last.parse().unwrap()).contains(&row)
+                } else {
+                    (first.len(), first) <= (column.len(), column)
+                        && (column.len(), column) <= (last.len(), last)
+                })
+    })
+}
+
 fn written(source: &Path, operations: &Json, use_cache: bool) -> (Vec<u8>, bool) {
     let extension = source.extension().unwrap().to_str().unwrap();
     let mut book = Book::from_file(source)
@@ -390,11 +415,12 @@ fn the_in_memory_write_is_the_file_write_and_gives_what_libreoffice_gives() {
                         found.push(format!("{context}: {} cells, first {cell}", lines.len()));
                     }
                 } else {
-                    // Nothing was left stale: the cells are the ones the file caches, which no edit calculated.
+                    // Nothing was left stale: the cells are the ones the file caches, which no edit calculated,
+                    // but the ones a conversion names: they are what `LibreOffice` calculates.
                     for (sheet, c) in &cached {
                         let g = &got[sheet];
                         for (cell, value) in &c.cells {
-                            if sheet == "Calc" {
+                            if sheet == "Calc" && !converted(operations, sheet, cell) {
                                 assert!(
                                     same_value(value, &g.cells[cell]),
                                     "{context}: {sheet}!{cell}"
@@ -402,10 +428,38 @@ fn the_in_memory_write_is_the_file_write_and_gives_what_libreoffice_gives() {
                             }
                         }
                     }
-                    assert_eq!(
-                        got, with_cache,
-                        "{context}: nothing to calculate, nothing to keep"
-                    );
+                    for (sheet, e) in &expected {
+                        for (cell, value) in &e.cells {
+                            if converted(operations, sheet, cell) {
+                                assert!(
+                                    got[sheet]
+                                        .cells
+                                        .get(cell)
+                                        .is_some_and(|g| same_value(g, value)),
+                                    "{context}: {sheet}!{cell} is {:?}, LibreOffice leaves {value:?}",
+                                    got[sheet].cells.get(cell)
+                                );
+                            }
+                        }
+                    }
+                    if operations.to_string().contains("formula_to_value") {
+                        // With the cache a conversion converts what the file caches where nothing reaches.
+                        for (sheet, c) in &cached {
+                            for (cell, value) in &c.cells {
+                                if sheet == "Calc" && converted(operations, sheet, cell) {
+                                    assert!(
+                                        same_value(value, &with_cache[sheet].cells[cell]),
+                                        "{context}: {sheet}!{cell} with the cache"
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        assert_eq!(
+                            got, with_cache,
+                            "{context}: nothing to calculate, nothing to keep"
+                        );
+                    }
                 }
 
                 // With the cache a formula keeps what the file caches, or has what the full run gives.
