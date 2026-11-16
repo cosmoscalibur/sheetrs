@@ -39,7 +39,7 @@ statistics, which are a tool like the others: `stats()` reads it.
 | | Member | Gives |
 | - | ------ | ----- |
 | | `format` | `"xlsx"`, `"xlsm"` or `"ods"`, from the content |
-| **reads** | `stats()` | `Stats`: `toJSON()` is `sheetrs stats --format json` (the totals and `sheets` with their `name`, `used_range`, `used_cells`, `formulas`...; `total_file_size` is 0: bytes carry no size), `hasMacros` (found, never run) and `definedNames` (`{name: refersTo}`). It reads the workbook in a single streaming pass each time it is called; a workbook that cannot be read throws |
+| **reads** | `stats()` | `Stats`: `toJSON()` is `sheetrs stats --format json` (the totals and `sheets` with their `name`, `used_range` (the rectangle of the used cells, `D10:E11`), `used_cells`, `formulas`...; `total_file_size` is 0: bytes carry no size), `hasMacros` (found, never run) and `definedNames` (`{name: refersTo}`). It reads the workbook in a single streaming pass each time it is called; a workbook that cannot be read throws |
 | | `lint(configToml?)` | `LintReport`: `count`, `records` (`{rule_id, rule_name, severity, message, scope, sheet, cell, row, col}`), `toText(file?)`, `toJSON()` (the document of `sheetrs lint --format json` as an object), `toJsonText(file?)` (the same, as text), `toSarif(file?)` (SARIF 2.1.0 text); `file` is the name the documents give the workbook |
 | | `query(query?)` | `{cells: [...]}`, as `sheetrs query` prints it |
 | | `range(ranges, options?)` | one block per range: `{range, values, formulas, numberFormats, displays, comments}` (the grids asked for, as lists of rows or of columns) |

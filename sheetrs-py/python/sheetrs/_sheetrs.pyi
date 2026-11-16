@@ -159,8 +159,8 @@ class Sheet:
     def name(self) -> str: ...
     @property
     def used_range(self) -> str | None:
-        """From `A1` to the bottom right corner of the cells that hold a value or a formula
-        (`"A1:GV5439"`); `None` for a sheet with none."""
+        """The rectangle of the cells that hold a value or a formula, from the first used row and
+        column to the last (`"D10:GV5439"`); `None` for a sheet with none."""
     @property
     def state(self) -> Literal["visible", "hidden", "very_hidden"]: ...
     @property
@@ -170,7 +170,8 @@ class Sheet:
     @property
     def errors(self) -> int: ...
     @property
-    def empty_cells(self) -> int: ...
+    def empty_cells(self) -> int:
+        """The cells without value or formula in the area from `A1` to the last used cell."""
     @property
     def comments(self) -> int: ...
     @property
