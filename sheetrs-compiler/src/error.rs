@@ -53,6 +53,13 @@ pub enum Error {
     /// A workbook that cannot be compiled, or a range that cannot be resolved against it.
     #[error("{0}")]
     Compile(String),
+    /// A workbook that depends on something the engine cannot calculate (a macro, an extension) in a cell that the run
+    /// calculates, which only `LibreOffice` can give a result for: `message` names the cause.
+    #[error("{message}")]
+    Unsupported {
+        kind: crate::compile::Unsupported,
+        message: String,
+    },
     /// `SOURCE_DATE_EPOCH` set to something that is not a number of seconds.
     #[error("SOURCE_DATE_EPOCH must be a number of seconds since 1970, not `{0}`")]
     BuildTime(String),

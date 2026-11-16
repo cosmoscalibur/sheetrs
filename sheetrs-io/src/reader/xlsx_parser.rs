@@ -1926,6 +1926,10 @@ fn parse_cell_contents<R: std::io::BufRead>(
                                 // LibreOffice (text is `t="s"`/`t="str"`).
                                 if let Ok(n) = v_typed.parse::<f64>() {
                                     CellValue::Number(n)
+                                } else if v_typed.is_empty() {
+                                    // `<v></v>` and `<v/>` hold nothing, as no `<v>` does (a text
+                                    // result is `t="str"`).
+                                    CellValue::Empty
                                 } else {
                                     CellValue::Text(Arc::from(v_text))
                                 }
@@ -2345,6 +2349,84 @@ pub fn extract_hidden_columns_rows_from_xlsx(
     }
 
     Ok((hidden_columns, hidden_rows))
+}
+
+/// The rows of a worksheet up to `last` (0-based, inclusive) that are hidden and the ones that hold a value or a formula, as bands
+/// `(first, last)`: the sheet is read as a stream and the read stops at the first row after `last`. A row with no `r` follows the
+/// previous one.
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
+pub fn extract_row_state_from_xlsx(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+    sheet_name: &str,
+    last: u32,
+) -> Result<HiddenColumnsRows> {
+    let mut hidden: Vec<(u32, u32)> = Vec::new();
+    let mut filled: Vec<(u32, u32)> = Vec::new();
+    let Ok(sheet_path) = xlsx_sheet_path(archive, sheet_name) else {
+        return Ok((hidden, filled));
+    };
+    let Ok(sheet_xml) = archive.by_name(&sheet_path) else {
+        return Ok((hidden, filled));
+    };
+    let mut reader = Reader::from_reader(BufReader::new(sheet_xml));
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    let mut row = 0u32;
+    let mut next_row = 0u32;
+    let mut in_row = false;
+    let mut counted = false;
+    let band = |bands: &mut Vec<(u32, u32)>, row: u32| match bands.last_mut() {
+        Some(last) if last.1 + 1 == row => last.1 = row,
+        _ => bands.push((row, row)),
+    };
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e) | Event::Empty(e)) => match e.name().as_ref() {
+                "row" => {
+                    row = next_row;
+                    let mut is_hidden = false;
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            "r" => {
+                                if let Ok(val) = attr_value(&attr)?.parse::<u32>() {
+                                    row = val.saturating_sub(1);
+                                }
+                            }
+                            "hidden" => {
+                                is_hidden = attr_value(&attr)? == "1"
+                                    || attr_value(&attr)?.to_lowercase() == "true";
+                            }
+                            _ => {}
+                        }
+                    }
+                    if row > last {
+                        break;
+                    }
+                    next_row = row + 1;
+                    in_row = true;
+                    counted = false;
+                    if is_hidden {
+                        band(&mut hidden, row);
+                    }
+                }
+                // A value, a formula or an inline text inside a cell: the row holds something.
+                "v" | "f" | "is" if in_row && !counted => {
+                    counted = true;
+                    band(&mut filled, row);
+                }
+                _ => {}
+            },
+            Ok(Event::End(e)) if e.name().as_ref() == "row" => in_row = false,
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(Error::malformed(format!("XML parsing error: {e}"))),
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok((hidden, filled))
 }
 
 /// Extract merged cell ranges from a worksheet

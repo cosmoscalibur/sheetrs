@@ -69,8 +69,8 @@ fn declared_and_inside_the_outputs_is_a_selection() {
 #[test]
 fn declared_and_outside_the_outputs_is_read_from_the_written_workbook() {
     for extension in EXTENSIONS {
-        // The formula nothing declares keeps the result the template stored; the constant and the input
-        // given are in the workbook as written.
+        // The workbook is the answer, so the formula nothing declares is calculated with the input given too
+        // (360 payments of the new loan); the constant and the input given are in the workbook as written.
         let got = ask(
             &loan(extension),
             &json!({"principal": 1000}),
@@ -88,7 +88,7 @@ fn declared_and_outside_the_outputs_is_read_from_the_written_workbook() {
             "{extension}"
         );
         assert!(
-            (number(&got[0].1, 0, 0) - 386_511.5).abs() < 1.0,
+            (number(&got[0].1, 0, 0) - 5.368_216_230_121_398 * 360.0).abs() < 1e-6,
             "{extension}"
         );
         assert!(
@@ -111,7 +111,7 @@ fn declared_a_range_that_is_not_one_of_the_workbook_is_an_error() {
 }
 
 #[test]
-fn none_declared_the_ranges_are_the_formula_cells_and_the_constants_the_workbook_holds() {
+fn none_declared_the_ranges_are_the_formulas_and_constants() {
     for extension in EXTENSIONS {
         // F!A5:A6 are formula cells (the outputs); T!A1:A3 constants, read from the workbook as written.
         let got = ask(&structure(extension), &json!({}), &["F!A5:A6", "T!A1:A3"]).unwrap();
@@ -168,5 +168,43 @@ fn an_input_is_in_the_workbook_a_range_outside_the_outputs_reads() {
             .unwrap();
         let first = blocks[0].values.as_ref().unwrap()[0][0].as_ref();
         assert_eq!(first.and_then(Json::as_f64), Some(10.0), "{extension}");
+    }
+}
+
+/// With the workbook as the answer (the embedded mode) the build declares only the inputs: the whole workbook comes out
+/// calculated, the formulas the workbook declares no output for (`Loan!B5`, the table below it) included.
+#[test]
+fn the_workbook_written_is_calculated_whole_whatever_outputs_it_declares() {
+    for extension in EXTENSIONS {
+        let read = |bytes: Vec<u8>| -> (f64, f64) {
+            let blocks = Book::from_bytes(bytes)
+                .unwrap()
+                .range(["Loan!B5", "Loan!B11"], &RangeOptions::default())
+                .unwrap();
+            let at = |i: usize| {
+                blocks[i].values.as_ref().unwrap()[0][0]
+                    .as_ref()
+                    .and_then(Json::as_f64)
+                    .unwrap()
+            };
+            (at(0), at(1))
+        };
+        let before = read(std::fs::read(loan(extension)).unwrap());
+        let mut book = Book::from_file(loan(extension)).unwrap();
+        book.calculate(Calculation {
+            inputs: json!({"principal": 1000}).as_object().cloned().unwrap(),
+            ..Calculation::default()
+        });
+        let mut bytes = Vec::new();
+        book.write_to(&mut bytes).unwrap();
+        let after = read(bytes);
+        assert!(
+            (after.0 - 5.368_216_230_121_398 * 360.0).abs() < 1e-6,
+            "{extension}: {after:?}"
+        );
+        assert!(
+            (after.1 - before.1).abs() > 1.0,
+            "{extension}: the table was not calculated: {before:?} {after:?}"
+        );
     }
 }

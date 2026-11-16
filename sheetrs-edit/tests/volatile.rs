@@ -107,7 +107,7 @@ fn without_now_and_seed_the_clock_is_the_systems() {
 }
 
 #[test]
-fn the_recalculation_after_a_deletion_runs_with_the_clock_of_the_calculate_step() {
+fn a_deletion_recalculates_with_the_clock_of_the_calculate_step() {
     for extension in EXTENSIONS {
         let mut book = Book::from_file(fixture(extension)).unwrap();
         book.calculate(Calculation {

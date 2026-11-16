@@ -124,6 +124,8 @@ fn check_rows(file: &str, given: Given<'_>, min_rows: usize, known: &[&str]) {
         outputs: vec![BindingSpec::parse(&format!("Calc!A1:A{}", last + 1))],
         fold: false,
         now,
+        // The oracle compares the engine with LibreOffice, not the cache the workbook holds with itself.
+        calculate_all: true,
         ..Spec::default()
     };
     spec.locale = Some(match given {

@@ -16,11 +16,9 @@
 //! 3. the changes of visibility (rows, columns and sheets hidden or shown): a pass of their own,
 //!    against the input, so that they name the rows and columns of the workbook as it is and a
 //!    deletion that follows removes hidden rows like any other;
-//! 4. the conversion of formulas to values (it reads the results the workbook caches, so it comes
-//!    after what could have left them stale, and when something did, the formulas are calculated
-//!    again first), the deletions of rows and columns, of defined names and of sheets, all in one
-//!    pass over the file: they are written against that workbook, whose rows, columns and sheets are
-//!    those of the input.
+//! 4. the conversion of formulas to values (of what the formulas calculate, see below), the deletions
+//!    of rows and columns, of defined names and of sheets, all in one pass over the file: they are
+//!    written against that workbook, whose rows, columns and sheets are those of the input.
 //!
 //! Step by step is a different thing: one cut per step (`write`, or save, between operations) gives
 //! the workbook the first step leaves as the input of the next.
@@ -30,16 +28,48 @@
 //! columns deleted from the last to the first, then the named ranges deleted, then the sheets
 //! deleted. A reference that spans sheets (`Sheet1:Sheet3!A1`) is not supported: issue #75.
 //!
-//! A conversion reads the results the workbook caches, and a deletion (or a removal, or a
-//! replacement) leaves the cached results of the formulas that read what changed stale: their text
-//! may not change, and so their value is out of date. An application that calculates as it goes
-//! shows the new results, so the conversion that follows gives those. The writer streams the file
-//! and reads no results of its own; a conversion after such a change is a pass of its own preceded by
-//! another, [`Operation::Recalculate`], which the engine (the compiler's program, with the semantics
-//! of `LibreOffice`) runs over the workbook: every formula calculated again, so that stale values are
-//! never written; when the engine cannot, the run stops, since the values to convert do not exist.
+//! **A conversion converts what the formulas calculate**, not what the file caches (the result a file
+//! caches is not a goal of the project, see `docs/approved-differences.md`; `LibreOffice` itself
+//! calculates some formulas when it loads a file and keeps the cached results of the others). It is one
+//! step in every mode: where the engine runs for it (always for an ODS, and for an XLSX whose results
+//! are stale or that calculates every formula) it calculates in the pass that writes the conversion. With
+//! `calculate_all` of an XLSX the cells the conversion names are the outputs of the engine (it calculates
+//! them and what they read: the compiler prunes the workbook to that, [`sheetrs_compiler::Only`]); in the
+//! cache mode the outputs are the formulas the plan reaches and the ones `LibreOffice` calculates on load,
+//! and the cells the conversion names that the engine did not calculate are converted with the result the
+//! file caches, which the same pass reads. The writer, in the same pass over the file that applies the
+//! deletions, writes each calculated cell as the value the engine gave, in place of the formula
+//! ([`sheetrs_io::write::CellEdit::Cached`] in a cell the pass converts). There is no pass of its own for the
+//! calculation and none for the conversion: the file is read once more, by the engine. The engine
+//! calculates the workbook as the passes before leave it, so a replacement or a calculation that comes
+//! first is seen, and the conversion is of the workbook as it is before the deletions of its own pass
+//! move any cell. A cell that depends on what the engine cannot calculate (another workbook, a macro, an
+//! extension) keeps the result the file caches unless the run calculates it, in which case an add-in that is
+//! not installed is `#NAME?` and a macro or a function only `LibreOffice` has is an error that names the cause
+//! (`sheetrs_compiler::Unsupported`; the run says so with [`EXTERNAL_FROM_CACHE`](crate::EXTERNAL_FROM_CACHE) and
+//! its two relatives); any other cause that the engine cannot calculate it is an error for a conversion, which
+//! needs the values.
+//!
+//! **The startup of an ODS.** `LibreOffice` calculates some formulas of an ODS when it opens it (the formulas
+//! that cache no result, an error, a result with no type or of some types in a cell with no format; a few
+//! functions), so the plan of an ODS starts with that calculation, in the mode of the run: the roots of the load
+//! by default, every formula with `calculate_all`, which is all that differs. It is the first pass that runs the
+//! engine (a calculation, a conversion, the recalculation that ends the plan), and a pass of its own, the first,
+//! when the plan has none (hiding columns). The compiler finds the roots in the read that compiles the
+//! workbook for that pass; the planner looks at nothing in the file before. After the startup each operation
+//! applies its own rule (a deletion reaches a cone, a conversion writes what the calculation gave, hiding rows
+//! reaches its cells). An XLSX has no startup: it keeps the functions `LibreOffice` calculates on load only.
+//!
+//! A deletion (or a removal, or a replacement) leaves the cached results of the formulas that read what
+//! changed stale: their text may not change, and so their value is out of date. The writer streams the
+//! file and reads no results of its own, so the plan ends with the engine calculating every formula
+//! again ([`Operation::Recalculate`]), with the semantics of `LibreOffice`: every formula calculated
+//! again, so that stale values are never written. What the engine gives is what `LibreOffice` shows when
+//! the workbook it leaves is saved and opened again (re-read): a reference that went is a bare `#REF!` in
+//! the text, the error value of an ODS and the unknown name of an XLSX, and the engine reads it so; the
 //! The same holds when the workbook says it is stale when the run starts (an XLSX marked to
-//! recalculate when it is opened; an ODS with no cached result in its formulas).
+//! recalculate when it is opened; an ODS with no cached result in its formulas) and a run that uses the
+//! cache converts.
 //!
 //! **The mark to recalculate is a consequence of the engine failing, never a decision taken
 //! before.** A plan that leaves results stale (rows, columns, sheets or names deleted, text replaced)
@@ -55,21 +85,44 @@
 //! other result and has nothing to calculate. A workbook that came marked and was calculated by the
 //! engine loses the mark, since its results are fresh.
 //!
+//! **The cache is the default** (what `LibreOffice` does when it opens a file and when a cell changes:
+//! it calculates what has no result and what the change reaches, and keeps the rest), and
+//! `calculate_all` (`Book::with_calculate_all(true)`, `--calculate-all`, `calculate_all=True`,
+//! `calculateAll = true`) is the opt-in that emulates `calculateAll()`: every formula is calculated
+//! again. By default the recalculation calculates the formulas the plan reaches and what
+//! depends on them, and every other formula keeps, byte for byte, the result the file caches. The
+//! option changes nothing about when the engine runs, only how much of the workbook it calculates. The
+//! default is also what makes a conversion read the results the file caches: the engine of the pass
+//! that writes the conversion calculates the cone of the plan, and the cells the conversion names that
+//! it did not calculate keep the results the file holds; with `calculate_all` the engine calculates what
+//! the conversion names (every formula in an ODS), and those are the results it converts. A formula is reached when the writer
+//! left it with no cached result (it read a deleted cell or a range that shrank; the replaced
+//! formula), when it reads a cell a replacement wrote, when it is volatile, when it is a `SUBTOTAL`
+//! or `AGGREGATE` and rows were hidden or shown, when a deletion moved the cell of a `ROW` or `COLUMN` or what they are
+//! given, when it reads through a defined name whose target a deletion moved, shrank or removed (or any name when one was deleted),
+//! and every formula when a sheet was deleted: what `LibreOffice` recalculates after the same edit (see
+//! `sheetrs_compiler::Cache`); the engine itself is what finds who depends on those. A workbook that reads
+//! cells at run time (`INDIRECT`, `OFFSET`), one that the file says is stale (an XLSX marked to be recalculated when it is opened),
+//! and one where the replacements and the deletions meet, are calculated
+//! whole: the result is then that of a run with `calculate_all`. A run that does not need the
+//! engine at all (the cone is empty) writes the workbook as the passes left it.
+//!
 //! The plan is a description, not a model of the workbook: it holds the operations (a few bands
 //! and names), and each pass streams the file once, rewriting each cell as it goes by. The memory
 //! of a pass does not depend on the size of the workbook.
 
-use crate::calculate::CalculateError;
-use crate::diagnostics::not_calculated;
+use crate::calculate::{CalculateError, ConvertError};
+use crate::diagnostics::{from_cache, not_calculated, not_calculated_on_load};
 use crate::error::{Context, Error, Result};
 use crate::replace::Report;
+use sheetrs_compiler::{Cache, FromCacheNote};
 use sheetrs_io::reader::Format;
 use sheetrs_io::write::{
-    self as writer, Bands, Calculation, ColumnRange, Operation, RowRange, ValueScope, ValueTarget,
-    VisibilityChange, WorkbookModifications,
+    self as writer, Bands, Calculation, ColumnRange, Operation, RowRange, SheetEdits, ValueScope,
+    ValueTarget, VisibilityChange, WorkbookModifications,
 };
-use sheetrs_io::{Book, Volatile};
-use std::collections::BTreeMap;
+use sheetrs_io::{Book, RowState, Volatile};
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 /// What a run is asked besides its operations (nothing, but in the tests: the engine of the
@@ -88,19 +141,327 @@ pub(crate) type StandIn = fn(&Book) -> std::result::Result<Vec<u8>, String>;
 impl Engine {
     /// Every formula of `workbook` calculated again, by the engine.
     #[cfg_attr(not(test), allow(clippy::unused_self))] // the tests give the engine a stand-in
-    fn recalculate(&self, workbook: &Book, operation: &str, volatile: Volatile) -> Result<Vec<u8>> {
+    fn recalculate(
+        &self,
+        workbook: &Book,
+        operation: &str,
+        volatile: Volatile,
+        cache: Option<&Cache>,
+    ) -> Result<(Vec<u8>, Vec<FromCacheNote>)> {
         #[cfg(test)]
         if let Some(recalculate) = self.recalculate {
-            return recalculate(workbook).map_err(|reason| Error::Recalculation {
+            return recalculate(workbook)
+                .map(|bytes| (bytes, Vec::new()))
+                .map_err(|reason| Error::Recalculation {
+                    operation: operation.to_string(),
+                    reason,
+                });
+        }
+        crate::calculate::recalculate(workbook, volatile, cache)
+            .map(|done| (done.workbook, done.from_cache))
+            .map_err(|error| match error {
+                CalculateError::Depends(reason) => Error::Unsupported {
+                    operation: operation.to_string(),
+                    reason,
+                },
+                error => Error::Recalculation {
+                    operation: operation.to_string(),
+                    reason: error.to_string(),
+                },
+            })
+    }
+
+    /// The pass `pass` over `workbook`, whose conversions of formulas to values take the results the
+    /// engine calculates for the cells they name (see [`crate::calculate::convert`]).
+    #[cfg_attr(not(test), allow(clippy::unused_self))] // the tests give the engine a stand-in
+    fn convert(
+        &self,
+        workbook: &Book,
+        pass: &WorkbookModifications,
+        operation: &str,
+        volatile: Volatile,
+        cache: Option<&Cache>,
+    ) -> Result<(Vec<u8>, Vec<FromCacheNote>)> {
+        #[cfg(test)]
+        if let Some(recalculate) = self.recalculate {
+            // The stand-in leaves the results as the file has them: the conversion is of those.
+            let bytes = recalculate(workbook).map_err(|reason| Error::Recalculation {
                 operation: operation.to_string(),
                 reason,
-            });
+            })?;
+            return Ok((
+                writer::modify_workbook_bytes(workbook.format(), &bytes, pass)?,
+                Vec::new(),
+            ));
         }
-        crate::calculate::recalculate(workbook, volatile).map_err(|reason| Error::Recalculation {
-            operation: operation.to_string(),
-            reason,
+        crate::calculate::convert(workbook, pass, volatile, cache).map_err(|error| match error {
+            ConvertError::Engine(reason) => Error::Recalculation {
+                operation: operation.to_string(),
+                reason,
+            },
+            ConvertError::Depends(reason) => Error::Unsupported {
+                operation: operation.to_string(),
+                reason,
+            },
+            ConvertError::Write(error) => Error::Write(error),
+            ConvertError::Other(reason) => Error::Calculation { reason },
         })
     }
+}
+
+/// What a run that keeps the results the file caches (no [`Book::calculate_all`]) has changed since the
+/// results of the workbook were last known to be right: the recalculation calculates what this
+/// reaches and leaves every other formula as the file has it.
+struct Touched {
+    cached: bool,
+    /// `None`: every formula is calculated (the run does not use the cache, or the file says its
+    /// results are stale, or the changes cannot be placed).
+    cache: Option<Cache>,
+}
+
+/// Replacements beyond this many rectangles in a sheet are one rectangle that holds them all.
+const MOST_CHANGES: usize = 64;
+
+impl Touched {
+    fn start(book: &Book) -> Result<Self> {
+        let cached = !book.calculate_all();
+        // An XLSX marked to be recalculated when it is opened caches nothing to trust. An ODS has no
+        // such mark: a formula that has no result is calculated like any other that the plan reaches.
+        let marked = cached && book.format() == Format::Xlsx && crate::stale::input_is_stale(book)?;
+        Ok(Self {
+            cached,
+            cache: (cached && !marked).then(Cache::default),
+        })
+    }
+
+    /// The workbook was calculated: its results are right, whatever came before.
+    fn calculated(&mut self) {
+        self.cache = self.cached.then(Cache::default);
+    }
+
+    /// A pass ran, with these replacements in it. `names` are the defined names of the workbook the pass
+    /// read (name to definition), asked for only when the pass deletes rows, columns or names.
+    #[cfg(test)]
+    fn record(
+        &mut self,
+        pass: &[Operation],
+        replacements: &HashMap<String, SheetEdits>,
+        names: impl FnOnce() -> HashMap<String, String>,
+    ) {
+        self.record_with(pass, replacements, names, |_| None);
+    }
+
+    /// As `record`, with `hidden`: the rows the input hides in the sheets asked for (`None` when they cannot be read, and then
+    /// the rows a pass hides or shows all count as changed). `LibreOffice` dirties the formulas of the rows whose visibility
+    /// changes, so hiding a row that is hidden or showing one that is visible reaches nothing.
+    fn record_with(
+        &mut self,
+        pass: &[Operation],
+        replacements: &HashMap<String, SheetEdits>,
+        names: impl FnOnce() -> HashMap<String, String>,
+        hidden: impl FnOnce(&[(&str, u32, u32)]) -> Option<HashMap<String, RowState>>,
+    ) {
+        let Some(cache) = &mut self.cache else {
+            return;
+        };
+        let mut names_deleted = false;
+        let mut visibility: Vec<&VisibilityChange> = Vec::new();
+        for operation in pass {
+            match operation {
+                Operation::SetVisibility(changes) => visibility.extend(changes),
+                Operation::DeleteRows(rows) => cache.rows_deleted.extend(
+                    rows.iter()
+                        .map(|range| (range.sheet.clone(), range.first, range.last)),
+                ),
+                Operation::DeleteColumns(columns) => cache.columns_deleted.extend(
+                    columns
+                        .iter()
+                        .map(|range| (range.sheet.clone(), range.first, range.last)),
+                ),
+                Operation::DeleteSheets(_) => cache.sheets_deleted = true,
+                Operation::DeleteNames(deleted) => {
+                    // The workbook that is calculated no longer has them: the formulas that read through them are found by their names.
+                    names_deleted = true;
+                    cache.stale_names.extend(deleted.iter().cloned());
+                }
+                _ => {}
+            }
+        }
+        cache
+            .rows_hidden
+            .extend(rows_that_change(&visibility, hidden));
+        // A deleted name recompiles every formula that reads through one (the compiler knows the names of the workbook); a
+        // deletion of rows or columns, the ones whose name has a target it moved or shrank, which needs the definitions before it.
+        cache.names_deleted |= names_deleted;
+        if !(cache.rows_deleted.is_empty() && cache.columns_deleted.is_empty()) {
+            cache.stale_names = sheetrs_compiler::compile::names_reached(
+                &names(),
+                &cache.rows_deleted,
+                &cache.columns_deleted,
+            );
+        }
+        for (sheet, edits) in replacements {
+            // Runs of cells along a row, one rectangle each.
+            let mut rects: Vec<(u32, u32, u32, u32)> = Vec::new();
+            for &(row, col) in edits.keys() {
+                match rects.last_mut() {
+                    Some(last) if last.0 == row && last.2 == row && last.3 + 1 == col => {
+                        last.3 = col;
+                    }
+                    _ => rects.push((row, col, row, col)),
+                }
+            }
+            if rects.len() > MOST_CHANGES {
+                let hull = rects.iter().fold(rects[0], |h, r| {
+                    (h.0.min(r.0), h.1.min(r.1), h.2.max(r.2), h.3.max(r.3))
+                });
+                rects = vec![hull];
+            }
+            cache.changed.extend(
+                rects
+                    .into_iter()
+                    .map(|(r0, c0, r1, c1)| (sheet.clone(), r0, c0, r1, c1)),
+            );
+        }
+        // Where a change and a deletion meet, the cells of the change are not where they were.
+        let layout = cache.sheets_deleted
+            || !(cache.rows_deleted.is_empty() && cache.columns_deleted.is_empty());
+        if layout && !cache.changed.is_empty() {
+            self.cache = None;
+        }
+    }
+}
+
+/// The rows whose visibility the `changes` of a pass change, as `(sheet, first, last)`: each change is applied in order to the
+/// rows the input hides, and a row is one that changed when some change flipped it (a row hidden and shown again counts, as it
+/// does for `LibreOffice`; hiding a hidden row or showing a visible one flips nothing) and it holds a value or a formula: the
+/// formulas that read a row are dirtied by its cells (OBSERVED, `probe` of `visibility.*`: a row with no cell, hidden or shown, calculates
+/// nothing).
+fn rows_that_change(
+    changes: &[&VisibilityChange],
+    hidden: impl FnOnce(&[(&str, u32, u32)]) -> Option<HashMap<String, RowState>>,
+) -> Vec<(String, u32, u32)> {
+    let rows: Vec<(&str, u32, u32, bool)> = changes
+        .iter()
+        .filter_map(|change| match change {
+            VisibilityChange::Rows { range, visible } => {
+                Some((range.sheet.as_str(), range.first, range.last, *visible))
+            }
+            _ => None,
+        })
+        .collect();
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let spans: Vec<(&str, u32, u32)> = rows
+        .iter()
+        .map(|&(sheet, first, last, _)| (sheet, first, last))
+        .collect();
+    let Some(mut state) = hidden(&spans) else {
+        return rows
+            .iter()
+            .map(|&(sheet, first, last, _)| (sheet.to_string(), first, last))
+            .collect();
+    };
+    let filled: HashMap<String, Vec<(u32, u32)>> = state
+        .iter()
+        .map(|(sheet, rows)| (sheet.clone(), rows.filled.clone()))
+        .collect();
+    let mut state: HashMap<String, Vec<(u32, u32)>> = state
+        .drain()
+        .map(|(sheet, rows)| (sheet, rows.hidden))
+        .collect();
+    let mut changed: HashMap<&str, Vec<(u32, u32)>> = HashMap::new();
+    for (sheet, first, last, visible) in rows {
+        let now = state.entry(sheet.to_string()).or_default();
+        let flipped = if visible {
+            intersect(now, (first, last))
+        } else {
+            subtract(&[(first, last)], now)
+        };
+        *now = if visible {
+            subtract(now, &[(first, last)])
+        } else {
+            union(now, &[(first, last)])
+        };
+        let all = changed.entry(sheet).or_default();
+        *all = union(all, &flipped);
+    }
+    for (sheet, bands) in &mut changed {
+        let with_cells = filled.get(*sheet).map_or(&[][..], Vec::as_slice);
+        *bands = bands
+            .iter()
+            .flat_map(|&band| intersect(with_cells, band))
+            .collect();
+    }
+    let mut out: Vec<(String, u32, u32)> = changed
+        .into_iter()
+        .flat_map(|(sheet, bands)| {
+            bands
+                .into_iter()
+                .map(move |(first, last)| (sheet.to_string(), first, last))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// The bands of `a` and `b` as one sorted list of bands that neither overlap nor touch.
+fn union(a: &[(u32, u32)], b: &[(u32, u32)]) -> Vec<(u32, u32)> {
+    let mut all: Vec<(u32, u32)> = a.iter().chain(b).copied().collect();
+    all.sort_unstable();
+    let mut out: Vec<(u32, u32)> = Vec::new();
+    for (first, last) in all {
+        match out.last_mut() {
+            Some(prev) if first <= prev.1.saturating_add(1) => prev.1 = prev.1.max(last),
+            _ => out.push((first, last)),
+        }
+    }
+    out
+}
+
+/// What of the bands `a` is not in the bands `b`.
+fn subtract(a: &[(u32, u32)], b: &[(u32, u32)]) -> Vec<(u32, u32)> {
+    let mut out = Vec::new();
+    for &(first, last) in a {
+        let mut from = first;
+        let mut done = false;
+        for &(b_first, b_last) in &union(b, &[]) {
+            if b_last < from {
+                continue;
+            }
+            if b_first > last {
+                break;
+            }
+            if b_first > from {
+                out.push((from, b_first - 1));
+            }
+            if b_last >= last {
+                done = true;
+                break;
+            }
+            from = b_last + 1;
+        }
+        if !done {
+            out.push((from, last));
+        }
+    }
+    out
+}
+
+/// What of the bands `a` is in the band `b`.
+fn intersect(a: &[(u32, u32)], b: (u32, u32)) -> Vec<(u32, u32)> {
+    a.iter()
+        .filter_map(|&(first, last)| {
+            let (first, last) = (first.max(b.0), last.min(b.1));
+            (first <= last).then_some((first, last))
+        })
+        .collect()
+}
+
+/// The defined names of `book`, name to definition (none when they cannot be read: the engine reads them again).
+fn input_names(book: &Book) -> HashMap<String, String> {
+    book.defined_name_definitions().unwrap_or_default()
 }
 
 fn target_key(target: ValueTarget) -> (u8, u32, u32) {
@@ -236,19 +597,82 @@ pub(crate) fn reads_results(operations: &[Operation]) -> bool {
 /// of the file. The last is the engine calculating again what the operations left stale, when they
 /// did.
 pub(crate) fn passes(operations: &[Operation]) -> Vec<Vec<Operation>> {
-    passes_from(operations, false)
+    passes_from(operations, false, true, false)
 }
 
-/// As [`passes`], for a workbook whose cached results are stale when the run starts (`stale`) or
-/// not.
+/// The passes of a plan, and what the run needs to know about them besides the operations they hold.
+pub(crate) struct Plan {
+    pub passes: Vec<Vec<Operation>>,
+    /// The first pass is the startup of an ODS that the plan adds because no pass of it runs the engine (see
+    /// [`plan_from`]): a recalculation of what `LibreOffice` calculates when it opens the file.
+    pub startup_pass: bool,
+    /// The conversion of formulas to values is calculated by the engine in the pass that writes it (see [`plan_from`]).
+    pub engine_converts: bool,
+}
+
+impl Plan {
+    /// Whether `pass` converts formulas to values with the engine.
+    fn converts_with_engine(&self, pass: &[Operation]) -> bool {
+        self.engine_converts
+            && pass
+                .iter()
+                .any(|operation| matches!(operation, Operation::FormulaToValue(_)))
+    }
+
+    /// The index of the first pass that runs the engine.
+    fn first_engine_pass(&self) -> Option<usize> {
+        self.passes
+            .iter()
+            .position(|pass| runs_the_engine(pass))
+            .filter(|_| !self.startup_pass || self.passes.len() > 1)
+    }
+}
+
+/// Whether `pass` runs the engine: a calculation, the recalculation of the planner, or a conversion (calculated by the
+/// engine in the pass that writes it whenever the run has an engine to start with: see [`plan_from`]).
+fn runs_the_engine(pass: &[Operation]) -> bool {
+    pass.iter().any(|operation| {
+        matches!(
+            operation,
+            Operation::Recalculate | Operation::Calculate(_) | Operation::FormulaToValue(_)
+        )
+    })
+}
+
+/// As [`passes`], for a workbook whose cached results are stale when the run starts (`stale`) or not; `calculate_all` says
+/// whether the run calculates every formula, and `startup` whether the workbook is an ODS.
+pub(crate) fn passes_from(
+    operations: &[Operation],
+    stale: bool,
+    calculate_all: bool,
+    startup: bool,
+) -> Vec<Vec<Operation>> {
+    plan_from(operations, stale, calculate_all, startup).passes
+}
+
+/// The plan of `operations` (see [`Plan`]).
 ///
-/// A conversion of formulas to values reads the results the workbook caches. When what runs before
-/// it (or the file itself) left them stale, they are calculated again first: a pass of its own that
-/// no operation asks for ([`Operation::Recalculate`]). That is what running the operations one at
-/// a time gives in an application that calculates as it goes.
-pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<Operation>> {
+/// **A conversion of formulas to values is one step in every mode.** Where the engine runs for the conversion (always for an ODS;
+/// for an XLSX when the results the file caches are stale or the run calculates every formula) it calculates in the pass that
+/// writes the conversion: the cells the conversion names with `calculate_all` of an XLSX, and otherwise (the cache) the formulas the
+/// plan reaches and the ones `LibreOffice` calculates on load, which are the ones the engine is given; the rest of the cells the
+/// conversion names are converted with the result the file caches, which the same pass reads. No calculation of the workbook comes
+/// first: a conversion needs the values the engine gives, not a file that holds them (a second read and write of the whole file).
+///
+/// **The startup of an ODS.** `LibreOffice` calculates some formulas of an ODS when it opens it (the formulas that cache no result, an
+/// error, a result with no type or of a type in a cell with no format; a few functions, in both formats), so the plan of an ODS
+/// starts with that calculation, in the mode of the run: the roots of the load by default, every formula with `calculate_all`. It is the
+/// first pass that runs the engine, and when the plan has none (nothing leaves results stale, no calculation, no conversion) it is a
+/// pass of its own, the first. The roots are found in the read that compiles the workbook for it: nothing scans the file before.
+pub(crate) fn plan_from(
+    operations: &[Operation],
+    mut stale: bool,
+    calculate_all: bool,
+    startup: bool,
+) -> Plan {
     let mut passes = Vec::new();
     let mut last: Vec<Operation> = Vec::new();
+    let mut convert_stale = false;
     for operation in canonical(operations) {
         match operation {
             Operation::Calculate(_) => {
@@ -270,8 +694,10 @@ pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<
                 passes.push(vec![operation]);
             }
             Operation::FormulaToValue(_) => {
-                if stale {
-                    passes.push(vec![Operation::Recalculate]);
+                // The engine that calculates the conversion calculates, in the same pass, what is stale (the cache) or everything
+                // (an ODS with `calculate_all`): nothing is left for a recalculation before it.
+                convert_stale = stale;
+                if !calculate_all || startup {
                     stale = false;
                 }
                 last.push(operation);
@@ -290,7 +716,15 @@ pub(crate) fn passes_from(operations: &[Operation], mut stale: bool) -> Vec<Vec<
         // What the operations left stale is calculated again by the engine, as the last thing.
         passes.push(vec![Operation::Recalculate]);
     }
-    passes
+    let startup_pass = startup && !passes.iter().any(|pass| runs_the_engine(pass));
+    if startup_pass {
+        passes.insert(0, vec![Operation::Recalculate]);
+    }
+    Plan {
+        passes,
+        startup_pass,
+        engine_converts: calculate_all || startup || convert_stale,
+    }
 }
 
 /// What running `operations` would do, as text, one operation per line and grouped by the pass over
@@ -317,23 +751,54 @@ pub fn explain(operations: &[Operation]) -> String {
 }
 
 /// As [`explain`], for the operations `book` holds: the workbook is looked at to tell whether its
-/// results are stale when the run starts, which puts a calculation before a conversion. A workbook
-/// that cannot be read is explained as [`explain`] does.
+/// results are stale when the run starts (an XLSX marked to recalculate, or one with functions `LibreOffice` calculates on load),
+/// which makes the engine calculate a conversion. An ODS starts with what `LibreOffice` calculates when it opens it, which comes
+/// first in the text. A workbook that cannot be read is explained as [`explain`] does.
 pub(crate) fn explain_book(book: &Book) -> String {
     use std::fmt::Write as _;
     let operations = book.operations();
-    let Ok(passes) = passes_for(book, operations) else {
+    let Ok(plan) = passes_for(book, operations) else {
         return explain(operations);
     };
     let mut out = String::new();
-    for (i, pass) in passes.iter().enumerate() {
-        let _ = writeln!(out, "pass {} of {}:", i + 1, passes.len());
+    if book.format() == Format::Ods {
+        let what = if book.calculate_all() {
+            "every formula is calculated (`calculate_all`)"
+        } else {
+            "the formulas LibreOffice calculates when it opens the file are calculated, and nothing that reads them"
+        };
+        let carried = match (plan.startup_pass, plan.first_engine_pass()) {
+            (true, _) => "in a pass of its own, the first".to_string(),
+            (false, Some(i)) => format!("in pass {}, with what the plan asks of the engine", i + 1),
+            (false, None) => "in no pass".to_string(),
+        };
+        let _ = writeln!(out, "startup of an ODS: {what}; {carried}");
+    }
+    for (i, pass) in plan.passes.iter().enumerate() {
+        let _ = writeln!(out, "pass {} of {}:", i + 1, plan.passes.len());
         for operation in pass {
             let _ = writeln!(out, "  {operation}");
         }
     }
+    if plan
+        .passes
+        .iter()
+        .any(|pass| plan.converts_with_engine(pass))
+    {
+        out.push_str(if book.calculate_all() {
+            "the formulas converted to values are calculated by the engine in the pass that writes them\n"
+        } else {
+            "the formulas converted to values are calculated by the engine in the pass that writes them: the ones the plan reaches and the ones LibreOffice calculates on load; the others are converted with the results the file caches\n"
+        });
+    }
+    if !book.calculate_all() && plan.passes.iter().any(|pass| runs_the_engine(pass)) {
+        out.push_str(
+            "the cache (the default): the formulas the plan reaches, and what depends on them, are calculated; the others keep the results the file caches\n",
+        );
+    }
     if has_calculate(operations)
-        || passes.last().map(Vec::as_slice) == Some(&[Operation::Recalculate])
+        || plan.passes.last().map(Vec::as_slice) == Some(&[Operation::Recalculate])
+            && !plan.startup_pass
     {
         out.push_str(
             "if the engine cannot calculate the workbook: warn, and mark it to be recalculated when opened\n",
@@ -388,7 +853,9 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
     {
         return Err(writer::Error::OutputIsInput(output.to_path_buf()).into());
     }
-    let passes = passes_for(book, operations)?;
+    let plan = passes_for(book, operations)?;
+    let passes = &plan.passes;
+    let only_on_load = only_on_load(book, operations);
     let volatile = plan_volatile(book);
     let extension = book.format().extension();
     let folder = (passes.len() > 1 || book.path().is_none())
@@ -405,6 +872,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
         _ => unreachable!("a book of bytes has a folder"),
     };
     let mut report = Report::default();
+    let mut touched = Touched::start(book)?;
     // Whether the engine failed: only then is the workbook marked to be recalculated.
     let mut failed = false;
     let marked = WorkbookModifications {
@@ -423,11 +891,16 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                 None
             } else {
                 recalculate_pass(
-                    &Book::from_file(&current)?.with_locale_of(book),
+                    &Book::from_file(&current)?
+                        .with_locale_of(book)
+                        .with_calculate_all_of(book),
+                    only_on_load,
+                    plan.startup_pass && i == 0,
                     last,
                     &first_conversion(operations),
                     engine,
                     volatile,
+                    &touched,
                     &mut report,
                 )
                 .with_context(said)?
@@ -435,8 +908,11 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
             [Operation::Calculate(calculation)] => Some(
                 calculate_pass(
                     calculation,
-                    &Book::from_file(&current)?.with_locale_of(book),
+                    &Book::from_file(&current)?
+                        .with_locale_of(book)
+                        .with_calculate_all_of(book),
                     volatile,
+                    &touched,
                     &mut report,
                 )
                 .with_context(said)?,
@@ -445,6 +921,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
         };
         if let Some(calculated) = calculated {
             if let Some(bytes) = calculated {
+                touched.calculated();
                 std::fs::write(&target, bytes).context("Cannot write the calculated workbook")?;
                 current = target;
             } else {
@@ -457,15 +934,45 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
             }
             continue;
         }
-        let mut mods = modifications_for(
-            pass,
-            &Book::from_file(&current)?.with_locale_of(book),
-            last && failed,
-            &mut report,
-        )
-        .with_context(said)?;
+        let input = Book::from_file(&current)?
+            .with_locale_of(book)
+            .with_calculate_all_of(book);
+        let mut mods =
+            modifications_for(pass, &input, last && failed, &mut report).with_context(said)?;
         mods.clear_recalculation_mark = false;
-        writer::modify_workbook(&current, &target, &mods).with_context(said)?;
+        // The engine calculates the cells to convert and the writer writes them as values, with the
+        // deletions, in this one pass.
+        let converted = if plan.converts_with_engine(pass) {
+            convert_pass(
+                engine,
+                &input,
+                &mods,
+                &first_conversion(operations),
+                volatile,
+                touched.cache.as_ref(),
+                &mut report,
+            )
+            .with_context(said)
+            .map(Some)?
+        } else {
+            None
+        };
+        if converted.is_some() && (!book.calculate_all() || book.format() == Format::Ods) {
+            // The engine calculated what was stale (the cache) or every formula (an ODS) in this pass.
+            touched.calculated();
+        }
+        touched.record_with(
+            pass,
+            &mods.replacements,
+            || input_names(&input),
+            |spans| input.row_state(spans).ok(),
+        );
+        match converted {
+            Some(bytes) => {
+                std::fs::write(&target, bytes).context("Cannot write the converted workbook")?;
+            }
+            None => writer::modify_workbook(&current, &target, &mods).with_context(said)?,
+        }
         current = target;
     }
     Ok(report)
@@ -493,18 +1000,22 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
     if operations.is_empty() {
         return Err(Error::EmptyPlan);
     }
-    let passes = passes_for(book, operations)?;
+    let plan = passes_for(book, operations)?;
+    let passes = &plan.passes;
+    let only_on_load = only_on_load(book, operations);
     let volatile = plan_volatile(book);
     let format = book.format();
     let mut current = if let Some(path) = book.path() {
         Book::from_bytes(std::fs::read(path).context("Cannot read the workbook to edit")?)?
             .with_locale_of(book)
+            .with_calculate_all_of(book)
     } else {
         let mut copy = book.clone();
         copy.clear_operations();
         copy
     };
     let mut report = Report::default();
+    let mut touched = Touched::start(book)?;
     let mut result = Vec::new();
     // Whether the engine failed: only then is the workbook marked to be recalculated.
     let mut failed = false;
@@ -521,16 +1032,20 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
             } else {
                 recalculate_pass(
                     &current,
+                    only_on_load,
+                    plan.startup_pass && i == 0,
                     last,
                     &first_conversion(operations),
                     engine,
                     volatile,
+                    &touched,
                     &mut report,
                 )
                 .with_context(said)?
             }),
             [Operation::Calculate(calculation)] => Some(
-                calculate_pass(calculation, &current, volatile, &mut report).with_context(said)?,
+                calculate_pass(calculation, &current, volatile, &touched, &mut report)
+                    .with_context(said)?,
             ),
             _ => None,
         };
@@ -541,6 +1056,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
         );
         if let Some(calculated) = calculated {
             if let Some(bytes) = calculated {
+                touched.calculated();
                 result = bytes;
             } else {
                 failed = true;
@@ -551,14 +1067,45 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
                     continue;
                 }
             }
-            current = Book::from_bytes(result.clone())?.with_locale_of(book);
+            current = Book::from_bytes(result.clone())?
+                .with_locale_of(book)
+                .with_calculate_all_of(book);
             continue;
         }
         let mods =
             modifications_for(pass, &current, last && failed, &mut report).with_context(said)?;
-        result = writer::modify_workbook_bytes(format, &data, &mods).with_context(said)?;
+        let converted = if plan.converts_with_engine(pass) {
+            convert_pass(
+                engine,
+                &current,
+                &mods,
+                &first_conversion(operations),
+                volatile,
+                touched.cache.as_ref(),
+                &mut report,
+            )
+            .with_context(said)
+            .map(Some)?
+        } else {
+            None
+        };
+        if converted.is_some() && (!book.calculate_all() || format == Format::Ods) {
+            touched.calculated();
+        }
+        touched.record_with(
+            pass,
+            &mods.replacements,
+            || input_names(&current),
+            |spans| current.row_state(spans).ok(),
+        );
+        result = match converted {
+            Some(bytes) => bytes,
+            None => writer::modify_workbook_bytes(format, &data, &mods).with_context(said)?,
+        };
         if !last {
-            current = Book::from_bytes(result.clone())?.with_locale_of(book);
+            current = Book::from_bytes(result.clone())?
+                .with_locale_of(book)
+                .with_calculate_all_of(book);
         }
     }
     Ok((result, report))
@@ -577,21 +1124,69 @@ fn fresh(bytes: Vec<u8>, format: Format) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// The pass `mods` over `workbook` with the conversions of formulas to values calculated by the engine
+/// (see [`Engine::convert`]; `cache` is what the passes before changed, `None` when every formula is calculated): the bytes
+/// of the workbook, and the notes of what the engine could not calculate and left as the file caches it. The engine failing
+/// is an error: the values to convert do not exist.
+#[allow(clippy::too_many_arguments)] // the state of one pass of the plan
+fn convert_pass(
+    engine: &Engine,
+    workbook: &Book,
+    mods: &WorkbookModifications,
+    operation: &str,
+    volatile: Volatile,
+    cache: Option<&Cache>,
+    report: &mut Report,
+) -> Result<Vec<u8>> {
+    let (bytes, from_cache_notes) = engine.convert(workbook, mods, operation, volatile, cache)?;
+    report.diagnostics.extend(
+        from_cache_notes
+            .iter()
+            .map(|note| from_cache(operation, note)),
+    );
+    Ok(bytes)
+}
+
 /// Calculates every formula of `workbook` again, for the results the operations left stale. The
 /// bytes of the workbook with fresh results, or `None` when the engine cannot and this is the last
 /// pass (`last`): nothing needs the values then, so the run says so ([`RECALC_NOT_SUPPORTED`](crate::RECALC_NOT_SUPPORTED)) and
 /// the workbook is marked to be recalculated when it is opened by whoever calls this. A conversion
 /// of formulas to values after it needs the values: the engine failing is an error then.
+#[allow(clippy::too_many_arguments)] // the state of one pass of the plan
 fn recalculate_pass(
     workbook: &Book,
+    only_on_load: bool,
+    startup: bool,
     last: bool,
     operation: &str,
     engine: &Engine,
     volatile: Volatile,
+    touched: &Touched,
     report: &mut Report,
 ) -> Result<Option<Vec<u8>>> {
-    match engine.recalculate(workbook, operation, volatile) {
-        Ok(bytes) => Ok(Some(fresh(bytes, workbook.format())?)),
+    match engine.recalculate(workbook, operation, volatile, touched.cache.as_ref()) {
+        Ok((bytes, notes)) => {
+            let label = if operation.is_empty() {
+                "recalculate"
+            } else {
+                operation
+            };
+            report
+                .diagnostics
+                .extend(notes.iter().map(|note| from_cache(label, note)));
+            Ok(Some(fresh(bytes, workbook.format())?))
+        }
+        // The startup of an ODS that nothing else in the plan needs the engine for: what `LibreOffice` calculates on load is not
+        // calculated by the engine here (a function it lacks, a reference it does not read, a macro), and the file goes on as it is,
+        // with the results it caches; nothing the plan did left a result stale, so nothing marks the workbook.
+        Err(Error::Unsupported { reason, .. } | Error::Recalculation { reason, .. }) if startup => {
+            report.diagnostics.push(not_calculated_on_load(&reason));
+            Ok(Some(match workbook.bytes() {
+                Some(bytes) => bytes.to_vec(),
+                None => std::fs::read(workbook.path().expect("a book is a file or bytes"))
+                    .context("Cannot read the workbook")?,
+            }))
+        }
         Err(Error::Recalculation { reason, .. }) if last => {
             // The recalculation that ends a run is the planner's own; a conversion that asks for it names itself.
             let operation = if operation.is_empty() {
@@ -602,6 +1197,14 @@ fn recalculate_pass(
             report.diagnostics.push(not_calculated(operation, &reason));
             Ok(None)
         }
+        // The recalculation an ODS gets only because `LibreOffice` calculates some of its formulas on load (nothing the plan did
+        // left a result stale) cannot be done for a workbook that holds what the engine cannot calculate (another workbook, macros,
+        // an extension): those cells keep the result the file caches, and the file goes on as it is.
+        Err(Error::Unsupported { .. }) if only_on_load => Ok(Some(match workbook.bytes() {
+            Some(bytes) => bytes.to_vec(),
+            None => std::fs::read(workbook.path().expect("a book is a file or bytes"))
+                .context("Cannot read the workbook")?,
+        })),
         Err(error) => Err(error),
     }
 }
@@ -615,6 +1218,7 @@ fn calculate_pass(
     calculation: &Calculation,
     workbook: &Book,
     volatile: Volatile,
+    touched: &Touched,
     report: &mut Report,
 ) -> Result<Option<Vec<u8>>> {
     // The step's own clock and seed win; what it leaves open is the plan's.
@@ -623,11 +1227,16 @@ fn calculate_pass(
         seed: calculation.seed.or(volatile.seed),
         ..calculation.clone()
     };
-    match crate::calculate::calculate(workbook, calculation) {
+    match crate::calculate::calculate(workbook, calculation, touched.cache.as_ref()) {
         Ok(done) => {
             if calculation.answer {
                 report.value_ranges = done.answer;
             }
+            report.diagnostics.extend(
+                done.from_cache
+                    .iter()
+                    .map(|note| from_cache("calculate", note)),
+            );
             Ok(Some(fresh(done.workbook, workbook.format())?))
         }
         Err(CalculateError::Unsupported(reason)) if !calculation.answer => {
@@ -636,18 +1245,45 @@ fn calculate_pass(
                 .push(not_calculated("calculate", &reason));
             Ok(None)
         }
-        Err(CalculateError::Unsupported(reason) | CalculateError::Failed(reason)) => {
-            Err(Error::Calculation { reason })
-        }
+        Err(
+            CalculateError::Unsupported(reason)
+            | CalculateError::Depends(reason)
+            | CalculateError::Failed(reason),
+        ) => Err(Error::Calculation { reason }),
     }
 }
 
-/// The passes for a run on `book`: when the operations convert formulas to values, whether the
-/// workbook already holds stale results is looked at, and the results are calculated again before
-/// the conversion if so.
-fn passes_for(book: &Book, operations: &[Operation]) -> Result<Vec<Vec<Operation>>> {
-    let stale_start = reads_results(operations) && crate::stale::input_is_stale(book)?;
-    Ok(passes_from(operations, stale_start))
+/// The plan for a run on `book` (see [`plan_from`]): an XLSX that says its results are stale (marked to be recalculated when it
+/// is opened) or that has functions `LibreOffice` calculates on load starts with them stale, which a conversion is calculated
+/// for; an ODS starts with the startup of the load, found by the read that compiles it (nothing scans the file here).
+fn passes_for(book: &Book, operations: &[Operation]) -> Result<Plan> {
+    let ods = book.format() == Format::Ods;
+    // `LibreOffice` calculates some formulas of an XLSX when it opens it (see `stale`): the run that keeps the cache calculates them
+    // whatever the operations are (writing results is the exception: they are taken as current). A plan that leaves results stale and
+    // converts nothing ends with a recalculation of the engine that calculates them as roots, so the file is not looked at for them.
+    let ends_with_recalculation = leaves_stale(operations) && !reads_results(operations);
+    let stale_start = !book.calculate_all()
+        && !ods
+        && (reads_results(operations) && crate::stale::input_is_stale(book)?
+            || !ends_with_recalculation
+                && operations
+                    .iter()
+                    .any(|operation| !matches!(operation, Operation::WriteCells(_)))
+                && crate::stale::calculates_on_load(book)?);
+    Ok(plan_from(
+        operations,
+        stale_start,
+        book.calculate_all(),
+        ods,
+    ))
+}
+
+/// Whether the recalculation of the plan is there only because `LibreOffice` calculates some formulas when it loads the file:
+/// nothing the operations do leaves a result stale (a conversion of formulas to values reads the results the load calculated).
+fn only_on_load(book: &Book, operations: &[Operation]) -> bool {
+    !book.calculate_all()
+        && !leaves_stale(operations)
+        && !crate::stale::input_is_stale(book).unwrap_or(true)
 }
 
 /// The first conversion of formulas to values, as text, for what is said about it.
@@ -858,7 +1494,7 @@ mod tests {
     }
 
     #[test]
-    fn a_conversion_after_a_replacement_calculates_the_results_again_in_a_pass_of_its_own() {
+    fn a_conversion_after_a_replacement_is_calculated_while_it_is_written() {
         // Pushed after the conversion, the replacement still runs before it.
         let operations = [
             Operation::FormulaToValue(scopes(&["F"])),
@@ -866,16 +1502,36 @@ mod tests {
             replacement(),
         ];
         let described = described(&passes(&operations));
-        assert_eq!(described.len(), 4);
+        assert_eq!(described.len(), 3);
         assert!(described[0][0].starts_with("replace"));
+        // The engine calculates the cells of `F` while the pass writes them as values: no calculation of
+        // the whole workbook comes first.
+        assert_eq!(described[1], ["formula to value in F", "delete rows T!1:1"]);
+        // What the replacement and the deletion leave stale is calculated again at the end.
         assert_eq!(
-            described[1],
+            described[2],
             ["recalculate every formula (the results are stale)"]
         );
-        assert_eq!(described[2], ["formula to value in F", "delete rows T!1:1"]);
-        // And what the deletion leaves stale is calculated again at the end.
-        assert_eq!(described[3], described[1]);
-        assert!(explain(&operations).starts_with("pass 1 of 4:"));
+        assert!(explain(&operations).starts_with("pass 1 of 3:"));
+    }
+
+    #[test]
+    fn a_conversion_with_the_cache_is_one_pass_that_calculates_the_replacement() {
+        let operations = [
+            Operation::FormulaToValue(scopes(&["F"])),
+            Operation::DeleteRows(rows(&["T!1"])),
+            replacement(),
+        ];
+        // The engine that calculates the conversion calculates what the replacement left stale in the same pass: no calculation of
+        // the workbook comes first, whichever the mode. The deletion of the pass leaves results stale again, which the last pass calculates.
+        let described = described(&passes_from(&operations, false, false, false));
+        assert_eq!(described.len(), 3);
+        assert!(described[0][0].starts_with("replace"));
+        assert_eq!(described[1], ["formula to value in F", "delete rows T!1:1"]);
+        assert_eq!(
+            described[2],
+            ["recalculate every formula (the results are stale)"]
+        );
     }
 
     #[test]
@@ -933,7 +1589,64 @@ mod tests {
         );
         let converting = [Operation::FormulaToValue(scopes(&["F"]))];
         assert!(!explain(&converting).contains("recalculate"));
-        assert!(passes_from(&[], false).is_empty());
+        assert!(passes_from(&[], false, true, false).is_empty());
+    }
+
+    #[test]
+    fn a_conversion_is_one_pass_in_every_mode() {
+        // The results the file caches are stale (an XLSX marked to recalculate, a deletion before it): no pass comes before.
+        let operations = [Operation::FormulaToValue(scopes(&["F"]))];
+        for (stale, calculate_all) in [(false, true), (true, false), (false, false)] {
+            assert_eq!(
+                passes_from(&operations, stale, calculate_all, false),
+                vec![operations.to_vec()],
+                "stale {stale}, calculate_all {calculate_all}"
+            );
+        }
+        // The engine runs for the conversion when the file is stale, with `calculate_all` and always for an ODS; a conversion of an
+        // XLSX whose results are right and that keeps the cache converts what the file caches, with no engine.
+        let engine = |stale, calculate_all, ods| {
+            plan_from(&operations, stale, calculate_all, ods).engine_converts
+        };
+        assert!(
+            engine(true, false, false) && engine(false, true, false) && engine(false, false, true)
+        );
+        assert!(!engine(false, false, false));
+    }
+
+    #[test]
+    fn an_ods_load_is_a_pass_only_when_no_other_pass_runs_the_engine() {
+        let hide = [Operation::SetVisibility(vec![VisibilityChange::Columns {
+            range: "T!B".parse().unwrap(),
+            visible: false,
+        }])];
+        // Nothing leaves a result stale, nothing calculates, nothing converts: the startup is the first pass.
+        let plan = plan_from(&hide, false, false, true);
+        assert!(plan.startup_pass);
+        assert_eq!(plan.passes.len(), 2);
+        assert_eq!(plan.passes[0], vec![Operation::Recalculate]);
+        // In the other plans it is the pass that runs the engine anyway: a deletion's recalculation, a conversion, a calculation.
+        for operations in [
+            vec![Operation::DeleteRows(rows(&["T!3"]))],
+            vec![Operation::FormulaToValue(scopes(&["F"]))],
+            vec![Operation::Calculate(Calculation::default())],
+        ] {
+            let plan = plan_from(&operations, false, false, true);
+            assert!(!plan.startup_pass, "{operations:?}");
+            assert_eq!(
+                plan.passes,
+                passes_from(&operations, false, false, false)
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            );
+        }
+        // An XLSX has no startup.
+        assert!(!plan_from(&hide, false, false, false).startup_pass);
+        // The mode changes the roots of the startup, not its place in the plan.
+        assert_eq!(
+            plan_from(&hide, false, true, true).passes,
+            plan_from(&hide, false, false, true).passes
+        );
     }
 
     #[test]
@@ -969,5 +1682,322 @@ mod tests {
             "'S'x".parse::<ValueScope>(),
             Err(ScopeError::TrailingText { .. })
         ));
+    }
+
+    /// What a run that uses the cache has to tell the engine (`Touched`): the changes the passes made,
+    /// as the engine reads them.
+    mod touched {
+        use super::*;
+        use sheetrs_io::write::CellEdit;
+
+        fn tracking() -> Touched {
+            Touched {
+                cached: true,
+                cache: Some(Cache::default()),
+            }
+        }
+
+        fn rows(sheet: &str, first: u32, last: u32) -> RowRange {
+            RowRange {
+                sheet: sheet.to_string(),
+                first,
+                last,
+            }
+        }
+
+        fn columns(sheet: &str, first: u32, last: u32) -> ColumnRange {
+            ColumnRange {
+                sheet: sheet.to_string(),
+                first,
+                last,
+            }
+        }
+
+        /// The cache after `pass` ran with `replacements`.
+        fn after(pass: &[Operation], replacements: &[(&str, &[(u32, u32)])]) -> Cache {
+            let mut touched = tracking();
+            touched.record(pass, &edits(replacements), HashMap::new);
+            touched.cache.expect("the cache is still used")
+        }
+
+        fn edits(replacements: &[(&str, &[(u32, u32)])]) -> HashMap<String, SheetEdits> {
+            replacements
+                .iter()
+                .map(|(sheet, cells)| {
+                    let cells = cells
+                        .iter()
+                        .map(|at| (*at, CellEdit::Text("x".into())))
+                        .collect();
+                    ((*sheet).to_string(), cells)
+                })
+                .collect()
+        }
+
+        /// The rows a pass flips, with `hidden` and `filled` as the bands of the input (sheet `S`).
+        fn flipped(
+            changes: &[(u32, u32, bool)],
+            hidden: &[(u32, u32)],
+            filled: &[(u32, u32)],
+        ) -> Vec<(u32, u32)> {
+            let changes: Vec<VisibilityChange> = changes
+                .iter()
+                .map(|&(first, last, visible)| VisibilityChange::Rows {
+                    range: rows("S", first, last),
+                    visible,
+                })
+                .collect();
+            let changes: Vec<&VisibilityChange> = changes.iter().collect();
+            rows_that_change(&changes, |_| {
+                Some(HashMap::from([(
+                    "S".to_string(),
+                    RowState {
+                        hidden: hidden.to_vec(),
+                        filled: filled.to_vec(),
+                    },
+                )]))
+            })
+            .into_iter()
+            .map(|(_, first, last)| (first, last))
+            .collect()
+        }
+
+        #[test]
+        fn hiding_a_hidden_row_or_showing_a_visible_one_changes_nothing() {
+            let all = [(0, 20)];
+            assert_eq!(flipped(&[(2, 2, false)], &[(2, 2)], &all), vec![]);
+            assert_eq!(flipped(&[(5, 6, true)], &[(2, 2)], &all), vec![]);
+        }
+
+        #[test]
+        fn a_band_that_overlaps_the_hidden_rows_changes_only_the_others() {
+            let all = [(0, 20)];
+            assert_eq!(
+                flipped(&[(1, 5, false)], &[(2, 3)], &all),
+                vec![(1, 1), (4, 5)]
+            );
+            assert_eq!(flipped(&[(3, 8, true)], &[(2, 4)], &all), vec![(3, 4)]);
+        }
+
+        #[test]
+        fn a_row_hidden_and_shown_again_in_one_plan_changed() {
+            let all = [(0, 20)];
+            assert_eq!(
+                flipped(&[(3, 3, false), (3, 3, true)], &[], &all),
+                vec![(3, 3)]
+            );
+            // Shown and hidden again, and hidden then shown while already hidden: flipped twice.
+            assert_eq!(
+                flipped(&[(3, 3, true), (3, 3, false)], &[(3, 3)], &all),
+                vec![(3, 3)]
+            );
+            assert_eq!(
+                flipped(&[(3, 3, false), (3, 3, true)], &[(3, 3)], &all),
+                vec![(3, 3)]
+            );
+            // Hidden twice flips once.
+            assert_eq!(
+                flipped(&[(3, 3, false), (3, 4, false)], &[], &all),
+                vec![(3, 4)]
+            );
+        }
+
+        #[test]
+        fn a_row_with_no_cell_calculates_nothing() {
+            assert_eq!(
+                flipped(&[(2, 8, false)], &[], &[(0, 3), (7, 7)]),
+                vec![(2, 3), (7, 7)]
+            );
+            assert_eq!(flipped(&[(10, 12, false)], &[], &[(0, 3)]), vec![]);
+        }
+
+        #[test]
+        fn the_rows_are_all_noted_when_the_workbook_cannot_say_which_are_hidden() {
+            let change = VisibilityChange::Rows {
+                range: rows("S", 1, 2),
+                visible: true,
+            };
+            assert_eq!(
+                rows_that_change(&[&change], |_| None),
+                vec![("S".to_string(), 1, 2)]
+            );
+        }
+
+        #[test]
+        fn hiding_or_showing_rows_is_noted_and_other_visibility_is_not() {
+            let rows_change = |visible| VisibilityChange::Rows {
+                range: rows("S", 1, 2),
+                visible,
+            };
+            for visible in [true, false] {
+                let cache = after(&[Operation::SetVisibility(vec![rows_change(visible)])], &[]);
+                assert_eq!(cache.rows_hidden.len(), 1, "rows, visible {visible}");
+            }
+            let others = vec![
+                VisibilityChange::Columns {
+                    range: columns("S", 1, 2),
+                    visible: false,
+                },
+                VisibilityChange::Sheet {
+                    name: "S".into(),
+                    visible: false,
+                },
+            ];
+            let cache = after(&[Operation::SetVisibility(others)], &[]);
+            assert_eq!(cache, Cache::default());
+        }
+
+        #[test]
+        fn deletions_are_noted_with_the_bands_they_cut() {
+            let cache = after(
+                &[Operation::DeleteRows(vec![
+                    rows("A", 0, 0),
+                    rows("B", 3, 4),
+                ])],
+                &[],
+            );
+            assert_eq!(
+                cache.rows_deleted,
+                [("A".to_string(), 0, 0), ("B".to_string(), 3, 4)]
+            );
+            assert!(cache.columns_deleted.is_empty() && !cache.sheets_deleted);
+
+            let cache = after(&[Operation::DeleteColumns(vec![columns("C", 1, 1)])], &[]);
+            assert_eq!(cache.columns_deleted, [("C".to_string(), 1, 1)]);
+            assert!(cache.rows_deleted.is_empty() && !cache.sheets_deleted);
+
+            let cache = after(&[Operation::DeleteSheets(vec!["Gone".into()])], &[]);
+            assert!(cache.sheets_deleted);
+            assert!(cache.rows_deleted.is_empty() && cache.columns_deleted.is_empty());
+        }
+
+        /// What `LibreOffice` recalculates when a name goes: every formula that reads through a name, whichever (the compiler
+        /// has the names of the workbook, so the planner reads none).
+        #[test]
+        fn a_deleted_name_reaches_the_formulas_of_every_name() {
+            let mut touched = tracking();
+            touched.record(
+                &[Operation::DeleteNames(vec!["rate".into()])],
+                &HashMap::new(),
+                || panic!("the names are not read for this"),
+            );
+            let cache = touched.cache.expect("the cache is still used");
+            assert!(cache.names_deleted);
+            // The deleted name is no longer in the workbook the engine reads: it is told by its name.
+            assert_eq!(cache.stale_names, ["rate"]);
+            assert!(cache.rows_deleted.is_empty() && !cache.sheets_deleted);
+        }
+
+        /// A deletion of rows or columns reaches the names whose target it moved or shrank, and no other.
+        #[test]
+        fn a_deletion_reaches_the_names_whose_target_it_moves() {
+            let mut touched = tracking();
+            touched.record(
+                &[Operation::DeleteRows(vec![rows("Data", 2, 2)])],
+                &HashMap::new(),
+                || {
+                    HashMap::from([
+                        ("above".to_string(), "Data!$A$1".to_string()),
+                        ("below".to_string(), "Data!$A$5".to_string()),
+                        ("elsewhere".to_string(), "Other!$A$5".to_string()),
+                    ])
+                },
+            );
+            let cache = touched.cache.expect("the cache is still used");
+            assert_eq!(cache.stale_names, ["below"]);
+            assert!(!cache.names_deleted);
+        }
+
+        #[test]
+        fn what_changes_no_result_is_not_noted() {
+            let pass = vec![
+                Operation::FormulaToValue(scopes(&["S"])),
+                Operation::Calculate(Calculation::default()),
+                Operation::Recalculate,
+            ];
+            assert_eq!(after(&pass, &[]), Cache::default());
+        }
+
+        #[test]
+        fn a_calculation_leaves_nothing_to_reach() {
+            let mut touched = tracking();
+            let delete = [Operation::DeleteRows(vec![rows("A", 0, 0)])];
+            touched.record(&delete, &edits(&[("A", &[(0, 0)])]), HashMap::new);
+            // The engine calculated every formula again: its results are right, whatever came before.
+            touched.calculated();
+            assert_eq!(touched.cache, Some(Cache::default()));
+
+            // A run that does not use the cache has no cache to start from again.
+            let mut off = Touched {
+                cached: false,
+                cache: None,
+            };
+            off.calculated();
+            assert_eq!(off.cache, None);
+        }
+
+        #[test]
+        fn a_run_with_no_cache_notes_nothing() {
+            let mut off = Touched {
+                cached: true,
+                cache: None,
+            };
+            off.record(
+                &[Operation::DeleteRows(vec![rows("A", 0, 0)])],
+                &edits(&[("A", &[(0, 0)])]),
+                HashMap::new,
+            );
+            assert_eq!(off.cache, None);
+        }
+
+        #[test]
+        fn adjacent_cells_of_a_row_are_one_rectangle() {
+            let cells = [(2, 1), (2, 2), (2, 3), (2, 5), (3, 5), (4, 1), (4, 2)];
+            let cache = after(&[], &[("S", &cells)]);
+            let rectangles: Vec<_> = cache.changed.iter().map(|c| (c.1, c.2, c.3, c.4)).collect();
+            // The run of three, the lone cell after a gap, the cell below it (rows do not merge) and
+            // the run of two.
+            assert_eq!(
+                rectangles,
+                [(2, 1, 2, 3), (2, 5, 2, 5), (3, 5, 3, 5), (4, 1, 4, 2)]
+            );
+            assert!(cache.changed.iter().all(|c| c.0 == "S"));
+        }
+
+        #[test]
+        fn more_than_the_most_changes_in_a_sheet_are_the_rectangle_that_holds_them() {
+            // 64 isolated cells stay as they are, one more makes them one rectangle.
+            let cells = |count: u32| -> Vec<(u32, u32)> {
+                (0..count).map(|i| (2 * i + 1, 3 + i % 2)).collect()
+            };
+            let sixty_four = after(&[], &[("S", &cells(64))]);
+            assert_eq!(sixty_four.changed.len(), 64);
+            let sixty_five = after(&[], &[("S", &cells(65))]);
+            assert_eq!(sixty_five.changed, [("S".to_string(), 1, 3, 129, 4)]);
+            // Each sheet is counted alone.
+            let two = after(&[], &[("S", &cells(64)), ("T", &cells(64))]);
+            assert_eq!(two.changed.len(), 128);
+        }
+
+        #[test]
+        fn a_change_and_a_deletion_together_leave_no_cache() {
+            let mut touched = tracking();
+            touched.record(&[], &edits(&[("S", &[(0, 0)])]), HashMap::new);
+            assert!(touched.cache.is_some());
+            touched.record(
+                &[Operation::DeleteColumns(vec![columns("S", 5, 5)])],
+                &HashMap::new(),
+                HashMap::new,
+            );
+            assert_eq!(touched.cache, None);
+
+            // In the same pass, and the other way round.
+            let mut touched = tracking();
+            touched.record(
+                &[Operation::DeleteSheets(vec!["Gone".into()])],
+                &edits(&[("S", &[(0, 0)])]),
+                HashMap::new,
+            );
+            assert_eq!(touched.cache, None);
+        }
     }
 }

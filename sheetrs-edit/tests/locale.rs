@@ -81,7 +81,8 @@ fn a_calculate_step_uses_the_locale_of_the_book() {
         for (given, spanish) in [(Some("es-CO"), true), (Some("en-US"), false)] {
             for (formula, es, en) in CASES {
                 let asked = format!("Calc!A{}", row_of(extension, formula) + 1);
-                let mut book = book(extension, given);
+                // The engine calculates the text (by default the workbook keeps what the file caches).
+                let mut book = book(extension, given).with_calculate_all(true);
                 book.calculate(Calculation {
                     ranges: Some(vec![asked.clone()]),
                     answer: true,
@@ -104,8 +105,9 @@ fn the_recalculation_that_follows_an_edit_uses_the_locale_of_the_book() {
     let folder = tempfile::tempdir().unwrap();
     for extension in EXTENSIONS {
         for (given, spanish) in [(Some("es-CO"), true), (Some("en-US"), false)] {
-            // Deleting a sheet that the formulas of the cases do not read leaves the results stale.
-            let mut book = book(extension, given);
+            // Deleting a sheet that the formulas of the cases do not read leaves the results stale; with
+            // `calculate_all` the engine calculates them again (by default they keep what the file caches).
+            let mut book = book(extension, given).with_calculate_all(true);
             book.delete_sheets(["Wide"]);
             let out = folder.path().join(format!("{spanish}.{extension}"));
             book.write(&out).unwrap();

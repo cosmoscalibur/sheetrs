@@ -108,6 +108,7 @@ mod tests {
             value: Value::Number(n),
             formula: None,
             array: false,
+            recalculated_on_load: false,
         }
     }
 

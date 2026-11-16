@@ -159,6 +159,14 @@ impl CellSink for AreaSink<'_> {
     fn array_member(&mut self, sheet: u16, at: (u32, u32), offset: (u32, u32)) {
         self.inner.array_member(sheet, at, offset);
     }
+
+    fn recalculated_on_load(&mut self, sheet: u16, at: (u32, u32)) {
+        self.inner.recalculated_on_load(sheet, at);
+    }
+
+    fn wants_more(&self) -> bool {
+        self.inner.wants_more()
+    }
 }
 
 /// Puts the areas the [`AreaSink`] found into the sheets it was reading. The kept area also reaches

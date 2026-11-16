@@ -26,8 +26,9 @@ use crate::error::{Error, Result};
 use crate::locale::{self, LocaleTag};
 use crate::reader::{
     CellSink, Format, NameConflict, Selection, SheetInfo, Workbook, read_analysis_from_reader_into,
-    read_date_system_from_reader, read_defined_names_from_reader, read_selection_from_reader_into,
-    read_workbook_from_reader, read_workbook_from_reader_into,
+    read_date_system_from_reader, read_defined_name_definitions_from_reader,
+    read_defined_names_from_reader, read_selection_from_reader_into, read_workbook_from_reader,
+    read_workbook_from_reader_into,
 };
 use sheetrs_formula::DateSystem;
 use std::collections::HashMap;
@@ -151,6 +152,9 @@ pub struct Book {
     volatile: Volatile,
     #[cfg(feature = "write")]
     operations: Vec<crate::write::Operation>,
+    /// Whether a run calculates every formula (`calculateAll()` of `LibreOffice`) instead of keeping the
+    /// results the file caches for the formulas nothing reaches.
+    calculate_all: bool,
 }
 
 impl Book {
@@ -206,6 +210,7 @@ impl Book {
             volatile: Volatile::default(),
             #[cfg(feature = "write")]
             operations: Vec::new(),
+            calculate_all: false,
         }
     }
 
@@ -237,6 +242,14 @@ impl Book {
     #[must_use]
     pub fn with_volatile_of(mut self, other: &Self) -> Self {
         self.volatile = other.volatile;
+        self
+    }
+
+    /// The same workbook with the calculation mode of `other` ([`with_calculate_all`](Self::with_calculate_all)):
+    /// for a book made from `other`.
+    #[must_use]
+    pub fn with_calculate_all_of(mut self, other: &Self) -> Self {
+        self.calculate_all = other.calculate_all;
         self
     }
 
@@ -455,6 +468,72 @@ impl Book {
         }
     }
 
+    /// The definitions of the defined names (name to definition) and nothing else: [`defined_names`](Self::defined_names) also
+    /// looks for the names that are defined in more than one scope, which an ODS makes read its content again.
+    ///
+    /// # Errors
+    ///
+    /// As [`workbook`](Self::workbook).
+    pub fn defined_name_definitions(&self) -> Result<HashMap<String, String>> {
+        match &self.origin {
+            Origin::File(path) => read_defined_name_definitions_from_reader(open(path)?),
+            Origin::Bytes(data) => read_defined_name_definitions_from_reader(Cursor::new(data)),
+        }
+    }
+
+    /// The state of the rows of `sheets` as the workbook has them before any pending operation: for each sheet, the rows up to the last of
+    /// `spans` (`(sheet, first row, last row)`, 0-based) that are hidden and the ones that hold a value or a formula, as bands
+    /// `(first, last)` in order. An XLSX is read as a stream that stops after the last row asked for (no cell is built); an ODS is read
+    /// as [`workbook`](Self::workbook) does. A sheet the workbook does not have gives no rows.
+    ///
+    /// # Errors
+    ///
+    /// As [`workbook`](Self::workbook).
+    pub fn row_state(&self, spans: &[(&str, u32, u32)]) -> Result<HashMap<String, RowState>> {
+        let mut last: HashMap<&str, u32> = HashMap::new();
+        for &(sheet, _, to) in spans {
+            let entry = last.entry(sheet).or_insert(to);
+            *entry = (*entry).max(to);
+        }
+        if self.format == Format::Ods {
+            let workbook = self.workbook()?;
+            let mut out = HashMap::new();
+            for sheet in workbook
+                .sheets
+                .iter()
+                .filter(|s| last.contains_key(s.name.as_str()))
+            {
+                let mut rows: Vec<u32> = sheet
+                    .cells
+                    .iter()
+                    .filter(|(_, cell)| crate::reader::is_used(cell))
+                    .map(|((row, _), _)| row)
+                    .collect();
+                rows.sort_unstable();
+                rows.dedup();
+                let mut filled: Vec<(u32, u32)> = Vec::new();
+                for row in rows {
+                    match filled.last_mut() {
+                        Some(band) if band.1 + 1 == row => band.1 = row,
+                        _ => filled.push((row, row)),
+                    }
+                }
+                out.insert(
+                    sheet.name.clone(),
+                    RowState {
+                        hidden: sheet.hidden_rows.clone(),
+                        filled,
+                    },
+                );
+            }
+            return Ok(out);
+        }
+        match &self.origin {
+            Origin::File(path) => xlsx_row_state(open(path)?, &last),
+            Origin::Bytes(data) => xlsx_row_state(Cursor::new(data), &last),
+        }
+    }
+
     /// The external workbooks the formulas refer to, in the order of the references that count
     /// them (`[1]` is the first, in an XLSX), with the URL `LibreOffice` shows for each:
     /// the address the formulas write it with.
@@ -499,6 +578,96 @@ impl Book {
         self.operations.clear();
         self
     }
+
+    /// The same workbook that, in every run that calculates (a calculation, what an edit leaves stale,
+    /// a build), calculates every formula again (`true`), as `calculateAll()` of `LibreOffice` does, instead
+    /// of what `LibreOffice` does by default (`false`): to keep the result the file caches for every
+    /// formula that nothing reaches, and to calculate what an operation or an input reaches and what
+    /// depends on it. A workbook whose results the file declares stale, or that reads cells at run time
+    /// (`INDIRECT`, `OFFSET`), is calculated whole in both.
+    #[must_use]
+    pub fn with_calculate_all(mut self, calculate_all: bool) -> Self {
+        self.calculate_all = calculate_all;
+        self
+    }
+
+    /// Whether the run calculates every formula ([`with_calculate_all`](Self::with_calculate_all)).
+    #[must_use]
+    pub fn calculate_all(&self) -> bool {
+        self.calculate_all
+    }
+}
+
+impl Book {
+    /// Whether the workbook asks the program that opens it to calculate every formula (`fullCalcOnLoad` in the
+    /// `calcPr` of an XLSX, which the applications write when the results they leave are not current). An ODS has no
+    /// such mark (`LibreOffice` writes none in its content, its settings or its metadata): it is `false`. This is
+    /// the one place the mark is read: the compiler (`sheetc build` and `calculate`) takes a marked workbook as a run
+    /// with `calculate_all`, and so does the editor, which is a calculation and a writer.
+    ///
+    /// # Errors
+    ///
+    /// When the file cannot be read or is not a zip archive.
+    pub fn recalculation_marked(&self) -> Result<bool> {
+        if self.format != Format::Xlsx {
+            return Ok(false);
+        }
+        let mut xml = String::new();
+        match (self.path(), self.bytes()) {
+            (Some(path), _) => zip::ZipArchive::new(open(path)?)?
+                .by_name("xl/workbook.xml")?
+                .read_to_string(&mut xml)?,
+            (None, Some(data)) => zip::ZipArchive::new(Cursor::new(data.as_ref()))?
+                .by_name("xl/workbook.xml")?
+                .read_to_string(&mut xml)?,
+            (None, None) => unreachable!("a book is a file or bytes"),
+        };
+        Ok(workbook_marks_recalculation(&xml))
+    }
+}
+
+/// Whether the `workbook.xml` of an XLSX has `fullCalcOnLoad` on in its `calcPr`.
+fn workbook_marks_recalculation(xml: &str) -> bool {
+    let mut reader = quick_xml::Reader::from_str(xml);
+    while let Ok(event) = reader.read_event() {
+        match event {
+            quick_xml::events::Event::Start(e) | quick_xml::events::Event::Empty(e)
+                if e.name().as_ref() == "calcPr" =>
+            {
+                return e.attributes().flatten().any(|a| {
+                    a.key.as_ref() == "fullCalcOnLoad" && matches!(a.value.as_ref(), "1" | "true")
+                });
+            }
+            quick_xml::events::Event::Eof => break,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The state of the rows of an XLSX (see [`Book::row_state`]).
+fn xlsx_row_state<R: Read + std::io::Seek>(
+    reader: R,
+    last: &HashMap<&str, u32>,
+) -> Result<HashMap<String, RowState>> {
+    let mut archive = zip::ZipArchive::new(reader).map_err(Error::Archive)?;
+    let mut out = HashMap::new();
+    for (sheet, &to) in last {
+        let (hidden, filled) =
+            crate::reader::xlsx_parser::extract_row_state_from_xlsx(&mut archive, sheet, to)?;
+        out.insert((*sheet).to_string(), RowState { hidden, filled });
+    }
+    Ok(out)
+}
+
+/// The rows of a sheet that are hidden and the ones that hold a value or a formula, as bands `(first, last)`, 0-based and
+/// inclusive (see [`Book::row_state`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RowState {
+    /// The hidden rows.
+    pub hidden: Vec<(u32, u32)>,
+    /// The rows with a value or a formula.
+    pub filled: Vec<(u32, u32)>,
 }
 
 fn open(path: &Path) -> Result<File> {
@@ -543,6 +712,19 @@ impl fmt::Display for Book {
 
 #[cfg(test)]
 mod tests {
+    use super::workbook_marks_recalculation;
+
+    #[test]
+    fn an_xlsx_that_asks_to_recalculate_when_it_is_opened_is_marked() {
+        let marked = r#"<workbook><sheets/><calcPr calcId="1" fullCalcOnLoad="1"/></workbook>"#;
+        let truthy = r#"<workbook><calcPr fullCalcOnLoad="true"></calcPr></workbook>"#;
+        let plain = r#"<workbook><calcPr calcId="1"/></workbook>"#;
+        assert!(workbook_marks_recalculation(marked));
+        assert!(workbook_marks_recalculation(truthy));
+        assert!(!workbook_marks_recalculation(plain));
+        assert!(!workbook_marks_recalculation("<workbook/>"));
+    }
+
     use super::*;
     use crate::reader::Format;
     use std::io::Write;

@@ -74,7 +74,7 @@ sheetc inspect -i model.xlsx      # sizes, unsupported functions, cycles, run-ti
 
 | Command | Purpose |
 | ------- | ------- |
-| `build FILE [-o OUT]` | Compile to an executable. `--emit-ir PATH` also writes the IR as JSON. `--target wasm` writes a WebAssembly module instead ([below](#webassembly-target)). |
+| `build FILE [-o OUT]` | Compile to an executable (`--calculate-all`, `--force-calculate-all`: see [the calculation mode](#the-calculation-mode-the-cache---calculate-all-and---force-calculate-all)). `--emit-ir PATH` also writes the IR as JSON. `--target wasm` writes a WebAssembly module instead ([below](#webassembly-target)). |
 | `calculate FILE\|PROGRAM.json` | Compile in memory (or load an IR file) and calculate once. |
 | `evaluate "=FORMULA"` | Evaluate a single formula. |
 | `inspect FILE` | Report what the compiler sees. |
@@ -199,7 +199,14 @@ sheetc calculate -i model.xlsx --in-place                                    # r
 * **The workbook answer writes what the program computed**: the inputs given in their cells and the
   outputs that are formulas. The formulas outside the program keep the result the template stored,
   so with outputs declared the answer refreshes only those; to refresh every formula, declare no
-  outputs.
+  outputs. That is the rule of a **build** (`sheetc build --embed-template`, a template module of
+  WebAssembly): it keeps its own rules, whatever calls it.
+* **`sheetc calculate` tells the build what it is for.** A calculation that writes a workbook has the workbook
+  as its answer, so it passes the build its inputs only (`Spec::whole_workbook`) and every formula is calculated
+  and written (under the rules of the cache: only what the inputs and the dirty cells reach is calculated, and the rest
+  is copied from what the workbook caches); the declared outputs are then the names a request may use and what the
+  JSON lists, not a selection of what is refreshed. A calculation with no workbook passes the ranges asked as the
+  declared outputs when the workbook declares none. Neither changes what a build does when you build.
 * **Recalculating a workbook** is `sheetc calculate -i FILE -o OUT` with nothing declared and
   nothing given: every formula is calculated again. `-o` never
   overwrites the input; `--in-place` replaces it through a temporary file and a rename, so a failure
@@ -281,6 +288,31 @@ outside the repository.
 the cumulative share and whether the engine has each one: the way to see which
 functions matter for a given model.
 
+### The calculation mode: the cache, `--calculate-all` and `--force-calculate-all`
+
+The default is what `LibreOffice` does when it opens a file and when a cell changes: a formula that has a
+result keeps it, and only what a change reaches is calculated. `--calculate-all` emulates `calculateAll()` of the
+UNO API (`calculate_all` in `sheetc.toml`, `calculateAll` in WebAssembly, `calculate_all` in Python and Rust).
+
+| | default (the cache) | `--calculate-all` | `--force-calculate-all` (`build` only) |
+| - | - | - | - |
+| **`build`: constants the build folds** | the values the workbook stores | the results of calculating the whole workbook first | as the default (or as `--calculate-all` if both are given) |
+| **`build`: the formulas the program keeps** | each keeps the cached result in the program (`--info`: `build.options`) | the results of that calculation are what is stored | no cached result is stored: the program is lighter and calculates all of them in every run |
+| **a run of the executable** | calculates only the formulas a changed input reaches; the others answer their cached result | `--calculate-all` of the executable ignores the cached results and calculates every formula it kept (the folded constants stay what they are) | no cache to take, so no effect |
+| **`calculate`** | builds in the default mode and runs it: what the inputs given reach is calculated | calculates the whole workbook | does not apply (a calculation has no program to keep) |
+
+A formula whose result is kept is one that has a cached result in the file, is not volatile (`NOW`, `RAND`,
+`CELL("address")`...) and does not read cells at run time (`INDIRECT`, `OFFSET`: a program that has one
+keeps no cache at all); the others are calculated, with what reads them. An input counts as changed when the
+request gives it a value other than the one the workbook holds. The build does not fold what has no cached result:
+the engine calculates it. A workbook whose file says its results are stale (an XLSX with `fullCalcOnLoad` in its `calcPr`) is taken as
+a run with `--calculate-all` by every path that builds or calculates it (`sheetc build` and `calculate`, `BookCompile`,
+`sheetrs edit`, which is a calculation and a writer): `Book::recalculation_marked` reads the mark in one place and the
+loader hands it to the compiler. The workbook a calculation writes leaves with no mark, since what it holds is
+calculated; if `sheetrs edit` cannot calculate the workbook (a function the engine lacks) its writer leaves the mark so
+that the spreadsheet program finishes the calculation. An ODS has no such mark (LibreOffice writes none): it keeps what
+it caches, and an ODS whose formulas have no cached result is calculated where it has none.
+
 ### The request and the answer
 
 The executable (and `sheetc calculate`) takes one JSON object, all of it optional, and
@@ -328,8 +360,8 @@ answer is the outputs as value ranges (the declared ones, or the formula cells a
 | Declared outputs (settings sheet or `settings_file`) | `ranges` outside them | Where |
 | --- | --- | --- |
 | yes, **compiled program** (JSON answer: `sheetc calculate` without `-o`, an executable run without `--output`, `BookCompile::calculate` with `Mode::Values`, a WebAssembly module from `compile`) | **an error** that lists the declared outputs (`sheetrs_engine::Error::OutsideOutputs`, `declared: Some(["payment (Loan!B4)", ...])`): `ranges` is a selection among the declared outputs (an output's name, a defined name that lies inside them, or a range inside one) | the program has pruned the workbook to what the outputs read, and writes no workbook to read the rest from |
-| yes, **a workbook is written** (the workbook is its own template: `sheetc calculate -o OUT --json`, `--in-place --json`, an embedded executable or module with `--output OUT --json`, `BookCompile::calculate` with `Mode::Embedded`, and the `calculate` of `sheetrs edit`, Python and WebAssembly, which are all this) | **read from the workbook just written**, in memory, with the machinery of `query` and no recalculation: a constant has the value it holds, the input given is in it, and a formula the outputs did not include has the result the template stored (declare it as an output to have it calculated). The answer keeps the order of the request and an outside range is named as it was asked | the workbook is there to read. A text that is no range or name of the workbook is still an error |
-| no | the outputs are the formula cells (as the rectangles that hold them): in the compiled program `ranges` must lie inside them and a constant is an error (with no declared outputs there is no list to give); where a workbook is written the rest is read as above | |
+| yes, **a workbook is written** (the workbook is its own template: `sheetc calculate -o OUT --json`, `--in-place --json`, an embedded executable or module with `--output OUT --json`, `BookCompile::calculate` with `Mode::Embedded`, and the `calculate` of `sheetrs edit`, Python and WebAssembly, which are all this) | **read from the workbook just written**, in memory, with the machinery of `query` and no recalculation: a constant has the value it holds, the input given is in it, and the workbook is the answer, so **every formula is calculated**, the ones no output includes too (a calculation declares only its inputs: the outputs the workbook declares are the names a request may use and what the answer lists by default). The answer keeps the order of the request and an outside range is named as it was asked | the workbook is there to read. A text that is no range or name of the workbook is still an error |
+| no | in the compiled program (no workbook is written) the **`ranges` of the request are the declared outputs of the build** (`Options::request_outputs`, filled by `BookCompile::calculate` and by the `calculate` of `sheetrs edit`): the program is pruned to what they read, whatever is not on their path is not in it (and is not calculated: only the declared ones are returned), and a constant may be asked for too. With no `ranges` the outputs are the formula cells (as the rectangles that hold them). Where a workbook is written every formula is calculated (previous row) | |
 
 The read is made by `sheetrs_answer` (`fill_template_to_with_answer` and `fill_template_with_answer`, which
 every path above calls), so it needs no compiler: the WebAssembly base module that writes workbooks

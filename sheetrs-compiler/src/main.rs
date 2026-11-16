@@ -77,6 +77,16 @@ BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
   --no-strict          compile a workbook with macros (reported as a warning);
                        by default (strict) it is an error. --strict undoes a
                        `strict = false` of the file
+  --calculate-all      emulates `calculateAll()` of LibreOffice. In a build the whole workbook is
+                       calculated first: the constants it folds are the results of that
+                       calculation, and they are what the program stores as cache. By default the
+                       values the workbook stores are the constants and the cache (what LibreOffice
+                       does when it opens a file: it calculates only what has no result, and what
+                       a change reaches). In `calculate` the whole workbook is calculated; an
+                       executable that was built with a cache ignores it in that run
+  --force-calculate-all  (only in `build`) the program stores no cache for the formulas it keeps:
+                       it calculates all of them in every run, and is lighter. No effect in
+                       `calculate`
   --now SERIAL   --seed N
   --system S  --osversion S  --release S  --directory PATH  --filename NAME
                        fix what INFO and CELL(filename) say (else the machine
@@ -102,7 +112,7 @@ BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
   --date-system 1899|1900|1904|YYYY-MM-DD and --iterate[=N[,EPS]].
 
 Executables accept: --request, --range RANGE, --serve, --pretty, --meta, --info, --now, --seed,
---system, --osversion, --release, --directory, --filename. One built with --embed-template also
+--system, --osversion, --release, --directory, --filename, --calculate-all. One built with --embed-template also
 accepts -o/--output OUT and --json (the workbook, and the JSON with it). An executable has no file
 to replace: it has no --in-place.";
 
@@ -439,6 +449,7 @@ fn config_from(args: &mut Args) -> Result<(Config, Option<String>), Fail> {
         } else {
             args.flag("--strict").then_some(true)
         },
+        force_calculate_all: args.flag("--force-calculate-all").then_some(true),
         enable_features: args.value("--enable-features")?.map(|v| {
             v.split(',')
                 .map(str::trim)
@@ -454,6 +465,7 @@ fn config_from(args: &mut Args) -> Result<(Config, Option<String>), Fail> {
     };
     let o = parse_overrides(args)?;
     cli.now = o.now;
+    cli.calculate_all = o.calculate_all.then_some(true);
     cli.seed = o.rand_seed;
     cli.host = Some(o.host);
     Ok((cli, explicit))
@@ -771,6 +783,19 @@ fn calculate(mut args: Args) -> Result<i32, Fail> {
         let model = load_model(file)?;
         let mut spec = spec_for(cli, explicit, file, &model)?;
         spec.mode = mode;
+        // What a calculation declares of the outputs (see `Options::request_outputs`): with the workbook as the answer
+        // every formula is calculated; with no workbook the ranges asked are the outputs when none is declared.
+        // What a calculation is given is all that can change (a request on the standard input or in a file is not
+        // known when the program is built: any declared input may be what it gives).
+        spec.given_inputs = requested_inputs(cinp.as_deref());
+        if writes {
+            spec.whole_workbook = true;
+        } else if spec.outputs.is_empty() {
+            spec.outputs = requested_ranges(cinp.as_deref(), &forwarded)
+                .iter()
+                .map(|range| sheetrs_compiler::BindingSpec::parse(range))
+                .collect();
+        }
         let (mut p, report) = compile(model, &spec)?;
         p.build.built_at = sheetrs_compiler::compile::build_time()?;
         print_report(&report, &p);
@@ -800,6 +825,42 @@ fn calculate(mut args: Args) -> Result<i32, Fail> {
         };
     }
     Ok(cli::calculate_program(&program, None, Args(forwarded)))
+}
+
+/// The inputs a request gives (the keys of its `inputs`): none when there is no request, `None` when the request is not
+/// given as the JSON text (`-` is the standard input, `@file` a file: they are read when the program runs).
+fn requested_inputs(request: Option<&str>) -> Option<Vec<String>> {
+    let Some(text) = request else {
+        return Some(Vec::new());
+    };
+    let json = serde_json::from_str::<serde_json::Value>(text).ok()?;
+    Some(
+        json.get("inputs")
+            .and_then(|inputs| inputs.as_object())
+            .map(|inputs| inputs.keys().cloned().collect())
+            .unwrap_or_default(),
+    )
+}
+
+/// The ranges a request asks: the `ranges` of its JSON (`--request`, given as the text) and each `--range` flag.
+fn requested_ranges(request: Option<&str>, forwarded: &[String]) -> Vec<String> {
+    let mut ranges: Vec<String> = request
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+        .and_then(|json| {
+            json.get("ranges")?.as_array().map(|list| {
+                list.iter()
+                    .filter_map(|r| r.as_str().map(str::to_string))
+                    .collect()
+            })
+        })
+        .unwrap_or_default();
+    let mut flags = forwarded.windows(2);
+    while let Some([flag, value]) = flags.next() {
+        if flag == "--range" {
+            ranges.push(value.clone());
+        }
+    }
+    ranges
 }
 
 /// Whether two paths are the same file (an output that does not exist yet is not the input).

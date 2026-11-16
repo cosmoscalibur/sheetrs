@@ -446,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn a_search_reads_a_pattern_that_can_match_the_empty_text_as_a_replacement_does() {
+    fn a_search_matches_the_empty_text_as_a_replacement_does() {
         // `findAll` reports the cells that `replaceAll` would change: an empty match is a hit only
         // at the very end of the text.
         assert!(found("$", false, "abc"));

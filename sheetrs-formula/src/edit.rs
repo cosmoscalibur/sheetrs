@@ -2,13 +2,13 @@
 //! are inserted or deleted, or a sheet is renamed or deleted, as the
 //! spreadsheet applications do it.
 //!
-//! A reference to deleted cells becomes `Sheet!#REF!` (`#REF!` for a deleted sheet); a range
-//! shrinks or grows around
+//! A reference to deleted cells or to a deleted sheet becomes a bare `#REF!`, the text that `LibreOffice`
+//! and Excel write for both when they save the file (`LibreOffice` reads it back as an error value in
+//! an ODS, `[#REF!]`, and as an unknown name in an XLSX); a range shrinks or grows around
 //! the edit; absolute markers are irrelevant (both kinds move).
 
 use crate::addr::{MAX_COLS, MAX_ROWS, same_name};
 use crate::ast::{BinOp, Expr, RefArea, Reference};
-use crate::print::sheet_text;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edit<'a> {
@@ -43,6 +43,15 @@ pub enum Edit<'a> {
 }
 
 /// Which axis an edit moves and by how much.
+/// A formula after the edits that changed it: see [`crate::parse::Formula::rewrite_all_detailed`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rewritten {
+    /// The text of the formula after the edits.
+    pub text: String,
+    /// Whether the edits only moved what the formula reads (the result it cached is still its result).
+    pub only_moved: bool,
+}
+
 #[derive(Clone, Copy)]
 enum Shift {
     Insert { at: u32, count: u32 },
@@ -175,7 +184,7 @@ pub fn apply(expr: &mut Expr, edit: &Edit<'_>, home_sheet: &str) -> bool {
                 } else {
                     Shift::Delete { at, count }
                 };
-                changed |= replace(e, r, s, true, target);
+                changed |= replace(e, r, s, true);
             }
             Edit::InsertCols { sheet, at, count } | Edit::DeleteCols { sheet, at, count }
                 if same_name(target, sheet) =>
@@ -185,7 +194,7 @@ pub fn apply(expr: &mut Expr, edit: &Edit<'_>, home_sheet: &str) -> bool {
                 } else {
                     Shift::Delete { at, count }
                 };
-                changed |= replace(e, r, s, false, target);
+                changed |= replace(e, r, s, false);
             }
             _ => {}
         }
@@ -199,6 +208,7 @@ pub fn apply(expr: &mut Expr, edit: &Edit<'_>, home_sheet: &str) -> bool {
 pub fn same_shape(before: &RefArea, after: &RefArea) -> bool {
     let size = |area: &RefArea| match *area {
         RefArea::Cell(_) => (0u8, 1, 1),
+        // A range of one cell is the cell (`A3:A3` and `A3` read the same).
         RefArea::Range(a, b) => (0, a.row.abs_diff(b.row) + 1, a.col.abs_diff(b.col) + 1),
         RefArea::Cols(a, b) => (1, 0, a.col.abs_diff(b.col) + 1),
         RefArea::Rows(a, b) => (2, a.row.abs_diff(b.row) + 1, 0),
@@ -206,10 +216,11 @@ pub fn same_shape(before: &RefArea, after: &RefArea) -> bool {
     size(before) == size(after)
 }
 
-/// Rewrite the reference `r` to a sheet named `target` after `s`. Cells that are gone leave
-/// `Sheet!#REF!`, the form that `LibreOffice` reads as `#REF!` (a bare one is an unknown name there)
-/// and Excel writes.
-fn replace(e: &mut Expr, r: Reference, s: Shift, rows: bool, target: &str) -> bool {
+/// Rewrite the reference `r` after `s`. Cells that are gone leave a bare `#REF!`, as `LibreOffice` and
+/// Excel write it: the file is read again with the same values as the one `LibreOffice` saves (`COUNT` 0,
+/// `COUNTA` 1, `IFERROR` caught, `SUM` the unknown name of an XLSX), where `Sheet!#REF!` reads as a
+/// reference that went (`COUNT` `#REF!`).
+fn replace(e: &mut Expr, r: Reference, s: Shift, rows: bool) -> bool {
     match shift_area(&r.area, s, rows) {
         Some(area) if area == r.area => false,
         Some(area) => {
@@ -220,10 +231,75 @@ fn replace(e: &mut Expr, r: Reference, s: Shift, rows: bool, target: &str) -> bo
             true
         }
         None => {
-            *e = Expr::Error(format!("{}!#REF!", sheet_text(target)));
+            *e = Expr::Error("#REF!".into());
             true
         }
     }
+}
+
+/// The formula `text` with every qualified `#REF!` (`Data!#REF!`, `'My Sheet'!#REF!`) written bare (`#REF!`), `None`
+/// when it has none. Text between quotes is left alone.
+#[must_use]
+pub fn bare_ref_errors(text: &str) -> Option<String> {
+    const MARK: &str = "!#REF!";
+    if !text.contains(MARK) {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == b'"' {
+                        if bytes.get(i + 1) == Some(&b'"') {
+                            i += 2;
+                            continue;
+                        }
+                        break;
+                    }
+                    i += 1;
+                }
+                i += 1;
+            }
+            b'!' if text[i..].starts_with(MARK) => {
+                // The qualifier: a quoted name (`''` is a quote inside it) or a plain one.
+                let mut start = i;
+                if start > 0 && bytes[start - 1] == b'\'' {
+                    start -= 1;
+                    while start > 0 {
+                        start -= 1;
+                        if bytes[start] == b'\'' {
+                            if start > 0 && bytes[start - 1] == b'\'' {
+                                start -= 1;
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                } else {
+                    while start > 0
+                        && (bytes[start - 1].is_ascii_alphanumeric()
+                            || matches!(bytes[start - 1], b'_' | b'.' | b'$'))
+                    {
+                        start -= 1;
+                    }
+                }
+                if start >= copied {
+                    out.push_str(&text[copied..start]);
+                    out.push_str("#REF!");
+                    copied = i + MARK.len();
+                }
+                i += MARK.len();
+            }
+            _ => i += 1,
+        }
+    }
+    out.push_str(&text[copied..]);
+    Some(out)
 }
 
 impl crate::parse::Formula {
@@ -261,6 +337,13 @@ impl crate::parse::Formula {
         edits: &[Edit<'_>],
         home_sheet: &str,
     ) -> Option<(String, bool)> {
+        self.rewrite_all_detailed(edits, home_sheet)
+            .map(|r| (r.text, r.only_moved))
+    }
+
+    /// As [`rewrite_all_tracked`](Self::rewrite_all_tracked), with the text and whether the edits only moved.
+    #[must_use]
+    pub fn rewrite_all_detailed(&self, edits: &[Edit<'_>], home_sheet: &str) -> Option<Rewritten> {
         let refs = self.expr.references();
         let mut out = String::with_capacity(self.source.len());
         let mut last = 0;
@@ -277,13 +360,25 @@ impl crate::parse::Formula {
             }
             only_moved &= matches!(&node, Expr::Ref(after)
                 if after.sheet == r.sheet && same_shape(&r.area, &after.area));
+            // A range that a deletion left with one cell is written as that cell (`Data!A2`, not `Data!A2:A2`), as
+            // `LibreOffice` saves it in an XLSX (an ODS keeps the range: `[$Data.A2:.A2]`, which its own writer prints).
+            if let Expr::Ref(after) = &mut node
+                && let RefArea::Range(a, b) = after.area
+                && a.row == b.row
+                && a.col == b.col
+            {
+                after.area = RefArea::Cell(a);
+            }
             out.push_str(&self.source[last..span.start]);
             out.push_str(&node.to_string());
             last = span.end;
             changed = true;
         }
         out.push_str(&self.source[last..]);
-        changed.then_some((out, only_moved))
+        changed.then_some(Rewritten {
+            text: out,
+            only_moved,
+        })
     }
 
     /// Whether the formula holds a 3D reference, one that spans sheets (`Sheet1:Sheet3!A1`, or
@@ -337,12 +432,12 @@ mod tests {
     #[test]
     fn deleting_rows() {
         // Row 3 (index 2) deleted.
-        assert_eq!(del_rows("A1+A3+A4", 2, 1), "A1+S!#REF!+A3");
+        assert_eq!(del_rows("A1+A3+A4", 2, 1), "A1+#REF!+A3");
         assert_eq!(del_rows("SUM(A1:A5)", 2, 1), "SUM(A1:A4)");
         assert_eq!(del_rows("SUM(A3:A5)", 2, 1), "SUM(A3:A4)");
         assert_eq!(del_rows("SUM(A1:A3)", 2, 1), "SUM(A1:A2)");
-        assert_eq!(del_rows("SUM(A3:A3)", 2, 1), "SUM(S!#REF!)");
-        assert_eq!(del_rows("SUM(A2:A4)", 1, 3), "SUM(S!#REF!)");
+        assert_eq!(del_rows("SUM(A3:A3)", 2, 1), "SUM(#REF!)");
+        assert_eq!(del_rows("SUM(A2:A4)", 1, 3), "SUM(#REF!)");
         assert_eq!(del_rows("A$4+$B5", 0, 2), "A$2+$B3");
         assert_eq!(del_rows("A:A+3:4", 0, 1), "A:A+2:3");
         assert_eq!(del_rows("SUM(A5:A1)", 2, 1), "SUM(A4:A1)");
@@ -379,7 +474,7 @@ mod tests {
                 "S",
             )
         };
-        assert_eq!(cols("B1+C1+D1", 2, 1), "B1+S!#REF!+C1");
+        assert_eq!(cols("B1+C1+D1", 2, 1), "B1+#REF!+C1");
         assert_eq!(cols("SUM(A1:D1)", 1, 2), "SUM(A1:B1)");
         assert_eq!(cols("B:D", 0, 1), "A:C");
         assert_eq!(
@@ -392,7 +487,7 @@ mod tests {
                 },
                 "S"
             ),
-            "S!#REF!"
+            "#REF!"
         );
     }
 
@@ -404,10 +499,7 @@ mod tests {
             count: 1,
         };
         // Unqualified reference on another sheet: untouched.
-        assert_eq!(
-            run("A5+Data!A5+'Data'!A1", e, "Other"),
-            "A5+Data!A4+Data!#REF!"
-        );
+        assert_eq!(run("A5+Data!A5+'Data'!A1", e, "Other"), "A5+Data!A4+#REF!");
         // Unqualified reference on the edited sheet itself moves.
         assert_eq!(run("A5", e, "data"), "A4");
     }
@@ -425,7 +517,7 @@ mod tests {
         };
         assert_eq!(
             f.rewrite(&e, "S").unwrap(),
-            "=  sum( A1 : A4 ,  S!#REF! ) + IF( x ,  Data!A9 ,'Q 1'!C3 )"
+            "=  sum( A1 : A4 ,  #REF! ) + IF( x ,  Data!A9 ,'Q 1'!C3 )"
         );
         // Nothing to change: no new text.
         assert_eq!(
@@ -475,13 +567,99 @@ mod tests {
         // Rows 2-3 and 6 deleted (1-based 3-4 and 7): A5 moves up two, A8 up three.
         assert_eq!(
             rows("=A5+A8+A3", &[(2, 2), (6, 1)]).as_deref(),
-            Some("=A3+A5+S!#REF!")
+            Some("=A3+A5+#REF!")
         );
         assert_eq!(
             rows("=SUM(A1:A10)", &[(2, 2), (6, 1)]).as_deref(),
             Some("=SUM(A1:A7)")
         );
         assert_eq!(rows("=A1+A2", &[(2, 2)]), None);
+    }
+
+    #[test]
+    fn a_deleted_sheet_and_deleted_cells_leave_the_same_text() {
+        use crate::parse::parse_spanned;
+        let rows = Edit::DeleteRows {
+            sheet: "S",
+            at: 2,
+            count: 1,
+        };
+        let sheet = Edit::DeleteSheet { sheet: "Gone" };
+        let run = |f: &str, edits: &[Edit<'_>]| {
+            parse_spanned(f).unwrap().rewrite_all_detailed(edits, "S")
+        };
+        let cells = run("=SUM(A3)+Gone!A1", &[rows]).unwrap();
+        assert_eq!(cells.text, "=SUM(#REF!)+Gone!A1");
+        let both = run("=SUM(A3)+Gone!A1", &[rows, sheet]).unwrap();
+        assert_eq!(both.text, "=SUM(#REF!)+#REF!");
+        let gone = run("=SUM(A3)+Gone!A1", &[sheet]).unwrap();
+        assert_eq!(gone.text, "=SUM(A3)+#REF!");
+    }
+
+    /// A range left with one cell is that cell in the text of an XLSX, as `LibreOffice` saves it.
+    #[test]
+    fn a_range_left_with_one_cell_is_that_cell() {
+        let rewrite = |f: &str, at: u32, count: u32| {
+            crate::parse::parse_spanned(f)
+                .unwrap()
+                .rewrite_all(
+                    &[Edit::DeleteRows {
+                        sheet: "S",
+                        at,
+                        count,
+                    }],
+                    "S",
+                )
+                .unwrap()
+        };
+        assert_eq!(rewrite("SUM(A2:A4)", 2, 2), "SUM(A2)");
+        assert_eq!(rewrite("SUM($A$1:$A$3)", 1, 2), "SUM($A$1)");
+        assert_eq!(rewrite("SUM(A4:A4)", 0, 1), "SUM(A3)");
+        assert_eq!(rewrite("SUM(A1:A5)", 2, 1), "SUM(A1:A4)");
+    }
+
+    #[test]
+    fn a_qualified_ref_error_is_written_bare() {
+        assert_eq!(bare_ref_errors("A1+B2"), None);
+        assert_eq!(
+            bare_ref_errors("COUNT(Data!#REF!)").as_deref(),
+            Some("COUNT(#REF!)")
+        );
+        assert_eq!(
+            bare_ref_errors("SUM('My ''Sheet'!#REF!,Data!#REF!+1)").as_deref(),
+            Some("SUM(#REF!,#REF!+1)")
+        );
+        assert_eq!(bare_ref_errors("Data!#REF!").as_deref(), Some("#REF!"));
+        // Text is not touched, a bare one stays.
+        assert_eq!(
+            bare_ref_errors("\"a!#REF!\"&Data!#REF!&#REF!").as_deref(),
+            Some("\"a!#REF!\"&#REF!&#REF!")
+        );
+    }
+
+    /// A reference with one end that went (`A1:#REF!`, as a file of Excel or an earlier edit leaves it) parses,
+    /// prints as it was written, and an edit moves the other references of the formula and not that one.
+    #[test]
+    fn a_reference_with_an_end_that_went_is_kept_as_written_and_the_rest_moves() {
+        for text in [
+            "SUM(A1:#REF!)",
+            "SUM(#REF!:B2)",
+            "SUM(Data!A1:#REF!)",
+            "SUM(Data!#REF!:B2)",
+            "SUM(Data:Other!#REF!)",
+            "SUM(Data:Other!A1:#REF!)",
+        ] {
+            let parsed = parse(text).unwrap_or_else(|e| panic!("{text}: {e}"));
+            assert_eq!(parsed.to_string(), text, "{text}");
+        }
+        // The cells next to it move as in any formula.
+        assert_eq!(del_rows("SUM(A1:#REF!)+A5", 1, 1), "SUM(A1:#REF!)+A4");
+        assert_eq!(del_rows("SUM(#REF!:B2)+B5", 0, 1), "SUM(#REF!:B1)+B4");
+        // The other end of the range is the cell that goes: the range is not one that shrank, and the text keeps
+        // an end that is `#REF!` where it was.
+        assert_eq!(del_rows("SUM(A2:#REF!)", 1, 1), "SUM(#REF!:#REF!)");
+        // Only a whole qualified `#REF!` is written bare; an end of a range stays as the file has it.
+        assert_eq!(bare_ref_errors("SUM(Data!A1:#REF!)"), None);
     }
 
     #[test]

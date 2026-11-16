@@ -351,6 +351,52 @@ a query and the dates a search reads. The first of these that is set decides, an
 `sheetrs_compiler::locale::resolve` is the one place that applies the order for the engine. The
 adapters (`sheetrs-py`, `sheetrs-wasm`, the command lines) only convert the argument.
 
+### The calculation mode: the cache is the default, `calculate_all` calculates everything
+
+The default of every run is what `LibreOffice` does when it opens a file and when a cell changes: a
+formula that has a result keeps it, and the formulas that a change reaches (and what depends on them)
+are calculated. The opt-in is `calculate_all`, which emulates `calculateAll()` of the UNO API: every
+formula is calculated. The option is a property of the run, off by default, and its name is
+`calculate_all` in every layer, converted only to the convention of each language:
+`Book::with_calculate_all` and `Book::calculate_all` (`sheetrs-io`; the planner of `sheetrs-edit` and the
+compiler read it), `--calculate-all` of `sheetrs edit`, `sheetc calculate`, `sheetc build` and the
+compiled executables, the keyword `calculate_all` of `save`, `to_bytes`, `explain` and `value_ranges` in
+Python, and the property `calculateAll` of the `Book` in WebAssembly (`sheetrs_set_calculate_all` in the
+module of a compiled workbook). `force_calculate_all` is the option of a build only (`sheetc build
+--force-calculate-all`, the key `force_calculate_all` of the options of `compile`): the program stores
+no cached result for the formulas it keeps. The option is never implied by another.
+
+What each tool does with it:
+
+- A **build** folds, as constants, the values the workbook stores (what `calculate_all` replaces by the
+  results of calculating the whole workbook first) and keeps in the program (`Program::cache`) the cached
+  result of every formula it keeps: a run whose inputs leave a formula and what it reads as they were takes
+  it (`Engine::take_cached`), and only what a changed input reaches is calculated. A run with
+  `calculate_all` (`Overrides::calculate_all`) ignores it. `sheetrs_compiler::Spec` has `calculate_all` and
+  `force_calculate_all`.
+- A **calculation** (`calculate`, in `sheetrs-edit`, `sheetrs-answer` and `sheetc calculate`) builds in the
+  mode it is given (`force_calculate_all` does not apply) and runs the program with it. It is the calculation that
+  tells its build what it is for: the workbook as the answer (`Spec::whole_workbook`) and the inputs it was given
+  (`Spec::given_inputs`, the only cells that can change, so the only cone that is calculated). A build, embedded or
+  not, keeps its own rules whatever calls it.
+- An **edit** (`sheetrs edit`) hands the compiler what its plan changed (`sheetrs_compiler::Cache`, built
+  by the planner from the operations it has run, `sheetrs-edit/src/plan.rs`): the formulas those changes
+  reach, and the ones that depend on them, are calculated, and the rest keep their result; with
+  `calculate_all` the whole workbook is calculated. The conversion of formulas to values converts the
+  cached results of the cells nothing reaches and what the engine calculates for the others (all of it
+  calculated first, with `calculate_all`).
+
+### What `LibreOffice` calculates on load is a root of the cache, not a walk
+
+A formula that `LibreOffice` calculates when it opens a file is calculated by the default mode too (`keep_cached`, `sheetrs-compiler`), and the
+kind of root says whether what reads it is: the functions it calculates on load in both formats (`HYPERLINK`, `CELL`, `INFO`, `FORMULATEXT`, the
+volatile ones, `INDIRECT`, `OFFSET`) are roots **with** the walk (`Flags::volatile`, `Flags::on_load`: what reads them is calculated), and the
+ODS cells whose cached result it recalculates (`ModelCell::recalculated_on_load`, told by the reader through `CellSink::recalculated_on_load`
+before the cell) are roots **without** it (a cell that caches a text, or a number in a cell with a format, keeps its result whatever the cell it
+reads gives). A rule of this kind is written from a probe of `LibreOffice` (`sheetrs-edit/tests/assets/write_to/probe_*.py`), checked in the oracle
+(`make_oracle.py`) and run now against it by `write_to_libreoffice.rs` for every fixture and both formats; a fixture whose cells give another
+result each time (`NOW`, `RAND`) cannot be compared, so it is only probed.
+
 ### Versioning
 
 The workspace uses [semantic versioning](https://semver.org/):

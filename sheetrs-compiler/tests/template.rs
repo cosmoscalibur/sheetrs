@@ -178,11 +178,12 @@ fn what_the_settings_declare_narrows_the_json_the_inputs_and_what_the_workbook_w
     assert!(!err.contains("discarded"), "{err}");
     assert_eq!(value(&out, "T", 0, 0), CellValue::Number(3.0));
     assert_eq!(value(&out, "F", 0, 0), CellValue::Number(6.0));
+    // The workbook is the answer: every formula is calculated, the ones the settings declare no output for too.
     let stored = value(&template, "F", 3, 0);
-    assert_eq!(
+    assert_ne!(
         value(&out, "F", 3, 0),
         stored,
-        "F!A4 is not an output: it keeps its stored result"
+        "F!A4 is not an output: it is calculated with the input given"
     );
     // The JSON answer gives what was declared and nothing else, from the same calculation.
     let both_out = dir.path().join("both.xlsx");
@@ -207,7 +208,8 @@ fn what_the_settings_declare_narrows_the_json_the_inputs_and_what_the_workbook_w
         serde_json::json!({"valueRanges": [{"name": "first", "range": "F!A1", "values": [[6]]}]})
     );
     assert_eq!(value(&both_out, "F", 0, 0), CellValue::Number(6.0));
-    assert_eq!(value(&both_out, "F", 3, 0), stored);
+    // The workbook is the answer: `F!A4`, which no output declares, is calculated too.
+    assert_ne!(value(&both_out, "F", 3, 0), stored);
     // The same without `--output`: the JSON alone.
     let (code, stdout, err) = run(
         SHEETC,
@@ -281,14 +283,20 @@ fn without_outputs_declared_the_json_gives_the_formula_cells() {
             serde_json::json!([[20]]),
             "{ext}"
         );
-        // A constant is not an output: it is in the template already.
-        let (code, _, err) = run(
+        // With no output declared the ranges asked are the outputs of the build (and no workbook is written): a
+        // constant is answered too.
+        let (code, stdout, err) = run(
             SHEETC,
             &["calculate", "-i", path(&template), "--range", "T!A1"],
             "{}",
         );
-        assert_eq!(code, 1, "{ext}");
-        assert!(err.contains("not inside the outputs"), "{ext}: {err}");
+        assert_eq!(code, 0, "{ext}: {err}");
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(
+            json["valueRanges"][0]["range"],
+            serde_json::json!("T!A1"),
+            "{ext}"
+        );
     }
 }
 
@@ -310,11 +318,35 @@ fn with_nothing_given_every_formula_is_calculated_again_and_inputs_and_outputs_a
             .unwrap();
         assert_eq!(value(&stale, "F", 0, 0), CellValue::Number(2.0), "{ext}");
 
-        // Nothing declared and nothing given: the workbook as it is, every formula calculated again.
+        // Nothing declared and nothing given: the workbook as it is. By default a formula that has a
+        // result keeps it, stale as it is, as `LibreOffice` does when it opens a file; the XLSX of this
+        // fixture reads cells at run time (`INDIRECT`), which `LibreOffice` calculates when it opens the file, and what reads it, and
+        // nothing else; the ODS caches a plain number in a cell with no format, which `LibreOffice` calculates when it opens the file too.
+        let kept = dir.path().join(format!("kept.{ext}"));
+        let (code, _, err) = run(
+            SHEETC,
+            &["calculate", "-i", path(&stale), "--output", path(&kept)],
+            "",
+        );
+        assert_eq!(code, 0, "{ext}: {err}");
+        let by_default = if ext == "xlsx" { 2.0 } else { 20.0 };
+        assert_eq!(
+            value(&kept, "F", 0, 0),
+            CellValue::Number(by_default),
+            "{ext}"
+        );
+        // With `--calculate-all` every formula is calculated again.
         let out = dir.path().join(format!("recalculated.{ext}"));
         let (code, _, err) = run(
             SHEETC,
-            &["calculate", "-i", path(&stale), "--output", path(&out)],
+            &[
+                "calculate",
+                "-i",
+                path(&stale),
+                "--calculate-all",
+                "--output",
+                path(&out),
+            ],
             "",
         );
         assert_eq!(code, 0, "{ext}: {err}");
@@ -351,16 +383,42 @@ fn with_nothing_given_every_formula_is_calculated_again_and_inputs_and_outputs_a
             "",
         );
         assert_eq!(code, 0, "{ext}: {err}");
+        // The input keeps the value the workbook holds, so nothing reaches `F!A1`: it keeps its result.
+        let by_default = if ext == "xlsx" { 2.0 } else { 20.0 };
         assert_eq!(
             value(&declared, "F", 0, 0),
-            CellValue::Number(20.0),
+            CellValue::Number(by_default),
             "{ext}"
         );
-        assert_eq!(
-            value(&declared, "F", 3, 0),
-            value(&stale, "F", 3, 0),
-            "{ext}: F!A4 is not an output: it keeps its stored result"
+        let all = dir.path().join(format!("declared_all.{ext}"));
+        let (code, _, err) = run(
+            SHEETC,
+            &[
+                "calculate",
+                "-i",
+                path(&stale),
+                "--calculate-all",
+                "--settings-file",
+                &settings(
+                    dir.path(),
+                    r#"{"inputs": [{"name": "base", "range": "T!A1"}], "outputs": [{"name": "first", "range": "F!A1"}]}"#,
+                ),
+                "--output",
+                path(&all),
+            ],
+            "",
         );
+        assert_eq!(code, 0, "{ext}: {err}");
+        assert_eq!(value(&all, "F", 0, 0), CellValue::Number(20.0), "{ext}");
+        // `F!A4` is not an output, and the workbook is the answer: it is calculated as the rest is. In the XLSX
+        // nothing caches a result to keep (`F!A1` shows it above), so it is calculated; in the ODS the plain number it caches is one
+        // `LibreOffice` calculates when it opens the file, so it is calculated too.
+        let expected = if ext == "xlsx" {
+            value(&stale, "F", 3, 0)
+        } else {
+            value(&all, "F", 3, 0)
+        };
+        assert_eq!(value(&declared, "F", 3, 0), expected, "{ext}");
     }
 }
 

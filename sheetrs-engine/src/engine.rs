@@ -120,6 +120,51 @@ pub struct Engine<'p> {
     /// What sets a number format (a function, an operator) clears it; what keeps the one of its
     /// operand (`VALUE`, a minus on a boolean) sets it; `finalize` reads it.
     pub(crate) logical_fmt: u8,
+    /// Slots of the inputs whose value was set to another one than the program holds.
+    changed: Vec<u32>,
+}
+
+/// The cells that have to be calculated again, found in a pass over the program in evaluation order: by
+/// column, so that a range is asked whether it holds one without looking at its cells.
+#[derive(Default)]
+struct Dirty {
+    columns: std::collections::BTreeMap<(u16, u32), std::collections::BTreeSet<u32>>,
+}
+
+impl Dirty {
+    fn insert(&mut self, at: CellRef) {
+        self.columns
+            .entry((at.sheet, at.col))
+            .or_default()
+            .insert(at.row);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.columns.is_empty()
+    }
+
+    fn contains(&self, at: CellRef) -> bool {
+        self.columns
+            .get(&(at.sheet, at.col))
+            .is_some_and(|rows| rows.contains(&at.row))
+    }
+
+    fn any_in(&self, r: &Rect) -> bool {
+        self.columns
+            .range((r.sheet, r.c0)..=(r.sheet, r.c1))
+            .any(|(_, rows)| rows.range(r.r0..=r.r1).next().is_some())
+    }
+
+    /// Whether `e` reads a cell that is dirty.
+    fn read_by(&self, e: &Expr) -> bool {
+        let mut dirty = false;
+        e.walk(&mut |x| match x {
+            Expr::Cell(c) => dirty |= self.contains(*c),
+            Expr::Range(r) => dirty |= self.any_in(r),
+            _ => {}
+        });
+        dirty
+    }
 }
 
 impl std::fmt::Debug for Engine<'_> {
@@ -205,6 +250,7 @@ impl<'p> Engine<'p> {
                 Vec::new()
             },
             logical_fmt: FMT_NONE,
+            changed: Vec::new(),
         }
     }
 
@@ -220,10 +266,75 @@ impl<'p> Engine<'p> {
     pub fn set_input(&mut self, at: CellRef, v: Value) -> bool {
         match self.index.get(&at) {
             Some(&s) if matches!(self.prog.cells[s as usize].kind, CellKind::Input(_)) => {
+                if self.values[s as usize] != v {
+                    self.changed.push(s);
+                }
                 self.values[s as usize] = v;
                 true
             }
             _ => false,
+        }
+    }
+
+    /// Takes the results the program caches (`Program::cache`) for the formulas that nothing changed
+    /// reaches: the default of a run, as `LibreOffice` keeps the results a file holds until a cell they
+    /// depend on changes. A formula is calculated when the program has no cached result for it, when an
+    /// input it reads (directly or through other formulas) was set to a value other than the program's,
+    /// or when it is in a circular group where one of those holds. Call it after the inputs are set
+    /// and before [`calculate`](Self::calculate); a run that does not call it calculates everything.
+    pub fn take_cached(&mut self) {
+        let prog = self.prog;
+        if prog.cache.is_empty() {
+            return;
+        }
+        let mut cached = prog.cache.iter().peekable();
+        let changed: std::collections::HashSet<u32> = self.changed.iter().copied().collect();
+        let mut dirty = Dirty::default();
+        let mut cycles = prog.cycles.iter().peekable();
+        let n = prog.cells.len() as u32;
+        let mut i = 0u32;
+        while i < n {
+            let end = match cycles.peek() {
+                Some(&&(s, e)) if s == i => {
+                    cycles.next();
+                    e
+                }
+                _ => i + 1,
+            };
+            // The group is calculated again if any of its cells is stale, or reads a stale cell.
+            let mut stale = false;
+            let mut kept: Vec<(u32, &Value)> = Vec::new();
+            for slot in i..end {
+                match &prog.cells[slot as usize].kind {
+                    CellKind::Input(_) => stale |= changed.contains(&slot),
+                    CellKind::Const(_) => {}
+                    CellKind::Formula(e) => {
+                        while cached.peek().is_some_and(|(s, _)| *s < slot) {
+                            cached.next();
+                        }
+                        match cached.peek() {
+                            Some((s, v)) if *s == slot => {
+                                stale |= !dirty.is_empty() && dirty.read_by(e);
+                                kept.push((slot, v));
+                            }
+                            _ => stale = true,
+                        }
+                    }
+                }
+            }
+            if stale {
+                for slot in i..end {
+                    if !matches!(prog.cells[slot as usize].kind, CellKind::Const(_)) {
+                        dirty.insert(prog.cells[slot as usize].at);
+                    }
+                }
+            } else {
+                for (slot, v) in kept {
+                    self.values[slot as usize] = v.clone();
+                    self.state[slot as usize] = St::Done;
+                }
+            }
+            i = end;
         }
     }
 

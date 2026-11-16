@@ -889,6 +889,7 @@ fn a_one_cell_array_formula_over_a_range_shows_its_first_element() {
             value: sheetrs_engine::Value::Empty,
             formula: Some("A1:B2".into()),
             array: true,
+            recalculated_on_load: false,
         },
     );
     let (p, _) = build(&m, &spec(&[], &["C1"]));
@@ -1185,7 +1186,13 @@ fn a_shared_formula_moved_outside_the_sheet_builds_and_is_a_ref_error() {
     )
     .unwrap();
     let m = sheetrs_compiler::loader::load(&sheetrs_io::Book::from_file(&path).unwrap()).unwrap();
-    let (p, _) = build(&m, &spec(&[], &["XFC1", "XFD1"]));
+    let (p, _) = build(
+        &m,
+        &Spec {
+            calculate_all: true,
+            ..spec(&[], &["XFC1", "XFD1"])
+        },
+    );
     let out = p
         .calculate(
             &Json::Null,
@@ -1193,5 +1200,62 @@ fn a_shared_formula_moved_outside_the_sheet_builds_and_is_a_ref_error() {
         )
         .unwrap();
     assert_eq!(out["S!XFC1"], json!(5));
-    assert_eq!(out["S!XFD1"], err("#REF!"));
+    // The reader writes the reference that left the sheet as `S!#REF!`, which is read as the plain error like every
+    // qualified `#REF!`: the unknown name in an XLSX. LibreOffice shows `#REF!` for it (reported to the maintainer: the
+    // text cannot tell it from a `Data!#REF!` that a file holds).
+    assert_eq!(out["S!XFD1"], err("#NAME?"));
+}
+
+/// A reference with one end that went (`A1:#REF!`, `#REF!:B2`, `Data!A1:#REF!`, a span of sheets) is read as
+/// `LibreOffice` reads the file it saved (probe: the file saved and opened again): in an XLSX the `#REF!` is the unknown
+/// name it is on its own (`SUM` is `#NAME?`, `COUNT` 0, `COUNTA` 1), in an ODS the error value (`SUM` is `#REF!`).
+#[test]
+fn a_reference_with_an_end_that_went_is_read_as_libreoffice_reads_it_saved() {
+    let name = err("#NAME?");
+    let gone = err("#REF!");
+    // (the formula as the reader gives it, the XLSX re-read, the ODS re-read)
+    let cases: [(&str, Json, Json); 11] = [
+        ("COUNT(Data!A1:#REF!)", json!(0), json!(0)),
+        ("COUNTA(Data!A1:#REF!)", json!(1), json!(1)),
+        ("COUNTBLANK(Data!A1:#REF!)", name.clone(), gone.clone()),
+        ("COUNTA(#REF!:B2)", json!(1), json!(1)),
+        ("COUNTA(A1:#REF!)", json!(1), json!(1)),
+        ("SUM(Data!A1:#REF!)", name.clone(), gone.clone()),
+        ("Data!A1:#REF!", name.clone(), gone.clone()),
+        ("ROWS(Data!A1:#REF!)", name.clone(), gone.clone()),
+        ("COUNT(Data:Other!A1:#REF!)", json!(0), json!(0)),
+        ("SUM(Data!A1:#DIV/0!)", err("#DIV/0!"), err("#DIV/0!")),
+        ("SUM(Data!A1:Missing)", name.clone(), name.clone()),
+    ];
+    let mut wrong = Vec::new();
+    for xlsx in [true, false] {
+        let mut m = sheetrs_compiler::Model::new();
+        m.from_xlsx = xlsx;
+        let data = m.add_sheet("Data");
+        m.set(data, "A1", sheetrs_engine::Value::Number(1.0));
+        m.add_sheet("Other");
+        let calc = m.add_sheet("Calc");
+        for (i, (formula, ..)) in cases.iter().enumerate() {
+            m.set_formula(calc, &format!("A{}", i + 1), formula);
+        }
+        let (p, _) = build(&m, &spec(&[], &["Calc!A1:A11"]));
+        let out = p
+            .calculate(
+                &Json::Null,
+                &sheetrs_engine::calculate::Overrides::default(),
+            )
+            .unwrap();
+        for (i, case) in cases.iter().enumerate() {
+            let expected = if xlsx { &case.1 } else { &case.2 };
+            let got = &out["Calc!A1:A11"][i][0];
+            if got != expected {
+                wrong.push(format!(
+                    "{} in an {}: {got}, LibreOffice {expected}",
+                    case.0,
+                    if xlsx { "XLSX" } else { "ODS" }
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }

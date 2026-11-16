@@ -10,7 +10,7 @@ use crate::reader::parser_utils::{
 };
 use quick_xml::events::{BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
-use sheetrs_formula::edit::Edit;
+use sheetrs_formula::edit::{Edit, Rewritten};
 use std::io::{BufRead, Write};
 
 /// What a command does to one worksheet.
@@ -44,15 +44,15 @@ impl SheetStructure<'_> {
         StructureEdits::rewrite_formula(self.edits, formula, &self.sheet)
     }
 
-    /// As [`rewrite`](Self::rewrite), and whether the plan only moved what the formula reads: the
-    /// result it cached is then still its result.
-    pub(super) fn rewrite_tracked(&self, formula: &str) -> Result<Option<(String, bool)>> {
+    /// As [`rewrite`](Self::rewrite), and whether the plan only moved what the formula reads (the
+    /// result it cached is then still its result).
+    pub(super) fn rewrite_detailed(&self, formula: &str) -> Result<Option<Rewritten>> {
         if formula.is_empty()
             || (!self.changes_layout() && !self.plan.may_reach_edited_sheet(formula))
         {
             return Ok(None);
         }
-        StructureEdits::rewrite_formula_tracked(self.edits, formula, &self.sheet)
+        StructureEdits::rewrite_formula_detailed(self.edits, formula, &self.sheet)
     }
 
     /// `A1`, `A1:B2`, `C:D` or `3:5` once the plan is applied, `None` when no cell of it remains.

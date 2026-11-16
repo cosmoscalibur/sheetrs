@@ -267,6 +267,7 @@ mod tests {
                 value,
                 formula: Some(formula.into()),
                 array: false,
+                recalculated_on_load: false,
             },
         );
     }

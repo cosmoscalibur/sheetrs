@@ -95,7 +95,7 @@ fn declared_and_outside_the_outputs_is_an_error_that_lists_the_declared_ones() {
 }
 
 #[test]
-fn with_no_output_declared_the_ranges_are_among_the_formula_cells() {
+fn with_no_output_declared_the_ranges_asked_are_the_outputs_of_the_build() {
     for file in FILES {
         let book = loan(file);
         let inside = answer(
@@ -107,24 +107,43 @@ fn with_no_output_declared_the_ranges_are_among_the_formula_cells() {
         .unwrap();
         // 1073.64 a month, 360 months.
         assert!((values(&inside)[0].1[0][0].as_f64().unwrap() - 386_511.5).abs() < 1.0);
-        // A constant is not an output, and with none declared the error has no list to give.
-        let error = answer(
+        // The workbook declares no output, so what the request asks is what the build declares: a constant is
+        // answered too (it is a declared output of that build).
+        let constant = answer(
             &book,
             &json!({"ranges": ["Loan!B2"]}),
             &undeclared(),
             Mode::Values,
         )
-        .unwrap_err();
-        let Error::Engine(sheetrs_engine::Error::OutsideOutputs { declared, .. }) = &error else {
-            panic!("{file}: {error:?}");
+        .unwrap();
+        assert!((values(&constant)[0].1[0][0].as_f64().unwrap() - 0.05).abs() < 1e-12);
+    }
+}
+
+/// With no workbook to write, the ranges of the request are the declared outputs of the build, and what is not on the
+/// path of them is not in the program: the build is smaller than the one that calculates every formula.
+#[test]
+fn the_build_keeps_only_the_path_of_the_ranges_asked() {
+    for file in FILES {
+        let book = loan(file);
+        let cells = |ranges: Option<Vec<String>>| {
+            let options = Options {
+                request_outputs: ranges,
+                ..undeclared()
+            };
+            book.compile(&options, Mode::Values).unwrap().0.cells.len()
         };
-        assert!(declared.is_none(), "{file}");
-        assert!(error.to_string().contains("formula cells"), "{error}");
+        let everything = cells(None);
+        let payment_only = cells(Some(vec!["Loan!B4".into()]));
+        assert!(
+            payment_only * 10 < everything,
+            "{file}: {payment_only} cells for the payment, {everything} for every formula"
+        );
     }
 }
 
 #[test]
-fn embedded_and_declared_a_range_outside_the_outputs_is_read_from_the_written_workbook() {
+fn embedded_declared_range_outside_outputs_is_read_from_the_workbook() {
     for file in FILES {
         // A formula nothing declares (`Total paid`), a constant (`Annual rate`) and the input given
         // (`Principal`), with a declared output between them: the answer keeps the order asked.
@@ -153,9 +172,13 @@ fn embedded_and_declared_a_range_outside_the_outputs_is_read_from_the_written_wo
             Some(1000.0),
             "{file}: the input is in the workbook"
         );
-        // Read, not calculated again: the formula the outputs left out holds what the template stored.
+        // The workbook is the answer, so every formula is calculated with the input given, not only the declared
+        // outputs: the formula nothing declares is 360 payments of the new loan.
         let total = got[0].1[0][0].as_f64().unwrap();
-        assert!((total - 386_511.5).abs() < 1.0, "{file}: {total}");
+        assert!(
+            (total - 5.368_216_230_121_398 * 360.0).abs() < 1e-6,
+            "{file}: {total}"
+        );
     }
 }
 
@@ -247,7 +270,7 @@ fn the_command_refuses_a_range_outside_the_declared_outputs_and_lists_them() {
 }
 
 #[test]
-fn the_command_that_writes_the_workbook_answers_a_range_outside_the_declared_outputs() {
+fn the_writing_command_answers_a_range_outside_the_outputs() {
     let dir = tempfile::tempdir().unwrap();
     for file in FILES {
         let out = dir.path().join(format!("out-{file}"));

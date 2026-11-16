@@ -234,7 +234,11 @@ Two crates, split along the line that matters for reuse and build time:
 - **`sheetrs-compiler`** turns a workbook into a `Program`: `loader` (the only code
   that knows the file format, on top of `sheetrs-io`) → `Model` → lowering of the
   `sheetrs-formula` AST to the IR → cone of influence, SCC order, constant
-  folding. Its binary is `sheetc`.
+  folding. Its binary is `sheetc`. **The calculation mode** is `LibreOffice`'s: by default the constants it folds
+  are the values the workbook stores and the program carries the cached result of the formulas it keeps
+  (`Program::cache`, taken by `Engine::take_cached` for what no changed input reaches); `calculate_all`
+  calculates the whole workbook first and stores those results, and `force_calculate_all` (a build) stores none
+  (`sheetrs-compiler/README.md`, *The calculation mode*).
 
 The date system (one of three, `DateSystem`: 1899-12-30, 1900-01-01 and 1904-01-01; another is an
 error), iteration, search settings and reference syntax come from the document;
@@ -308,7 +312,10 @@ libraries stay free of clap when the feature is off (`sheetrs-wasm` and `sheetrs
     engine calculates again the results a conversion of formulas to values reads after a change that
     leaves them stale. Rows and columns are typed (`RowRange`,
     `ColumnRange`, with `FromStr`/`Display`), so a deletion with the wrong kind of range cannot
-    be built. What a deletion leaves stale is calculated again by the engine as the last pass (every formula; no analysis decides which); the output is marked to be recalculated when
+    be built. What a deletion leaves stale is calculated again by the engine as the last pass: by default
+    the formulas the plan reaches and what depends on them, which the compiler finds with its dependency graph
+    (`sheetrs_compiler::Cache`), the others keeping the result the file caches, as `LibreOffice` does; with
+    `calculate_all` (`calculateAll()`) every formula. The output is marked to be recalculated when
     opened only if the engine cannot calculate the workbook (the mark is never decided before the engine
     has run, and there is no option to ask for it or avoid it).
   - `plan` (private): the planner behind `BookEdit`, a set of functions that take the operations of

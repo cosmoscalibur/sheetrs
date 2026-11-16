@@ -331,7 +331,7 @@ fn the_options_of_a_call_win_over_the_volatile_of_the_book_field_by_field() {
 }
 
 #[test]
-fn the_build_of_a_book_takes_its_volatile_too() {
+fn the_build_of_a_book_takes_its_volatile() {
     for extension in EXTENSIONS {
         let given = book(extension).with_volatile(Volatile {
             now: Some(NOW),

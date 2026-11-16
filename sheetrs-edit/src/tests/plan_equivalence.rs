@@ -21,8 +21,8 @@ fn asset(extension: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/assets/structure/book.{extension}"))
 }
 
-/// Every cell of the workbook with its formula and value. A reference that went reads `T!#REF!`
-/// in an XLSX and `#REF!` in an ODS.
+/// Every cell of the workbook with its formula and value. A reference that went reads `#REF!`
+/// in both formats.
 fn snapshot(path: &Path) -> Snapshot {
     let book = Book::from_file(path).unwrap().workbook().unwrap();
     let mut cells = BTreeMap::new();
@@ -31,9 +31,7 @@ fn snapshot(path: &Path) -> Snapshot {
             cells.insert(
                 (sheet.name.clone(), at.0, at.1),
                 (
-                    cell.formula
-                        .as_deref()
-                        .map(|f| f.replace("T!#REF!", "#REF!")),
+                    cell.formula.as_deref().map(str::to_string),
                     format!("{:?}", cell.value),
                 ),
             );

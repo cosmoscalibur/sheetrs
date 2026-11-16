@@ -169,7 +169,7 @@ fn the_end_of_the_text_is_not_searched_after_a_hit_or_a_skipped_empty_match() {
 }
 
 #[test]
-fn a_replacement_is_made_in_the_text_and_the_next_search_goes_on_in_what_is_left() {
+fn the_next_search_goes_on_in_the_text_left_by_a_replacement() {
     // The second `a` is at the start once the first is gone.
     assert_eq!(one("^a", "", "aaa"), "");
     assert_eq!(one("^a", "", "aab"), "b");
@@ -177,8 +177,7 @@ fn a_replacement_is_made_in_the_text_and_the_next_search_goes_on_in_what_is_left
 }
 
 #[test]
-fn a_character_outside_the_basic_plane_is_two_units_for_the_search_that_goes_on_after_an_empty_match()
- {
+fn a_character_outside_the_basic_plane_is_two_units_after_an_empty_match() {
     // `LibreOffice` counts in UTF-16 units: after the empty match at the start of the emoji its
     // search begins inside it, so `(^|$)` still finds the end, and `x*` matches the empty text
     // there and finds nothing more.
@@ -189,7 +188,7 @@ fn a_character_outside_the_basic_plane_is_two_units_for_the_search_that_goes_on_
 }
 
 #[test]
-fn a_dollar_is_before_the_line_break_that_ends_the_text_and_never_before_another() {
+fn a_dollar_is_before_the_final_line_break_only() {
     assert_eq!(one("a$", "X", "a\n"), "X\n");
     assert_eq!(
         one("$", "X", "a\n"),
@@ -284,7 +283,7 @@ fn the_empty_search_text_replaces_nothing_in_every_mode() {
 }
 
 #[test]
-fn the_empty_search_text_is_answered_at_once_even_for_a_sheet_that_is_not_there() {
+fn the_empty_search_text_is_answered_for_a_missing_sheet() {
     for extension in ["xlsx", "ods"] {
         let dir = tempfile::tempdir().unwrap();
         let mut book = Book::from_file(asset(&format!("input.{extension}"))).unwrap();

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Makes `sheetrs-io/tests/assets/oracle/shapes_delete.json`: where LibreOffice puts the two shapes of
 `sheetrs-edit/tests/assets/structure/book.{xlsx,ods}` (sheet `T`) after deleting each band of rows
-and of columns, through UNO (`Rows.removeByIndex`, `Columns.removeByIndex`).
+and of columns, through UNO (`Rows.removeByIndex`, `Columns.removeByIndex`), in the file that LibreOffice saves
+after the deletion and opens again.
 
     scripts/libreoffice-server.sh
     /opt/libreoffice26.8/program/python sheetrs-edit/scripts/make_shapes_oracle.py
@@ -9,12 +10,13 @@ and of columns, through UNO (`Rows.removeByIndex`, `Columns.removeByIndex`).
 Each entry: the format, the axis, the first index and the count of the band, and the shapes left,
 as [anchor row, anchor column, x, y, width, height] in 1/100 mm, sorted by x then y.
 """
-import json, os, subprocess, sys, time
+import json, os, shutil, subprocess, sys, tempfile, time
 import uno
 from com.sun.star.beans import PropertyValue
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..", "..")
+FILTERS = {"xlsx": "Calc MS Excel 2007 XML", "ods": "calc8"}
 OUT = os.path.join(ROOT, "sheetrs-io", "tests", "assets", "oracle", "shapes_delete.json")
 
 
@@ -60,8 +62,16 @@ def main():
                         doc = desktop.loadComponentFromURL("file://" + book, "_blank", 0, props(Hidden=True))
                         sheet = doc.Sheets.getByName("T")
                         (sheet.Rows if axis == "rows" else sheet.Columns).removeByIndex(first, count)
+                        # The shapes are where LibreOffice puts them when the file it saves is opened again
+                        # (the reference of the project, `CONTRIBUTING.md`), not where its memory has them.
+                        folder = tempfile.mkdtemp()
+                        saved = os.path.join(folder, "step." + extension)
+                        doc.storeToURL("file://" + saved, props(FilterName=FILTERS[extension]))
+                        doc.close(True)
+                        doc = desktop.loadComponentFromURL("file://" + saved, "_blank", 0, props(Hidden=True))
                         left = shapes(doc)
                         doc.close(True)
+                        shutil.rmtree(folder, ignore_errors=True)
                     except Exception:
                         # A deletion that LibreOffice cannot do (it dies on a few): no entry.
                         subprocess.run([os.path.join(ROOT, "scripts", "libreoffice-server.sh")], capture_output=True)

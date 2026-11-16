@@ -70,6 +70,18 @@ pub trait CellSink {
     /// members that are not the top-left cell (a formula that holds one value has none): each member
     /// shows its own element of the result.
     fn array_member(&mut self, _sheet: u16, _at: (u32, u32), _offset: (u32, u32)) {}
+
+    /// The formula of the cell at `(row, column)` (0-based) is one that `LibreOffice` calculates when it opens the
+    /// file, whatever result the file caches: only an ODS says it (an XLSX keeps what it caches), by the type of the
+    /// cached result and the format of the cell ([`CellSink::cell`] of an ODS). It comes **before** the
+    /// [`cell`](CellSink::cell) it is about.
+    fn recalculated_on_load(&mut self, _sheet: u16, _at: (u32, u32)) {}
+
+    /// Whether the sink wants more cells: a reader of an ODS stops after the cell that makes it `false` (checked where it tells
+    /// [`recalculated_on_load`](CellSink::recalculated_on_load)). A sink that only asks whether some cell is one needs no more.
+    fn wants_more(&self) -> bool {
+        true
+    }
 }
 
 /// A sink that hands on the cells of `inner` with their formulas in Excel's notation, the
@@ -95,6 +107,14 @@ impl<'a> ExcelFormulas<'a> {
 impl CellSink for ExcelFormulas<'_> {
     fn hint(&mut self, sheet: u16, cells: usize) {
         self.inner.hint(sheet, cells);
+    }
+
+    fn recalculated_on_load(&mut self, sheet: u16, at: (u32, u32)) {
+        self.inner.recalculated_on_load(sheet, at);
+    }
+
+    fn wants_more(&self) -> bool {
+        self.inner.wants_more()
     }
 
     fn sheet(&mut self, index: u16, name: &str) {
@@ -452,6 +472,18 @@ pub(crate) fn read_defined_names_from_reader<R: std::io::Read + std::io::Seek>(
     } else {
         let mut reader = XlsxReader::new(&mut archive)?;
         Ok((reader.read_defined_names()?, reader.read_name_conflicts()?))
+    }
+}
+
+/// The definitions of the defined names only (not the names that live in more than one scope: an ODS is read once less).
+pub(crate) fn read_defined_name_definitions_from_reader<R: std::io::Read + std::io::Seek>(
+    reader: R,
+) -> Result<HashMap<String, String>> {
+    let mut archive = open_archive(reader)?;
+    if detect::detect_archive(&mut archive)? == Format::Ods {
+        OdsReader::new(&mut archive)?.read_defined_names()
+    } else {
+        XlsxReader::new(&mut archive)?.read_defined_names()
     }
 }
 

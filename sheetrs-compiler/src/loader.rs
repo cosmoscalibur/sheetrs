@@ -39,6 +39,7 @@ pub fn load(source: &Book) -> Result<Model> {
     let mut m = assemble(wb, ods, sink.cells);
     m.array_members = sink.array_members;
     m.from_xlsx = !ods;
+    m.recalculate_on_load = source.recalculation_marked().unwrap_or(false);
     // The locale of the run: the one given to the workbook, else the system's (an ODS does
     // not carry the regional setting that matters: see `locale::resolve`).
     m.settings.book_locale = source.locale().map(ToString::to_string);
@@ -87,6 +88,8 @@ fn sha256_of(source: &Book) -> Result<String> {
 struct ModelSink {
     cells: CellStore,
     array_members: std::collections::HashMap<CellRef, (u32, u32)>,
+    /// The next cell is one `LibreOffice` calculates on load (the reader says so before the cell).
+    on_load: bool,
 }
 
 impl sheetrs_io::reader::CellSink for ModelSink {
@@ -99,8 +102,14 @@ impl sheetrs_io::reader::CellSink for ModelSink {
             .insert(CellRef::new(sheet, at.0, at.1), offset);
     }
 
+    fn recalculated_on_load(&mut self, _sheet: u16, _at: (u32, u32)) {
+        self.on_load = true;
+    }
+
     fn cell(&mut self, sheet: u16, at: (u32, u32), cell: sheetrs_io::reader::Cell) {
-        if let Some(c) = model_cell(&cell.value, cell.formula, cell.is_array) {
+        let on_load = std::mem::take(&mut self.on_load);
+        if let Some(mut c) = model_cell(&cell.value, cell.formula, cell.is_array) {
+            c.recalculated_on_load = on_load && c.formula.is_some();
             self.cells.insert(CellRef::new(sheet, at.0, at.1), c);
         }
     }
@@ -114,6 +123,7 @@ fn model_cell(value: &CellValue, formula: Option<Box<str>>, array: bool) -> Opti
         value,
         formula,
         array,
+        recalculated_on_load: false,
     })
 }
 
@@ -185,6 +195,7 @@ pub fn from_workbook(wb: &Workbook, format: Format) -> Model {
                     value,
                     formula,
                     array: cell.is_array,
+                    recalculated_on_load: false,
                 },
             );
         }

@@ -17,6 +17,10 @@ pub struct ModelCell {
     pub formula: Option<String>,
     /// Array (Ctrl+Shift+Enter) formula: its operators work element-wise.
     pub array: bool,
+    /// `LibreOffice` calculates the formula when it opens the file, whatever result the file caches (an ODS cell whose
+    /// cached result is of a type and format it recalculates, see `sheetrs_io::reader::CellSink::recalculated_on_load`):
+    /// the default mode calculates it too.
+    pub recalculated_on_load: bool,
 }
 
 impl ModelCell {
@@ -52,6 +56,7 @@ pub struct ModelSettings {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)] // independent facts of the file (where it comes from, what it carries), not states of one machine
 pub struct Model {
     pub sheets: Vec<String>,
     pub cells: CellStore,
@@ -70,6 +75,9 @@ pub struct Model {
     /// The formulas come from an XLSX (`LibreOffice` reads a bare `#REF!` in one as an
     /// unknown name).
     pub from_xlsx: bool,
+    /// The workbook carries the mark to calculate every formula when it is opened (`fullCalcOnLoad` of an XLSX): a
+    /// build or a calculation takes it as a run with `calculate_all`.
+    pub recalculate_on_load: bool,
     /// The file name of the workbook, with its extension (`CELL("filename")`).
     pub file_name: Option<String>,
     /// The file contains macros (VBA, Basic, scripts). They are never run.
@@ -104,6 +112,7 @@ impl Model {
             settings: ModelSettings::default(),
             from_file: false,
             from_xlsx: false,
+            recalculate_on_load: false,
             file_name: None,
             macros: false,
             properties: Vec::new(),
@@ -133,6 +142,7 @@ impl Model {
                 value,
                 formula: None,
                 array: false,
+                recalculated_on_load: false,
             },
         );
         self
@@ -147,6 +157,7 @@ impl Model {
                 value: Value::Empty,
                 formula: Some(formula),
                 array: false,
+                recalculated_on_load: false,
             },
         );
         self

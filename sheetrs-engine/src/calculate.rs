@@ -60,6 +60,10 @@ pub struct Overrides {
     pub now: Option<f64>,
     pub rand_seed: Option<u64>,
     pub host: crate::options::Host,
+    /// Ignore the results the program caches for its formulas and calculate all of them (the
+    /// `calculateAll()` of `LibreOffice`). By default a formula whose precedents did not change keeps
+    /// its cached result (see [`Program::cache`](crate::ir::Program)).
+    pub calculate_all: bool,
 }
 
 pub use sheetrs_protocol::{MajorDimension, ValueRange, ValueRanges};
@@ -301,6 +305,9 @@ impl Program {
             for (at, v) in bind_input(&b, j)? {
                 engine.set_input(at, v);
             }
+        }
+        if !o.calculate_all {
+            engine.take_cached();
         }
         engine.calculate();
         Ok(engine)

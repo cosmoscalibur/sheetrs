@@ -1,13 +1,14 @@
 """Makes `input.{xlsx,ods}` and `oracle.json`, the fixtures of `tests/replace_anchors.rs`: a sheet `T`
 with one text a row (texts of one and of several lines), and, for each search of `CASES` and each
 combination of `match_case` and `entire_cells`, the text of each cell after LibreOffice itself ran
-`Sheet.replaceAll` with a regular expression over the workbook, loaded from each format.
+`Sheet.replaceAll` with a regular expression over the workbook, loaded from each format, in the file that
+LibreOffice saves after it and opens again (the reference of the project, `CONTRIBUTING.md`).
 
 Run it with a LibreOffice listening on a socket (`scripts/libreoffice-server.sh`):
 
     /opt/libreoffice26.8/program/python make_anchors_oracle.py
 """
-import json, os, sys, time
+import json, os, shutil, sys, tempfile, time
 import uno
 from com.sun.star.beans import PropertyValue
 
@@ -71,6 +72,9 @@ def pv(name, value):
     return p
 
 
+FILTERS = {"xlsx": "Calc MS Excel 2007 XML", "ods": "calc8"}
+
+
 def open_doc(path):
     return desktop.loadComponentFromURL("file://" + path, "_blank", 0, (pv("Hidden", True),))
 
@@ -104,13 +108,20 @@ for ext in ("xlsx", "ods"):
             d.SearchWords = entire
             d.setPropertyValue("SearchFormatted", False)
             sheet.replaceAll(d)
+            # The result is what LibreOffice shows when the file it saves is opened again (CONTRIBUTING.md).
+            saved = tempfile.mkdtemp() + "/step." + ext
+            doc.storeToURL("file://" + saved, (pv("FilterName", FILTERS[ext]),))
+            again = open_doc(saved)
+            sheet_after = again.Sheets.getByName("T")
             after = []
             for i in range(len(TEXTS)):
                 try:
-                    after.append(sheet.getCellByPosition(0, i).String)
+                    after.append(sheet_after.getCellByPosition(0, i).String)
                 except Exception:  # a lone surrogate: not a text that UNO can give
                     after.append(None)
                     print("not a text:", ext, repr(search), repr(with_), repr(TEXTS[i]))
+            again.close(True)
+            shutil.rmtree(os.path.dirname(saved), ignore_errors=True)
             oracle["cases"].append(
                 {"format": ext, "find": search, "with": with_, "match_case": match_case,
                  "entire_cells": entire, "result": after}

@@ -1,4 +1,5 @@
-"""What LibreOffice 26.8 shows of a workbook after an edit, recorded for the tests that compare a write with it.
+"""Makes `oracle.json`, what `tests/write_to_libreoffice.rs` compares the in-memory write (`BookEdit::write_to`,
+the one Python and WebAssembly use) with.
 
 THE RULE (policy of the project, `CONTRIBUTING.md`, *Parity and fidelity*): the expected values of an edit are what
 LibreOffice 26.8 shows when the workbook it left after the edit is SAVED AND OPENED AGAIN (re-read). The state of its
@@ -6,29 +7,44 @@ memory right after the edit is not a reference: the same workbook, saved and ope
 (it is not reproducible), which is a defect of LibreOffice and not a behavior to copy. The rule is for every operation
 and both formats.
 
-For each workbook of the list of fixtures, in each format, and for each edit of its list, LibreOffice 26.8 makes the
-edit through UNO on the loaded file, saves the file (`storeToURL`) and loads it again. The record holds:
+For each workbook of `tests/assets/cached/` (`book`, `rules`, `refs`, `preref`, `dirty`), in each format, and for each edit of
+`EDITS`, LibreOffice 26.8 makes the edit through UNO on the loaded file and calculates every formula (`calculateAll`: the
+recalculation the screen does as it repaints, so that no result stays stale), saves the file (`storeToURL`) and loads it
+again. The oracle holds:
 
-  reread_default        the cells (formula and value), the hidden rows and columns and the visibility of each sheet of
+  reread                the cells (formula and value), the hidden rows and columns and the visibility of each sheet of
                         that file as LibreOffice shows them when it opens it (default load: the results the file
-                        caches, plus what LibreOffice itself calculates on load), for an edit with no `calculateAll()`;
-  reread                the same after the edit and `calculateAll()` (every formula calculated: the recalculation the
-                        screen does as it repaints);
+                        caches, plus what LibreOffice itself calculates on load), after the edit and `calculateAll()`.
+                        THE EXPECTED VALUES of the mode `calculate_all` (`sheetrs edit --calculate-all`);
+  reread_default        the same, for an edit with no `calculateAll()`: what LibreOffice keeps of the results the file
+                        caches and calculates because the edit reaches it. THE EXPECTED VALUES of the default mode;
+  differences_default   where the file of `sheetrs edit` (default mode) is not `reread_default`;
   cache_differences     where the same file, after a hard recalculation (`calculateAll`), shows another value than
-                        `reread`;
+                        `reread` (a cross-check; `reread` is the official one);
+  opened                what LibreOffice shows of the file `sheetrs edit` writes for the same edit, loaded with its
+                        default load (`written`) and after `calculateAll` (`opened`);
+  differences           where `written` is not `reread`, for the formulas and for the values: the file of `sheetrs edit`
+                        against the expected one. Nothing here is an approved difference unless the test says so;
+  hard_differences      the same, between `opened` (a hard recalculation of the file of `sheetrs edit`) and the file of
+                        LibreOffice recalculated the same way: whether the two files are the same program for
+                        LibreOffice;
   in_memory_differences INFORMATIONAL ONLY, never a reference: where the memory of LibreOffice right after the edit
-                        (and `calculateAll`) differs from `reread`. They are the evidence that the memory is not stable.
+                        (and `calculateAll`) differs from `reread`. They are the evidence that the memory is not stable
+                        (a reference that went counts as `#REF!` there and as an error value or an unknown name after
+                        saving and loading).
 
-An edit is a list of operations, `[name, ...arguments]`, applied through UNO. Run it with a LibreOffice listening on a
-socket (`scripts/libreoffice-server.sh`):
+The edit is the same list of operations in the three places: `sheetrs edit` flags, UNO calls, and the methods of
+`BookEdit` that the Rust test calls. Run it with a LibreOffice listening on a socket
+(`scripts/libreoffice-server.sh`) and a built `sheetrs` (`cargo build -p sheetrs-cli`):
 
-    ASSETS=DIR /opt/libreoffice26.8/program/python make_oracle.py [FIXTURE ...]
+    /opt/libreoffice26.8/program/python make_oracle.py [FIXTURE ...]
 
-`ASSETS` is the folder that holds `FIXTURE.xlsx` and `FIXTURE.ods`; with fixture names it makes only those again.
+With fixture names (`book`, `rules`, `refs`, `preref`, `dirty`, `classes`) it makes only those again.
 """
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -37,17 +53,144 @@ import uno
 from com.sun.star.beans import PropertyValue
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ASSETS = os.environ.get("ASSETS", ".")
+ASSETS = os.path.join(HERE, "..", "cached")
+SHEETRS = os.environ.get("SHEETRS", os.path.join(HERE, "..", "..", "..", "..", "target", "debug", "sheetrs"))
 FILTERS = {"xlsx": "Calc MS Excel 2007 XML", "ods": "calc8"}
 ROWS, COLUMNS = 80, 6  # the area of each sheet that is compared: A1:F80
 
 # (label, the operations). An operation is `[name, ...arguments]`:
-#   delete_rows "S!3:5"      delete_columns "S!B:D"      delete_sheets "S"      delete_names "name"
-#   formula_to_value "S!A:A"
+#   delete_rows / hide_rows / show_rows "S!3:5"      delete_columns / hide_columns / show_columns "S!B:D"
+#   delete_sheets / hide_sheets / show_sheets "S"    delete_names "name"       formula_to_value "S!A:A"
 #   replace {text, with, scope, regex, in}           set_value "S!A2" 25 (an input of a calculation: the value is
-#   written and every formula calculated)
-# `FIXTURES` pairs the name of each workbook with its list of edits.
-FIXTURES = []
+#   written and every formula calculated; the API has it, `sheetrs edit` has no flag for it, so the file is not compared)
+BOOK = [
+    ("delete rows Data!3", [["delete_rows", "Data!3"]]),
+    ("delete rows Data!2:3", [["delete_rows", "Data!2:3"]]),
+    ("delete columns Data!B", [["delete_columns", "Data!B"]]),
+    ("delete columns Data!D (no cell reads it)", [["delete_columns", "Data!D"]]),
+    ("delete sheet Data", [["delete_sheets", "Data"]]),
+    ("delete name rate", [["delete_names", "rate"]]),
+    ("replace 20 by 25 in Data!A2", [["replace", {"text": "20", "with": "25", "scope": "Data!A2"}]]),
+    ("replace ^x$ by y in Data!B1 (regex)",
+     [["replace", {"text": "^x$", "with": "y", "scope": "Data!B1", "regex": True}]]),
+    ("replace $ by ! in Data!B1 (regex, the end of the text)",
+     [["replace", {"text": "$", "with": "!", "scope": "Data!B1", "regex": True}]]),
+    ("replace ^ by > in Data!B1 (regex, the start: no match of no characters)",
+     [["replace", {"text": "^", "with": ">", "scope": "Data!B1", "regex": True}]]),
+    ("replace * by + in the formula of Calc!A2", [["replace", {"text": "*2", "with": "*3", "scope": "Calc!A2", "in": "formula"}]]),
+    ("hide rows Data!2", [["hide_rows", "Data!2"]]),
+    ("hide rows Data!2:3 and show Data!3", [["hide_rows", "Data!2:3"], ["show_rows", "Data!3"]]),
+    ("hide columns Data!B", [["hide_columns", "Data!B"]]),
+    ("hide columns Data!B:C and show Data!C", [["hide_columns", "Data!B:C"], ["show_columns", "Data!C"]]),
+    ("hide sheet Data", [["hide_sheets", "Data"]]),
+    ("formula to value Calc!A:A", [["formula_to_value", "Calc!A:A"]]),
+    ("delete rows Data!3 and columns Data!B", [["delete_rows", "Data!3"], ["delete_columns", "Data!B"]]),
+    ("replace and hide rows", [["replace", {"text": "20", "with": "25", "scope": "Data!A2"}], ["hide_rows", "Data!4"]]),
+    ("write 25 in Data!A2 (input of a calculation)", [["set_value", "Data!A2", 25]]),
+    ("write 9 in Data!C1 (the name rate)", [["set_value", "Data!C1", 9]]),
+    ("write y in Data!B1 (a text)", [["set_value", "Data!B1", "y"]]),
+    ("write 55 in Data!A3 and delete rows Data!3", [["set_value", "Data!A3", 55], ["delete_rows", "Data!3"]]),
+]
+RULES = [
+    ("delete columns Data!D", [["delete_columns", "Data!D"]]),
+    ("delete rows Data!6", [["delete_rows", "Data!6"]]),
+    ("delete rows Data!2 (the cell ISFORMULA and FORMULATEXT ask about)", [["delete_rows", "Data!2"]]),
+    ("delete sheet Other", [["delete_sheets", "Other"]]),
+    ("delete name rate", [["delete_names", "rate"]]),
+    ("replace Data!B1 x by y", [["replace", {"text": "x", "with": "y", "scope": "Data!B1"}]]),
+    ("replace 20 by 25 in Data!A2", [["replace", {"text": "20", "with": "25", "scope": "Data!A2"}]]),
+    ("replace *2 by *3 in the formula of Calc!A5", [["replace", {"text": "*2", "with": "*3", "scope": "Calc!A5", "in": "formula"}]]),
+    ("hide rows Data!2:4", [["hide_rows", "Data!2:4"]]),
+    ("hide columns Data!D", [["hide_columns", "Data!D"]]),
+]
+REFS = [
+    ("delete sheet Data", [["delete_sheets", "Data"]]),
+    ("delete rows Data!3", [["delete_rows", "Data!3"]]),
+    ("delete rows Data!1:6", [["delete_rows", "Data!1:6"]]),
+    ("delete rows Data!2:3", [["delete_rows", "Data!2:3"]]),
+    ("delete columns Data!A", [["delete_columns", "Data!A"]]),
+    ("delete columns Data!A:B", [["delete_columns", "Data!A:B"]]),
+    ("write 55 in Data!A3", [["set_value", "Data!A3", 55]]),
+]
+# An error written in the formulas next to references an edit removes (`Data!A3` on rows, `Other!A1` on a sheet).
+PREREF = [
+    ("delete rows Data!3", [["delete_rows", "Data!3"]]),
+    ("delete columns Data!C", [["delete_columns", "Data!C"]]),
+    ("delete sheet Other", [["delete_sheets", "Other"]]),
+    ("delete sheet Data", [["delete_sheets", "Data"]]),
+    ("delete rows Data!3 and sheet Other", [["delete_rows", "Data!3"], ["delete_sheets", "Other"]]),
+    ("hide rows Data!2 (no deletion)", [["hide_rows", "Data!2"]]),
+    ("replace x by y in Data!B1 (no deletion)", [["replace", {"text": "x", "with": "y", "scope": "Data!B1"}]]),
+    ("write 5 in Data!A1 (no deletion)", [["set_value", "Data!A1", 5]]),
+]
+# What a deletion reaches in a workbook whose results are all stale (the text `S`: `LibreOffice` keeps it where nothing reaches
+# the formula, and calculates it where something does): a number of the ODS would be calculated on load.
+DIRTY = [
+    ("delete rows Data!3", [["delete_rows", "Data!3"]]),
+    ("delete rows Data!2:3", [["delete_rows", "Data!2:3"]]),
+    ("delete rows Data!6 (the last of the range)", [["delete_rows", "Data!6"]]),
+    ("delete rows Data!7:8 (below everything)", [["delete_rows", "Data!7:8"]]),
+    ("delete rows Data!1", [["delete_rows", "Data!1"]]),
+    ("delete rows Data!4", [["delete_rows", "Data!4"]]),
+    ("delete rows Data!2 and Data!5", [["delete_rows", "Data!2"], ["delete_rows", "Data!5"]]),
+    ("delete columns Data!B", [["delete_columns", "Data!B"]]),
+    ("delete columns Data!C", [["delete_columns", "Data!C"]]),
+    ("delete columns Data!D", [["delete_columns", "Data!D"]]),
+    ("delete columns Data!A", [["delete_columns", "Data!A"]]),
+    ("delete columns Data!E", [["delete_columns", "Data!E"]]),
+    ("delete sheet Other", [["delete_sheets", "Other"]]),
+    ("delete sheet Data", [["delete_sheets", "Data"]]),
+    ("delete name n_cell1", [["delete_names", "n_cell1"]]),
+    ("delete rows Calc!100 (below the formulas)", [["delete_rows", "Calc!100"]]),
+    ("delete rows Calc!2 (the formulas below move)", [["delete_rows", "Calc!2"]]),
+    ("delete columns Calc!C (empty)", [["delete_columns", "Calc!C"]]),
+    ("delete columns Calc!D (the cells to its right move)", [["delete_columns", "Calc!D"]]),
+]
+# One formula for each class of function (`classes`, every result cached as the text `S`): what `LibreOffice` calculates when it opens
+# the file (the first edit leaves every formula alone) and what each edit reaches.
+CLASSES = [
+    ("hide columns Data!H (no edit: no cell is in it)", [["hide_columns", "Data!H"]]),
+    ("hide rows Data!2", [["hide_rows", "Data!2"]]),
+    ("hide rows Data!3", [["hide_rows", "Data!3"]]),
+    ("hide rows Data!6", [["hide_rows", "Data!6"]]),
+    ("hide rows Data!2 and show Data!2", [["hide_rows", "Data!2"], ["show_rows", "Data!2"]]),
+    ("write 5 in Data!A1", [["set_value", "Data!A1", 5]]),
+    ("write y in Data!B1 (a text)", [["set_value", "Data!B1", "y"]]),
+    ("delete rows Data!3", [["delete_rows", "Data!3"]]),
+    ("delete rows Data!5 (the cell FORMULATEXT and ISFORMULA ask about)", [["delete_rows", "Data!5"]]),
+    ("delete columns Data!B", [["delete_columns", "Data!B"]]),
+    ("delete rows Calc!2", [["delete_rows", "Calc!2"]]),
+]
+# A formula that reads cells at run time (`INDIRECT`) next to formulas that cache results the engine would not give: `LibreOffice` calculates
+# the first when it opens the file, and what reads it, and the others keep what the file caches.
+INDIRECT = [
+    ("hide columns Data!H (no edit: no cell is in it)", [["hide_columns", "Data!H"]]),
+    ("delete rows Data!3", [["delete_rows", "Data!3"]]),
+    ("delete columns Data!D", [["delete_columns", "Data!D"]]),
+    ("write 25 in Data!A2", [["set_value", "Data!A2", 25]]),
+    ("write y in Data!B1 (what the INDIRECT counts)", [["set_value", "Data!B1", "y"]]),
+]
+# `visibility`: rows 3-4, 6 and 10-14 of `Data` are hidden in the file (10-13 are one repeated row of an ODS; 6 and 10-14 are empty). LibreOffice
+# dirties the formulas of the rows whose visibility CHANGES: hiding a hidden row or showing a visible one reaches nothing.
+VISIBILITY = [
+    ("hide rows Data!3 (already hidden)", [["hide_rows", "Data!3"]]),
+    ("show rows Data!2 (already visible)", [["show_rows", "Data!2"]]),
+    ("hide rows Data!2 (visible)", [["hide_rows", "Data!2"]]),
+    ("show rows Data!3 (hidden)", [["show_rows", "Data!3"]]),
+    ("hide rows Data!2:4 (two of them hidden already)", [["hide_rows", "Data!2:4"]]),
+    ("show rows Data!3:5 (two of them hidden)", [["show_rows", "Data!3:5"]]),
+    ("show rows Data!6 (hidden and empty, between values)", [["show_rows", "Data!6"]]),
+    ("hide rows Data!16 (visible and empty, past the last value)", [["hide_rows", "Data!16"]]),
+    ("hide rows Data!5:7", [["hide_rows", "Data!5:7"]]),
+    ("show rows Data!10:15 (hidden empty rows and a visible value)", [["show_rows", "Data!10:15"]]),
+    ("hide rows Data!11 (inside a repeated hidden row)", [["hide_rows", "Data!11"]]),
+    ("show rows Data!12 (inside a repeated hidden row)", [["show_rows", "Data!12"]]),
+    ("hide rows Data!9:12 (partly hidden)", [["hide_rows", "Data!9:12"]]),
+    ("hide Data!2 and show Data!2 (in one plan)", [["hide_rows", "Data!2"], ["show_rows", "Data!2"]]),
+    ("hide Data!3 and show Data!3 (hidden already)", [["hide_rows", "Data!3"], ["show_rows", "Data!3"]]),
+    ("hide Data!2:3 and show Data!3:4", [["hide_rows", "Data!2:3"], ["show_rows", "Data!3:4"]]),
+]
+FIXTURES = [("book", BOOK), ("rules", RULES), ("refs", REFS), ("preref", PREREF), ("dirty", DIRTY), ("classes", CLASSES), ("indirect", INDIRECT), ("visibility", VISIBILITY)]
 
 
 def pv(name, value):
@@ -133,11 +276,11 @@ def columns_of(spec):
 
 
 def apply_lo(doc, operations, calculate_all=True):
-    """The operations on the loaded document, in a fixed order: the replacements,
+    """The operations on the loaded document, in the order of the planner: the replacements, the visibility,
     the conversions, then the deletions of rows and of columns (from the last to the first), the names and
-    the sheets. With `calculate_all` a conversion is of what the formulas give after `calculateAll()`;
-    without it, of what the cells hold (the results the file caches plus what the edit made LibreOffice
-    calculate)."""
+    the sheets. With `calculate_all` a conversion is of what the formulas give after `calculateAll()` (the
+    mode `calculate_all` of `sheetrs`); without it, of what the cells hold (the results the file caches
+    plus what the edit made LibreOffice calculate: the default mode)."""
     by_name = {}
     for name, *args in operations:
         by_name.setdefault(name, []).append(args[0])
@@ -159,6 +302,21 @@ def apply_lo(doc, operations, calculate_all=True):
         d.SearchCaseSensitive = False
         d.SearchWords = False
         target.replaceAll(d)
+    for name, *args in operations:
+        verb, _, kind = name.partition("_")
+        if verb not in ("hide", "show"):
+            continue
+        visible = verb == "show"
+        if kind == "rows":
+            sheet, first, last = rows_of(args[0])
+            for r in range(first, last + 1):
+                sheets.getByName(sheet).Rows.getByIndex(r).IsVisible = visible
+        elif kind == "columns":
+            sheet, first, last = columns_of(args[0])
+            for c in range(first, last + 1):
+                sheets.getByName(sheet).Columns.getByIndex(c).IsVisible = visible
+        elif kind == "sheets":
+            sheets.getByName(args[0]).IsVisible = visible
     if by_name.get("formula_to_value") and calculate_all:
         # With `calculate_all` a conversion is of what the formulas give, not of what the file caches:
         # LibreOffice calculates them first. Its own load calculates only some of them, and an ODS and an
@@ -181,6 +339,30 @@ def apply_lo(doc, operations, calculate_all=True):
     for name in by_name.get("delete_sheets", []):
         sheets.removeByName(name)
 
+
+def flags(operations, calculate_all=True):
+    """The flags of `sheetrs edit` for the edit, `None` when it has an operation that only the API has."""
+    if any(name == "set_value" for name, *_ in operations):
+        return None
+    out = ["edit"] + (["--calculate-all"] if calculate_all else [])
+    groups = {}
+    replaces = []
+    for name, *args in operations:
+        if name == "replace":
+            replaces.append(args[0])
+        else:
+            groups.setdefault(name, []).append(args[0])
+    command = []
+    for name, values in groups.items():
+        command += ["--" + name.replace("_", "-"), *values]
+    # Each replacement is a search of its own: they share the options, so every edit here has one.
+    for spec in replaces:
+        command += ["--replace", spec["text"], "--with", spec["with"], "--scope", spec["scope"]]
+        if spec.get("regex"):
+            command += ["--regex"]
+        if spec.get("in"):
+            command += ["--in", spec["in"]]
+    return out + command
 
 
 def differences(expected, opened):
@@ -221,7 +403,6 @@ def same_value(a, b):
     return a == b
 
 
-
 def main(only):
     """`only`: the fixtures to make again (their entries replace the ones of the `oracle.json` that is there)."""
     path = os.path.join(HERE, "oracle.json")
@@ -237,8 +418,9 @@ def main(only):
             source = os.path.join(ASSETS, f"{fixture}.{extension}")
             results = []
             for label, operations in edits:
-                # No `calculateAll()`: the edit on the loaded file, saved and opened again; LibreOffice keeps what the
-                # file caches and calculates what the edit reaches (and what it calculates on load).
+                # THE DEFAULT MODE: the edit on the loaded file, no `calculateAll()`, saved and opened again:
+                # LibreOffice keeps what the file caches and calculates what the edit reaches (and what it
+                # calculates on load).
                 doc = load(source)
                 apply_lo(doc, operations, calculate_all=False)
                 with tempfile.TemporaryDirectory() as folder:
@@ -248,6 +430,18 @@ def main(only):
                     doc = load(own)
                     reread_default = dump(doc)
                     doc.close(True)
+                    command = flags(operations, calculate_all=False)
+                    if command is None:
+                        written_default = None
+                    else:
+                        out = os.path.join(folder, f"default_out.{extension}")
+                        done = subprocess.run([SHEETRS, *command, "-i", source, "-o", out],
+                                              capture_output=True, text=True)
+                        if done.returncode != 0:
+                            sys.exit(f"{fixture}.{extension} {label}: {done.stderr}")
+                        doc = load(out)
+                        written_default = dump(doc)
+                        doc.close(True)
                 doc = load(source)
                 apply_lo(doc, operations)
                 doc.calculateAll()
@@ -261,18 +455,37 @@ def main(only):
                     doc.calculateAll()
                     reread_hard = dump(doc)
                     doc.close(True)
+                    out = os.path.join(folder, f"out.{extension}")
+                    command = flags(operations)
+                    if command is None:
+                        written = opened = None
+                    else:
+                        done = subprocess.run([SHEETRS, *command, "-i", source, "-o", out],
+                                              capture_output=True, text=True)
+                        if done.returncode != 0:
+                            sys.exit(f"{fixture}.{extension} {label}: {done.stderr}")
+                        doc = load(out)
+                        written = dump(doc)
+                        doc.calculateAll()
+                        opened = dump(doc)
+                        doc.close(True)
                 results.append({
                     "label": label,
                     "operations": operations,
                     "reread": reread,
                     "reread_default": reread_default,
+                    "differences_default": [] if written_default is None
+                    else differences(reread_default, written_default),
                     "cache_differences": differences(reread, reread_hard),
+                    "differences": [] if written is None else differences(reread, written),
+                    "hard_differences": [] if opened is None else differences(reread_hard, opened),
                     "in_memory_differences": differences(reread, in_memory),
                 })
                 r = results[-1]
-                print(f"{fixture}.{extension} {label}: {len(r['cache_differences'])} cells where the re-read "
-                      f"changes when calculated, {len(r['in_memory_differences'])} (informational) in memory",
-                      flush=True)
+                print(f"{fixture}.{extension} {label}: {len(r['differences'])} differences from the re-read, "
+                      f"{len(r['hard_differences'])} after calculating both, {len(r['cache_differences'])} "
+                      f"cells where the re-read changes when calculated, {len(r['in_memory_differences'])} "
+                      f"(informational) in memory", flush=True)
             oracle["fixtures"][fixture][extension] = {"edits": results}
     with open(path, "w") as f:
         json.dump(oracle, f, indent=1, sort_keys=True)

@@ -196,6 +196,35 @@ pub fn fill_template_to(
     write_cells_to(&filled.writes, template, out)
 }
 
+/// [`fill_template_to`] with what else the same pass over the file does: `also` are the modifications
+/// (formulas converted to values, rows, columns, sheets and names deleted) the writer applies as it
+/// writes the results, against the workbook as it is. A formula that `also` converts to its value
+/// becomes the result the program gave it, not the one the file cached. `also` holds no replacement
+/// of its own: the results are the replacements.
+///
+/// # Errors
+///
+/// As [`fill_template_to`], and what the writer finds in `also`.
+pub fn fill_template_to_also(
+    template: &Book,
+    program: &Program,
+    base: Option<&dyn ConstSource>,
+    request: &Json,
+    overrides: &Overrides,
+    also: &WorkbookModifications,
+    mut out: impl std::io::Write,
+) -> Result<Written> {
+    let filled = fill(template, program, base, request, overrides, false)?;
+    let mut mods = also.clone();
+    mods.replacements.clone_from(filled.writes.sheets());
+    let bytes = template.modify_to_bytes(&mods)?;
+    out.write_all(&bytes)
+        .map_err(sheetrs_io::write::Error::from)?;
+    Ok(Written {
+        cells: filled.writes.len(),
+    })
+}
+
 /// [`fill_template_with_answer`] that writes the bytes of the workbook to `out`, in memory.
 ///
 /// **Ranges outside the outputs.** In the embedded mode (the workbook is its own template) the
@@ -376,6 +405,39 @@ fn fill_with_outside(
     ))
 }
 
+/// The runs of `runs` (in the order of the positions) that no rectangle of `rects` holds, each as a rectangle of one row. One
+/// sweep by sheet and row, as the writer of the cells does: the cost does not grow with the rectangles times the runs.
+fn uncovered_runs(rects: &[Rect], runs: &[sheetrs_engine::ir::CellRun]) -> Vec<Rect> {
+    let mut by_start: Vec<usize> = (0..rects.len()).collect();
+    by_start.sort_by_key(|&i| (rects[i].sheet, rects[i].r0));
+    let (mut next, mut open, mut at_sheet) = (0, Vec::<usize>::new(), None);
+    let mut out = Vec::new();
+    for run in runs {
+        if at_sheet != Some(run.sheet) {
+            at_sheet = Some(run.sheet);
+            open.clear();
+            while next < by_start.len() && rects[by_start[next]].sheet < run.sheet {
+                next += 1;
+            }
+        }
+        while next < by_start.len()
+            && rects[by_start[next]].sheet == run.sheet
+            && rects[by_start[next]].r0 <= run.row
+        {
+            open.push(by_start[next]);
+            next += 1;
+        }
+        open.retain(|&i| rects[i].r1 >= run.row);
+        let held = open
+            .iter()
+            .any(|&i| rects[i].c0 <= run.first && run.last <= rects[i].c1);
+        if !held {
+            out.push(Rect::new(run.sheet, run.row, run.first, run.row, run.last));
+        }
+    }
+    out
+}
+
 /// The answer of a run that was asked for it (no value ranges when it was not).
 fn answer_of(answer: Option<ValueRanges>) -> ValueRanges {
     answer.unwrap_or_default()
@@ -392,6 +454,9 @@ struct Filled {
 fn modifications(writes: &CellWrites) -> WorkbookModifications {
     WorkbookModifications {
         replacements: writes.sheets().clone(),
+        // What the engine calculated is current: a template that came with the mark to recalculate (`fullCalcOnLoad`)
+        // leaves without it. A workbook the engine could not calculate never gets here.
+        clear_recalculation_mark: true,
         ..WorkbookModifications::default()
     }
 }
@@ -459,7 +524,11 @@ fn fill(
 
     // Where the values of the formulas are read: the outputs of the program (declared, or the
     // formula cells when nothing is declared). Every formula to write lies inside one of them.
-    let rects: Vec<Rect> = program.outputs.iter().map(|b| b.rect).collect();
+    let mut rects: Vec<Rect> = program.outputs.iter().map(|b| b.rect).collect();
+    // A calculation whose answer is the workbook also calculates the formulas the declared outputs do not hold
+    // (`Spec::whole_workbook` of the compiler): each run of them is read as a rectangle of its own.
+    let extra = uncovered_runs(&rects, &program.formula_cells);
+    rects.extend(extra);
     // The inputs given, written back as given (an input is a constant of the template, not an
     // output of the program, so it is not read from the answer).
     let mut written_inputs: Vec<(u16, u32, u32, Json)> = Vec::new();
@@ -468,9 +537,8 @@ fn fill(
         let binding = program.input_range(key).map_err(|e| fail(e.to_string()))?;
         written_inputs.extend(input_cells(&binding.rect, given));
     }
-    if program.formula_cells.is_empty() && written_inputs.is_empty() {
-        return Err(fail("there is no formula or input to write".into()));
-    }
+    // Nothing to write is a calculation that reached no formula (the results the workbook caches are the answer): the
+    // workbook goes out as it is.
     let (answer, matrices) = if with_answer {
         let (answer, matrices) = program
             .handle_with(base, request, overrides, &rects)

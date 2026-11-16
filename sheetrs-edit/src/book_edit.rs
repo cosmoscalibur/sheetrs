@@ -73,7 +73,15 @@ pub trait BookEdit {
     fn delete_names(&mut self, names: impl IntoIterator<Item = impl Into<String>>) -> &mut Self;
 
     /// Replace the formulas of the scopes by the values they have (*Data ▸ Calculate ▸ Formula to
-    /// Value* in `LibreOffice`).
+    /// Value* in `LibreOffice`): by default the results the file caches for the formulas the plan does
+    /// not reach and what the engine calculates for the ones it reaches; with
+    /// [`with_calculate_all`](sheetrs_io::Book::with_calculate_all) the engine calculates the cells of the
+    /// scopes (and what they read) in the pass that writes them as values. A cell that depends on what the engine
+    /// cannot calculate (another workbook, a macro, an extension) keeps the result the file caches, as `LibreOffice`
+    /// shows it until something dirties the cell, and the [`Report`] says so
+    /// ([`EXTERNAL_FROM_CACHE`](crate::EXTERNAL_FROM_CACHE), [`MACRO_FROM_CACHE`](crate::MACRO_FROM_CACHE),
+    /// [`EXTENSION_FROM_CACHE`](crate::EXTENSION_FROM_CACHE)); one the run calculates and that only `LibreOffice` can give
+    /// a result for (a macro, a function the engine lacks) is an error that names the cause.
     fn formula_to_value(&mut self, scopes: impl IntoIterator<Item = ValueScope>) -> &mut Self;
 
     /// Delete rows, in the rows of the workbook; the references to them become `#REF!` and the

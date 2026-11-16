@@ -1,6 +1,7 @@
 """Makes the fixtures of `tests/replace.rs`: `input.{xlsx,ods}` and, for each case of `CASES`,
 `expected_<case>.{xlsx,ods}`, the workbook after LibreOffice itself replaced the text
-(`Sheet.replaceAll`), plus `cases.json`.
+(`Sheet.replaceAll`), plus `cases.json`. Each case is also saved and opened again, and the script fails if the cells
+then differ from the ones in memory (the reference of the project is the workbook opened again, `CONTRIBUTING.md`).
 
 Run it with a LibreOffice listening on a socket (26.8 until another is the reference):
 
@@ -127,6 +128,33 @@ def build_typed():
             c.NumberFormat=k if k!=-1 else fm.addNew(code,loc)
         c.String='T:'+t
     return doc
+def reread_differences(doc,label):
+    """The reference is the workbook saved and opened again (project rule, `CONTRIBUTING.md`): the values of every cell of
+    each sheet in memory after the replacement against those of the file LibreOffice saves, in each format, loaded again.
+    The expected file is the one LibreOffice saves, so what it caches is what a user sees when it is opened again exactly
+    when this finds nothing; what it finds is printed and makes the script fail."""
+    import shutil, tempfile
+    def area(d):
+        out={}
+        for i in range(d.Sheets.Count):
+            sh=d.Sheets.getByIndex(i); cur=sh.createCursor(); cur.gotoEndOfUsedArea(False)
+            r1,c1=cur.RangeAddress.EndRow,cur.RangeAddress.EndColumn
+            out[sh.Name]=sh.getCellRangeByPosition(0,0,c1,r1).getDataArray()
+        return out
+    memory=area(doc); found=[]
+    for ext,flt in (('xlsx','Calc MS Excel 2007 XML'),('ods','calc8')):
+        folder=tempfile.mkdtemp(); tmp=folder+'/step.'+ext
+        doc.storeToURL('file://'+tmp,(pv('FilterName',flt),))
+        again=desktop.loadComponentFromURL('file://'+tmp,'_blank',0,(pv('Hidden',True),))
+        read=area(again); again.close(True); shutil.rmtree(folder,ignore_errors=True)
+        for name,rows in memory.items():
+            for r,row in enumerate(rows):
+                for c,v in enumerate(row):
+                    w=read[name][r][c] if name in read and r<len(read[name]) and c<len(read[name][r]) else None
+                    if isinstance(v,float) and isinstance(w,float) and abs(v-w)<=1e-12*max(1.0,abs(v)): continue  # an XLSX keeps 15 digits
+                    if v!=w: found.append('%s %s %s!%d,%d: %r in memory, %r opened again'%(label,ext,name,r,c,v,w))
+    return found
+REREAD_DIFFERENCES=[]
 def save(doc,stem):
     doc.storeToURL('file://'+OUT+'/'+stem+'.xlsx',(pv('FilterName','Calc MS Excel 2007 XML'),))
     doc.storeToURL('file://'+OUT+'/'+stem+'.ods',(pv('FilterName','calc8'),))
@@ -221,6 +249,9 @@ for c in CASES:
         d.SearchRegularExpression=c.get('mode')=='regex'
         d.SearchWildcard=c.get('mode')=='wildcards'
         t.replaceAll(d)
+    REREAD_DIFFERENCES+=reread_differences(doc,c['name'])
     save(doc,'expected_'+c['name']); doc.close(True)
 json.dump(CASES,open(OUT+'/cases.json','w'),indent=1)
+for line in REREAD_DIFFERENCES: print('IN MEMORY IS NOT RE-READ:',line)
+if REREAD_DIFFERENCES: sys.exit(1)
 print(len(CASES))

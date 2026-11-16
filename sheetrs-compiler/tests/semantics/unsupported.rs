@@ -39,10 +39,29 @@ fn a_function_of_libreoffice_the_engine_lacks_stops_the_build() {
 
 #[test]
 fn syntax_the_parser_does_not_read_stops_the_build() {
-    for f in ["[1]Sheet1!B3", "Table1[Col]", "A1:A5#", "A1 B1"] {
+    for f in ["Table1[Col]", "A1:A5#", "A1 B1"] {
         let e = build_with(f).unwrap_err();
         assert!(e.contains("syntax") && e.contains(f), "{f}: {e}");
     }
+}
+
+#[test]
+fn an_external_reference_keeps_the_stored_value_and_the_build_says_so() {
+    // `LibreOffice` shows the stored value of the link: the cell is not in the program, and the report names it.
+    let r = build_with("[1]Sheet1!B3").unwrap();
+    assert_eq!(r.from_cache.len(), 1, "{:?}", r.from_cache);
+    let note = &r.from_cache[0];
+    assert_eq!(note.kind, sheetrs_compiler::Unsupported::External);
+    assert_eq!((note.cells, note.first.as_str()), (1, "Sheet1!A1"));
+    assert_eq!(note.what, ["[1]Sheet1!B3"]);
+    assert!(
+        r.warnings.iter().any(|w| w.contains("external")),
+        "{:?}",
+        r.warnings
+    );
+    // A structured reference is not one: it has no `!` after the index.
+    let e = build_with("Table1[[#This Row],[1]]").unwrap_err();
+    assert!(!e.contains("another workbook"), "{e}");
 }
 
 #[test]

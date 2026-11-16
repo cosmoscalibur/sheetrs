@@ -15,7 +15,7 @@
 //! | `sheetc verify -i FILE` (`--reference cache`) | [`BookCompile::verify`] |
 //! | `sheetc evaluate FORMULA` | [`evaluate`] |
 
-use crate::compile::{Report, compile};
+use crate::compile::{Cache, Only, Report, compile};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::loader;
@@ -37,6 +37,22 @@ pub struct Options {
     /// The declarations of inputs and outputs as the JSON text of a `settings_file`; they replace
     /// the settings sheet.
     pub declarations: Option<String>,
+    /// For [`Mode::Recalculate`]: calculate only what these changes reach, and keep the results the
+    /// workbook caches for the rest (see [`Cache`]); with `calculate_all` every formula is calculated.
+    pub cache: Cache,
+    /// For [`Mode::Recalculate`]: calculate only the formulas inside these cells and what they read, and
+    /// write only them (see [`Only`]).
+    pub only: Vec<Only>,
+    /// The inputs a calculation is given (the keys of the `inputs` of its request): when the workbook declares
+    /// no inputs, they are the declared inputs of the build, so that what they do not reach is folded as the
+    /// result the workbook stores. [`BookCompile::calculate`] fills it.
+    pub request_inputs: Vec<String>,
+    /// Set by a calculation, with the `ranges` of its request (none when it asks for none); `None` for a build.
+    /// A calculation declares what it is asked and nothing more (see [`Spec::whole_workbook`](crate::Spec)): when
+    /// the workbook is the answer (an embedded or recalculated workbook) it declares only its inputs, and every
+    /// formula it reaches is calculated and written (`Spec::whole_workbook`; a build does not set it); with no workbook the ranges asked are the declared outputs of the build when the
+    /// workbook declares none, so what they do not read is out of the program (and may stay stale).
+    pub request_outputs: Option<Vec<String>>,
 }
 
 impl Options {
@@ -69,6 +85,10 @@ impl Options {
         Ok(Self {
             config,
             declarations,
+            cache: Cache::default(),
+            only: Vec::new(),
+            request_inputs: Vec::new(),
+            request_outputs: None,
         })
     }
 
@@ -78,6 +98,29 @@ impl Options {
             None => self.config.spec(model)?,
         };
         spec.mode = mode;
+        spec.cache.clone_from(&self.cache);
+        spec.only.clone_from(&self.only);
+        // The inputs of a calculation are its declared inputs, unless the workbook declares them.
+        if !spec.inputs_declared && spec.inputs.is_empty() && !self.request_inputs.is_empty() {
+            spec.inputs = self
+                .request_inputs
+                .iter()
+                .map(|key| crate::compile::BindingSpec::parse(key))
+                .collect();
+            spec.inputs_declared = true;
+        }
+        if let Some(ranges) = &self.request_outputs {
+            // A calculation: what it was given is all that can change (a build is run later with any declared input).
+            spec.given_inputs = Some(self.request_inputs.clone());
+            if mode.is_workbook() {
+                spec.whole_workbook = true;
+            } else if spec.outputs.is_empty() {
+                spec.outputs = ranges
+                    .iter()
+                    .map(|range| crate::compile::BindingSpec::parse(range))
+                    .collect();
+            }
+        }
         Ok(spec)
     }
 
@@ -91,6 +134,10 @@ impl Options {
         let mut options = self.clone();
         options.config.now = options.config.now.or(volatile.now);
         options.config.seed = options.config.seed.or(volatile.seed);
+        options.config.calculate_all = options
+            .config
+            .calculate_all
+            .or(book.calculate_all().then_some(true));
         options
     }
 
@@ -101,6 +148,7 @@ impl Options {
             now: self.config.now,
             rand_seed: self.config.seed,
             host: self.config.host.clone().unwrap_or_default(),
+            calculate_all: self.config.calculate_all.unwrap_or(false),
         }
     }
 }
@@ -341,6 +389,20 @@ fn calculate(
     mode: Mode,
     with_json: bool,
 ) -> Result<Calculated> {
+    // `force_calculate_all` is an option of a build: a calculation has no program to keep.
+    let mut options = options.clone();
+    options.config.force_calculate_all = None;
+    if let Some(Json::Object(inputs)) = request.get("inputs") {
+        options.request_inputs = inputs.keys().cloned().collect();
+    }
+    options.request_outputs = Some(match request.get("ranges") {
+        Some(Json::Array(ranges)) => ranges
+            .iter()
+            .filter_map(|range| range.as_str().map(str::to_string))
+            .collect(),
+        _ => Vec::new(),
+    });
+    let options = &options;
     let (program, _) = build(source, options, mode)?;
     let overrides = options.with_book(source).overrides();
     let diagnostics = program.diagnostics.clone();

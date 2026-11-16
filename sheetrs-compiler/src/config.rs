@@ -45,6 +45,16 @@ pub struct Config {
     /// Refuse what the compiler cannot reproduce (macros); default true. When
     /// false they are reported and the build goes on.
     pub strict: Option<bool>,
+    /// Emulates `calculateAll()` of `LibreOffice` (`calculate_all`): the whole workbook is calculated first,
+    /// the constants a build folds are the results of that calculation and are stored as the cache of the
+    /// formulas it keeps, and a run ignores the cache. Off by default: the values the workbook stores
+    /// are the constants and the cache (what `LibreOffice` does when it opens a file).
+    #[serde(alias = "calculate-all")]
+    pub calculate_all: Option<bool>,
+    /// A build only (`force_calculate_all`): the program stores no cache for the formulas it keeps, so it
+    /// calculates all of them in every run, and is lighter. It has no effect on `calculate`.
+    #[serde(alias = "force-calculate-all")]
+    pub force_calculate_all: Option<bool>,
     /// Fixed value of `NOW()`, as a serial number (`TODAY()` is its integer part); absent, the clock.
     pub now: Option<f64>,
     /// Seed of `RAND()` and its relatives; absent, seeded from the clock.
@@ -92,6 +102,8 @@ impl Config {
             settings: self.settings.or(base.settings),
             settings_file: self.settings_file.or(base.settings_file),
             strict: self.strict.or(base.strict),
+            calculate_all: self.calculate_all.or(base.calculate_all),
+            force_calculate_all: self.force_calculate_all.or(base.force_calculate_all),
             now: self.now.or(base.now),
             seed: self.seed.or(base.seed),
             host: match (self.host, base.host) {
@@ -189,6 +201,8 @@ impl Config {
             now: self.now,
             rand_seed: self.seed,
             host: self.host.clone().unwrap_or_default(),
+            calculate_all: self.calculate_all.unwrap_or(false),
+            force_calculate_all: self.force_calculate_all.unwrap_or(false),
             features: match &self.enable_features {
                 None => Features::default(),
                 Some(names) => Features::parse(names)?,
@@ -201,11 +215,13 @@ impl Config {
         spec.notes = notes;
         if model.macros {
             if self.strict.unwrap_or(true) {
-                return Err(Error::Config(
-                    "the workbook contains macros, which are never run, so what depends on them would differ; \
-                     build with --no-strict (strict = false) to compile anyway"
+                return Err(Error::Unsupported {
+                    kind: crate::compile::Unsupported::Macro,
+                    message: "the workbook contains macros, which are never run, so what depends on them would differ; \
+                              build with --no-strict (strict = false) to compile anyway: the cells that call a function a macro may define \
+                              keep the result the file caches, as LibreOffice does until something dirties them"
                         .into(),
-                ));
+                });
             }
             spec.notes.push(
                 "warning: the workbook contains macros; they are ignored (strict mode is off)"

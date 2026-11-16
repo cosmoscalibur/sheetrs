@@ -105,12 +105,12 @@ fn editor(source: &Book, case: &Json) -> Book {
     editor
 }
 
-/// A formula as the file spells it: the reference that went reads `Data!#REF!` in an XLSX and
-/// `#REF!` in an ODS, and a range of one cell (`A1:A1`) is that cell.
+/// A formula as the file spells it: the reference that went reads `#REF!` in both formats, and a range of one cell (`A1:A1`) is that cell.
 fn norm(formula: &str) -> String {
-    let gone = regex::Regex::new(r"(?:'[^']+'|[A-Za-z0-9_.]+)!#REF!").unwrap();
+    // The file that `LibreOffice` saves after it opened the bare `#REF!` of an XLSX again holds the unknown
+    // name it read, `#ref!`: the same error in another case.
+    let formula = formula.replace("#ref!", "#REF!");
     let one = regex::Regex::new(r"(\$?[A-Z]+\$?[0-9]+):(\$?[A-Z]+\$?[0-9]+)").unwrap();
-    let formula = gone.replace_all(formula, "#REF!");
     one.replace_all(&formula, |c: &regex::Captures| {
         if c[1] == c[2] {
             c[1].to_string()
@@ -171,7 +171,19 @@ fn structure(workbook: &Workbook) -> Vec<String> {
     }
     let mut names: Vec<_> = workbook.defined_names.iter().collect();
     names.sort();
-    let names: Vec<_> = names.iter().map(|(n, v)| (n.as_str(), norm(v))).collect();
+    // The file LibreOffice saves after it read the bare `#REF!` of a name again holds it as the unknown name
+    // `#ref!`: the same error, in another case.
+    let names: Vec<_> = names
+        .iter()
+        .map(|(n, v)| {
+            let v = if v.eq_ignore_ascii_case("#REF!") {
+                "#REF!"
+            } else {
+                v.as_str()
+            };
+            (n.as_str(), norm(v))
+        })
+        .collect();
     out.push(format!("names={names:?}"));
     out
 }
@@ -224,6 +236,8 @@ fn notes(path: &Path) -> BTreeMap<(String, String), String> {
 fn check(extension: &str, case: &Json) -> Vec<String> {
     let name = case["name"].as_str().unwrap();
     let dir = tempfile::tempdir().unwrap();
+    // The book has a reference to another workbook (`Summary!A8`), which the engine does not open: what the edits are
+    // compared with is the workbook `LibreOffice` leaves, where that cell keeps the result it cached.
     let source = Book::from_file(asset(&format!("book.{extension}"))).unwrap();
     let out = dir.path().join(format!("{name}.{extension}"));
     let report = match editor(&source, case).write(&out) {
@@ -417,7 +431,7 @@ fn writing_in_place_gives_what_libreoffice_gives() {
                 formula == wformula
                     && array == warray
                     && (formula.is_some() || same(value, wvalue)),
-                "{extension} {key:?}"
+                "{extension} {key:?}: {formula:?} {wformula:?}"
             );
         }
     }

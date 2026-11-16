@@ -278,6 +278,10 @@ sheetrs edit -i input.xlsx --delete-names "OldRange" --output cleaned.xlsx
 
 # Freeze the inputs sheet and columns B:D of the model as values
 sheetrs edit -i master.xlsx --formula-to-value "Inputs" "Model!B:D" --output run.xlsx
+# (by default, as LibreOffice does, the results the file caches are converted for the cells nothing reaches, and what
+# the engine calculates for the ones the edit reaches; with --calculate-all the engine calculates what it converts. A cell
+# that depends on another workbook, a macro or an extension keeps the cached result, as LibreOffice does, and the report
+# says so; one the run calculates that only LibreOffice can answer (a macro, WEBSERVICE) is an error that names it)
 
 # Replace text in a sheet; the replacement is entered as if it were typed (12 makes a number)
 sheetrs edit -i book.ods --replace "2023" --with "2024" --scope Data --in-place

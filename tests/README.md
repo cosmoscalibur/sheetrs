@@ -86,3 +86,37 @@ standard library only, no application) holds `V!A1 =NOW()`, `V!B1 =TODAY()`, `V!
 to delete, with no cached result: the tests of `now` and `seed` of `calculate` (Rust, `sheetrs edit`,
 Python, WebAssembly) read what the engine writes into it. `sheetrs-compiler/tests/assets/volatile.{xlsx,ods}` are
 copies of the same two files (the tests of `sheetc` flags and of the `Book` in memory read them).
+
+`sheetrs-edit/tests/assets/cached/*.{xlsx,ods}` (`make_fixtures.py`: openpyxl builds the XLSX, LibreOffice
+makes the ODS, `fixture_determinism.normalize` fixes the bytes; run it twice and compare) are the workbooks of the
+tests of the calculation mode (`sheetrs-edit/tests/calculation_mode.rs`, `sheetrs-cli/tests/edit_calculate_all.rs`). Their formulas cache
+a result the engine would not give, so that a formula that kept its cache is told from one calculated again:
+`book`, `indirect`, `repro` and `array` are the cases of the feature; `volatile` (`TODAY()`, `NOW()`, `RAND()`),
+`rules` (a whole row, `ROW()`, `SHEET()`, a defined name, a sheet to delete), `refs` (every function of a family over
+a reference that an edit removes: whole column, whole row, range, one cell), `dirty` (every kind of formula over `Data` that a deletion
+of rows, columns, a sheet or a name reaches or leaves alone, every result cached as the text `S`: what `LibreOffice` calculates again and what it keeps, in both
+formats; `write_to/probe_dirty.py` prints the table), `quarter` (40 formulas over `Data!A1:A80`: many of them stale at once, where the cache is still used) and `runs` (the rectangles of 65 separate and of 70 adjacent replaced cells),
+`preref` (an error written in a formula next to references to deleted cells and sheets) and `limit` (a `TEXT` code of another
+language: a formula the engine does not calculate, where a run marks the workbook) each pin a rule that decides which formulas an edit reaches (a test fails when the rule is off).
+
+`sheetrs-edit/tests/assets/write_to/oracle.json` (`make_oracle.py`, run with the Python of LibreOffice and a
+`scripts/libreoffice-server.sh` listening) is what `sheetrs-edit/tests/write_to_libreoffice.rs` compares the in-memory
+write (`BookEdit::write_to`, Python and WebAssembly) with. **The reference is the workbook saved and opened again** (the
+rule of the project, `CONTRIBUTING.md`, *Parity and fidelity*): for `book`, `rules`, `refs` and `preref` of `cached/`, in both
+formats, LibreOffice itself makes each edit (rows, columns, sheets and names deleted, values written, replacements with
+anchors, rows, columns and sheets hidden and shown, formulas converted to values), calculates every formula, saves the file and
+opens it again: `reread` holds the cells, hidden rows and columns and sheet visibility it shows then (the default load), and
+`cache_differences` where a hard recalculation (`calculateAll`) of that file shows another value (none, in every case of the
+oracle). `differences` and `hard_differences` are what LibreOffice shows of the file `sheetrs edit` writes (default load and
+after `calculateAll`) against `reread`. `in_memory_differences` records where the memory of LibreOffice right after the edit is
+not `reread`: INFORMATIONAL only, nothing compares with it (it is the evidence that the memory is not a reference).
+`reread_default` and `differences_default` are the same for the default mode (no `calculateAll()` before the save, and the file
+of `sheetrs edit` without `--calculate-all`): the cases where they differ are listed in `DEFAULT_DIFFERENCES` of
+`write_to_libreoffice.rs` and proposed, not approved (`docs/approved-differences.md`); in the mode `calculate_all` the only
+difference is the text of a qualified `Data!#REF!` that a run does not touch (proposed). The scripts that make the other expected workbooks of the edits
+(`sheetrs-edit/scripts/gen_book_fixtures.py`, `gen_recalculation_fixtures.py`, `make_shapes_oracle.py`,
+`compare_structure_with_libreoffice.py`, `sheetrs-edit/tests/assets/replace/make_fixtures.py`,
+`replace_anchors/make_anchors_oracle.py`) save what LibreOffice leaves after each operation and open it again before they
+read or keep it. `sheetrs-edit/tests/assets/from_cache/` (`make_fixtures.py`, `make_external.py`) are the
+workbooks, in both formats, of `tests/from_cache.rs`: another workbook, a macro and an extension; `probe.py` there is the probe of `LibreOffice` that the
+table of `FIDELITY.md` (*What depends on what the engine cannot calculate*) is from.

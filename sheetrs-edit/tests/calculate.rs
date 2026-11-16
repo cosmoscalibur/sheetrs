@@ -19,11 +19,13 @@ fn structure(extension: &str) -> PathBuf {
         .join(format!("book.{extension}"))
 }
 
-/// The editor workbook: it has an external reference the engine cannot calculate.
+/// A workbook with a formula the engine does not calculate (a `TEXT` code of another language, which it has no
+/// names for). It is none of the three things that depend on what the engine cannot calculate (another workbook, a
+/// macro, an extension: `tests/from_cache.rs`): a run that has to calculate marks it to be recalculated.
 fn external(extension: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/assets/book")
-        .join(format!("book.{extension}"))
+        .join("tests/assets/cached")
+        .join(format!("limit.{extension}"))
 }
 
 fn editor(path: &Path) -> Book {
@@ -131,7 +133,7 @@ fn a_deletion_alone_has_its_stale_results_calculated_and_no_mark() {
 
 #[test]
 fn the_mark_is_only_where_the_engine_fails_and_the_report_says_why() {
-    // The `book` workbook has an external reference the engine cannot calculate: the deletion leaves
+    // The `limit` workbook has a formula the engine cannot calculate: the deletion leaves
     // results stale, the engine fails at calculating them again, and then (and only then) the
     // workbook is marked to be recalculated when it is opened.
     for extension in EXTENSIONS {
