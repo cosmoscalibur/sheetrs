@@ -69,11 +69,12 @@ pub struct Args {
     )]
     pub property: Vec<Prop>,
 
-    /// Keep only the cells where this text is found (as `LibreOffice`'s Find & Replace finds it)
+    /// Keep only the cells where this text is found (as `LibreOffice`'s Find & Replace finds it); the
+    /// empty text matches nothing
     #[arg(long, value_name = "TEXT")]
     pub find: Option<String>,
 
-    /// The search is a regular expression (ICU, the subset that is reproduced)
+    /// The search is a regular expression (ICU, the subset that is reproduced; `^` and `$` anchor the text of the cell, and the pattern may match the empty text: that match is a hit only at the end of the text)
     #[arg(long, conflicts_with = "wildcards")]
     pub regex: bool,
 

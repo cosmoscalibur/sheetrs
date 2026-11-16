@@ -224,7 +224,7 @@ fn a_scope_that_names_a_missing_sheet_and_a_pattern_that_is_not_reproduced_are_e
             [Replace {
                 find: Find {
                     mode: Mode::Regex,
-                    ..Find::literal("^a")
+                    ..Find::literal("\\bfoo")
                 },
                 with: "b".into(),
             }],

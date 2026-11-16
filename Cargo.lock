@@ -2413,7 +2413,7 @@ version = "0.4.1"
 dependencies = [
  "anyhow",
  "clap",
- "regex",
+ "fancy-regex 0.19.2",
  "serde_json",
  "sheetrs-engine",
  "sheetrs-formula",

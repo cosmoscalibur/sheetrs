@@ -196,6 +196,11 @@ impl BookQuery for Book {
 /// When the workbook cannot be read, the query names a sheet it does not have, the locale is
 /// unknown, or the search is one the matcher does not reproduce.
 pub(crate) fn run(source: &Book, query: &Query) -> Result<QueryResponse> {
+    // The empty search text matches nothing (`LibreOffice`'s `findAll` gives no cell): answered
+    // before anything is read or compiled.
+    if query.find.as_ref().is_some_and(Find::matches_nothing) {
+        return Ok(QueryResponse { cells: Vec::new() });
+    }
     let wants = |p: Property| query.properties.contains(&p);
     let searching = query.find.is_some();
     // Only the value is given as a date, and only when it is asked for.
@@ -254,7 +259,7 @@ pub(crate) fn run(source: &Book, query: &Query) -> Result<QueryResponse> {
     let matcher = query
         .find
         .as_ref()
-        .map(|f| Matcher::new(f).map(|m| (f, m)))
+        .map(|f| Matcher::for_find(f).map(|m| (f, m)))
         .transpose()?;
 
     // A search in formulas needs the name of the sheet of each cell (the formula says `$Sheet.A1`

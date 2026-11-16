@@ -68,6 +68,14 @@ pub struct Find {
 }
 
 impl Find {
+    /// Whether the search cannot find anything: the empty text matches nothing, in every mode, as
+    /// in `LibreOffice` (`findAll` returns no cell and `replaceAll` changes none). A caller answers
+    /// it before reading the workbook.
+    #[must_use]
+    pub fn matches_nothing(&self) -> bool {
+        self.text.is_empty()
+    }
+
     #[must_use]
     pub fn literal(text: impl Into<String>) -> Self {
         Self {
