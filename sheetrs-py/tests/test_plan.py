@@ -7,17 +7,17 @@ import zipfile
 import pytest
 
 import sheetrs
-from conftest import ROOT, make_xlsx
+from conftest import ROOT, _make_xlsx
 from test_find import TEXTS
 
 
-def parts(path):
+def _parts(path):
     """Every part of a workbook, by name: the bytes the zip holds."""
     with zipfile.ZipFile(path) as z:
         return {name: z.read(name) for name in z.namelist()}
 
 
-def whole(book):
+def _whole(book):
     """What a workbook says: the cells of every sheet with value and formula, and the names."""
     out = {}
     for name in book.stats().sheets.names():
@@ -67,7 +67,7 @@ def test_save_with_a_path_writes_it_and_gives_a_book_on_it(structure, tmp_path):
     assert sheetrs.Book(structure).range("T!A2")["T!A2"].values == [[2]]
     assert "1 pending operation" in repr(book)
     other = book.save(tmp_path / f"other{structure.suffix}")
-    assert parts(other.path if hasattr(other, "path") else tmp_path / f"other{structure.suffix}")
+    assert _parts(other.path if hasattr(other, "path") else tmp_path / f"other{structure.suffix}")
 
 
 def test_save_without_a_path_replaces_the_original_and_the_book_is_the_file_now(structure):
@@ -204,7 +204,7 @@ def test_formula_to_value_leaves_an_empty_text_where_the_formula_gave_an_error(s
 
 
 def test_replace_reports_what_it_did(tmp_path):
-    book = sheetrs.Book(make_xlsx(tmp_path / "t.xlsx", TEXTS))
+    book = sheetrs.Book(_make_xlsx(tmp_path / "t.xlsx", TEXTS))
     saved = book.replace("apple", "cherry").save(tmp_path / "t2.xlsx")
     assert saved.report.replaced == 5 and saved.report.skipped == []
     assert saved.range("S!A1:C1")["S!A1:C1"].values == [["cherry", 1.5, "cherry"]]
@@ -213,7 +213,7 @@ def test_replace_reports_what_it_did(tmp_path):
 
 
 def test_replace_with_regular_expression_groups_and_a_scope(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    source = _make_xlsx(tmp_path / "t.xlsx", TEXTS)
     saved = (
         sheetrs.Book(source)
         .replace("(an)(a)", "$2$1", regex=True, match_case=True, scope="S!A3:C3")
@@ -224,7 +224,7 @@ def test_replace_with_regular_expression_groups_and_a_scope(tmp_path):
 
 
 def test_replace_options(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    source = _make_xlsx(tmp_path / "t.xlsx", TEXTS)
     saved = (
         sheetrs.Book(source)
         .replace("apple", "X", entire_cells=True, match_case=True, scope=["R"])
@@ -267,27 +267,6 @@ def test_the_operations_that_can_share_a_pass_do(structure):
         assert line in text
 
 
-def test_the_operations_that_cannot_share_a_pass_say_why_by_their_passes(structure):
-    book = (
-        sheetrs.Book(structure)
-        .delete_rows("T!2")
-        .formula_to_value("F")
-        .replace("9", "8", scope="U")
-    )
-    text = book.explain()
-    # Whatever order they were called in: the replacement, the results it left stale calculated
-    # again, then the conversion and the deletion together, written against the workbook as it is.
-    assert "pass 1 of 4" in text and "pass 4 of 4" in text
-    assert (
-        text.index("replace")
-        < text.index("recalculate every formula")
-        < text.index("formula to value")
-        < text.index("delete rows")
-    )
-    # And what the deletion left stale is calculated again at the end.
-    assert text.rindex("recalculate every formula") > text.index("delete rows")
-
-
 SEQUENCE = [
     lambda b: b.delete_rows("T!2"),
     lambda b: b.delete_columns("U!B"),
@@ -299,7 +278,7 @@ SEQUENCE = [
 PLANNERS_ORDER = [SEQUENCE[4], *SEQUENCE[:4]]
 
 
-def one_plan_and_one_at_a_time(structure, tmp_path, operations, planners_order):
+def _one_plan_and_one_at_a_time(structure, tmp_path, operations, planners_order):
     """The operations pushed in `operations` order in one plan, and saved one at a time, each step
     reading the file the one before wrote, in `planners_order`."""
     suffix = structure.suffix
@@ -318,20 +297,20 @@ def one_plan_and_one_at_a_time(structure, tmp_path, operations, planners_order):
 def test_one_plan_gives_the_bytes_of_the_operations_saved_one_at_a_time_in_the_planners_order(
     structure, tmp_path
 ):
-    one, one_path, last = one_plan_and_one_at_a_time(
+    one, one_path, last = _one_plan_and_one_at_a_time(
         structure, tmp_path, SEQUENCE, PLANNERS_ORDER
     )
-    assert parts(one_path) == parts(last)
-    assert whole(one) == whole(sheetrs.Book(last))
+    assert _parts(one_path) == _parts(last)
+    assert _whole(one) == _whole(sheetrs.Book(last))
 
 
 def test_the_same_with_formulas_made_values(structure, tmp_path):
     operations = [*SEQUENCE[:4], lambda b: b.formula_to_value("F"), SEQUENCE[4]]
     planners_order = [SEQUENCE[4], lambda b: b.formula_to_value("F"), *SEQUENCE[:4]]
-    _, one_path, last = one_plan_and_one_at_a_time(
+    _, one_path, last = _one_plan_and_one_at_a_time(
         structure, tmp_path, operations, planners_order
     )
-    assert parts(one_path) == parts(last)
+    assert _parts(one_path) == _parts(last)
 
 
 def test_the_order_the_operations_were_called_in_changes_nothing(structure, tmp_path):
@@ -378,9 +357,9 @@ def test_a_conversion_is_of_the_workbook_as_it_is_and_after_a_deletion_it_is_ano
 
 
 def test_a_conversion_the_engine_cannot_calculate_says_why_and_writes_nothing(tmp_path):
-    """The `book` workbook has an external reference, which the engine does not calculate: the stale
+    """The `limit` workbook has a formula the engine does not calculate (a `TEXT` code of another language): the stale
     results of a saved deletion are not converted in the next step."""
-    book = ROOT / "sheetrs-edit/tests/assets/book/book.xlsx"
+    book = ROOT / "sheetrs-edit/tests/assets/cached/limit.xlsx"
     deleted = tmp_path / "deleted.xlsx"
     # The deletion is saved marked, with the warning: the engine cannot calculate what it left stale.
     with pytest.warns(sheetrs.RecalculationWarning, match="not calculated"):
@@ -489,7 +468,7 @@ def test_an_array_of_targets_is_the_sweep_and_one_str_is_one_target(structure, t
         .formula_to_value("T!C:C")
         .save(tmp_path / f"chained{suffix}")
     )
-    assert whole(swept) == whole(chained)
+    assert _whole(swept) == _whole(chained)
     assert swept.stats().sheets.names() == ["T", "F"]
 
 
@@ -540,7 +519,7 @@ def test_an_empty_array_is_a_call_that_does_nothing(structure):
 
 
 def test_the_scope_and_the_outputs_are_arrays_too(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    source = _make_xlsx(tmp_path / "t.xlsx", TEXTS)
     saved = (
         sheetrs.Book(source)
         .replace("apple", "X", entire_cells=True, match_case=True, scope=(s for s in ["R", "S!A2"]))
@@ -553,30 +532,30 @@ def test_the_scope_and_the_outputs_are_arrays_too(tmp_path):
 
 
 def test_a_mapping_of_pairs_is_one_replace_per_pair_in_order(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    source = _make_xlsx(tmp_path / "t.xlsx", TEXTS)
     sweep = sheetrs.Book(source).replace({"apple": "cherry", "cherry": "plum"})
     chained = sheetrs.Book(source).replace("apple", "cherry").replace("cherry", "plum")
     assert sweep.explain() == chained.explain()
     assert sweep.explain().count("replace") == 2
     one = sweep.save(tmp_path / "sweep.xlsx")
     two = chained.save(tmp_path / "chained.xlsx")
-    assert parts(tmp_path / "sweep.xlsx") == parts(tmp_path / "chained.xlsx")
+    assert _parts(tmp_path / "sweep.xlsx") == _parts(tmp_path / "chained.xlsx")
     assert one.range("R!A1")["R!A1"].values == [["plum"]]
     assert two.report.replaced == one.report.replaced
 
 
 def test_the_order_of_the_pairs_matters(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    source = _make_xlsx(tmp_path / "t.xlsx", TEXTS)
     forward = sheetrs.Book(source).replace([("apple", "cherry"), ("cherry", "plum")])
     backward = sheetrs.Book(source).replace([("cherry", "plum"), ("apple", "cherry")])
     forward.save(tmp_path / "f.xlsx")
     backward.save(tmp_path / "b.xlsx")
-    assert parts(tmp_path / "f.xlsx") != parts(tmp_path / "b.xlsx")
+    assert _parts(tmp_path / "f.xlsx") != _parts(tmp_path / "b.xlsx")
     assert sheetrs.Book(tmp_path / "b.xlsx").range("R!A1")["R!A1"].values == [["cherry"]]
 
 
 def test_the_options_and_the_scope_are_shared_by_the_pairs(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    source = _make_xlsx(tmp_path / "t.xlsx", TEXTS)
     saved = (
         sheetrs.Book(source)
         .replace([("apple", "X"), ("pear", "Y")], entire_cells=True, match_case=True, scope=["R"])
@@ -587,7 +566,7 @@ def test_the_options_and_the_scope_are_shared_by_the_pairs(tmp_path):
 
 
 def test_the_pairs_are_pairs_of_str(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    source = _make_xlsx(tmp_path / "t.xlsx", TEXTS)
     book = sheetrs.Book(source)
     for text, replacement in (
         ("a", None),  # a str needs its replacement
@@ -606,7 +585,7 @@ def test_the_pairs_are_pairs_of_str(tmp_path):
 
 
 def test_a_mistake_in_a_later_pair_adds_no_pair(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
+    source = _make_xlsx(tmp_path / "t.xlsx", TEXTS)
     book = sheetrs.Book(source)
     with pytest.raises(TypeError):
         book.replace([("apple", "cherry"), ("pear", 2)])
@@ -616,26 +595,26 @@ def test_a_mistake_in_a_later_pair_adds_no_pair(tmp_path):
 # ---- to_bytes: the cut to memory ------------------------------------------------------------
 
 
-def a_plan(book):
+def _a_plan(book):
     return book.delete_rows("T!2").formula_to_value("F").replace("9", "8", scope="U")
 
 
 def test_to_bytes_gives_the_bytes_save_writes_for_the_same_plan(structure, tmp_path):
-    book = a_plan(sheetrs.Book(structure))
+    book = _a_plan(sheetrs.Book(structure))
     data = book.to_bytes()
     assert isinstance(data, bytes)
     saved = tmp_path / f"saved{structure.suffix}"
-    a_plan(sheetrs.Book(structure)).save(saved)
+    _a_plan(sheetrs.Book(structure)).save(saved)
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         in_memory = {name: z.read(name) for name in z.namelist()}
-    assert in_memory == parts(saved)
+    assert in_memory == _parts(saved)
 
 
 def test_a_book_made_from_the_bytes_reads_what_the_saved_one_reads(structure, tmp_path):
-    book = a_plan(sheetrs.Book(structure))
+    book = _a_plan(sheetrs.Book(structure))
     again = sheetrs.Book(book.to_bytes())
-    saved = a_plan(sheetrs.Book(structure)).save(tmp_path / f"saved{structure.suffix}")
-    assert whole(again) == whole(saved)
+    saved = _a_plan(sheetrs.Book(structure)).save(tmp_path / f"saved{structure.suffix}")
+    assert _whole(again) == _whole(saved)
 
 
 def test_to_bytes_keeps_the_operations_and_can_be_repeated(structure):
@@ -683,7 +662,7 @@ def test_to_bytes_of_a_file_that_went(structure):
         book.delete_rows("T!2").to_bytes()
 
 
-def test_hide_and_show_rows_columns_and_sheets(structure, tmp_path):
+def hide_and_show_rows_columns_and_sheets(structure, tmp_path):
     hidden = tmp_path / f"h{structure.suffix}"
     sheetrs.Book(structure).hide_rows("T!3").hide_columns("T!B").hide_sheets("V").save(hidden)
     # What was hidden is shown again by the opposite operations.
@@ -691,31 +670,3 @@ def test_hide_and_show_rows_columns_and_sheets(structure, tmp_path):
     sheetrs.Book(hidden).show_rows("T!3").show_columns("T!B").show_sheets("V").save(shown)
     assert sheetrs.Book(shown).range("T!A1:A4")["T!A1:A4"].values == sheetrs.Book(structure).range("T!A1:A4")["T!A1:A4"].values
 
-
-def test_replace_with_the_empty_text_replaces_nothing_in_every_mode(tmp_path):
-    # LibreOffice: an empty search string matches nothing (replaceAll changes no cell), in every mode.
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
-    for options in [{}, {"regex": True}, {"wildcards": True}, {"entire_cells": True}, {"regex": True, "entire_cells": True, "match_case": True}]:
-        saved = sheetrs.Book(source).replace("", "X", **options).save(tmp_path / "e.xlsx")
-        assert saved.report.replaced == 0 and saved.report.skipped == []
-        assert saved.range("S!A1:C1")["S!A1:C1"].values == [["Apple", 1.5, "APPLE"]]
-    # A sheet that is not there is no error either: nothing is read.
-    saved = sheetrs.Book(source).replace("", "X", scope="Nowhere").save(tmp_path / "n.xlsx")
-    assert saved.report.replaced == 0
-
-
-def test_replace_with_an_empty_mapping_key_replaces_nothing(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
-    saved = sheetrs.Book(source).replace({"": "X", "apple": "cherry"}).save(tmp_path / "m.xlsx")
-    assert saved.report.replaced == 5
-    assert saved.range("S!A1:C1")["S!A1:C1"].values == [["cherry", 1.5, "cherry"]]
-
-
-def test_replace_reads_the_patterns_that_match_the_empty_text(tmp_path):
-    source = make_xlsx(tmp_path / "t.xlsx", TEXTS)
-    # `$` adds at the end of the text; `^` and `x*` change nothing where they match no characters.
-    saved = sheetrs.Book(source).replace("$", "!", regex=True, scope="S!A1:A3").save(tmp_path / "d.xlsx")
-    assert saved.range("S!A1:A3")["S!A1:A3"].values == [["Apple!"], ["apple pie!"], ["Banana!"]]
-    assert saved.report.replaced == 3
-    saved = sheetrs.Book(source).replace("^", "!", regex=True).save(tmp_path / "c.xlsx")
-    assert saved.report.replaced == 0

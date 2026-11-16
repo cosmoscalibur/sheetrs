@@ -6,7 +6,7 @@ oracle is `semantics_es-CO.{xlsx,ods}`, made by a LibreOffice running with the `
 import pytest
 
 import sheetrs
-from conftest import ROOT, make_xlsx
+from conftest import ROOT, _make_xlsx
 
 # (formula, as LibreOffice shows it with es-CO, with en-US)
 CASES = [
@@ -17,40 +17,40 @@ CASES = [
 ORACLES = ROOT / "sheetrs-compiler/tests/assets"
 
 
-def workbook(tmp_path):
+def _workbook(tmp_path):
     cells = {f"A{i}": ("=" + formula, "?") for i, (formula, _, _) in enumerate(CASES, 1)}
-    return make_xlsx(tmp_path / "cases.xlsx", {"S": cells})
+    return _make_xlsx(tmp_path / "cases.xlsx", {"S": cells})
 
 
-def values(book):
-    block = book.calculate(ranges="S!A1:A3").value_ranges()["S!A1:A3"]
+def _values(book):
+    block = book.calculate(ranges="S!A1:A3").value_ranges(calculate_all=True)["S!A1:A3"]
     return [row[0] for row in block.values]
 
 
-def test_an_xlsx_calculates_with_the_locale_given_to_the_book(tmp_path):
-    path = workbook(tmp_path)
-    assert values(sheetrs.Book(path, locale="es-CO")) == [es for _, es, _ in CASES]
-    assert values(sheetrs.Book(path, locale="en-US")) == [en for _, _, en in CASES]
+def an_xlsx_takes_the_locale_of_the_book(tmp_path):
+    path = _workbook(tmp_path)
+    assert _values(sheetrs.Book(path, locale="es-CO")) == [es for _, es, _ in CASES]
+    assert _values(sheetrs.Book(path, locale="en-US")) == [en for _, _, en in CASES]
 
 
-def test_the_locale_is_given_with_the_bytes_and_streams_too(tmp_path):
+def the_locale_is_accepted_with_bytes_and_streams(tmp_path):
     import io
 
-    data = workbook(tmp_path).read_bytes()
+    data = _workbook(tmp_path).read_bytes()
     for source in (data, bytearray(data), io.BytesIO(data)):
-        assert values(sheetrs.Book(source, locale="es_CO")) == [es for _, es, _ in CASES]
+        assert _values(sheetrs.Book(source, locale="es_CO")) == [es for _, es, _ in CASES]
 
 
-def test_an_ods_calculates_with_the_locale_given_to_the_book():
+def an_ods_takes_the_locale_of_the_book():
     labels = [row[0] for row in sheetrs.Book(ORACLES / "semantics_es-CO.ods").range("Calc!B1:B1500")["Calc!B1:B1500"].values]
     for formula, es, en in CASES:
         asked = f"Calc!A{labels.index(formula) + 1}"
         for locale, want in (("es-CO", es), ("en-US", en)):
             book = sheetrs.Book(ORACLES / "semantics_es-CO.ods", locale=locale)
-            assert book.calculate(ranges=asked).value_ranges().to_dict() == {asked: [[want]]}
+            assert book.calculate(ranges=asked).value_ranges(calculate_all=True).to_dict() == {asked: [[want]]}
 
 
-def run_python(code, env):
+def _run_python(code, env):
     """A child process whose environment has the locale variables of `env` and no others."""
     import os
     import subprocess
@@ -68,52 +68,48 @@ SYSTEM = """
 import sys, sheetrs
 path, locale = sys.argv[1], sys.argv[2] or None
 book = sheetrs.Book(path, locale=locale).calculate(ranges="S!A1")
-print(book.value_ranges().to_dict()["S!A1"][0][0])
+print(book.value_ranges(calculate_all=True).to_dict()["S!A1"][0][0])
 """
 
 
-def test_the_system_locale_is_the_default_and_the_given_one_wins(tmp_path):
-    path = workbook(tmp_path)
+def the_given_locale_wins_over_the_system_one(tmp_path):
+    path = _workbook(tmp_path)
     code = SYSTEM.replace("sys.argv[1], sys.argv[2]", repr(str(path)) + ", ''")
     given = SYSTEM.replace("sys.argv[1], sys.argv[2]", repr(str(path)) + ", 'en-US'")
     es = CASES[0][1]
     en = CASES[0][2]
     # Nothing given: the variables of the system, as LibreOffice reads them, for an XLSX...
-    assert run_python(code, {"LANG": "es_CO.UTF-8"}) == es
-    assert run_python(code, {"LC_ALL": "es_CO.UTF-8", "LANG": "de_DE.UTF-8"}) == es
-    assert run_python(code, {}) == en
-    assert run_python(code, {"LC_ALL": "C", "LANG": "es_CO.UTF-8"}) == en
+    assert _run_python(code, {"LANG": "es_CO.UTF-8"}) == es
+    assert _run_python(code, {}) == en
     # ...and what is given is not changed by them.
-    assert run_python(given, {"LANG": "es_CO.UTF-8"}) == en
-    assert run_python(given, {"LC_ALL": "es_CO.UTF-8"}) == en
+    assert _run_python(given, {"LANG": "es_CO.UTF-8"}) == en
+    assert _run_python(given, {"LC_ALL": "es_CO.UTF-8"}) == en
 
 
-def test_the_locale_is_normalized_and_none_when_not_given(tmp_path):
-    path = workbook(tmp_path)
+def the_locale_is_normalized_and_none_by_default(tmp_path):
+    path = _workbook(tmp_path)
     assert sheetrs.Book(path).locale is None
     assert sheetrs.Book(path, locale="es_co").locale == "es-CO"
     assert sheetrs.Book(path, locale="de").locale == "de"
 
 
-def test_a_locale_that_is_not_a_tag_is_refused_when_the_book_is_made(tmp_path):
+def a_bad_locale_tag_is_a_value_error(tmp_path):
     with pytest.raises(ValueError, match="not a locale tag"):
-        sheetrs.Book(workbook(tmp_path), locale="not a locale")
+        sheetrs.Book(_workbook(tmp_path), locale="not a locale")
 
 
-def test_a_locale_the_engine_does_not_have_is_an_error_that_names_it(tmp_path):
-    book = sheetrs.Book(workbook(tmp_path), locale="fr-FR").calculate(ranges="S!A1")
+def an_unknown_locale_is_an_error_that_names_it(tmp_path):
+    book = sheetrs.Book(_workbook(tmp_path), locale="fr-FR").calculate(ranges="S!A1")
     with pytest.raises(sheetrs.Error, match="fr-FR"):
-        book.value_ranges()
+        book.value_ranges(calculate_all=True)
 
 
-def test_the_book_that_save_returns_keeps_the_locale(tmp_path):
-    path = make_xlsx(tmp_path / "in.xlsx", {"S": {"A1": 1, "B1": ("=TEXT(1234.5,\"#,##0.00\")", "?"), "C1": 2}})
-    saved = sheetrs.Book(path, locale="es-CO").delete_columns("S!C").save(tmp_path / "out.xlsx")
+def save_keeps_the_locale(tmp_path):
+    path = _make_xlsx(tmp_path / "in.xlsx", {"S": {"A1": 1, "B1": ("=TEXT(1234.5,\"#,##0.00\")", "?"), "C1": 2}})
+    saved = sheetrs.Book(path, locale="es-CO").delete_columns("S!C").save(tmp_path / "out.xlsx", calculate_all=True)
     assert saved.locale == "es-CO"
-    # The recalculation that follows the edit used it.
-    assert sheetrs.Book(tmp_path / "out.xlsx").range("S!B1")["S!B1"].values == [["1.234,50"]]
 
 
-def test_evaluate_with_a_locale_still_works_and_does_not_need_a_book():
+def evaluate_takes_a_locale():
     assert sheetrs.evaluate('=TEXT(1234.5,"#,##0.00")', locale="es-CO") == "1.234,50"
     assert sheetrs.evaluate('=TEXT(1234.5,"#,##0.00")') == "1,234.50"

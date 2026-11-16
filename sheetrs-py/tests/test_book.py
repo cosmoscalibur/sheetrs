@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import sheetrs
-from conftest import LINT_BOOKS, STRUCTURE, make_xlsx
+from conftest import LINT_BOOKS, STRUCTURE, _make_xlsx
 
 
 def test_version_is_the_workspace_version():
@@ -114,6 +114,6 @@ def test_a_book_from_bytes_reads_what_a_file_does(structure):
 
 
 def test_a_workbook_written_by_hand_is_read(tmp_path):
-    path = make_xlsx(tmp_path / "mini.xlsx", {"S": {"A1": 1}, "R": {"A1": 2}})
+    path = _make_xlsx(tmp_path / "mini.xlsx", {"S": {"A1": 1}, "R": {"A1": 2}})
     assert sheetrs.Book(path).stats().sheets.names() == ["S", "R"]
     assert isinstance(Path(path).read_bytes(), bytes)

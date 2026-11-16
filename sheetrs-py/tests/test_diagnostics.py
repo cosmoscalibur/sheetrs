@@ -11,7 +11,7 @@ import sheetrs
 
 from conftest import ROOT
 
-EXTERNAL = ROOT / "sheetrs-edit/tests/assets/book/book.xlsx"
+EXTERNAL = ROOT / "sheetrs-edit/tests/assets/cached/limit.xlsx"
 
 
 def _run_that_cannot_be_calculated(tmp_path):

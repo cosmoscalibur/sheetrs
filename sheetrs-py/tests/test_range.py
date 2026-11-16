@@ -5,7 +5,7 @@ import datetime
 import pytest
 
 import sheetrs
-from conftest import io_asset, make_xlsx
+from conftest import _io_asset, _make_xlsx
 
 T_A1_C4 = [[1, 10, 1], [2, 20, 40], [3, 30, 6], [4, 40, 160]]
 
@@ -72,9 +72,9 @@ def test_a_property_that_was_not_asked_for_raises(structure):
 
 def test_the_properties_are_checked():
     with pytest.raises(ValueError, match="properties"):
-        sheetrs.Book(io_asset("cells.xlsx")).range("T!A1", properties=("value", "colour"))
+        sheetrs.Book(_io_asset("cells.xlsx")).range("T!A1", properties=("value", "colour"))
     with pytest.raises(ValueError, match="empty"):
-        sheetrs.Book(io_asset("cells.xlsx")).range("T!A1", properties=())
+        sheetrs.Book(_io_asset("cells.xlsx")).range("T!A1", properties=())
 
 
 def test_a_block_is_a_sequence_of_rows(structure):
@@ -142,7 +142,7 @@ def test_ranges_are_one_text_or_a_list_of_texts(structure):
 
 
 def test_numbers_are_floats_or_ints_when_exact(tmp_path):
-    path = make_xlsx(
+    path = _make_xlsx(
         tmp_path / "n.xlsx", {"S": {"A1": 3, "A2": 2.5, "A3": 1e20, "A4": -7}}
     )
     values = sheetrs.Book(path).range("S!A1:A4")["S!A1:A4"].values
@@ -151,14 +151,14 @@ def test_numbers_are_floats_or_ints_when_exact(tmp_path):
 
 
 def test_text_booleans_and_empty_cells_have_their_python_types(tmp_path):
-    path = make_xlsx(tmp_path / "t.xlsx", {"S": {"A1": "hello", "A2": True, "A3": False}})
+    path = _make_xlsx(tmp_path / "t.xlsx", {"S": {"A1": "hello", "A2": True, "A3": False}})
     values = sheetrs.Book(path).range("S!A1:A4")["S!A1:A4"].values
     assert values == [["hello"], [True], [False], [None]]
     assert [type(row[0]) for row in values] == [str, bool, bool, type(None)]
 
 
 def test_an_error_is_a_cell_error_and_not_a_text(tmp_path):
-    path = make_xlsx(
+    path = _make_xlsx(
         tmp_path / "e.xlsx",
         {"S": {"A1": ("#N/A",), "A2": "#N/A", "A3": ("#DIV/0!",)}},
     )
@@ -173,7 +173,7 @@ def test_an_error_is_a_cell_error_and_not_a_text(tmp_path):
 
 def test_errors_of_both_formats(request):
     for name in ("errors.xlsx", "errors.ods"):
-        block = sheetrs.Book(io_asset(name)).range("Errors!A5:A6")["Errors!A5:A6"]
+        block = sheetrs.Book(_io_asset(name)).range("Errors!A5:A6")["Errors!A5:A6"]
         assert block.values == [[sheetrs.CellError("#N/A")], [sheetrs.CellError("#DIV/0!")]]
 
 
@@ -196,7 +196,7 @@ def test_a_cell_error_is_a_value_with_its_code():
 
 @pytest.mark.parametrize("name", ["cells.xlsx", "cells.ods"])
 def test_dates_are_serial_numbers_unless_asked(name):
-    book = sheetrs.Book(io_asset(name))
+    book = sheetrs.Book(_io_asset(name))
     serial = book.range("T!A1:A5")["T!A1:A5"].values
     assert serial[0] == [45000] and serial[3] == [1.0625]
     assert all(isinstance(row[0], (int, float)) for row in serial)
@@ -205,7 +205,7 @@ def test_dates_are_serial_numbers_unless_asked(name):
 
 @pytest.mark.parametrize("name", ["cells.xlsx", "cells.ods"])
 def test_dates_as_dates_when_asked(name):
-    book = sheetrs.Book(io_asset(name))
+    book = sheetrs.Book(_io_asset(name))
     values = book.range("T!A1:A5", dates=True)["T!A1:A5"].values
     assert values == [
         [datetime.date(2023, 3, 15)],
@@ -231,7 +231,7 @@ def test_dates_as_dates_when_asked(name):
     ],
 )
 def test_the_date_system_is_the_one_of_the_file(name, origin):
-    values = sheetrs.Book(io_asset(name)).range("Dates!A1:B3", dates=True)[
+    values = sheetrs.Book(_io_asset(name)).range("Dates!A1:B3", dates=True)[
         "Dates!A1:B3"
     ].values
     assert values[0][0] == origin
@@ -242,7 +242,7 @@ def test_the_date_system_is_the_one_of_the_file(name, origin):
 def test_a_date_system_that_is_none_of_the_three_is_an_error_that_names_the_date():
     """LibreOffice stores another null date (its API); SheetRS refuses it when the workbook is read:
     a `Book` reads nothing when it is made, so it is the first read that raises."""
-    book = sheetrs.Book(io_asset("other_null_date.ods"))
+    book = sheetrs.Book(_io_asset("other_null_date.ods"))
     with pytest.raises(sheetrs.UnsupportedDateSystemError) as raised:
         book.stats()
     message = str(raised.value)
@@ -254,7 +254,7 @@ def test_a_date_system_that_is_none_of_the_three_is_an_error_that_names_the_date
 
 
 def test_fractions_of_a_second_are_kept_when_the_format_writes_them():
-    row = sheetrs.Book(io_asset("dates.xlsx")).range("Dates!E1:E1", dates=True)[
+    row = sheetrs.Book(_io_asset("dates.xlsx")).range("Dates!E1:E1", dates=True)[
         "Dates!E1:E1"
     ].values[0]
     assert row == [datetime.datetime(1899, 12, 30, 0, 0)]
@@ -262,11 +262,11 @@ def test_fractions_of_a_second_are_kept_when_the_format_writes_them():
 
 def test_dates_is_a_flag_and_a_name_of_a_kind_of_date_is_refused():
     with pytest.raises(TypeError, match="dates|bool"):
-        sheetrs.Book(io_asset("cells.xlsx")).range("T!A1", dates="datetime")
+        sheetrs.Book(_io_asset("cells.xlsx")).range("T!A1", dates="datetime")
 
 
 def test_comments_and_formats_are_read_when_asked():
-    book = sheetrs.Book(io_asset("cells.xlsx"))
+    book = sheetrs.Book(_io_asset("cells.xlsx"))
     block = book.range("T!A1:A2", properties=["number_format", "comment"])["T!A1:A2"]
     assert block.number_formats[0][0].endswith("yyyy-mm-dd")
     assert block.comments == [[None], [None]]
@@ -274,7 +274,7 @@ def test_comments_and_formats_are_read_when_asked():
 
 
 def test_to_dicts_takes_the_first_row_as_the_header(tmp_path):
-    path = make_xlsx(
+    path = _make_xlsx(
         tmp_path / "d.xlsx",
         {"S": {"A1": "Name", "B1": "Qty", "A2": "pen", "B2": 3, "A3": "ink", "B3": 5}},
     )
@@ -293,7 +293,7 @@ def test_an_empty_text_is_read_as_libreoffice_reads_each_file():
     # LibreOffice: `None`. An ODS text cell with a paragraph, even an empty one, is an empty text, and
     # one with none (`office:string-value=""` alone) is blank. Rows 1 to 7 of `T` in each file
     # (`sheetrs-io/tests/assets/oracle/make_empty_text.py`).
-    xlsx = sheetrs.Book(io_asset("empty_text.xlsx")).range("T!A1:A7")["T!A1:A7"].values
+    xlsx = sheetrs.Book(_io_asset("empty_text.xlsx")).range("T!A1:A7")["T!A1:A7"].values
     assert xlsx == [[None]] * 7
-    ods = sheetrs.Book(io_asset("empty_text.ods")).range("T!A1:A7")["T!A1:A7"].values
+    ods = sheetrs.Book(_io_asset("empty_text.ods")).range("T!A1:A7")["T!A1:A7"].values
     assert ods == [[""], [""], [None], [None], [""], [""], [None]]

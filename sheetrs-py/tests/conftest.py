@@ -40,11 +40,11 @@ def lint_book(request):
     return request.param
 
 
-def io_asset(name):
+def _io_asset(name):
     return IO_ASSETS / name
 
 
-def make_xlsx(path, sheets, names=None):
+def _make_xlsx(path, sheets, names=None):
     """Writes a workbook. `sheets` is `{name: {"A1": value}}`, where a value is a number, a `str`
     (text), a `bool`, a `("=formula", cached)` pair or `("#N/A",)` for an error."""
     path = Path(path)
