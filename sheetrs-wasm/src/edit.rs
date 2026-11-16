@@ -258,6 +258,91 @@ impl Book {
         Ok(())
     }
 
+    /// Hide rows, in the rows of the workbook as it is: `Sheet!3:10` or `Sheet!3`, or a list of
+    /// them. They stay in the file.
+    ///
+    /// # Errors
+    ///
+    /// A message when a range is not valid.
+    #[wasm_bindgen(js_name = hideRows)]
+    pub fn hide_rows(&mut self, rows: JsValue) -> Result<(), JsValue> {
+        let rows = parse_all::<RowRange>(&targets(rows, "`rows`")?)?;
+        if !rows.is_empty() {
+            self.inner.hide_rows(rows);
+        }
+        Ok(())
+    }
+
+    /// Show rows, whatever hid them.
+    ///
+    /// # Errors
+    ///
+    /// A message when a range is not valid.
+    #[wasm_bindgen(js_name = showRows)]
+    pub fn show_rows(&mut self, rows: JsValue) -> Result<(), JsValue> {
+        let rows = parse_all::<RowRange>(&targets(rows, "`rows`")?)?;
+        if !rows.is_empty() {
+            self.inner.show_rows(rows);
+        }
+        Ok(())
+    }
+
+    /// Hide columns: `Sheet!B:D` or `Sheet!B`, or a list of them.
+    ///
+    /// # Errors
+    ///
+    /// A message when a range is not valid.
+    #[wasm_bindgen(js_name = hideColumns)]
+    pub fn hide_columns(&mut self, columns: JsValue) -> Result<(), JsValue> {
+        let columns = parse_all::<ColumnRange>(&targets(columns, "`columns`")?)?;
+        if !columns.is_empty() {
+            self.inner.hide_columns(columns);
+        }
+        Ok(())
+    }
+
+    /// Show columns.
+    ///
+    /// # Errors
+    ///
+    /// A message when a range is not valid.
+    #[wasm_bindgen(js_name = showColumns)]
+    pub fn show_columns(&mut self, columns: JsValue) -> Result<(), JsValue> {
+        let columns = parse_all::<ColumnRange>(&targets(columns, "`columns`")?)?;
+        if !columns.is_empty() {
+            self.inner.show_columns(columns);
+        }
+        Ok(())
+    }
+
+    /// Hide sheets by name (one sheet must stay visible): a name or a list of them.
+    ///
+    /// # Errors
+    ///
+    /// A message when the argument is not a text or a list of texts.
+    #[wasm_bindgen(js_name = hideSheets)]
+    pub fn hide_sheets(&mut self, names: JsValue) -> Result<(), JsValue> {
+        let names = targets(names, "`names`")?;
+        if !names.is_empty() {
+            self.inner.hide_sheets(names);
+        }
+        Ok(())
+    }
+
+    /// Show sheets by name: a name or a list of them.
+    ///
+    /// # Errors
+    ///
+    /// A message when the argument is not a text or a list of texts.
+    #[wasm_bindgen(js_name = showSheets)]
+    pub fn show_sheets(&mut self, names: JsValue) -> Result<(), JsValue> {
+        let names = targets(names, "`names`")?;
+        if !names.is_empty() {
+            self.inner.show_sheets(names);
+        }
+        Ok(())
+    }
+
     /// Find and replace text, as `LibreOffice` does. `replaces` is a list of `[text, with]` pairs or
     /// an object `{text: with}`; each pair is a replacement of its own, in order, with the options
     /// of `options` (`mode`, `matchCase`, `entireCells`, `searchIn`, `formatted`, `filtered`,

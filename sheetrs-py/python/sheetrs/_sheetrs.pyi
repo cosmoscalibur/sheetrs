@@ -316,6 +316,19 @@ class Book:
     def delete_columns(self, columns: Targets) -> Self:
         """Delete columns (`"Sheet!B:D"`, `"Sheet!B"`): one `str` or an iterable of them,
         simultaneous within the call."""
+    def hide_rows(self, rows: Targets) -> Self:
+        """Hide rows (`"Sheet!3:10"`, `"Sheet!3"`): one `str` or an iterable of them. The rows stay in
+        the file; the ranges are those of the workbook as it is, before any deletion."""
+    def show_rows(self, rows: Targets) -> Self:
+        """Show rows, whatever hid them (by hand or by a filter)."""
+    def hide_columns(self, columns: Targets) -> Self:
+        """Hide columns (`"Sheet!B:D"`, `"Sheet!B"`): one `str` or an iterable of them."""
+    def show_columns(self, columns: Targets) -> Self:
+        """Show columns."""
+    def hide_sheets(self, names: Targets) -> Self:
+        """Hide sheets by name; one sheet must stay visible. A very hidden XLSX sheet stays so."""
+    def show_sheets(self, names: Targets) -> Self:
+        """Show sheets by name (hidden or very hidden)."""
     @overload
     def replace(
         self,

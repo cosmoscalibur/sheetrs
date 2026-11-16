@@ -22,8 +22,8 @@ struct Cli {
 enum Command {
     /// Read the cells of a workbook, search them, list its sheets and names
     Query(sheetrs_query::cli::Args),
-    /// Edit a workbook: delete, convert formulas to values, find and replace
-    Edit(sheetrs_edit::cli::Args),
+    /// Edit a workbook: delete or hide, convert formulas to values, find and replace
+    Edit(Box<sheetrs_edit::cli::Args>),
     /// Check a workbook against the lint rules
     Lint(sheetrs_linter::cli::Args),
     /// Statistics of a workbook
@@ -35,7 +35,7 @@ fn main() -> anyhow::Result<ExitCode> {
     let logger = cli.log.logger();
     match cli.command {
         Command::Query(args) => sheetrs_query::cli::run(args),
-        Command::Edit(args) => sheetrs_edit::cli::run(args, &logger),
+        Command::Edit(args) => sheetrs_edit::cli::run(*args, &logger),
         Command::Lint(args) => sheetrs_linter::cli::run(args),
         Command::Stats(args) => sheetrs_stats::cli::run(args),
     }

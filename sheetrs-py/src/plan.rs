@@ -6,8 +6,11 @@
 //! Python layer adds nothing to the plan.
 
 use serde_json::{Map, Value};
-use sheetrs_edit::{BookEdit, Calculation, ColumnRange, Report, RowRange, ValueScope};
+use sheetrs_edit::{
+    BookEdit, Calculation, ColumnRange, Report, RowRange, ValueScope, VisibilityChange,
+};
 use sheetrs_io::Book;
+use sheetrs_io::write::Operation;
 use sheetrs_protocol::{MajorDimension, Replace, Scope};
 use std::io::Write;
 use std::path::Path;
@@ -31,6 +34,8 @@ pub(crate) enum Step {
     FormulaToValue(Vec<ValueScope>),
     DeleteRows(Vec<RowRange>),
     DeleteColumns(Vec<ColumnRange>),
+    /// Rows, columns or sheets hidden or shown.
+    SetVisibility(Vec<VisibilityChange>),
     Replace {
         scopes: Vec<Scope>,
         replace: Replace,
@@ -102,6 +107,9 @@ fn editor(source: &Book, steps: &[Step], keep_answer: bool) -> Book {
             }
             Step::DeleteColumns(columns) => {
                 editor.delete_columns(columns.clone());
+            }
+            Step::SetVisibility(changes) => {
+                editor.push(Operation::SetVisibility(changes.clone()));
             }
             Step::Replace { scopes, replace } => {
                 editor.replace(scopes.clone(), [replace.clone()]);
