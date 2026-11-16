@@ -15,6 +15,7 @@ pub mod ods_parser;
 mod ods_styles;
 pub mod parser_utils;
 mod selection;
+pub mod used_area;
 pub mod workbook;
 pub mod xlsx_parser;
 
@@ -25,6 +26,7 @@ pub use external::{ExternalUrl, external_url};
 pub use format::Format;
 pub use selection::{Properties, Selection, SheetInfo, Window};
 pub use sheetrs_formula::grid::Grid;
+pub use used_area::{AreaSink, SheetAreas, UsedArea, is_used};
 pub use workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, NameConflict,
     NameScope, NumFmt, Sheet, SheetState, Workbook,
