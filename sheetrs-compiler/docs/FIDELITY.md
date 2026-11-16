@@ -1125,9 +1125,18 @@ A cell that the edit does not reach keeps its result (the edit of `D1` and the d
   with `calculate_all`. The ODS rule of the load (a cached number in a cell with no format is calculated) does not take these cells in: `LibreOffice` gives what
   its engine and its links give, and the engine cannot, so the file's result stays (it is the same in a file `LibreOffice` wrote).
 * **Reached (an edit reaches the cell, or every formula is calculated): an add-in that is not installed** (`_xll.NAME`, `COM.SUN.STAR.SHEET.ADDIN.*`) **is `#NAME?`**, as
-  in `LibreOffice`, and what reads it too. **A macro, and a function only `LibreOffice` has, is an error that names the cause**, because the result is the one that
-  only `LibreOffice` gives (`#MACRO?` or the macro's value by the security level; `Err:540` or the response of a server; `7`): the engine cannot represent it, so the run
-  stops instead of writing another value.
+  in `LibreOffice`, and what reads it too. **A function only `LibreOffice` has is an error that names the cause**, because the result is the one that
+  only `LibreOffice` gives (`Err:540` or the response of a server; `7`): the engine cannot represent it, so the run stops instead of writing another value.
+  **A workbook that carries macros is refused by the build itself** (`compile`: `Error::Macros`), in every tool that builds (`sheetc build`, `calculate`, `evaluate`, `sheetrs edit`, Python,
+  WebAssembly and the library), with no policy of the layer, because the result of what depends on a macro is the one that only `LibreOffice` gives (`#MACRO?` or the macro's value by
+  the security level) and the engine does not run macros. `inspect` and `verify` only read (they compile with `inspect`) and do not refuse it. The refusal is proposed, not approved, in
+  `docs/approved-differences.md`.
+* **Secure mode** (`--secure-mode`, `secure_mode = true`, `Book::with_secure_mode`; off by default; proposed in `docs/approved-differences.md`) goes on instead of stopping: the
+  call that only `LibreOffice` can answer is an error value, what reads it is calculated from it (`IFERROR` catches it), the rest of the workbook is calculated, and the
+  report holds a warning (`UNSUPPORTED_AS_ERROR`; `sheetc` prints it). The error is the one observed in the table above: a macro is `#MACRO?` (`Err:531`; an XLSX holds it as `#VALUE!`, as the
+  export of `LibreOffice` does), `WEBSERVICE` is `Err:540` (offline), `DDE` is `#N/A`. `FILTERXML` and any other function that `LibreOffice` has and the engine lacks has no error to
+  copy (`LibreOffice` calculates a value, `7`), so the generic error of the engine, `#NOT_IMPLEMENTED!`, is used. Secure mode is also what opens a workbook with macros, which the build refuses by default (the macro rows of
+  `MACRO_FROM_CACHE` and of this mode are reachable only there). The cells that no edit reaches and the references to another workbook are as above in both modes, and an add-in that is not installed is `#NAME?` in both.
 * Not reproduced, with the reason: the `#MACRO?` an ODS with a `Basic/` library shows on load for a name it takes for a macro (its value depends on the macro security of
   the installation, which the file does not hold); the `#N/A` of a `DDE` link of an ODS on load (a server); a formula that mixes another workbook with local cells
   and that an edit reaches (`LibreOffice` calculates it from the stored value, `A1+D1` is 48; the parser does not read the reference, so the dependency walk cannot see

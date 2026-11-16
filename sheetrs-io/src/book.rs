@@ -155,6 +155,9 @@ pub struct Book {
     /// Whether a run calculates every formula (`calculateAll()` of `LibreOffice`) instead of keeping the
     /// results the file caches for the formulas nothing reaches.
     calculate_all: bool,
+    /// Whether what the engine cannot calculate (a call to a macro, to an add-in, to a function of
+    /// `LibreOffice` it lacks) is an error cell and a warning instead of an error of the run.
+    secure_mode: bool,
 }
 
 impl Book {
@@ -211,6 +214,7 @@ impl Book {
             #[cfg(feature = "write")]
             operations: Vec::new(),
             calculate_all: false,
+            secure_mode: false,
         }
     }
 
@@ -250,6 +254,14 @@ impl Book {
     #[must_use]
     pub fn with_calculate_all_of(mut self, other: &Self) -> Self {
         self.calculate_all = other.calculate_all;
+        self
+    }
+
+    /// The same workbook with the secure mode of `other` ([`with_secure_mode`](Self::with_secure_mode)):
+    /// for a book made from `other`.
+    #[must_use]
+    pub fn with_secure_mode_of(mut self, other: &Self) -> Self {
+        self.secure_mode = other.secure_mode;
         self
     }
 
@@ -595,6 +607,27 @@ impl Book {
     #[must_use]
     pub fn calculate_all(&self) -> bool {
         self.calculate_all
+    }
+
+    /// The same workbook that, in every run that calculates (a calculation, what an edit leaves stale, a
+    /// build), goes on when it meets what the engine cannot calculate and has to (`true`): a workbook with
+    /// macros is opened, and a call to a macro, to an add-in or to a function of `LibreOffice` that the engine
+    /// lacks (`WEBSERVICE`, `FILTERXML`, `DDE`) is an error cell (the error `LibreOffice` shows where it is
+    /// documented, `#NOT_IMPLEMENTED!` where it is not), what reads it is calculated from it, and the report
+    /// holds a warning. By default (`false`) a run that builds refuses a workbook with macros, and stops at the
+    /// others with an error that names the cause. A cell that no edit reaches keeps the result the file
+    /// caches, with a warning, in both (as does a reference to another workbook).
+    #[must_use]
+    pub fn with_secure_mode(mut self, secure_mode: bool) -> Self {
+        self.secure_mode = secure_mode;
+        self
+    }
+
+    /// Whether the run goes on with what the engine cannot calculate and opens a workbook with macros
+    /// ([`with_secure_mode`](Self::with_secure_mode)).
+    #[must_use]
+    pub fn secure_mode(&self) -> bool {
+        self.secure_mode
     }
 }
 

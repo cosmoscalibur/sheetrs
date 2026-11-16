@@ -36,6 +36,9 @@ pub(crate) enum CalculateError {
     /// calculates, and only `LibreOffice` can give its result: the error names the cause, and the plan stops, as
     /// it has not the right to mark the workbook to be recalculated instead.
     Depends(String),
+    /// The workbook carries macros and secure mode is off: the build refuses it (`sheetrs_compiler::Error::Macros`), in every
+    /// layer. The plan stops: it is not the engine that cannot, and `LibreOffice` is not left to do it.
+    Refused(String),
     /// The calculation was asked for something that is not valid (an input that is no cell, a range
     /// that does not exist): an error of the person who asked, not of the engine.
     Failed(String),
@@ -44,9 +47,10 @@ pub(crate) enum CalculateError {
 impl fmt::Display for CalculateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Unsupported(reason) | Self::Depends(reason) | Self::Failed(reason) => {
-                f.write_str(reason)
-            }
+            Self::Unsupported(reason)
+            | Self::Depends(reason)
+            | Self::Refused(reason)
+            | Self::Failed(reason) => f.write_str(reason),
         }
     }
 }
@@ -64,9 +68,8 @@ pub(crate) fn calculate(
     // The clock and the seed reach the engine as the options of the build and of the run, as the
     // `--now` and `--seed` of `sheetc` do: the step's own, else the ones given to the book.
     let mut options = Options::default().with_book(source);
-    // The macros of a workbook are never run: what depends on them keeps the cache until something dirties it (`strict` is the
-    // policy of a build of `sheetc`, which refuses a workbook with macros).
-    options.config.strict = Some(false);
+    // The macros of a workbook are never run: the build refuses a workbook that carries them unless secure mode is on, and then
+    // what depends on them keeps the cache until something dirties it (and is an error cell when the run calculates it).
     options.config.now = calculation.now.or(options.config.now);
     options.config.seed = calculation.seed.or(options.config.seed);
     // No cone of changes means every formula is calculated (the run asks for it, the file says its
@@ -174,10 +177,12 @@ pub(crate) fn recalculate(
 }
 
 /// What the error of the compiler says about a workbook the engine cannot calculate: a calculated cell that depends
-/// on a macro or an extension is [`Depends`](CalculateError::Depends) (the run stops), any other cause is
+/// on a macro or an extension is [`Depends`](CalculateError::Depends) (the run stops), a workbook with macros built with secure
+/// mode off is [`Refused`](CalculateError::Refused) (the run stops), any other cause is
 /// [`Unsupported`](CalculateError::Unsupported).
 pub(crate) fn cannot(error: &sheetrs_compiler::Error) -> CalculateError {
     match error {
+        sheetrs_compiler::Error::Macros(_) => CalculateError::Refused(error.to_string()),
         sheetrs_compiler::Error::Unsupported { .. } => CalculateError::Depends(error.to_string()),
         _ => CalculateError::Unsupported(error.to_string()),
     }
@@ -192,6 +197,8 @@ pub(crate) enum ConvertError {
     /// The workbook depends on something the engine cannot calculate in a cell the run calculates: see
     /// [`CalculateError::Depends`].
     Depends(String),
+    /// The workbook carries macros and secure mode is off: see [`CalculateError::Refused`].
+    Refused(String),
     /// The writer of the workbook failed (a sheet that is not there, a deletion that cannot be made).
     Write(sheetrs_io::write::Error),
     /// The cells could not be written.
@@ -219,9 +226,8 @@ pub(crate) fn convert(
     cache: Option<&Cache>,
 ) -> Result<(Vec<u8>, Vec<FromCacheNote>), ConvertError> {
     let mut options = Options::default().with_book(source);
-    // The macros of a workbook are never run: what depends on them keeps the cache until something dirties it (`strict` is the
-    // policy of a build of `sheetc`, which refuses a workbook with macros).
-    options.config.strict = Some(false);
+    // The macros of a workbook are never run: the build refuses a workbook that carries them unless secure mode is on, and then
+    // what depends on them keeps the cache until something dirties it (and is an error cell when the run calculates it).
     options.config.now = volatile.now.or(options.config.now);
     options.config.seed = volatile.seed.or(options.config.seed);
     // The cache is what the passes before changed (the formulas that reach calculate, the rest keep what the file caches, and
@@ -257,6 +263,7 @@ pub(crate) fn convert(
             .compile(&options, Mode::Recalculate)
             .map_err(|e| match cannot(&e) {
                 CalculateError::Depends(reason) => ConvertError::Depends(reason),
+                CalculateError::Refused(reason) => ConvertError::Refused(reason),
                 other => ConvertError::Engine(other.to_string()),
             })?;
     if program.formula_cells.is_empty() {

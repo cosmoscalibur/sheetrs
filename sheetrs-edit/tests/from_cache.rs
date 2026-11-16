@@ -5,9 +5,11 @@
 //! * a cell that no edit reaches keeps the result the file caches, and the report holds a warning of its kind
 //!   (`EXTERNAL_FROM_CACHE`, `MACRO_FROM_CACHE`, `EXTENSION_FROM_CACHE`);
 //! * a cell that the run calculates (an edit reaches it, or every formula is calculated) is what `LibreOffice`
-//!   gives: an add-in that is not installed (`_xll.NAME`) is `#NAME?`; a macro or a function only `LibreOffice` has
+//!   gives: an add-in that is not installed (`_xll.NAME`) is `#NAME?`; a function only `LibreOffice` has
 //!   (`WEBSERVICE`) has a result the engine cannot give, so it is an error that names the cause; a reference to
-//!   another workbook keeps the stored value of the link, which is what the file caches.
+//!   another workbook keeps the stored value of the link, which is what the file caches;
+//! * a workbook with macros is refused by the build, whatever the run, unless secure mode is on (`macro.*`): then
+//!   what no edit reaches keeps the cache and `MACRO_FROM_CACHE` says so, and a calculated call is an error cell.
 //!
 //! The workbooks (`tests/assets/from_cache`, made by `make_fixtures.py` and `make_external.py`) hold, in `Calc`,
 //! `A1` (the cell that depends on it, with a cached result), `B1 =A1+1` (cached 1000), `C1 =Data!D1*2` (cached 999,
@@ -17,9 +19,10 @@
 use serde_json::{Map, json};
 use sheetrs_edit::{
     BookEdit, Calculation, EXTENSION_FROM_CACHE, EXTERNAL_FROM_CACHE, MACRO_FROM_CACHE,
+    UNSUPPORTED_AS_ERROR,
 };
 use sheetrs_io::Book;
-use sheetrs_io::reader::CellValue;
+use sheetrs_io::reader::{CellValue, ExcelError};
 use std::path::{Path, PathBuf};
 
 /// What a kind of fixture is: its name, the code of its warning, what the error names when a calculated cell cannot be
@@ -44,7 +47,7 @@ const KINDS: [Kind; 3] = [
     Kind {
         name: "macro",
         code: MACRO_FROM_CACHE,
-        names: &["macro", "MYFUNC"],
+        names: &["macros", "secure mode"],
         a1: 77.0,
         input: "Data!D1",
     },
@@ -97,6 +100,8 @@ enum Run {
     Dirty,
     /// A `calculate` step with nothing given, in the mode of the cache.
     Calculate,
+    /// A `calculate` step with nothing given and every formula calculated (`calculate_all`).
+    CalculateAll,
 }
 
 fn run(
@@ -104,9 +109,20 @@ fn run(
     extension: &str,
     how: Run,
 ) -> (Result<sheetrs_edit::Report, sheetrs_edit::Error>, Vec<u8>) {
+    run_in_mode(kind, extension, how, false)
+}
+
+/// As [`run`], in secure mode or not.
+fn run_in_mode(
+    kind: &Kind,
+    extension: &str,
+    how: Run,
+    secure: bool,
+) -> (Result<sheetrs_edit::Report, sheetrs_edit::Error>, Vec<u8>) {
     let mut book = Book::from_file(fixture(kind.name, extension))
         .unwrap()
-        .with_calculate_all(matches!(how, Run::ConvertAll));
+        .with_calculate_all(matches!(how, Run::ConvertAll | Run::CalculateAll))
+        .with_secure_mode(secure);
     match how {
         Run::Convert | Run::ConvertAll => {
             book.formula_to_value(["Calc".parse().unwrap()]);
@@ -119,7 +135,7 @@ fn run(
                 ..Calculation::default()
             });
         }
-        Run::Calculate => {
+        Run::Calculate | Run::CalculateAll => {
             book.calculate(Calculation::default());
         }
     }
@@ -141,7 +157,8 @@ fn codes(report: &sheetrs_edit::Report) -> Vec<&str> {
 fn an_unreached_cell_keeps_its_cached_result_and_the_report_says_so() {
     for kind in &KINDS {
         for how in [Run::Convert, Run::Calculate] {
-            let (report, bytes) = run(kind, "xlsx", how);
+            // A workbook with macros is built only in secure mode.
+            let (report, bytes) = run_in_mode(kind, "xlsx", how, kind.name == "macro");
             let report = report.unwrap_or_else(|e| panic!("{}: {e:#}", kind.name));
             if matches!(how, Run::Calculate) {
                 assert_eq!(codes(&report), [kind.code], "{}", kind.name);
@@ -186,8 +203,9 @@ fn an_external_reference_keeps_the_stored_value_with_calculate_all() {
     }
 }
 
-/// A macro, and a function only `LibreOffice` has, in a cell that the run calculates: the result is not one the engine can
-/// give, so the run is an error that names the cause (the cache is the result of a cell that is not calculated).
+/// A workbook with macros, and a function only `LibreOffice` has, in a cell that the run calculates: the result is not one the
+/// engine can give, so the run is an error that names the cause (the cache is the result of a cell that is not calculated);
+/// for the macros it is the refusal of the build, which names secure mode.
 #[test]
 fn a_macro_or_libreoffice_only_function_is_an_error_when_calculated() {
     for kind in &KINDS[1..] {
@@ -210,7 +228,7 @@ fn a_macro_or_libreoffice_only_function_is_an_error_when_calculated() {
     }
 }
 
-/// An edit that reaches the cell: an add-in that is not installed is `#NAME?` (OBSERVED, both formats), a macro is an error,
+/// An edit that reaches the cell: an add-in that is not installed is `#NAME?` (OBSERVED, both formats), a workbook with macros is refused,
 /// and the cells that no edit reaches (`WEBSERVICE`) keep what the file caches and are named by the warning.
 #[test]
 fn an_edit_that_reaches_a_cell_gives_what_libreoffice_gives_for_it() {
@@ -227,10 +245,10 @@ fn an_edit_that_reaches_a_cell_gives_what_libreoffice_gives_for_it() {
     assert!((number(&bytes, 4) - 13.0).abs() < 1e-9, "E1");
     assert_eq!(codes(&report), [EXTENSION_FROM_CACHE]);
     assert_eq!(report.diagnostics[0].context["cells"], "1", "F1 only");
-    // The macro: `A1` is reached and only `LibreOffice` can say what it gives.
+    // The macro: the workbook is refused by the build, whatever the edit reaches.
     let (result, _) = run(&KINDS[1], "xlsx", Run::Dirty);
     let message = format!("{:#}", result.expect_err("an error"));
-    assert!(message.contains("MYFUNC"), "{message}");
+    assert!(message.contains("secure mode"), "{message}");
     // Another workbook: `A1` does not read `D1`, it keeps the stored value.
     let (report, bytes) = run(&KINDS[0], "xlsx", Run::Dirty);
     let report = report.unwrap_or_else(|e| panic!("{e:#}"));
@@ -247,4 +265,175 @@ fn a_workbook_that_depends_on_nothing_is_calculated_with_no_warning() {
     let dir = tempfile::tempdir().unwrap();
     let report = book.write(dir.path().join("out.xlsx")).unwrap();
     assert!(report.diagnostics.is_empty());
+}
+
+/// What an error that a file cannot name is in a cell read back: an ODS keeps the code of `LibreOffice`, an XLSX holds
+/// `#VALUE!` (as the export of `LibreOffice` does).
+fn libre_error(extension: &str, code: u16) -> CellValue {
+    CellValue::Error(if extension == "ods" {
+        ExcelError::Libre(code)
+    } else {
+        ExcelError::Value
+    })
+}
+
+/// In secure mode a macro that the run calculates is not an error of the run: the cell is the error `LibreOffice` shows
+/// (`#MACRO?`, `Err:531`), what reads it is calculated from it, the rest of the workbook is calculated, and the report holds the warning.
+#[test]
+fn secure_mode_makes_a_calculated_macro_an_error_cell_and_warns() {
+    for extension in ["xlsx", "ods"] {
+        let (report, bytes) = run_in_mode(&KINDS[1], extension, Run::CalculateAll, true);
+        let report = report.unwrap_or_else(|e| panic!("{extension}: {e:#}"));
+        assert_eq!(
+            cell(&bytes, 0),
+            libre_error(extension, 531),
+            "{extension}: A1"
+        );
+        assert_eq!(
+            cell(&bytes, 1),
+            libre_error(extension, 531),
+            "{extension}: B1 reads A1"
+        );
+        assert!((number(&bytes, 2) - 10.0).abs() < 1e-9, "{extension}: C1");
+        assert!((number(&bytes, 4) - 11.0).abs() < 1e-9, "{extension}: E1");
+        assert_eq!(codes(&report), [UNSUPPORTED_AS_ERROR], "{extension}");
+        let note = &report.diagnostics[0];
+        assert_eq!(
+            note.code, "UNSUPPORTED_AS_ERROR",
+            "{extension}: the code is the contract"
+        );
+        assert_eq!(note.context["cells"], "1", "{extension}");
+        assert!(
+            note.message.contains("MYFUNC"),
+            "{extension}: {}",
+            note.message
+        );
+    }
+}
+
+/// The same for a function that only `LibreOffice` has: `WEBSERVICE` is `Err:540` (offline), and an add-in that is not
+/// installed is `#NAME?`, which needs no warning because it is what `LibreOffice` gives.
+#[test]
+fn secure_mode_makes_a_calculated_libreoffice_only_function_an_error_cell_and_warns() {
+    for extension in ["xlsx", "ods"] {
+        let (report, bytes) = run_in_mode(&KINDS[2], extension, Run::CalculateAll, true);
+        let report = report.unwrap_or_else(|e| panic!("{extension}: {e:#}"));
+        assert_eq!(
+            cell(&bytes, 5),
+            libre_error(extension, 540),
+            "{extension}: F1"
+        );
+        assert_eq!(
+            cell(&bytes, 0),
+            CellValue::Error(ExcelError::Name),
+            "{extension}: A1 is the add-in"
+        );
+        assert!((number(&bytes, 2) - 10.0).abs() < 1e-9, "{extension}: C1");
+        assert_eq!(codes(&report), [UNSUPPORTED_AS_ERROR], "{extension}");
+        assert!(
+            report.diagnostics[0].message.contains("WEBSERVICE"),
+            "{extension}"
+        );
+    }
+}
+
+/// A cell that no edit reaches keeps what the file caches and the warning of its kind, in secure mode as by default.
+#[test]
+fn secure_mode_keeps_the_cache_of_a_cell_nothing_reaches() {
+    let (report, bytes) = run_in_mode(&KINDS[2], "xlsx", Run::Dirty, true);
+    let report = report.unwrap_or_else(|e| panic!("{e:#}"));
+    assert_eq!(codes(&report), [EXTENSION_FROM_CACHE]);
+    assert_eq!(
+        cell(&bytes, 5),
+        CellValue::Text("abc".into()),
+        "F1 keeps its cache"
+    );
+}
+
+/// An edit that reaches a macro in secure mode: the cell is the error and the rest is calculated from the new value.
+#[test]
+fn secure_mode_reaches_a_macro_through_an_edit() {
+    for extension in ["xlsx", "ods"] {
+        let (report, bytes) = run_in_mode(&KINDS[1], extension, Run::Dirty, true);
+        let report = report.unwrap_or_else(|e| panic!("{extension}: {e:#}"));
+        assert_eq!(
+            cell(&bytes, 0),
+            libre_error(extension, 531),
+            "{extension}: A1"
+        );
+        assert!(
+            (number(&bytes, 2) - 12.0).abs() < 1e-9,
+            "{extension}: C1 reads D1"
+        );
+        assert_eq!(codes(&report), [UNSUPPORTED_AS_ERROR], "{extension}");
+    }
+}
+
+/// The conversion of formulas to values is a run that calculates too: in secure mode it goes on with the macro and the
+/// rest of `Calc` is converted from what the engine calculated.
+#[test]
+fn secure_mode_reaches_the_conversion_of_formulas_to_values() {
+    for extension in ["xlsx", "ods"] {
+        let (report, bytes) = run_in_mode(&KINDS[1], extension, Run::ConvertAll, true);
+        let report = report.unwrap_or_else(|e| panic!("{extension}: {e:#}"));
+        assert_eq!(codes(&report), [UNSUPPORTED_AS_ERROR], "{extension}");
+        assert!((number(&bytes, 2) - 10.0).abs() < 1e-9, "{extension}: C1");
+    }
+}
+
+/// The refusal is the build's, so every operation that builds the engine inherits it: a calculation with nothing given, every
+/// formula calculated, an edit that reaches a formula, and a conversion of formulas to values that calculates. Each names
+/// secure mode, leaves no file, and is the run of secure mode when it is on.
+#[test]
+fn every_run_that_builds_refuses_a_workbook_with_macros_unless_secure_mode_is_on() {
+    for extension in ["xlsx", "ods"] {
+        for how in [
+            Run::Calculate,
+            Run::CalculateAll,
+            Run::Dirty,
+            Run::ConvertAll,
+        ] {
+            let (result, bytes) = run(&KINDS[1], extension, how);
+            let error = result.expect_err("refused");
+            assert!(
+                format!("{error:#}").contains("the workbook was refused"),
+                "{extension}: {error:#}"
+            );
+            assert!(format!("{error:#}").contains("secure mode"), "{extension}");
+            assert!(bytes.is_empty(), "{extension}: no file is left");
+            let (secure, bytes) = run_in_mode(&KINDS[1], extension, how, true);
+            secure.unwrap_or_else(|e| panic!("{extension}: {e:#}"));
+            assert!(!bytes.is_empty(), "{extension}");
+        }
+    }
+}
+
+/// The value ranges of a calculation build the program too.
+#[test]
+fn the_value_ranges_of_a_workbook_with_macros_are_refused_unless_secure_mode_is_on() {
+    for extension in ["xlsx", "ods"] {
+        let ranges = |secure: bool| {
+            let mut book = Book::from_file(fixture("macro", extension))
+                .unwrap()
+                .with_secure_mode(secure);
+            book.calculate(Calculation {
+                ranges: Some(vec!["Calc!A1:E1".into()]),
+                answer: true,
+                ..Calculation::default()
+            });
+            book.value_ranges()
+        };
+        let error = ranges(false).expect_err("refused");
+        assert!(format!("{error:#}").contains("secure mode"), "{extension}");
+        ranges(true).unwrap_or_else(|e| panic!("{extension}: {e:#}"));
+    }
+}
+
+/// A conversion of an XLSX whose results are all right runs no engine, so nothing builds and nothing refuses: the file's
+/// results are converted as they are (the macros are not run either way).
+#[test]
+fn an_xlsx_conversion_that_needs_no_engine_does_not_build_and_is_not_refused() {
+    let (report, bytes) = run(&KINDS[1], "xlsx", Run::Convert);
+    report.unwrap();
+    assert!((number(&bytes, 0) - 77.0).abs() < 1e-9);
 }

@@ -24,7 +24,7 @@ use sheetrs_engine::ir::{
     Binding, BuildInfo, BuildOptions, CellDef, CellKind, Expr, Meta, Mode, Program, Queryable,
 };
 use sheetrs_engine::options::{DateSystem, EngineOptions, Iteration, Locale, Search};
-use sheetrs_engine::value::Value;
+use sheetrs_engine::value::{ErrorKind, Value};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 
@@ -119,6 +119,11 @@ pub struct Spec {
     /// all of them in every run (a lighter program). Without it a run calculates only what the inputs it
     /// is given change.
     pub force_calculate_all: bool,
+    /// Secure mode: what the engine cannot calculate does not stop the build. A workbook with macros is opened (off, it is
+    /// refused by [`compile`] with [`Error::Macros`], whatever the tool) and a call to a macro, or to a function of
+    /// `LibreOffice` that the engine lacks, that a run would have to calculate is an error value ([`unsupported_error`]) and
+    /// the report says so (see [`FromCacheNote::error`]). Off by default: the build stops and names the cause.
+    pub secure_mode: bool,
     /// Only these cells are asked for: the outputs of the program are the formulas inside them (the
     /// program is pruned to what they read, and only they are written), where none is given the outputs
     /// are every formula. See [`Only`].
@@ -180,12 +185,38 @@ impl Unsupported {
 /// depend on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FromCacheNote {
+    /// What the formulas depend on.
     pub kind: Unsupported,
     pub cells: usize,
     pub first: String,
     /// The references or the functions, without repeats, as the formulas write them (at most five).
     pub what: Vec<String>,
+    /// Set in secure mode for the cells that the run calculates: not the result the file caches but an error (what
+    /// the call gives, as `Err:540` or `#N/A`; the errors that were given, without repeats). `None`: the cells
+    /// keep what the file caches.
+    pub error: Option<String>,
 }
+
+/// The error a call that only `LibreOffice` can answer is in secure mode, from what `LibreOffice` shows for it
+/// (OBSERVED in 26.8, `FIDELITY.md`, *What depends on what the engine cannot calculate*): a macro is `#MACRO?`
+/// (`Err:531`), `WEBSERVICE` is `Err:540` (offline) and `DDE` is `#N/A`. `FILTERXML` and the rest of its functions
+/// that the engine lacks give a value, not an error, that only `LibreOffice` can calculate: none is observable as an
+/// error, so the call is the generic error of the engine (`#NOT_IMPLEMENTED!`).
+#[must_use]
+pub fn unsupported_error(kind: Unsupported, name: &str) -> ErrorKind {
+    match (kind, name) {
+        (Unsupported::Macro, _) => ErrorKind::Libre(531),
+        (_, "WEBSERVICE") => ErrorKind::Libre(540),
+        (_, "DDE") => ErrorKind::Na,
+        _ => ErrorKind::Unsupported,
+    }
+}
+
+/// Why a workbook with macros is not built with secure mode off (the same text in every layer: it names the option of each).
+pub const MACROS_REFUSED: &str = "the workbook contains macros, which are never run, so what depends on them would differ from LibreOffice, which runs them; \
+turn secure mode on to open it anyway (`--secure-mode` or `secure_mode = true` of sheetc and sheetrs edit, `Book::with_secure_mode(true)` in Rust, \
+`secure_mode=True` in Python, `secureMode` in WebAssembly): the cells that call a function a macro may define are error cells (`Err:531`), \
+the run warns, and the rest of the workbook is calculated";
 
 /// What a recalculation that uses the results a workbook caches is told, besides the workbook: the
 /// changes the passes before it made that its formulas cannot show. Only the formulas those changes
@@ -384,6 +415,7 @@ impl Default for Spec {
             cache: Cache::default(),
             calculate_all: false,
             force_calculate_all: false,
+            secure_mode: false,
             only: Vec::new(),
             whole_workbook: false,
             given_inputs: None,
@@ -868,6 +900,11 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
     // formulas is freed (nothing after reads it), which lowers the peak of the rest of the build.
     // A model passed by reference is the caller's and stays as it is.
     let mut owned: Cow<'m, Model> = model.into_cow();
+    // The refusal is the build's own, so that every tool that builds (`sheetc`, `sheetrs edit`, the libraries, Python and
+    // WebAssembly) inherits it with no policy of its own. `inspect` and `verify` only read (they compile with `inspect`).
+    if owned.macros && !spec.secure_mode && !spec.inspect {
+        return Err(Error::Macros(MACROS_REFUSED.into()));
+    }
     // A workbook that carries the mark to calculate every formula when it is opened is a run with `calculate_all`:
     // what it caches is not current. One place decides it, for every path that builds or calculates.
     let marked;
@@ -1102,7 +1139,14 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         stale_formulas = kept.stale;
     }
     if !found.is_empty() && !spec.inspect {
-        settle_found(model, &found, &formulas, &mut report)?;
+        settle_found(
+            model,
+            &found,
+            detect,
+            spec.secure_mode,
+            &mut formulas,
+            &mut report,
+        )?;
     }
     drop(formula_cells);
     if let Cow::Owned(own) = &mut owned {
@@ -2146,15 +2190,18 @@ fn leave_external(
 ///   calculated;
 /// * a formula that stays and that only `LibreOffice` can calculate (a function the engine lacks, one a macro may define) is an
 ///   error that names the cause: the result is not one the engine can give, and the cache is not the result of a cell that the
-///   run calculates.
+///   run calculates. In secure mode it is not an error of the build: the call is the error value of [`unsupported_error`], what
+///   reads it is calculated from it, and the report says so (a note with [`FromCacheNote::error`], and a warning).
 ///
 /// # Errors
 ///
-/// When a formula that only `LibreOffice` can calculate is calculated by the run.
+/// When a formula that only `LibreOffice` can calculate is calculated by the run, and the mode is not secure.
 fn settle_found(
     model: &Model,
     found: &[Found],
-    formulas: &[(CellRef, CellKind)],
+    detect: &Detect,
+    secure: bool,
+    formulas: &mut [(CellRef, CellKind)],
     report: &mut Report,
 ) -> Result<()> {
     let name_of = |at: &CellRef| {
@@ -2164,7 +2211,9 @@ fn settle_found(
             .map_or("?", String::as_str);
         format!("{sheet}!{}", addr::a1(at.row, at.col))
     };
-    let stays = |at: &CellRef| formulas.binary_search_by_key(at, |(cell, _)| *cell).is_ok();
+    let stays = |formulas: &[(CellRef, CellKind)], at: &CellRef| {
+        formulas.binary_search_by_key(at, |(cell, _)| *cell).is_ok()
+    };
     let mut found: Vec<&Found> = found.iter().collect();
     found.sort_by_key(|f| (f.1, f.0));
     for kind in [
@@ -2175,7 +2224,7 @@ fn settle_found(
         let of_kind: Vec<&&Found> = found.iter().filter(|f| f.1 == kind).collect();
         let reached: Vec<&&&Found> = of_kind
             .iter()
-            .filter(|f| !f.3 && f.1 != Unsupported::External && stays(&f.0))
+            .filter(|f| !f.3 && f.1 != Unsupported::External && stays(formulas, &f.0))
             .collect();
         if let Some(first) = reached.first() {
             let mut what: Vec<String> = Vec::new();
@@ -2185,30 +2234,76 @@ fn settle_found(
                 }
             }
             what.truncate(5);
-            let (cause, why) = match kind {
-                Unsupported::Macro => (
-                    "call a function that a macro of the workbook may define",
-                    "macros are never run, and LibreOffice gives `#MACRO?` or the result of the macro, by its security level",
-                ),
-                _ => (
-                    "call a function that the engine does not implement (an add-in or extension of LibreOffice, or one of its functions that the engine lacks)",
-                    "its result is the one only LibreOffice gives",
-                ),
-            };
-            return Err(Error::Unsupported {
-                kind,
-                message: format!(
-                    "{} formula(s) {cause} and the run calculates them (an edit reaches them, or every formula is calculated), so it cannot replace LibreOffice for the workbook: {why}; first: {} ({})",
-                    reached.len(),
+            if secure {
+                let mut cells: Vec<CellRef> = reached.iter().map(|f| f.0).collect();
+                cells.sort_unstable();
+                cells.dedup();
+                let mut errors: Vec<String> = Vec::new();
+                let mut replaced: BTreeSet<String> = BTreeSet::new();
+                for at in &cells {
+                    let Ok(i) = formulas.binary_search_by_key(at, |(cell, _)| *cell) else {
+                        continue;
+                    };
+                    if let CellKind::Formula(expr) = &mut formulas[i].1 {
+                        expr.walk_mut(&mut |x| {
+                            let Expr::Unknown(call) = x else { return };
+                            let name = call.0.to_ascii_uppercase();
+                            if let Some((found_kind, false)) = detect.function(&name)
+                                && found_kind == kind
+                            {
+                                let error = unsupported_error(found_kind, &name);
+                                let shown = error
+                                    .libre_code()
+                                    .unwrap_or_else(|| error.as_str().to_string());
+                                if !errors.contains(&shown) {
+                                    errors.push(shown);
+                                }
+                                replaced.insert(call.0.to_string());
+                                *x = Expr::Const(Value::Error(error));
+                            }
+                        });
+                    }
+                }
+                // They are not names `LibreOffice` ignores (`#NAME?`): the call is the error that was given.
+                for name in &replaced {
+                    report.unsupported.remove(name);
+                }
+                let shown = errors.join(", ");
+                report.warnings.push(format!(
+                    "{} formula(s) call {} that the engine cannot calculate and the run calculates them: secure mode makes the call an error ({shown}), and what reads it is calculated from it; first {} ({})",
+                    cells.len(),
+                    kind.as_str(),
                     name_of(&first.0),
                     what.join(", ")
-                ),
-            });
+                ));
+                report.from_cache.push(FromCacheNote {
+                    kind,
+                    cells: cells.len(),
+                    first: name_of(&first.0),
+                    what,
+                    error: Some(shown),
+                });
+            } else {
+                // Only an extension reaches here: a workbook with macros is refused before, unless secure mode is on.
+                let (cause, why) = (
+                    "call a function that the engine does not implement (an add-in or extension of LibreOffice, or one of its functions that the engine lacks)",
+                    "its result is the one only LibreOffice gives",
+                );
+                return Err(Error::Unsupported {
+                    kind,
+                    message: format!(
+                        "{} formula(s) {cause} and the run calculates them (an edit reaches them, or every formula is calculated), so it cannot replace LibreOffice for the workbook: {why}; first: {} ({}); build with secure mode to make the call an error cell and a warning instead",
+                        reached.len(),
+                        name_of(&first.0),
+                        what.join(", ")
+                    ),
+                });
+            }
         }
         // The ones that keep what the file caches: the cells that are not in the program.
         let kept: Vec<&&Found> = of_kind
             .iter()
-            .filter(|f| f.1 == Unsupported::External || !stays(&f.0))
+            .filter(|f| f.1 == Unsupported::External || !stays(formulas, &f.0))
             .copied()
             .collect();
         let Some(first) = kept.first() else {
@@ -2228,6 +2323,7 @@ fn settle_found(
             cells: cells.len(),
             first: name_of(&first.0),
             what,
+            error: None,
         });
         report.warnings.push(format!(
             "{} formula(s) that depend on {} keep the result the file caches (the engine cannot calculate them; LibreOffice keeps it until something dirties the cell): first {}",
@@ -2236,7 +2332,12 @@ fn settle_found(
             name_of(&first.0)
         ));
     }
-    report.formulas_cached += report.from_cache.iter().map(|n| n.cells).sum::<usize>();
+    report.formulas_cached += report
+        .from_cache
+        .iter()
+        .filter(|n| n.error.is_none())
+        .map(|n| n.cells)
+        .sum::<usize>();
     Ok(())
 }
 
@@ -3197,10 +3298,7 @@ fn keep_cached(
             && matches!(cell.value, Value::Error(_))
         {
             e.walk(&mut |x| {
-                stale |= matches!(
-                    x,
-                    Expr::Const(Value::Error(sheetrs_engine::value::ErrorKind::Name))
-                );
+                stale |= matches!(x, Expr::Const(Value::Error(ErrorKind::Name)));
             });
         }
         if !stale

@@ -206,8 +206,9 @@ engine runs for it (always for an ODS; for an XLSX when its results are stale or
 conversion, and the cells of the scopes that it did not calculate are converted with the result the file caches, which the same pass reads. What runs before
 it (a replacement) is seen. A cell that depends on something the engine cannot calculate (another workbook, a macro, an extension:
 *What the engine cannot calculate*, below) keeps the result the file caches, as `LibreOffice` shows it, and the report says so; one that the run calculates and
-that only `LibreOffice` can give a result for (a macro, a function it has and the engine lacks) is an error that names the cause. An XLSX whose results are right
-and that keeps the cache converts the cached results and needs no engine. Two scenarios, both documented and measured (`docs/performance.md`, *sheetrs edit*;
+that only `LibreOffice` can give a result for (a function it has and the engine lacks) is an error that names the cause; a workbook with macros is refused by the
+build that runs the engine, unless secure mode. An XLSX whose results are right and that keeps the cache converts the cached results and needs no engine (nothing
+builds, so nothing refuses). Two scenarios, both documented and measured (`docs/performance.md`, *sheetrs edit*;
 2.4 M formulas, 300 000 rows).
 A conversion **does not** see a deletion pushed with
 it: the deletion runs after, as in `--formula-to-value F --delete-rows T!4`. To convert what a
@@ -254,8 +255,8 @@ again (*The cache is the default*, below). The plan is the same for every workbo
 last pass depends on the mode.
 
 The workbook is written with fresh results and no mark. Only when the engine cannot calculate it (a
-syntax it does not read; **not** for a macro or a function only `LibreOffice` has in a cell the run calculates, which is an error: *What the engine cannot
-calculate*) is the workbook marked to be recalculated
+syntax it does not read; **not** for a function only `LibreOffice` has in a cell the run calculates, which is an error, nor for a workbook with macros, which is
+refused: *What the engine cannot calculate*) is the workbook marked to be recalculated
 when it is opened (`fullCalcOnLoad` in an XLSX, which `sheetc` reads too: a marked workbook is a run with `calculate_all` in both; an ODS has no marker, so the cached results of its
 formulas are dropped) and the run says why (a `Diagnostic` with the code `RECALC_NOT_SUPPORTED` in `Report::diagnostics`,
 written by the command line to the standard error): the spreadsheet program that opens it does the recalculation then. Nothing
@@ -272,15 +273,25 @@ calculate*, with `tests/assets/from_cache/probe.py`):
 | Kind | Detected as | A cell no edit reaches | A cell the run calculates | Warning in the `Report` |
 | ---- | ----------- | ---------------------- | ------------------------- | ----------------------- |
 | external | a reference to another workbook (`[1]Sheet1!A1` in an XLSX; an ODS is read the same way) or a defined name that holds one | the result the file caches (the stored value of the link), also with `calculate_all` | the same (a formula that mixes it with local cells that an edit reaches keeps it too) | `EXTERNAL_FROM_CACHE` |
-| macro | a workbook that carries macros (`vbaProject.bin`, macrosheets, a `Basic/` or `Scripts/` library, event macros) and a function that no spreadsheet program has, which a macro may define; the macros are never run | the result the file caches | an error that names the function (`LibreOffice` gives `#MACRO?` or the macro's value, by the security level) | `MACRO_FROM_CACHE` |
+| macro (secure mode only: by default the build refuses the workbook, below) | a workbook that carries macros (`vbaProject.bin`, macrosheets, a `Basic/` or `Scripts/` library, event macros) and a function that no spreadsheet program has, which a macro may define; the macros are never run | the result the file caches | `Err:531` (`#MACRO?`), an error cell; `LibreOffice` gives `#MACRO?` or the macro's value, by the security level | `MACRO_FROM_CACHE` (and `UNSUPPORTED_AS_ERROR` for the cells the run calculates) |
 | extension | a function the engine does not implement: an add-in that is not installed (`_xll.NAME`, `COM.SUN.STAR.SHEET.ADDIN.*`) or a function of `LibreOffice` it lacks (`WEBSERVICE`, `FILTERXML`, `DDE`) | the result the file caches | an add-in: `#NAME?`, as `LibreOffice`; `WEBSERVICE`, `FILTERXML`, `DDE`: an error that names the function (their result is the one only `LibreOffice` gives) | `EXTENSION_FROM_CACHE` |
 
 A cell that no edit reaches keeps the result the file caches, as it is, and what reads it is calculated from it; the `Report` carries one warning per kind (`Diagnostic`,
 level warning) with the number of formulas, the first cell and what they depend on (where the engine runs: an XLSX conversion that keeps the cache and has
 nothing stale converts the file's results and runs no engine, so it says nothing). The result the file caches is the one of the program that wrote it: an external
 workbook may have changed, a macro may give another value, an extension may compute what the cache does not say, and `LibreOffice` keeps it all the same until
-something dirties the cell. A workbook that carries macros is not refused (`sheetc` does refuse it unless `--no-strict`, a policy of a build). A name no
+something dirties the cell. **A workbook that carries macros is refused by the build that runs the engine**, in every layer and by default (the macros are never run, so what depends on them
+would differ from `LibreOffice`, which runs them or shows `#MACRO?`): the run stops with an error that names secure mode, whatever the edit, in a calculation, a
+conversion that runs the engine and a recalculation. A run that builds nothing (an XLSX conversion of results that are right, which converts the cached results with
+no engine) does not refuse. With `--secure-mode` the workbook is opened (below). A name no
 spreadsheet program has, in a workbook without macros, is `#NAME?`, as in `LibreOffice`.
+
+**Secure mode.** `--secure-mode` (`Book::with_secure_mode(true)`, `secure_mode=True` in Python, `secureMode = true` in WebAssembly; off by default)
+opens a workbook with macros, and makes a cell the run calculates and that only `LibreOffice` can answer (a macro, or the "an error that names the function" of the
+table) an error cell instead of an error of the run: `Err:531` (`#MACRO?`) for a macro, `Err:540` for `WEBSERVICE`, `#N/A` for `DDE`, `#NOT_IMPLEMENTED!` for `FILTERXML` (a value of `LibreOffice` that the engine
+lacks, with no error to copy). What reads the cell is calculated from the error, the rest of the workbook is calculated, and the `Report` holds a warning with the code
+`UNSUPPORTED_AS_ERROR` (the number of formulas, the first cell, what they call and the errors). The cells no edit reaches and the references to another workbook are
+as above in both modes. An XLSX holds the codes of `LibreOffice` as `#VALUE!`, as its own export does; an ODS holds `Err:531`.
 
 **The startup of an ODS.** `LibreOffice` runs the rule of the load every time it opens an ODS (the formulas that cache a number in a cell with no format, a cached error,
 no result, a few functions), so `sheetrs edit` on an ODS **starts** with that calculation, in the mode the run was asked: the roots of the load by default, every formula with
@@ -307,7 +318,7 @@ reached when:
   or a date in a cell with no number format, a cached error, an array formula, or a result with no type, and not what reads those: *What
   LibreOffice calculates when it opens a file*, in `FIDELITY.md`), and a run that keeps the cache does the same, even when no edit reaches
   anything: an ODS starts with them (*The startup of an ODS*, below), an XLSX that holds one of those functions ends with the recalculation that load does; a
-  cell that depends on another workbook, a macro or an extension the engine cannot calculate keeps the result the file caches;
+  cell that depends on another workbook, an extension (or a macro, in secure mode) the engine cannot calculate keeps the result the file caches;
 - it reads a cell a replacement wrote, or reads a range with a row that was hidden or shown and is a `SUBTOTAL`, or sits in a group of
   adjacent formulas of one shape (`LibreOffice` groups them; hiding calculates the members that read the row);
 - rows or columns were deleted and it calls `ROW` or `COLUMN` and its own cell moved, or the cell or range it is given moved

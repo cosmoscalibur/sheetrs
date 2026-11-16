@@ -60,6 +60,12 @@ pub enum Error {
         kind: crate::compile::Unsupported,
         message: String,
     },
+    /// A workbook that carries macros, built with secure mode off: the macros are never run, so what depends on them
+    /// would differ from `LibreOffice`, which opens the workbook and runs them (or gives `#MACRO?`, by its security
+    /// level). The build refuses it, in every tool that builds; secure mode opens it and turns the cells that depend
+    /// on a macro into error cells. `inspect` and `verify` only read the workbook and never refuse it.
+    #[error("{0}")]
+    Macros(String),
     /// `SOURCE_DATE_EPOCH` set to something that is not a number of seconds.
     #[error("SOURCE_DATE_EPOCH must be a number of seconds since 1970, not `{0}`")]
     BuildTime(String),

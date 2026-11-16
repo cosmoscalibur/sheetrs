@@ -74,9 +74,12 @@ BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
                        the pieces of `_xlfn._LONGTEXT(a,b,...)` (a text literal
                        over 255 characters written by LibreOffice 26.2);
                        constant text pieces only
-  --no-strict          compile a workbook with macros (reported as a warning);
-                       by default (strict) it is an error. --strict undoes a
-                       `strict = false` of the file
+  --secure-mode        what the engine cannot calculate does not stop the build: a workbook
+                       with macros is compiled, and a call to a macro, to an add-in or to a
+                       function of LibreOffice the engine lacks (WEBSERVICE, FILTERXML, DDE) that
+                       the run calculates is an error cell (`Err:531`, `Err:540`, `#N/A`, ...) and a
+                       warning. By default each of them is an error of the build that names the
+                       cause. `secure_mode` of the file
   --calculate-all      emulates `calculateAll()` of LibreOffice. In a build the whole workbook is
                        calculated first: the constants it folds are the results of that
                        calculation, and they are what the program stores as cache. By default the
@@ -451,11 +454,7 @@ fn config_from(args: &mut Args) -> Result<(Config, Option<String>), Fail> {
     let mut cli = Config {
         settings: args.value("--settings")?,
         settings_file: args.value("--settings-file")?.map(PathBuf::from),
-        strict: if args.flag("--no-strict") {
-            Some(false)
-        } else {
-            args.flag("--strict").then_some(true)
-        },
+        secure_mode: args.flag("--secure-mode").then_some(true),
         force_calculate_all: args.flag("--force-calculate-all").then_some(true),
         enable_features: args.value("--enable-features")?.map(|v| {
             v.split(',')
@@ -937,15 +936,7 @@ fn inspect(mut args: Args) -> Result<i32, Fail> {
     let spec = Spec {
         fold: false,
         inspect: true,
-        ..spec_for(
-            Config {
-                strict: Some(false),
-                ..Config::default()
-            },
-            None,
-            file,
-            &model,
-        )?
+        ..spec_for(Config::default(), None, file, &model)?
     };
     let (program, report) = compile(&model, &spec)?;
     println!("sheets: {}", model.sheets.join(", "));
@@ -1033,10 +1024,7 @@ fn verify(mut args: Args) -> Result<i32, Fail> {
             .map_err(|_| Fail::Usage(format!("bad --max `{v}`")))?,
         None => 20,
     };
-    let (mut cli, explicit) = config_from(&mut args)?;
-    // The workbook's own settings sheet is irrelevant here, and macros do not
-    // change what is being compared.
-    cli.strict = cli.strict.or(Some(false));
+    let (cli, explicit) = config_from(&mut args)?;
     let file = input_file(&mut args)?;
     let file = file.as_str();
     reject_unknown_options(&args)?;

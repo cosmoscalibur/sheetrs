@@ -780,21 +780,26 @@ fn declarations_are_validated_together() {
     assert_eq!(run(json!({"a": null})), json!(0), "null sets a blank");
 }
 
+/// The refusal is the build's own: `compile` refuses a workbook with macros, whatever the caller, and secure mode opens it.
 #[test]
-fn macros_are_refused_unless_strict_is_off() {
+fn the_build_refuses_a_workbook_with_macros_unless_secure_mode_is_on() {
     use sheetrs_compiler::config::Config;
     let mut m = sheet(&[("A1", json!(1)), ("B1", json!("=A1+1"))]);
     m.macros = true;
-    let strict = Config::default().spec(&m).unwrap_err().to_string();
+    let spec = Config::default().spec(&m).unwrap();
+    let Err(refused) = sheetrs_compiler::compile(&m, &spec) else {
+        panic!("a workbook with macros was built");
+    };
+    let refused = refused.to_string();
     assert!(
-        strict.contains("macros") && strict.contains("--no-strict"),
-        "{strict}"
+        refused.contains("macros") && refused.contains("secure mode"),
+        "{refused}"
     );
-    let lax = Config {
-        strict: Some(false),
+    let secure = Config {
+        secure_mode: Some(true),
         ..Config::default()
     };
-    let spec = lax.spec(&m).unwrap();
+    let spec = secure.spec(&m).unwrap();
     assert!(
         spec.notes
             .iter()
@@ -802,9 +807,27 @@ fn macros_are_refused_unless_strict_is_off() {
     );
     let (p, _) = build(&m, &spec);
     assert!(p.diagnostics.iter().any(|d| d.contains("contains macros")));
-    // No macros, no complaint.
-    m.macros = false;
-    assert!(Config::default().spec(&m).is_ok());
+}
+
+#[test]
+fn a_workbook_without_macros_is_built_with_secure_mode_off() {
+    use sheetrs_compiler::config::Config;
+    let m = sheet(&[("A1", json!(1)), ("B1", json!("=A1+1"))]);
+    let spec = Config::default().spec(&m).unwrap();
+    build(&m, &spec);
+}
+
+/// `inspect` and `verify` compile with `inspect`: they only read, so a workbook with macros is not refused there.
+#[test]
+fn an_inspection_of_a_workbook_with_macros_is_not_refused() {
+    use sheetrs_compiler::config::Config;
+    let mut m = sheet(&[("A1", json!(1)), ("B1", json!("=A1+1"))]);
+    m.macros = true;
+    let spec = Spec {
+        inspect: true,
+        ..Config::default().spec(&m).unwrap()
+    };
+    build(&m, &spec);
 }
 
 #[test]

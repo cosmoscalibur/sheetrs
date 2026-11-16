@@ -27,7 +27,7 @@ use sheetrs_engine::calculate::{Overrides, ValueRanges};
 use sheetrs_engine::ir::{Mode, Program};
 use sheetrs_io::Book;
 
-/// What a build is configured with: the keys of a `sheetc.toml` (`strict`, `now`, `seed`,
+/// What a build is configured with: the keys of a `sheetc.toml` (`secure_mode`, `now`, `seed`,
 /// `host`, `enable_features`, `locale`, `settings`) and, for a workbook with no settings sheet, the
 /// declarations of its inputs and outputs.
 #[derive(Debug, Clone, Default)]
@@ -138,6 +138,10 @@ impl Options {
             .config
             .calculate_all
             .or(book.calculate_all().then_some(true));
+        options.config.secure_mode = options
+            .config
+            .secure_mode
+            .or(book.secure_mode().then_some(true));
         options
     }
 
@@ -495,8 +499,7 @@ pub struct FunctionUse {
 /// When the workbook cannot be read or compiled.
 fn inspect(source: &Book, options: &Options) -> Result<Inspection> {
     let model = loader::load(source)?;
-    let mut config = options.with_book(source).config;
-    config.strict = Some(false);
+    let config = options.with_book(source).config;
     let mut spec = match &options.declarations {
         Some(text) => config.spec_with_declarations(&model, text)?,
         None => config.spec(&model)?,
@@ -541,8 +544,7 @@ fn verify(
     abs_tolerance: Option<f64>,
 ) -> Result<Json> {
     let model = loader::load(source)?;
-    let mut config = options.with_book(source).config;
-    config.strict = Some(false);
+    let config = options.with_book(source).config;
     let spec = match &options.declarations {
         Some(text) => config.spec_with_declarations(&model, text)?,
         None => config.spec(&model)?,

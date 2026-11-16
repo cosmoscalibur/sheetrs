@@ -50,12 +50,32 @@ pub const MACRO_FROM_CACHE: &str = "MACRO_FROM_CACHE";
 /// not implement (an add-in or extension, or a function of `LibreOffice` it lacks).
 pub const EXTENSION_FROM_CACHE: &str = "EXTENSION_FROM_CACHE";
 
+/// The code of the diagnostic of a run in secure mode that made an error the cells that call what the engine cannot
+/// calculate and the run calculates (a macro, a function of `LibreOffice` the engine lacks).
+pub const UNSUPPORTED_AS_ERROR: &str = "UNSUPPORTED_AS_ERROR";
+
 /// The diagnostic of an `operation` that left as the file caches it what the engine cannot calculate (`note`),
 /// because no edit reached the cell: it is the result of the program that wrote the file, which `LibreOffice` shows
 /// too until something dirties the cell (OBSERVED, `sheetrs-compiler/docs/FIDELITY.md`), and which a dirtied cell
 /// does not keep (an add-in that is not installed is `#NAME?`, an external value is its stored one).
 #[must_use]
 pub(crate) fn from_cache(operation: &str, note: &FromCacheNote) -> Diagnostic {
+    if let Some(error) = &note.error {
+        return Diagnostic::warning(
+            UNSUPPORTED_AS_ERROR,
+            format!(
+                "{} formula(s) call {} that the engine cannot calculate and the run calculates them: secure mode makes the call an error ({error}), and what reads it is calculated from it (first {}: {})",
+                note.cells,
+                note.kind.as_str(),
+                note.first,
+                note.what.join(", ")
+            ),
+        )
+        .with("operation", operation)
+        .with("cells", note.cells.to_string())
+        .with("first", note.first.clone())
+        .with("error", error.clone());
+    }
     let code = match note.kind {
         Unsupported::External => EXTERNAL_FROM_CACHE,
         Unsupported::Macro => MACRO_FROM_CACHE,

@@ -251,10 +251,13 @@ All of these fail the build, reporting every offender at once:
   an input must be a constant.
 * An output range with **no value and no formula** in it.
 * The settings-sheet rules above (duplicates, unknown ranges, collisions).
-* **Macros** (VBA, Basic, scripts): they are never run, so what depends on them
-  would differ. This is *strict* mode, the default; `--no-strict` (or
-  `strict = false`) compiles anyway and reports a warning, and `--strict` undoes
-  a `strict = false` of the file.
+* **A workbook with macros** (VBA, Basic, scripts): the macros are never run, so what depends on them would differ
+  from `LibreOffice`, and the build refuses the workbook and names secure mode. The refusal is the build's own
+  (`compile`), so every tool that builds has it, with no policy of its own (`sheetc build`, `calculate` and `evaluate`,
+  `sheetrs edit`, the Rust library, Python and WebAssembly); `inspect` and `verify` only read and never refuse it.
+  This is the default; [secure mode](#secure-mode) (`--secure-mode`, or `secure_mode = true`) opens it.
+* **What else the engine cannot calculate** (a call to an add-in or to a function of `LibreOffice` the engine lacks:
+  `WEBSERVICE`, `FILTERXML`, `DDE`, in a cell the run calculates): the build stops and names the cause, unless secure mode.
 
 A declared input is optional at run time: the value the workbook holds in that
 cell is its default (a blank cell defaults to blank), and a request overrides it
@@ -287,6 +290,25 @@ outside the repository.
 `sheetc inspect -i FILE` counts the functions a workbook uses, most used first, with
 the cumulative share and whether the engine has each one: the way to see which
 functions matter for a given model.
+
+### Secure mode
+
+`--secure-mode` (`secure_mode = true` in `sheetc.toml`; `Book::with_secure_mode(true)`, `secure_mode=True` in Python,
+`secureMode = true` in WebAssembly, `--secure-mode` of `sheetrs edit`) is off by default. By default what the engine
+cannot calculate stops the build with an error that names the cause: a workbook with macros (refused by the build itself,
+in every tool that builds, with no policy of the layer: the error names secure mode and the option of each layer), and a
+call to a function of `LibreOffice` the engine lacks (`WEBSERVICE`, `FILTERXML`, `DDE`) in a cell that the run
+calculates. `inspect` and `verify` only read the workbook and do not refuse it. With secure mode the build goes on: the
+workbook with macros is opened, each call to a macro (a function no spreadsheet program has) or to such a function that
+the run calculates is an error cell, what reads it is calculated from it, the rest of the workbook is calculated, and
+the build warns (`sheetc` on the standard error, the `Report` of the library in `warnings`
+and in `from_cache` with `error` set, `sheetrs edit`, Python and WebAssembly in the diagnostics with the code
+`UNSUPPORTED_AS_ERROR`). The error is the one `LibreOffice` shows where it was observed (*What depends on what the engine
+cannot calculate* in [`FIDELITY.md`](docs/FIDELITY.md)): `Err:531` (`#MACRO?`) for a macro, `Err:540` for `WEBSERVICE`,
+`#N/A` for `DDE`; `FILTERXML` gives a value in `LibreOffice` that the engine lacks, and no error of `LibreOffice` is
+observable for it, so it is the generic error of the engine, `#NOT_IMPLEMENTED!`. A cell that no edit reaches keeps the
+result the file caches with a warning of its kind (`*_FROM_CACHE`), and a reference to another workbook keeps the stored
+value of the link, in both modes. An add-in that is not installed is `#NAME?` in both.
 
 ### The calculation mode: the cache, `--calculate-all` and `--force-calculate-all`
 
@@ -399,7 +421,7 @@ where it is started). Unknown keys are errors.
 ```toml
 settings = "settings"   # --settings
 # settings_file = "model.json"   # --settings-file: the same declarations as JSON
-strict   = true         # --strict / --no-strict: refuse (or only warn about) macros
+secure_mode = false     # --secure-mode: what the engine cannot calculate is an error cell and a warning, not a build error
 now      = 45292.5      # --now SERIAL: fix NOW()/TODAY() (default: the clock, at each run)
 seed     = 42           # --seed N: fix RAND (default: seeded from the clock)
 enable_features = ["LONGTEXT"]   # --enable-features L: compatibility features (default: none)

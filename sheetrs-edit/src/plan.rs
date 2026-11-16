@@ -43,9 +43,10 @@
 //! calculation and none for the conversion: the file is read once more, by the engine. The engine
 //! calculates the workbook as the passes before leave it, so a replacement or a calculation that comes
 //! first is seen, and the conversion is of the workbook as it is before the deletions of its own pass
-//! move any cell. A cell that depends on what the engine cannot calculate (another workbook, a macro, an
-//! extension) keeps the result the file caches unless the run calculates it, in which case an add-in that is
-//! not installed is `#NAME?` and a macro or a function only `LibreOffice` has is an error that names the cause
+//! move any cell. A cell that depends on what the engine cannot calculate (another workbook, an extension, or a
+//! macro in secure mode) keeps the result the file caches unless the run calculates it, in which case an add-in that is
+//! not installed is `#NAME?` and a function only `LibreOffice` has is an error that names the cause; a workbook with macros
+//! is refused by the build that runs the engine ([`Error::Refused`]) unless secure mode is on
 //! (`sheetrs_compiler::Unsupported`; the run says so with [`EXTERNAL_FROM_CACHE`](crate::EXTERNAL_FROM_CACHE) and
 //! its two relatives); any other cause that the engine cannot calculate it is an error for a conversion, which
 //! needs the values.
@@ -164,6 +165,10 @@ impl Engine {
                     operation: operation.to_string(),
                     reason,
                 },
+                CalculateError::Refused(reason) => Error::Refused {
+                    operation: operation.to_string(),
+                    reason,
+                },
                 error => Error::Recalculation {
                     operation: operation.to_string(),
                     reason: error.to_string(),
@@ -200,6 +205,10 @@ impl Engine {
                 reason,
             },
             ConvertError::Depends(reason) => Error::Unsupported {
+                operation: operation.to_string(),
+                reason,
+            },
+            ConvertError::Refused(reason) => Error::Refused {
                 operation: operation.to_string(),
                 reason,
             },
@@ -893,7 +902,8 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                 recalculate_pass(
                     &Book::from_file(&current)?
                         .with_locale_of(book)
-                        .with_calculate_all_of(book),
+                        .with_calculate_all_of(book)
+                        .with_secure_mode_of(book),
                     only_on_load,
                     plan.startup_pass && i == 0,
                     last,
@@ -910,7 +920,8 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                     calculation,
                     &Book::from_file(&current)?
                         .with_locale_of(book)
-                        .with_calculate_all_of(book),
+                        .with_calculate_all_of(book)
+                        .with_secure_mode_of(book),
                     volatile,
                     &touched,
                     &mut report,
@@ -936,7 +947,8 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
         }
         let input = Book::from_file(&current)?
             .with_locale_of(book)
-            .with_calculate_all_of(book);
+            .with_calculate_all_of(book)
+            .with_secure_mode_of(book);
         let mut mods =
             modifications_for(pass, &input, last && failed, &mut report).with_context(said)?;
         mods.clear_recalculation_mark = false;
@@ -1009,6 +1021,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
         Book::from_bytes(std::fs::read(path).context("Cannot read the workbook to edit")?)?
             .with_locale_of(book)
             .with_calculate_all_of(book)
+            .with_secure_mode_of(book)
     } else {
         let mut copy = book.clone();
         copy.clear_operations();
@@ -1069,7 +1082,8 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
             }
             current = Book::from_bytes(result.clone())?
                 .with_locale_of(book)
-                .with_calculate_all_of(book);
+                .with_calculate_all_of(book)
+                .with_secure_mode_of(book);
             continue;
         }
         let mods =
@@ -1105,7 +1119,8 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
         if !last {
             current = Book::from_bytes(result.clone())?
                 .with_locale_of(book)
-                .with_calculate_all_of(book);
+                .with_calculate_all_of(book)
+                .with_secure_mode_of(book);
         }
     }
     Ok((result, report))
@@ -1245,6 +1260,10 @@ fn calculate_pass(
                 .push(not_calculated("calculate", &reason));
             Ok(None)
         }
+        Err(CalculateError::Refused(reason)) => Err(Error::Refused {
+            operation: "calculate".to_string(),
+            reason,
+        }),
         Err(
             CalculateError::Unsupported(reason)
             | CalculateError::Depends(reason)
