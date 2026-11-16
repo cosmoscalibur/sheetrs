@@ -14,9 +14,14 @@
 //! one) over the bytes of the base; every other section is copied as it is.
 
 use crate::error::{Error, Result};
+use sheetrs_engine::bundle::{SCHEMA, WASM_ABI_VERSION};
 
 /// The marker of the slot in the base, and the bytes after it: the address and the length.
 const MARKER: &[u8; 16] = b"SHEETRS-WASM-SLT";
+/// The marker of what the base says of itself (`sheetrs-rt-wasm`, `SHEETRS_INFO`), and after it the ABI version and the
+/// schema of the payload as two little-endian 32-bit integers.
+const INFO_MARKER: &[u8; 16] = b"SHEETRS-WASM-ABI";
+
 const SLOT: usize = 24;
 const PAGE: u64 = 65_536;
 /// The largest memory a module is given: the payload and what the module allocates while it runs
@@ -186,6 +191,34 @@ pub fn complete(base: &[u8], payload: &[u8]) -> Result<Vec<u8>> {
         at = i + 1;
     }
     let slot = found.ok_or_else(|| bad("it has no slot for a program"))?;
+    // The base says which interface it has and which payload it reads: a program is only valid with the runtime of
+    // the `sheetc` that writes it.
+    let mut infos = patched
+        .windows(INFO_MARKER.len())
+        .enumerate()
+        .filter(|(_, w)| *w == INFO_MARKER)
+        .map(|(i, _)| i);
+    let info = infos.next().ok_or_else(|| {
+        Error::Wasm(
+            "the base module does not say which ABI and payload schema it has (it is a base of another version of SheetRS): use the base module built with this `sheetc`"
+                .into(),
+        )
+    })?;
+    if infos.next().is_some() {
+        return Err(bad("what it says of its ABI is there twice"));
+    }
+    let word = |at: usize| -> Result<u32> {
+        let bytes = patched
+            .get(at..at + 4)
+            .ok_or_else(|| bad("what it says of its ABI is cut short"))?;
+        Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    };
+    let (abi, schema) = (word(info + 16)?, word(info + 20)?);
+    if abi != WASM_ABI_VERSION || schema != SCHEMA {
+        return Err(Error::Wasm(format!(
+            "the base module has ABI version {abi} and payload schema {schema}, and this `sheetc` writes ABI version {WASM_ABI_VERSION} and payload schema {SCHEMA}: a module is only valid with the `sheetc` that built it (use the base module of this version)"
+        )));
+    }
     let body = patched
         .get_mut(slot..slot + SLOT)
         .ok_or_else(|| bad("the slot is cut short"))?;

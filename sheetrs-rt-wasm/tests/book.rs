@@ -102,3 +102,25 @@ fn a_book_with_its_workbook_writes_the_answer_into_it() {
     assert!(!plain.has_template());
     assert!(plain.write(b"", false, &Overrides::default()).is_err());
 }
+
+/// A payload `sheetc` wrote before the schema number existed (the two fixtures of `sheetrs-engine`, made by the commit
+/// before the redesign of the calculation mode) is not run: the module says so, naming the schema it found and the one it reads.
+#[test]
+fn a_payload_of_another_schema_is_refused_naming_both_numbers() {
+    let assets = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../sheetrs-engine/tests/assets"
+    );
+    for name in ["payload_schema0.bin", "payload_schema0_template.bin"] {
+        let bytes = Vec::leak(std::fs::read(format!("{assets}/{name}")).unwrap());
+        let error = Book::from_payload(bytes).err().expect("refused");
+        assert!(
+            error.contains("payload schema 0")
+                && error.contains(&format!("reads schema {}", sheetrs_rt_wasm::PAYLOAD_SCHEMA)),
+            "{name}: {error}"
+        );
+    }
+    // The schema a module reads is the one `sheetc` writes, and the ABI is the one the host asks for.
+    assert_eq!(sheetrs_rt_wasm::PAYLOAD_SCHEMA, bundle::SCHEMA);
+    assert_eq!(sheetrs_rt_wasm::ABI_VERSION, bundle::WASM_ABI_VERSION);
+}

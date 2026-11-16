@@ -397,6 +397,18 @@ reads gives). A rule of this kind is written from a probe of `LibreOffice` (`she
 (`make_oracle.py`) and run now against it by `write_to_libreoffice.rs` for every fixture and both formats; a fixture whose cells give another
 result each time (`NOW`, `RAND`) cannot be compared, so it is only probed.
 
+### The payload schema and the ABI of a module
+
+The program a compiled executable or WebAssembly module carries is serialized with `postcard`, which is positional: a field
+inserted, removed, moved or retyped in `Program` or in what it holds changes what the same bytes mean, and an old payload is
+read as garbage or fails far from the cause. So `sheetrs_engine::bundle::SCHEMA` is the number of that layout, written next to
+the magic of the payload and checked by the runtime before it decodes (a refusal names both numbers); `sheetc` refuses a stub or
+a base module whose schema or ABI is not its own. **A change of the order or of the type of a field of what is serialized bumps
+`SCHEMA`** (the test `the_schema_number_follows_the_layout_of_the_program` pins the bytes of a program that sets every field and
+fails until you bump it and write the bytes again). `bundle::WASM_ABI_VERSION` (`sheetrs_abi`) is another number: an integer
+bumped only on an incompatible change of the exports of a module or of what they mean; an added export (`sheetrs_set_calculate_all`,
+`sheetrs_payload_schema`) never bumps it, a host looks for the export. A module is only valid with the `sheetc` that built it.
+
 ### Versioning
 
 The workspace uses [semantic versioning](https://semver.org/):

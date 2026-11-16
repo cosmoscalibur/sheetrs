@@ -10,7 +10,8 @@
 //! | Export | |
 //! |---|---|
 //! | `memory` | the linear memory |
-//! | `sheetrs_abi() -> i32` | the version of this interface |
+//! | `sheetrs_abi() -> i32` | the version of this interface: an integer bumped only on an incompatible change of the exports or of what they mean; an export that is added never bumps it (look for the export, as for `sheetrs_set_calculate_all`) |
+//! | `sheetrs_payload_schema() -> i32` | the schema number of the payload this module reads, which `sheetc` wrote next to the program and the module checks before it runs it (added without bumping `sheetrs_abi`). A module is only valid with the `sheetc` that built it |
 //! | `sheetrs_alloc(len) -> ptr`, `sheetrs_free(ptr, len)` | memory for a request |
 //! | `sheetrs_set_clock(seconds: f64)`, `sheetrs_set_seed(seed: f64)` | the clock and the random seed (an integer up to 2^53) |
 //! | `sheetrs_set_calculate_all(flag: i32)` | `1`: the next calls ignore the results the program caches and calculate every formula (`calculateAll()`); `0` (the default): a formula whose inputs did not change keeps its cached result. A program built with `--force-calculate-all` caches none |
@@ -94,6 +95,12 @@ fn request<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
 #[unsafe(no_mangle)]
 pub extern "C" fn sheetrs_abi() -> i32 {
     ABI_VERSION as i32
+}
+
+/// The schema of the payload this module reads (an export added to the interface version 1: found by looking for it).
+#[unsafe(no_mangle)]
+pub extern "C" fn sheetrs_payload_schema() -> i32 {
+    super::PAYLOAD_SCHEMA as i32
 }
 
 #[unsafe(no_mangle)]

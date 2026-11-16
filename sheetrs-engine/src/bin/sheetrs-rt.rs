@@ -3,15 +3,20 @@
 
 fn main() {
     let args = sheetrs_engine::cli::Args(std::env::args().skip(1).collect());
-    let code = if let Some(e) = sheetrs_engine::bundle::read_embedded() {
-        sheetrs_engine::cli::with_big_stack(move || {
+    let code = match sheetrs_engine::bundle::read_embedded() {
+        Ok(Some(e)) => sheetrs_engine::cli::with_big_stack(move || {
             sheetrs_engine::cli::calculate_program(&e.program, e.consts.as_ref(), args)
-        })
-    } else {
-        eprintln!(
-            "sheetrs-rt: no program embedded; this is the runtime stub used by `sheetc build`"
-        );
-        2
+        }),
+        Ok(None) => {
+            eprintln!(
+                "sheetrs-rt: no program embedded; this is the runtime stub used by `sheetc build`"
+            );
+            2
+        }
+        Err(error) => {
+            eprintln!("sheetrs-rt: {error}");
+            2
+        }
     };
     std::process::exit(code);
 }

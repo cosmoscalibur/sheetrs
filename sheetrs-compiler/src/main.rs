@@ -167,15 +167,22 @@ fn logger_of(args: &mut Args) -> Result<Logger, Fail> {
 }
 
 fn real_main(mut args: Args) -> i32 {
-    if let Some(e) = bundle::read_embedded() {
-        return match embedded_workbook(&e, args) {
-            Ok(code) => code,
-            Err(Fail::Usage(m)) => cli::usage_error(&m),
-            Err(Fail::Run(m)) => {
-                eprintln!("error: {m}");
-                1
-            }
-        };
+    match bundle::read_embedded() {
+        Ok(Some(e)) => {
+            return match embedded_workbook(&e, args) {
+                Ok(code) => code,
+                Err(Fail::Usage(m)) => cli::usage_error(&m),
+                Err(Fail::Run(m)) => {
+                    eprintln!("error: {m}");
+                    1
+                }
+            };
+        }
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("error: {error}");
+            return 2;
+        }
     }
     if args.0.is_empty() || args.flag("--help") || args.flag("-h") {
         println!("{HELP}");
