@@ -163,7 +163,8 @@ Exports of the module (all `extern "C"`; sizes are in bytes of its linear memory
 | Export | |
 | ------ | - |
 | `memory` | the linear memory |
-| `sheetrs_abi() -> i32` | the version of this interface (`1`) |
+| `sheetrs_abi() -> i32` | the version of this interface (`1`): an integer bumped only on an incompatible change of the exports or of what they mean. An export that is added (`sheetrs_set_calculate_all`, `sheetrs_payload_schema`) never bumps it: look for the export (`typeof x.sheetrs_payload_schema === "function"`) before you call it |
+| `sheetrs_payload_schema() -> i32` | the schema number of the payload (the program) this module reads, which `sheetc` wrote next to the program and the module checks before it runs it |
 | `sheetrs_has_writer() -> i32` | `1` when the module can write a workbook (built with `embed_template`) |
 | `sheetrs_alloc(len) -> ptr`, `sheetrs_free(ptr, len)` | memory for a request |
 | `sheetrs_set_clock(seconds: f64)` | the clock of `NOW()` and `TODAY()` (seconds since the Unix epoch). A module has no clock of its own: until the host sets one, the time is the epoch |
@@ -175,6 +176,13 @@ Exports of the module (all `extern "C"`; sizes are in bytes of its linear memory
 | `sheetrs_write(ptr, len, with_json) -> status` | the workbook with the answer written into it, in the workbook buffer; the JSON answer in the result buffer when `with_json` is not 0 |
 | `sheetrs_result_ptr() -> ptr`, `sheetrs_result_len() -> len` | the result buffer: UTF-8 text |
 | `sheetrs_workbook_ptr() -> ptr`, `sheetrs_workbook_len() -> len` | the workbook buffer |
+
+**A module is only valid with the `sheetc` that built it.** The program inside a module is serialized by `postcard`, which is positional:
+the layout of a program of another version is not the one this runtime reads. The payload carries its schema number next to its magic and the module refuses
+one that is not its own, naming both (`the program of this executable has payload schema 0, and this runtime reads schema 1`: the first call returns `1` with that
+message; the module is not usable and has to be built again). `sheetc` also refuses to complete a base module whose ABI version or payload schema is not its own, so a module
+and the `sheetc` that built it always agree: do not mix the base modules of one release with the `sheetc` of another, and build a module again when you update.
+The package carries the base modules that go with its own `Book.compile`.
 
 A call returns `0` when it worked, and `1` when it failed, with the message in the result buffer
 (a request the program does not take, a mistake of the JSON): the module stays usable. The buffers
