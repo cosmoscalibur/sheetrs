@@ -244,7 +244,8 @@ pub struct Cache {
     /// Cells whose content changed, as `(sheet, first row, first column, last row, last column)`
     /// (0-based, inclusive): the formulas that read them are stale.
     pub changed: Vec<(String, u32, u32, u32, u32)>,
-    /// The rows whose visibility changed, as `(sheet, first, last)` (0-based, inclusive). `LibreOffice` calculates a `SUBTOTAL`
+    /// The rows whose visibility changed, as `(sheet, first, last)` (0-based, inclusive, in the rows of the workbook before the
+    /// deletions, as `rows_deleted`: the compiler moves them with the deletions). `LibreOffice` calculates a `SUBTOTAL`
     /// that reads a range with one of them, and a formula that reads such a range and sits in a group of formulas (adjacent
     /// cells of a column with the same formula, as relative references).
     pub rows_hidden: Vec<(String, u32, u32)>,
@@ -3071,6 +3072,48 @@ fn asks_about_a_changed_cell(text: &str, sheet: u16, model: &Model, changed: &[R
     stale
 }
 
+/// The band `rows` (0-based, inclusive, rows of the input) as the bands of the rows that remain, numbered as they are once
+/// the `deleted` bands (rows of the input, in any order, possibly overlapping) are gone: a deleted row leaves no band, and
+/// the rows after it move up.
+fn rows_after_deletions(deleted: &[(u32, u32)], rows: (u32, u32)) -> Vec<(u32, u32)> {
+    let mut gone: Vec<(u32, u32)> = deleted.to_vec();
+    gone.sort_unstable();
+    let mut merged: Vec<(u32, u32)> = Vec::with_capacity(gone.len());
+    for (first, last) in gone {
+        match merged.last_mut() {
+            Some(prev) if first <= prev.1.saturating_add(1) => prev.1 = prev.1.max(last),
+            _ => merged.push((first, last)),
+        }
+    }
+    // Where a surviving row of the input is after the deletions.
+    let moved = |row: u32| -> u32 {
+        row - merged
+            .iter()
+            .take_while(|(first, _)| *first < row)
+            .map(|&(first, last)| last.min(row - 1) - first + 1)
+            .sum::<u32>()
+    };
+    let (mut from, last) = rows;
+    let mut out = Vec::new();
+    for &(first, end) in &merged {
+        if end < from {
+            continue;
+        }
+        if first > last {
+            break;
+        }
+        if first > from {
+            out.push((moved(from), moved(first - 1)));
+        }
+        from = end.saturating_add(1);
+        if from > last {
+            return out;
+        }
+    }
+    out.push((moved(from), moved(last)));
+    out
+}
+
 /// Whether `text` names one of `names` (in lower case), however it is written.
 fn mentions(text: &str, names: &HashSet<String>, buffer: &mut String) -> bool {
     text.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
@@ -3204,17 +3247,24 @@ fn keep_cached(
                 .map(|(_, c)| *c),
         );
     }
+    // The rows of `rows_hidden` are rows of the input, like the ones deleted: the formulas are those of the workbook
+    // after the deletions, so the rows move with them (a row that went no longer reads as hidden).
     let hidden: Vec<Rect> = cache
         .rows_hidden
         .iter()
-        .filter_map(|(sheet, first, last)| {
-            Some(Rect::new(
-                model.sheet_id(sheet)?,
-                *first,
-                0,
-                *last,
-                addr::MAX_COLS - 1,
-            ))
+        .flat_map(|(sheet, first, last)| {
+            let deleted = cache
+                .rows_deleted
+                .iter()
+                .filter(|(name, _, _)| name == sheet)
+                .map(|&(_, first, last)| (first, last))
+                .collect::<Vec<_>>();
+            let id = model.sheet_id(sheet);
+            rows_after_deletions(&deleted, (*first, *last))
+                .into_iter()
+                .filter_map(move |(first, last)| {
+                    Some(Rect::new(id?, first, 0, last, addr::MAX_COLS - 1))
+                })
         })
         .collect();
     let no_result = |i: usize| cell_of[i].is_none_or(|cell| cell.value == Value::Empty);
@@ -3626,6 +3676,30 @@ mod build_time_tests {
             cells.iter().map(|c| (c.sheet, c.row, c.col)).collect();
         wanted.sort_unstable();
         assert_eq!(held, wanted, "no constant, no formula left out");
+    }
+}
+
+#[cfg(test)]
+mod rows_after_deletions_tests {
+    use super::rows_after_deletions;
+
+    #[test]
+    fn a_band_moves_up_by_the_rows_deleted_before_it() {
+        assert_eq!(rows_after_deletions(&[(0, 0)], (4, 4)), [(3, 3)]);
+        assert_eq!(rows_after_deletions(&[(0, 1), (2, 2)], (4, 6)), [(1, 3)]);
+        assert_eq!(rows_after_deletions(&[(9, 9)], (4, 6)), [(4, 6)]);
+        assert_eq!(rows_after_deletions(&[], (4, 6)), [(4, 6)]);
+    }
+
+    #[test]
+    fn the_rows_that_went_leave_no_band() {
+        assert!(rows_after_deletions(&[(4, 4)], (4, 4)).is_empty());
+        assert!(rows_after_deletions(&[(3, 7)], (4, 6)).is_empty());
+        // Deleted rows in the middle split the band; the order of the deletions does not matter.
+        assert_eq!(
+            rows_after_deletions(&[(6, 6), (0, 0), (4, 4)], (3, 8)),
+            [(2, 2), (3, 3), (4, 5)]
+        );
     }
 }
 
