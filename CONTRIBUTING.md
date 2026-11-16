@@ -58,9 +58,23 @@ Two requirements, and a rule about how to test them:
   decision, not shipped as if it were settled.
 - **The cache is not a fidelity criterion.** What a file caches in a formula cell is not a behavior to
   preserve; it is recorded, with its reason, in [docs/approved-differences.md](docs/approved-differences.md).
+- **The reference is the workbook saved and opened again.** What LibreOffice holds in memory right after
+  an edit (through its API or its screen) is not the reference: the same workbook, saved and opened by
+  someone else, shows other values (a reference that went is `#REF!` in memory and `COUNT` of it is `#REF!`;
+  opened again it is 0), so the memory is not reproducible and its behavior is a defect of LibreOffice, not
+  something to copy. The expected result of an operation (a write, a replacement, a deletion of rows,
+  columns, sheets or names, a conversion of formulas to values, a calculation) is
+  what a user sees when the workbook it leaves is **saved and opened again** in LibreOffice (`storeToURL`,
+  then load, then read the values with the default load), in both formats. A hard recalculation of that file
+  (`calculateAll`) is a cross-check; where it differs from the default load the default load is the
+  expected result, and the case is reported. An oracle script that edits through UNO therefore saves,
+  loads again and reads there; the values read from the document in memory are, at most, recorded as
+  informational evidence, labeled so, and no test compares with them.
 - **How it is tested.** A file is tested against what LibreOffice reports for that file: the
   fixtures are made by LibreOffice and `sheetrs-io/tests/assets/oracle/make_oracle.py` records what it
-  says of each cell (see `sheetrs-query/tests/libreoffice_oracle.rs`). A capability is tested on both
+  says of each cell (see `sheetrs-query/tests/libreoffice_oracle.rs`); the effect of an edit is tested against
+  the file LibreOffice saves after making the same edit and what it shows when it opens it again
+  (`sheetrs-edit/tests/assets/write_to/make_oracle.py`, see the rule above). A capability is tested on both
   formats, each with its own expectation.
 
 Test assets and their description: [Test Assets](tests/README.md).
