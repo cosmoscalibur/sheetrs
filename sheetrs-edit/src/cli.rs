@@ -150,10 +150,18 @@ pub struct Args {
     pub seed: Option<u64>,
 
     /// Configuration file (TOML) whose `locale`, `now` and `seed` in `[global]` are the defaults of
-    /// `--locale`, `--now` and `--seed` (default: `sheetrs.toml` in the current directory, when there
-    /// is one)
+    /// `--locale`, `--now` and `--seed` (default: `sheetrs.toml` in the current directory, when there is
+    /// one)
     #[arg(short = 'c', long, value_name = "FILE")]
     pub config: Option<PathBuf>,
+
+    /// Calculate every formula again (`calculateAll()` of `LibreOffice`) instead of what `LibreOffice` does
+    /// by default: the recalculation that an edit leaves to do calculates only the formulas the edit
+    /// reaches and the ones that depend on them, and every other formula keeps, as it is, the value the
+    /// application that wrote the file cached. A workbook that reads cells at run time (`INDIRECT`,
+    /// `OFFSET`) or that the file says is stale is calculated whole either way
+    #[arg(long)]
+    pub calculate_all: bool,
 
     /// Output file (required unless `--in-place`)
     #[arg(short, long, conflicts_with = "in_place")]
@@ -214,7 +222,7 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
 
     // The flags of a command are all written against the input file, in no order: the planner
     // decides what runs first (see `sheetrs_edit::BookEdit`), as it does for every other caller.
-    let mut book = Book::from_file(&cli.file)?;
+    let mut book = Book::from_file(&cli.file)?.with_calculate_all(cli.calculate_all);
     if let Some(tag) =
         sheetrs_io::locale::for_command(cli.locale.as_deref(), cli.config.as_deref())?
     {

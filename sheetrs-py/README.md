@@ -124,12 +124,24 @@ content as Python dicts and lists, `to_json()` as JSON text (and, for the lint r
   the embedded mode (the workbook is its own template): `ranges` may be inside the outputs the workbook declares (a
   selection among them) or outside them, and a range outside is read, in memory and with no recalculation, from the
   workbook just written with the machinery of `range` (the inputs given are in it, a constant has the value it holds
-  and a formula no output includes has the result the template stored: declare it as an output to have it
+  and a formula no output includes is calculated too: the workbook is the answer, so the whole workbook comes out
   calculated), in the order of the request; with no output declared the outputs are the formula cells and the rest is
   read the same way. A range that is no range or name of the workbook, or an input that is not one, raises
   `sheetrs.Error`. The workbook can be read from memory at any time: `sheetrs.Book(book.calculate(...).to_bytes()).range("Data!A1:C9")`.
   (The compiled program, which writes no workbook, refuses a range outside the declared outputs and lists
   them: see [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for).)
+- **The cache is the default, `calculate_all=True` calculates everything** (a keyword of `save`, `to_bytes`,
+  `explain` and `value_ranges`; `False` is the default). By default, as `LibreOffice` does when it opens a file and
+  when a cell changes, the recalculation after an edit calculates only the formulas the operations reach (the ones
+  that read a deleted cell or a range that shrank, a replaced cell, a `SUBTOTAL` when rows are hidden or shown, a
+  function of position or a name when rows, columns, sheets or names are deleted) and the ones that depend on
+  them; every other formula keeps, as the file has it, the result the application that wrote it cached. It takes
+  less time and memory the fewer formulas the edit reaches and is the same as with `calculate_all=True` where it
+  reaches most of them (see `sheetrs-edit/README.md`, *The cache is the default*). `calculate_all=True` emulates
+  `calculateAll()`: the engine calculates every formula. It also decides what `formula_to_value` converts: by
+  default the results the file caches for the formulas the edit does not reach (and what the engine calculates for
+  the ones it reaches); with `calculate_all=True` what the formulas calculate (the engine calculates the cells of
+  the scopes while the file is written).
 - **Recalculation on open**, with no option: a workbook whose results the changes leave stale (rows,
   columns, sheets or names deleted) and that no `calculate` calculated again is saved marked so that
   the application that opens it recalculates every formula. When the engine cannot calculate the

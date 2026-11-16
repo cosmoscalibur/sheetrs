@@ -29,23 +29,26 @@ pub struct Book {
     pub(crate) report: Option<crate::edit::Report>,
 }
 
-/// The `{now, seed}` of the options of a `Book`; absent, the clock. A key that is not one of them is
-/// an error that names it, as in the options of a call.
-fn volatile_of(options: &JsValue) -> Result<sheetrs_io::Volatile, JsValue> {
+/// The keys of the options of a `Book`.
+const BOOK_OPTIONS: &str = "now, seed";
+
+/// The `{now, seed}` of the options of a `Book`; absent, the clock. A key that is not one of them is an
+/// error that names it, as in the options of a call.
+fn options_of(options: &JsValue) -> Result<sheetrs_io::Volatile, JsValue> {
     if options.is_undefined() || options.is_null() {
         return Ok(sheetrs_io::Volatile::default());
     }
     if !options.is_object() {
-        return Err(JsValue::from_str(
-            "The options are not valid: an object {now, seed} is expected",
-        ));
+        return Err(JsValue::from_str(&format!(
+            "The options are not valid: an object {{{BOOK_OPTIONS}}} is expected"
+        )));
     }
     let object = js_sys::Object::from(options.clone());
     for key in js_sys::Object::keys(&object) {
         let key = key.as_string().unwrap_or_default();
-        if key != "now" && key != "seed" {
+        if !BOOK_OPTIONS.split(", ").any(|known| known == key) {
             return Err(JsValue::from_str(&format!(
-                "The options are not valid: unknown key `{key}` (the keys are now, seed)"
+                "The options are not valid: unknown key `{key}` (the keys are {BOOK_OPTIONS})"
             )));
         }
     }
@@ -92,7 +95,7 @@ impl Book {
     /// number from a text, in `calculate`, in the recalculation that follows an edit and in the
     /// queries. Without it the workbook has the locale of the system, and WebAssembly has none: `en-US`. The `locale` of a single call wins over it.
     ///
-    /// `options` is `{now, seed}`: the serial number that `NOW()` and `TODAY()` give and the seed of
+    /// `options` is `{now, seed}`: `now` is the serial number that `NOW()` and `TODAY()` give and `seed` the seed of
     /// `RAND()` and its relatives (an integer from 0 up to 2^53, or a `BigInt`), the `now` and `seed`
     /// of `sheetc`, in every calculation of the workbook: `calculate`, the recalculation that follows
     /// an edit, `inspect` and `compile`. Without them the clock decides. The `now` and `seed` of a
@@ -102,7 +105,7 @@ impl Book {
     /// # Errors
     ///
     /// A message when the bytes are not an XLSX, XLSM or ODS workbook, `locale` is not a locale tag
-    /// or `options` has a key other than `now` and `seed` or a value that is not valid.
+    /// or `options` has a key that is not one of its keys or a value that is not valid.
     #[wasm_bindgen(constructor)]
     pub fn new(data: &[u8], locale: Option<String>, options: JsValue) -> Result<Book, JsValue> {
         let mut inner = Inner::from_bytes(data).map_err(|e| failure("Reader error", e))?;
@@ -110,7 +113,7 @@ impl Book {
             let tag = tag.parse().map_err(|e| failure("Locale error", e))?;
             inner = inner.with_locale(tag);
         }
-        inner = inner.with_volatile(volatile_of(&options)?);
+        inner = inner.with_volatile(options_of(&options)?);
         Ok(Book {
             inner,
             on_diagnostic: None,

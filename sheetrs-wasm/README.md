@@ -62,8 +62,8 @@ statistics, which are a tool like the others: `stats()` reads it.
 | **the cut** | `save()` | the workbook the operations make, as a `Uint8Array` in the format of the `Book` (the plan is not consumed: saving again gives the same bytes). With none pending, the bytes as they are |
 | | `valueRanges()` | `ValueRanges` of the calculation (`toJSON()` is the answer of the protocol, `{valueRanges: [{range, name, values}]}`, `toObject()` is `{name: rows}`); runs the operations in memory and writes nothing |
 | | `report` | `Report` of the last `save` or `valueRanges`: `replaced`, `written`, `skipped` (`{sheet, cell, reason}`), `diagnostics`, `valueRanges`; `undefined` before |
-| **compile** | `compile(options?)` | `{module, cells, reachable, formulas, folded, kept, cycles, diagnostics}`: `module` is a `Uint8Array`, the WebAssembly module of the workbook (`sheetc build --target wasm`) |
-| **settings** | `locale`, `now`, `seed` (read only), `dates`, `onDiagnostic` | `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
+| **compile** | `compile(options?)` | `{module, cells, reachable, formulas, folded, kept, cycles, diagnostics}`: `module` is a `Uint8Array`, the WebAssembly module of the workbook (`sheetc build --target wasm`). By default the constants it folds are the values the workbook stores and the module keeps the cached result of the formulas it keeps; `calculateAll = true` on the `Book` (or `calculate_all` in the options) calculates the whole workbook first and stores those results; `force_calculate_all: true` (only here) stores no cached result, so the module calculates everything it kept in every run and is lighter |
+| **settings** | `locale`, `now`, `seed` (read only), `calculateAll`, `dates`, `onDiagnostic` | by default `save` calculates only the formulas the operations reach (and the ones that depend on them) and keeps, as the file has them, the results it caches for the rest, as `LibreOffice` does (see below); `calculateAll = true` calculates every formula (`calculateAll()` of `LibreOffice`, `--calculate-all` of the command line; `false` is the default), in `save`, `valueRanges` and `compile`; `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
 
 Free functions: `lintRules()` (array of `{id, name, category, is_default}`), `evaluateFormula(formula,
 locale, options)` (the value of one formula, `sheetc evaluate`) and `initPanicHook()`.
@@ -88,7 +88,7 @@ of its targets (a sweep is one operation); where a list is expected a single tex
 | `formulaToValue` | scopes: `"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"` |
 | `deleteRows`, `deleteColumns`, `hideRows`, `showRows`, `hideColumns`, `showColumns` | `"Sheet!3:10"`, `"Sheet!3"`, `"Sheet!B:D"`, `"Sheet!B"` |
 | `replace(replaces, options?)` | `replaces` is a list of `[text, with]` pairs or an object `{text: with}`; each pair is a replacement of its own, in order, that sees what the one before it left, so their order matters. `options`: `mode` (`literal`, `regex`, `wildcards`), `matchCase`, `entireCells`, `searchIn` (`value`, `formula`, `comment`), `formatted`, `filtered`, `scope` (sheets and ranges, the whole workbook when omitted). It looks inside formulas, as `sheetrs edit --replace` does |
-| `calculate(request?, options?)` | `{inputs, ranges, majorDimension}`, the request of `sheetc calculate`: the engine writes the `inputs` (a cell, a range or a defined name each) and calculates every formula of the workbook as it is, before the conversions and the deletions; `ranges` are the ranges `valueRanges()` answers (the workbook's own outputs when omitted; with them `save` also keeps the answer in `report.valueRanges`). The workbook is its own template here (the embedded mode): a range inside the outputs the workbook declares is a selection among them, and one **outside** them is read, in memory and with no recalculation, from the workbook just written, in the order asked (a constant has the value it holds, the `inputs` are in it, and a formula the outputs left out has the result the template stored); a range that is no range or name of the workbook throws. A compiled module (`compile`) refuses a range outside its declared outputs and lists them (see [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for)); the workbook that `save()` gives is read from memory with `new Book(saved).range(...)` (or `find`); `majorDimension` is `"ROWS"` (the default) or `"COLUMNS"`. `options` is `{now, seed}`: the serial number that `NOW()` and `TODAY()` give and the seed of `RAND()` (the `now` and `seed` of `sheetc`; the clock when absent, so the same workbook gives the same results on every run when both are given); they also fix the recalculation that the same `save` runs after an edit that leaves results stale. Any other key throws |
+| `calculate(request?, options?)` | `{inputs, ranges, majorDimension}`, the request of `sheetc calculate`: the engine writes the `inputs` (a cell, a range or a defined name each) and calculates every formula of the workbook as it is, before the conversions and the deletions; `ranges` are the ranges `valueRanges()` answers (the workbook's own outputs when omitted; with them `save` also keeps the answer in `report.valueRanges`). The workbook is its own template here (the embedded mode): a range inside the outputs the workbook declares is a selection among them, and one **outside** them is read, in memory and with no recalculation, from the workbook just written, in the order asked (a constant has the value it holds, the `inputs` are in it, and a formula the outputs left out is calculated too: the workbook is the answer, so the whole workbook comes out calculated); a range that is no range or name of the workbook throws. A compiled module (`compile`) refuses a range outside its declared outputs and lists them (see [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for)); the workbook that `save()` gives is read from memory with `new Book(saved).range(...)` (or `find`); `majorDimension` is `"ROWS"` (the default) or `"COLUMNS"`. `options` is `{now, seed}`: the serial number that `NOW()` and `TODAY()` give and the seed of `RAND()` (the `now` and `seed` of `sheetc`; the clock when absent, so the same workbook gives the same results on every run when both are given); they also fix the recalculation that the same `save` runs after an edit that leaves results stale. Any other key throws |
 
 A `calculate` is a step of the plan: the workbook is written with fresh results and without the mark that
 makes the application that opens it recalculate every formula; so is a workbook whose results a deletion or
@@ -98,9 +98,23 @@ when it is opened, with a diagnostic with the code `RECALC_NOT_SUPPORTED` in `re
 (and in `onDiagnostic`): the recalculation that is needed will be done by the spreadsheet program that
 opens it later. `valueRanges()` has no workbook to mark: there it is an error that gives the reason.
 
-A `formulaToValue` that follows a change which leaves results stale (rows, columns, sheets or names
-deleted) converts the results calculated again by the engine, as an application that calculates as it goes
-shows them. If the engine cannot calculate the workbook, the call throws with the reason.
+By default (what `LibreOffice` does when it opens a file and when a cell changes) `save` keeps the results the file
+caches for the formulas the operations do not reach: the engine calculates the ones they reach (a formula that
+read a deleted cell or a range that shrank, one that reads a replaced cell, a `SUBTOTAL` when rows are hidden or
+shown...) and the ones that depend on them, and every other formula keeps the value the application that wrote
+the file computed. `calculateAll = true` (a property of the `Book`, `false` by default) emulates
+`calculateAll()`: every formula is calculated again. A workbook that reads cells at run time (`INDIRECT`),
+or whose file says its results are stale, is calculated whole in both (see `sheetrs-edit/README.md`,
+*The cache is the default*).
+
+A `formulaToValue` converts, by default, the results the file caches for the formulas the plan does not reach and
+what the engine calculates for the ones it reaches (a replacement pushed with it, a deletion). With `calculateAll
+= true` the engine calculates the cells of its scopes (and what they read) in the pass that writes them as
+values, and those are the values. A cell that depends on what the engine
+cannot calculate (another workbook, a macro, an extension) keeps its cached result, as `LibreOffice` shows it until something dirties the cell, and the
+report holds a warning with the code `EXTERNAL_FROM_CACHE`, `MACRO_FROM_CACHE` or `EXTENSION_FROM_CACHE`; one the run calculates and that only `LibreOffice`
+can answer (a macro, a function it has and the engine lacks) makes the call throw with a message that names the cause. An add-in that is not installed is `#NAME?`
+in a cell the run calculates, as in `LibreOffice`.
 
 ### `query`
 
@@ -154,6 +168,7 @@ Exports of the module (all `extern "C"`; sizes are in bytes of its linear memory
 | `sheetrs_alloc(len) -> ptr`, `sheetrs_free(ptr, len)` | memory for a request |
 | `sheetrs_set_clock(seconds: f64)` | the clock of `NOW()` and `TODAY()` (seconds since the Unix epoch). A module has no clock of its own: until the host sets one, the time is the epoch |
 | `sheetrs_set_seed(seed: f64)` | the seed of `RAND()` (an integer up to 2^53) |
+| `sheetrs_set_calculate_all(flag: i32)` | `1`: the next calls ignore the results the program caches for the formulas it kept and calculate every one (`calculateAll()`); `0`, the default: a formula whose inputs did not change keeps its cached result. A module built with `force_calculate_all` caches none, so it has no effect there |
 | `sheetrs_meta() -> status` | the metadata, inputs and outputs of the program (`--meta` of an executable), in the result buffer |
 | `sheetrs_info() -> status` | the `--info` of an executable |
 | `sheetrs_calculate(ptr, len) -> status` | the JSON answer (`{"valueRanges": [...]}`) to a request (`{"inputs": {...}, "ranges": [...]}`; empty for the declared outputs), in the result buffer |

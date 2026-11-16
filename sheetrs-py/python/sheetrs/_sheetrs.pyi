@@ -339,7 +339,14 @@ class Book:
         """Delete defined names: one `str` or an iterable of them."""
     def formula_to_value(self, scopes: Targets) -> Self:
         """Replace the formulas of the scopes (`"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"`) by their
-        values: one `str` or an iterable of them."""
+        values: one `str` or an iterable of them. By default the values are the results the file caches for
+        the formulas the edit does not reach and what the engine calculates for the ones it reaches; with
+        `calculate_all=True` on the terminal the engine calculates the cells of the scopes, and what they
+        read, while the file is written. A cell that depends on what the engine cannot calculate (another
+        workbook, a macro, an extension) keeps the result the file caches, as LibreOffice shows it until
+        something dirties the cell, and the report of the save says so (`EXTERNAL_FROM_CACHE`,
+        `MACRO_FROM_CACHE`, `EXTENSION_FROM_CACHE`); one the run calculates and that only LibreOffice can
+        give a result for (a macro, a function the engine lacks) raises `Error`, naming the cause."""
     def delete_rows(self, rows: Targets) -> Self:
         """Delete rows (`"Sheet!3:10"`, `"Sheet!3"`): one `str` or an iterable of them, simultaneous
         within the call."""
@@ -410,16 +417,26 @@ class Book:
         (`"rows"`, the default, or `"columns"`, the `majorDimension` of the request); a range outside the
         outputs the workbook declares is read, in memory and with no recalculation, from the workbook just
         written (the workbook is its own template). Where the engine
-        cannot calculate the workbook it is written marked to be recalculated, with a
-        `RecalculationWarning`. `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
+        cannot calculate the workbook for a reason that is none of the next ones it is written marked to be
+        recalculated, with a `RecalculationWarning`. A cell that depends on another workbook, a macro
+        or a function the engine does not implement keeps the result the file caches, as LibreOffice shows
+        it until something dirties the cell, and the report holds a warning of its own; one the run
+        calculates and that only LibreOffice can give a result for (a macro, a function the engine lacks)
+        raises `Error` naming the cause. `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
         (the seed of `RAND()`) fix the volatile functions, as `--now` and `--seed` of `sheetc` do
         (without them the engine reads the clock); they also fix the recalculation that the same `save`
         runs after an edit that leaves results stale."""
-    def value_ranges(self) -> ValueRanges:
+    def value_ranges(self, *, calculate_all: bool = False) -> ValueRanges:
         """The value ranges of the calculation, in memory: runs the operations and writes the workbook
-        nowhere. Raises `Error` without a `calculate` step."""
-    def explain(self) -> str: ...
-    def save(self, dest: Destination | None = None, *, json: Destination | None = None) -> Book:
+        nowhere. Raises `Error` without a `calculate` step. `calculate_all` is the one of `save`."""
+    def explain(self, *, calculate_all: bool = False) -> str: ...
+    def save(
+        self,
+        dest: Destination | None = None,
+        *,
+        json: Destination | None = None,
+        calculate_all: bool = False,
+    ) -> Book:
         """The cut: run the operations and write the workbook.
 
         `save(dest)` writes to a path or to a binary stream (`io.BytesIO()`) and returns a `Book` on what
@@ -427,13 +444,21 @@ class Book:
         from (rewritten from its start), and returns this `Book`, which then has no operations. `json`
         is a path or a stream where the value ranges of the `calculate` step are written as JSON besides the
         workbook.
+
+        By default (what `LibreOffice` does) only the formulas the operations reach, and the ones that
+        depend on them, are calculated again: every other formula keeps, as it is, the result the file
+        caches (the application that wrote it computed it, and that is the value it holds after the
+        edit). With `calculate_all=True` the engine calculates every formula of the workbook
+        (`calculateAll()`). A workbook that reads cells at run time (`INDIRECT`, `OFFSET`), one the file
+        says is stale, and one where a replacement and a deletion meet are calculated whole in both.
         """
-    def to_bytes(self) -> bytes:
+    def to_bytes(self, *, calculate_all: bool = False) -> bytes:
         """The workbook the operations make, as bytes in the format of the source: the cut like `save`,
         but to memory, with no file. The bytes are the ones `save(path)` writes for the same plan. Like
         `save(path)` it keeps the operations of this `Book`; `report` says what the run did and a
         `RecalculationWarning` is issued where `save` would issue it. With no operations it returns
-        the workbook as it is (the file, or the bytes the `Book` was made from)."""
+        the workbook as it is (the file, or the bytes the `Book` was made from). `calculate_all` is the one
+        of `save`."""
     def range(
         self,
         ranges: Targets,

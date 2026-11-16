@@ -363,6 +363,7 @@ impl PyBook {
     ///
     /// Raises `FileNotFoundError` for a path that is not a file, `FormatError` for a workbook
     /// that is not an XLSX, XLSM or ODS one and `ValueError` for a `locale` that is not a locale tag.
+    ///
     #[new]
     #[pyo3(signature = (source, *, locale=None, now=None, seed=None))]
     fn new(
@@ -493,8 +494,10 @@ impl PyBook {
     }
 
     /// Replace the formulas of the scopes by the values they have (*Data ▸ Calculate ▸ Formula to
-    /// Value*). A scope is `"Sheet"`, `"Sheet!B:D"` (columns) or `"Sheet!3:10"` (rows); one or an
-    /// iterable of them.
+    /// Value*): by default the results the file caches for the formulas the edit does not reach and what the
+    /// engine calculates for the ones it reaches (with `calculate_all=True` on the terminal the engine
+    /// calculates what the scopes name first). A scope is `"Sheet"`, `"Sheet!B:D"` (columns)
+    /// or `"Sheet!3:10"` (rows); one or an iterable of them.
     fn formula_to_value<'py>(
         slf: PyRefMut<'py, Self>,
         scopes: &Bound<'_, PyAny>,
@@ -662,8 +665,14 @@ impl PyBook {
     /// reads the clock. They also fix the recalculation that the same `save` runs after an edit that
     /// leaves results stale.
     ///
-    /// Where the engine cannot calculate the workbook (a function it does not have, a reference it
-    /// does not read) `save` still writes it, marked to be recalculated when it is opened, and issues
+    /// A cell that depends on another workbook, a macro or a function the engine does not implement
+    /// keeps the result the file caches, as `LibreOffice` shows it until something dirties the cell, and
+    /// the report says so with a warning (`EXTERNAL_FROM_CACHE`, `MACRO_FROM_CACHE`,
+    /// `EXTENSION_FROM_CACHE`); one the run calculates and that only `LibreOffice` can give a result for
+    /// (a macro, a function the engine lacks) raises `Error` with a message that names the cause.
+    ///
+    /// Where the engine cannot calculate the workbook for another reason (a reference it does not read)
+    /// `save` still writes it, marked to be recalculated when it is opened, and issues
     /// a `RecalculationWarning`: the recalculation that is needed will be done by the spreadsheet
     /// program that opens the file later. With `to_dict()` or `save(json=...)` there is no answer to
     /// give, and it is an error.
@@ -710,8 +719,9 @@ impl PyBook {
     /// It is a terminal like `save`: it runs the operations (the workbook goes through memory and is
     /// written nowhere), so it is allowed with operations pending. Raises `Error` when there is no
     /// `calculate` step, and `UnavailableFunctionError` when the engine cannot calculate the
-    /// workbook.
-    fn value_ranges(&self, py: Python<'_>) -> PyResult<PyValueRanges> {
+    /// workbook. `calculate_all` is the one of `save`.
+    #[pyo3(signature = (*, calculate_all=false))]
+    fn value_ranges(&self, py: Python<'_>, calculate_all: bool) -> PyResult<PyValueRanges> {
         if !plan::has_calculate(&self.steps) {
             return Err(raise(
                 "Error",
@@ -719,7 +729,7 @@ impl PyBook {
                  call calculate() first",
             ));
         }
-        let source = self.source.clone();
+        let source = self.source.clone().with_calculate_all(calculate_all);
         let steps = self.steps.clone();
         let done = py
             .detach(|| plan::run(&source, &steps, &Target::Nowhere, true))
@@ -736,8 +746,12 @@ impl PyBook {
     /// What `save` will do: the passes over the file that run the operations, one operation per
     /// line, and the calculations in their place. The operations are not run in the order they were
     /// given: each is written against the workbook as it is, and the planner orders them.
-    fn explain(&self) -> String {
-        plan::explain(&self.source, &self.steps)
+    #[pyo3(signature = (*, calculate_all=false))]
+    fn explain(&self, calculate_all: bool) -> String {
+        plan::explain(
+            &self.source.clone().with_calculate_all(calculate_all),
+            &self.steps,
+        )
     }
 
     /// The cut: run the operations and write the workbook.
@@ -757,14 +771,18 @@ impl PyBook {
     /// the operations leave stale is calculated again by the engine, so it is written with fresh
     /// results; where the engine cannot, it is written marked so that the application that opens it
     /// recalculates every formula, and a `RecalculationWarning` says so (also logged by `sheetrs`).
+    /// By default (what `LibreOffice` does) only the formulas the operations reach, and the ones that depend on
+    /// them, are calculated: every other formula keeps the result the file caches. With
+    /// `calculate_all=True` every formula is calculated (`calculateAll()`).
     /// Raises `OSError` for a file that cannot be read or written and `sheetrs.Error` when the
     /// workbook cannot be edited (including when there are no operations).
-    #[pyo3(signature = (dest=None, *, json=None))]
+    #[pyo3(signature = (dest=None, *, json=None, calculate_all=false))]
     fn save<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
         dest: Option<&Bound<'py, PyAny>>,
         json: Option<&Bound<'py, PyAny>>,
+        calculate_all: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         if json.is_some() && !plan::has_calculate(&slf.steps) {
             return Err(raise(
@@ -773,7 +791,7 @@ impl PyBook {
                  call calculate() first",
             ));
         }
-        let source = slf.source.clone();
+        let source = slf.source.clone().with_calculate_all(calculate_all);
         let steps = slf.steps.clone();
         let stream_dest = match dest {
             Some(dest) if is_stream(dest)? => Some(dest.clone()),
@@ -872,12 +890,15 @@ impl PyBook {
     /// made from).
     ///
     /// Raises `OSError` for a file that cannot be read when there are no operations, and
-    /// `sheetrs.Error` when the workbook cannot be read or edited to run them.
+    /// `sheetrs.Error` when the workbook cannot be read or edited to run them. `calculate_all` is the one
+    /// of `save`.
+    #[pyo3(signature = (*, calculate_all=false))]
     fn to_bytes<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
+        calculate_all: bool,
     ) -> PyResult<Bound<'py, PyBytes>> {
-        let source = slf.source.clone();
+        let source = slf.source.clone().with_calculate_all(calculate_all);
         if slf.steps.is_empty() {
             let bytes = py
                 .detach(|| match (source.path(), source.bytes()) {

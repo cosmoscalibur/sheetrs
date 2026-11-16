@@ -34,6 +34,8 @@ const bookOds = join(root, "sheetrs-edit/tests/assets/book/book.ods");
 
 const ext = (file) => file.split(".").pop();
 const read = (file) => new Uint8Array(readFileSync(file));
+// `book` has a reference to another workbook, which the engine does not open: the cell keeps the result the file caches, as
+// `LibreOffice` shows it, with no option.
 const open = (file) => new wasm.Book(read(file));
 // A linter exits with 1 when it finds violations: what it wrote is its answer all the same.
 // `lint`, `query`, `edit` and `stats` are the subcommands of `sheetrs`; any other tool is an executable.
@@ -259,6 +261,89 @@ for (const file of [book, bookOds]) {
     assert.ok(edited.explain().includes("delete rows"));
     // The plan is not consumed: saved again it gives the same bytes.
     sameBytes(edited.save(), saved);
+    // `calculateAll = true` is `--calculate-all`: every formula is calculated again, where by default the
+    // results the file caches stay where nothing reaches them.
+    assert.equal(edited.calculateAll, false);
+    run("edit", ["-i", file, "--delete-rows", "Data!10:11", "--calculate-all", "-o", out]);
+    const everything = open(file);
+    everything.calculateAll = true;
+    assert.equal(everything.calculateAll, true);
+    everything.deleteRows("Data!10:11");
+    sameBytes(everything.save(), readFileSync(out));
+  });
+}
+// The workbooks of the tests of the calculation mode: `Calc!A7` caches `from-excel`, which the engine would not give
+// (it gives `t`), and nothing the edits below reach reads it.
+const cacheBook = (extension) => join(root, `sheetrs-edit/tests/assets/cached/book.${extension}`);
+const cell = (data, range) => new wasm.Book(data).range(range)[0].values.flat()[0];
+for (const extension of ["xlsx", "ods"]) {
+  const file = cacheBook(extension);
+  check(`edit (by default the results the file caches stay where the edit reaches nothing; calculateAll calculates every formula) ${extension}`, () => {
+    const out = join(work, `cache-kept.${extension}`);
+    run("edit", ["-i", file, "--delete-rows", "Data!3", "-o", out]);
+    const kept = open(file);
+    kept.deleteRows("Data!3");
+    const saved = kept.save();
+    sameBytes(saved, readFileSync(out));
+    assert.equal(cell(saved, "Calc!A7"), "from-excel");
+    // What the deletion reaches is calculated again: the range that shrank.
+    assert.equal(cell(saved, "Calc!A1"), 180);
+    // With `calculateAll` every formula is calculated again, as `--calculate-all` does.
+    run("edit", ["-i", file, "--delete-rows", "Data!3", "--calculate-all", "-o", out]);
+    const whole = open(file);
+    whole.calculateAll = true;
+    whole.deleteRows("Data!3");
+    const all = whole.save();
+    sameBytes(all, readFileSync(out));
+    assert.equal(cell(all, "Calc!A7"), "t");
+  });
+  check(`edit (by default hiding and showing rows reach SUBTOTAL and nothing else) ${extension}`, () => {
+    const out = join(work, `cache-hidden.${extension}`);
+    run("edit", ["-i", file, "--hide-rows", "Data!2", "-o", out]);
+    const hidden = open(file);
+    hidden.hideRows("Data!2");
+    const saved = hidden.save();
+    sameBytes(saved, readFileSync(out));
+    assert.equal(cell(saved, "Calc!B2"), 190);
+    assert.equal(cell(saved, "Calc!A7"), "from-excel");
+    // And the rows shown again: the sum of every row.
+    const shownOut = join(work, `cache-shown.${extension}`);
+    run("edit", ["-i", out, "--show-rows", "Data!2", "-o", shownOut]);
+    const shown = new wasm.Book(saved);
+    shown.showRows("Data!2");
+    const again = shown.save();
+    sameBytes(again, readFileSync(shownOut));
+    assert.equal(cell(again, "Calc!B2"), 210);
+  });
+  check(`edit (replace with anchors and the empty pattern, as the command) ${extension}`, () => {
+    const out = join(work, `anchors.${extension}`);
+    run("edit", ["-i", file, "--replace", "^x$", "--with", "y", "--regex", "--scope", "Data!B1", "-o", out]);
+    const anchored = open(file);
+    anchored.replace([["^x$", "y"]], { mode: "regex", scope: ["Data!B1"] });
+    const saved = anchored.save();
+    sameBytes(saved, readFileSync(out));
+    assert.equal(cell(saved, "Data!B1"), "y");
+    // The empty text matches nothing, in every mode: no cell is replaced.
+    const empty = open(file);
+    empty.replace([["", "z"]], { mode: "regex" });
+    empty.save();
+    assert.equal(empty.report.replaced, 0);
+    // A match of no characters is replaced only at the very end of the text (as LibreOffice does): `^` leaves
+    // the cell, `$` adds to it.
+    const start = join(work, `start.${extension}`);
+    run("edit", ["-i", file, "--replace", "^", "--with", ">", "--regex", "--scope", "Data!B1", "-o", start]);
+    const prefixed = open(file);
+    prefixed.replace([["^", ">"]], { mode: "regex", scope: ["Data!B1"] });
+    const text = prefixed.save();
+    sameBytes(text, readFileSync(start));
+    assert.equal(cell(text, "Data!B1"), "x");
+    const endOut = join(work, `end.${extension}`);
+    run("edit", ["-i", file, "--replace", "$", "--with", "!", "--regex", "--scope", "Data!B1", "-o", endOut]);
+    const suffixed = open(file);
+    suffixed.replace([["$", "!"]], { mode: "regex", scope: ["Data!B1"] });
+    const end = suffixed.save();
+    sameBytes(end, readFileSync(endOut));
+    assert.equal(cell(end, "Data!B1"), "x!");
   });
 }
 // A sweep: arrays of targets and a replace with pairs, the same as the command with its flags repeated.
@@ -441,8 +526,11 @@ check("edit (calculate with inputs and the ranges asked for)", () => {
   assert.deepEqual(answer.toObject(), { "T!C1": [[100]] });
   assert.equal(valueOf(edited.save(), "T!C1"), 100);
 });
+// A workbook with a formula the engine does not calculate (a `TEXT` code of another language): the three
+// things that are an error unless asked for are in "from-cache" below.
+const limit = join(root, "sheetrs-edit/tests/assets/cached/limit.xlsx");
 check("edit (calculate on a workbook the engine cannot calculate: marked and a warning)", () => {
-  const edited = open(book);
+  const edited = open(limit);
   edited.deleteRows("Data!10:11");
   edited.calculate();
   const seen = [];
@@ -460,10 +548,58 @@ check("edit (calculate on a workbook the engine cannot calculate: marked and a w
   assert.deepEqual(seen, records);
   assert.equal(marked(workbook), true);
   // With the ranges asked for there is no answer to give: an error, not a warning.
-  const asked = open(book);
+  const asked = open(limit);
   asked.calculate();
   assert.throws(() => asked.valueRanges(), /could not be calculated/);
   assert.throws(() => open(book).valueRanges(), /no calculate step/);
+});
+
+// -- from-cache ------------------------------------------------------------------------------
+// What the engine cannot calculate (another workbook, a macro, an extension) has no option: a cell that nothing reaches keeps
+// the result the file caches and the report holds a warning of its kind; a cell the run calculates is what `LibreOffice` gives
+// (`#NAME?` for an add-in that is not installed, the stored value of a link) or, where only `LibreOffice` can answer (a macro,
+// `WEBSERVICE`), an error that names the cause (`sheetrs-edit/tests/from_cache.rs` has the logic; this is the package).
+const fromCache = (kind, extension) => join(root, `sheetrs-edit/tests/assets/from_cache/${kind}.${extension}`);
+const kinds = [
+  { kind: "external", code: "EXTERNAL_FROM_CACHE", cause: null, a1: 42 },
+  { kind: "macro", code: "MACRO_FROM_CACHE", cause: /MYFUNC/, a1: 77 },
+  { kind: "extension", code: "EXTENSION_FROM_CACHE", cause: /WEBSERVICE/, a1: 77 },
+];
+for (const { kind, code, cause, a1 } of kinds) {
+  for (const extension of ["xlsx", "ods"]) {
+    const file = fromCache(kind, extension);
+    check(`from-cache (${kind} ${extension}: every formula calculated keeps a link, and a macro or WEBSERVICE is an error)`, () => {
+      const converting = open(file);
+      converting.calculateAll = true;
+      converting.formulaToValue("Calc");
+      if (cause === null) {
+        const saved = converting.save();
+        const [row] = new wasm.Book(saved).range("Calc!A1:E1")[0].values;
+        assert.equal(row[0], a1);
+        assert.equal(row[1], a1 + 1);
+        assert.equal(row[2], 10);
+        assert.equal(row[4], 11);
+        assert.deepEqual(converting.report.diagnostics.map((d) => d.code), [code]);
+      } else {
+        assert.throws(() => converting.save(), (error) => cause.test(String(error)));
+      }
+    });
+  }
+  check(`from-cache (${kind} xlsx: a calculation nothing reaches keeps the cache and warns)`, () => {
+    const book = open(fromCache(kind, "xlsx"));
+    book.calculate();
+    const saved = book.save();
+    const [row] = new wasm.Book(saved).range("Calc!A1:C1")[0].values;
+    assert.equal(row[0], a1);
+    assert.equal(row[2], 999, "C1 keeps what the file caches");
+    assert.deepEqual(book.report.diagnostics.map((d) => d.code), [code]);
+  });
+}
+check("from-cache (the options of an earlier version are gone)", () => {
+  assert.throws(() => new wasm.Book(read(book), undefined, { externalFromCache: true }), /unknown key/);
+  assert.throws(() => open(book).calculate(undefined, { macroFromCache: true }), /not valid|unknown/);
+  assert.equal(open(book).externalFromCache, undefined);
+  assert.equal("macroFromCache" in open(book), false);
 });
 
 // -- calculate -------------------------------------------------------------------------------
@@ -525,8 +661,8 @@ for (const file of [loan, loanOds]) {
     assert.ok(Math.abs(payment.values[0][0] - 5.368216230121398) < 1e-9);
     assert.equal(rate.values[0][0], 0.05);
     assert.equal(principal.values[0][0], 1000);
-    // Read, not calculated again: the formula the outputs left out holds what the template stored.
-    assert.ok(Math.abs(total.values[0][0] - 386511.5) < 1);
+    // The workbook is the answer, so the formula the outputs left out is calculated too (360 payments of the new loan).
+    assert.ok(Math.abs(total.values[0][0] - 5.368216230121398 * 360) < 1e-6);
     const nowhere = open(file);
     nowhere.calculate({ ranges: ["Nowhere!A1"] });
     assert.throws(() => nowhere.valueRanges(), /Nowhere!A1/);
@@ -568,6 +704,7 @@ for (const [extension, locale, expected] of [
     const asked = `Calc!A${labels.indexOf(formulaLocale) + 1}`;
     const calculating = new wasm.Book(data, locale);
     assert.equal(calculating.locale, locale);
+    calculating.calculateAll = true; // the engine calculates the text; by default the file's cached one is kept
     calculating.calculate({ ranges: [asked] });
     assert.deepEqual(calculating.valueRanges().toJSON().valueRanges[0].values, [[expected]]);
   });
@@ -737,14 +874,42 @@ for (const file of [loan, loanOds]) {
     assert.equal(both.status, 0);
     const direct = calculated(file, request);
     assert.deepEqual(JSON.parse(both.text), direct.answer);
-    sameBytes(both.workbook, direct.workbook);
+    moduleWorkbookIsWhatTheBuildDeclares(file, both.workbook, direct.workbook);
     const only = book.write(request, false);
     assert.equal(only.text, "");
-    sameBytes(only.workbook, direct.workbook);
+    moduleWorkbookIsWhatTheBuildDeclares(file, only.workbook, direct.workbook);
     // And as any executable, the JSON.
     assert.deepEqual(JSON.parse(book.calculate(request).text), direct.answer);
   });
 }
+// A module is a build: it has the rules of a build, not the ones of `calculate`. The loan declares `payment` (Loan!B4), `interest`
+// (Loan!B6) and `balance` (Loan!B8) and the inputs, and the module writes those: what the package calculates for them, the inputs given in
+// their cells. Loan!B5 (the total, which the interest reads) and the schedule are formulas no declared output holds, so the template keeps the
+// results it stored; `calculate` is the one whose answer is the whole workbook, and it tells the build so (`whole_workbook`).
+function moduleWorkbookIsWhatTheBuildDeclares(file, module, packageWorkbook) {
+  for (const range of ["Loan!B1:B3", "Loan!B4", "Loan!B6", "Loan!B7", "Loan!B8"]) sameValues(module, packageWorkbook, range);
+  const template = read(file);
+  sameValues(module, template, "Loan!B5");
+  sameValues(module, template, "Loan!D12:D20");
+  const [total] = new wasm.Book(packageWorkbook).range(["Loan!B5"]);
+  const [stored] = new wasm.Book(template).range(["Loan!B5"]);
+  assert.notEqual(total.values[0][0], stored.values[0][0], "the package calculated the formula the build leaves alone");
+}
+check("compile (embed_template, no output declared): every formula is an output, so the workbook comes out as `calculate` gives it", () => {
+  const declarations = {
+    inputs: [
+      { name: "principal", range: "Loan!B1" },
+      { name: "rate", range: "Loan!B2" },
+      { name: "years", range: "Loan!B3" },
+      { name: "month", range: "Loan!B7" },
+    ],
+  };
+  const { module } = open(loan).compile({ embed_template: true, declarations });
+  const done = instantiate(module).write(request, false);
+  assert.equal(done.status, 0);
+  const direct = calculated(loan, request);
+  for (const range of ["Loan!B1:B8", "Loan!D10:D40"]) sameValues(done.workbook, direct.workbook, range);
+});
 check("compile (embed_template, nothing given): the workbook with every formula calculated", () => {
   const { module } = open(loan).compile({ embed_template: true });
   const book = instantiate(module);
@@ -783,7 +948,7 @@ check("compile (sheetc build --target wasm makes a module that answers the same)
   assert.equal(fromCli.calculate(request).text, instantiate(module).calculate(request).text);
   const outTemplate = join(work, "loan_t.wasm");
   run("sheetc", ["build", "-i", loan, "--target", "wasm", "--embed-template", "--runtime", join(rt, "sheetrs-rt-template.wasm"), "-o", outTemplate]);
-  sameBytes(instantiate(new Uint8Array(readFileSync(outTemplate))).write(request, false).workbook, calculated(loan, request).workbook);
+  moduleWorkbookIsWhatTheBuildDeclares(loan, instantiate(new Uint8Array(readFileSync(outTemplate))).write(request, false).workbook, calculated(loan, request).workbook);
 });
 check("compile (the module has no clock of its own: the host sets it)", () => {
   const nowBook = chainWorkbook(2, () => "NOW()");

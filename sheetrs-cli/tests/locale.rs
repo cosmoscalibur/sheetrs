@@ -197,7 +197,7 @@ fn the_edit_takes_the_locale_flag_and_the_configuration() {
             .env_remove("LANG")
             .args(["edit", "-i"])
             .arg(asset(file))
-            .args(["--delete-rows", "Numbers!1", "--output"])
+            .args(["--delete-rows", "Numbers!1", "--calculate-all", "--output"])
             .arg(&out)
             .args(args)
             .output()

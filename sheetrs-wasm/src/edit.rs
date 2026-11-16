@@ -28,6 +28,7 @@ where
 /// recalculation that the same `save` runs after an edit that leaves results stale.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct CalculateOptions {
     now: Option<f64>,
     seed: Option<u64>,
@@ -224,7 +225,8 @@ impl Book {
     }
 
     /// Replace the formulas by the values they have (*Data ▸ Calculate ▸ Formula to Value*):
-    /// `Sheet`, `Sheet!B:D` or `Sheet!3:10`, or a list of them.
+    /// `Sheet`, `Sheet!B:D` or `Sheet!3:10`, or a list of them. The values are what the formulas
+    /// calculate, by default the results the file caches for the formulas the plan does not reach and what the engine calculates for the ones it reaches (with `calculateAll` the engine calculates what the scopes name).
     ///
     /// # Errors
     ///
@@ -456,6 +458,21 @@ impl Book {
     #[wasm_bindgen(getter)]
     pub fn pending(&self) -> usize {
         self.inner.operations().len()
+    }
+
+    /// Whether `save` (and `compile`) calculates every formula (`true`, `calculateAll()` of `LibreOffice`).
+    /// `false`, the default, is what `LibreOffice` does: only the formulas the operations reach, and the
+    /// ones that depend on them, are calculated again, and every other keeps the result the file
+    /// caches.
+    #[wasm_bindgen(getter, js_name = calculateAll)]
+    pub fn calculate_all(&self) -> bool {
+        self.inner.calculate_all()
+    }
+
+    /// Sets [`calculate_all`](Self::calculate_all).
+    #[wasm_bindgen(setter, js_name = calculateAll)]
+    pub fn set_calculate_all(&mut self, calculate_all: bool) {
+        self.inner = self.inner.clone().with_calculate_all(calculate_all);
     }
 
     /// What `save` will do: the passes over the file, one operation per line.
