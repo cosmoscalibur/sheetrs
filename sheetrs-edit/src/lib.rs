@@ -42,4 +42,4 @@ pub use error::{Error, Result, ScopeError};
 pub use plan::explain;
 pub use replace::{Report, Skipped};
 pub use sheetrs_io::write::{CachedResult, Calculation, CellWrites, Constant, ValueScope};
-pub use sheetrs_io::write::{ColumnRange, RowRange};
+pub use sheetrs_io::write::{ColumnRange, RowRange, VisibilityChange};

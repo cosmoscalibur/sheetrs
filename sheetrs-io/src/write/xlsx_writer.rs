@@ -25,8 +25,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, BufWriter, Cursor, Read, Seek, Write};
 use zip::{ZipArchive, ZipWriter};
 
-const WORKBOOK_PART: &str = "xl/workbook.xml";
-const WORKBOOK_RELS_PART: &str = "xl/_rels/workbook.xml.rels";
+pub(super) const WORKBOOK_PART: &str = "xl/workbook.xml";
+pub(super) const WORKBOOK_RELS_PART: &str = "xl/_rels/workbook.xml.rels";
 const CONTENT_TYPES_PART: &str = "[Content_Types].xml";
 /// Part name of the calculation chain, which lists every formula cell.
 const CALC_CHAIN_PART: &str = "xl/calcChain.xml";
@@ -34,10 +34,10 @@ const STYLES_PART: &str = "xl/styles.xml";
 
 /// A `<sheet>` entry of `workbook.xml`.
 #[derive(Debug, PartialEq)]
-struct SheetEntry {
-    name: String,
+pub(super) struct SheetEntry {
+    pub(super) name: String,
     /// Relationship id of the sheet part in `workbook.xml.rels`.
-    rel_id: String,
+    pub(super) rel_id: String,
 }
 
 /// Modify an XLSX file by applying specified modifications
@@ -52,7 +52,27 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
 ) -> Result<()> {
     let archive = ZipArchive::new(input)?;
     let mut zip_writer = ZipWriter::new(super::Quiet::new(output));
-    let result = apply_xlsx(archive, &mut zip_writer, modifications);
+    let result = if modifications.visibility.is_empty() {
+        apply_xlsx(archive, &mut zip_writer, modifications)
+    } else {
+        // Visibility is applied to the input, and the rest to what that leaves.
+        let visibilities = super::visibility::Visibilities::new(&modifications.visibility);
+        if modifications.asks_nothing_else() {
+            super::xlsx_visibility::apply(archive, &mut zip_writer, &visibilities)
+        } else {
+            let mut shown = Cursor::new(Vec::new());
+            {
+                let mut first = ZipWriter::new(&mut shown);
+                super::xlsx_visibility::apply(archive, &mut first, &visibilities)?;
+                first.finish()?;
+            }
+            apply_xlsx(
+                ZipArchive::new(shown)?,
+                &mut zip_writer,
+                &modifications.without_visibility(),
+            )
+        }
+    };
     // The writer is closed in both cases: dropped open it would try to finish the archive and print
     // a line of its own to the standard error when the output refuses the bytes.
     let closed = zip_writer.finish();
@@ -359,7 +379,7 @@ fn apply_xlsx<R: Read + Seek, W: Write + Seek>(
 
 // Helper functions
 
-fn read_part<R: Read + Seek>(archive: &mut ZipArchive<R>, name: &str) -> Result<String> {
+pub(super) fn read_part<R: Read + Seek>(archive: &mut ZipArchive<R>, name: &str) -> Result<String> {
     let mut content = String::new();
     archive
         .by_name(name)
@@ -422,7 +442,7 @@ fn sheet_relationships_part(part: &str) -> String {
     format!("{folder}/_rels/{file}.rels")
 }
 
-fn parse_sheets(workbook_xml: &str) -> Result<Vec<SheetEntry>> {
+pub(super) fn parse_sheets(workbook_xml: &str) -> Result<Vec<SheetEntry>> {
     let mut reader = Reader::from_str(workbook_xml);
     let mut sheets = Vec::new();
     loop {
@@ -441,7 +461,7 @@ fn parse_sheets(workbook_xml: &str) -> Result<Vec<SheetEntry>> {
 }
 
 /// Map each relationship id of a relationships part to its `Target`.
-fn parse_relationship_targets(rels_xml: &str) -> Result<HashMap<String, String>> {
+pub(super) fn parse_relationship_targets(rels_xml: &str) -> Result<HashMap<String, String>> {
     let mut reader = Reader::from_str(rels_xml);
     let mut targets = HashMap::new();
     loop {

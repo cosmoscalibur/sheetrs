@@ -45,7 +45,27 @@ pub fn modify_workbook_ods<R: Read + Seek, W: Write + Seek>(
 ) -> Result<()> {
     let archive = ZipArchive::new(input)?;
     let mut zip_writer = ZipWriter::new(super::Quiet::new(output));
-    let result = apply_ods(archive, &mut zip_writer, modifications);
+    let result = if modifications.visibility.is_empty() {
+        apply_ods(archive, &mut zip_writer, modifications)
+    } else {
+        // Visibility is applied to the input, and the rest to what that leaves.
+        let visibilities = super::visibility::Visibilities::new(&modifications.visibility);
+        if modifications.asks_nothing_else() {
+            super::ods_visibility::apply(archive, &mut zip_writer, &visibilities)
+        } else {
+            let mut shown = std::io::Cursor::new(Vec::new());
+            {
+                let mut first = ZipWriter::new(&mut shown);
+                super::ods_visibility::apply(archive, &mut first, &visibilities)?;
+                first.finish()?;
+            }
+            apply_ods(
+                ZipArchive::new(shown)?,
+                &mut zip_writer,
+                &modifications.without_visibility(),
+            )
+        }
+    };
     // The writer is closed in both cases: dropped open it would try to finish the archive and print
     // a line of its own to the standard error when the output refuses the bytes.
     let closed = zip_writer.finish();
