@@ -292,18 +292,38 @@ class Book:
     `inspect`, `stats`) raise `PendingOperationsError` while operations are pending.
     """
 
-    def __init__(self, source: Source, *, locale: str | None = None) -> None:
+    def __init__(
+        self,
+        source: Source,
+        *,
+        locale: str | None = None,
+        now: float | None = None,
+        seed: int | None = None,
+    ) -> None:
         """`locale` is the locale of the workbook (a tag such as `"es-CO"`): the regional settings that
         give a text to a number (`TEXT`, the conversion of a number to text, `display`) and read a number
         from a text, in `calculate`, in the recalculation that follows an edit and in the queries. Without
         it the workbook, an XLSX or an ODS, has the locale of the system (`LC_ALL`, `LC_CTYPE` or `LANG`,
         read when it is needed; `en-US` when there is none). The `locale` of a single call
-        (`evaluate`) wins over it. Raises `ValueError` when it is not a locale tag."""
+        (`evaluate`) wins over it. Raises `ValueError` when it is not a locale tag.
+
+        `now` (the serial number that `NOW()` and `TODAY()` give) and `seed` (the seed of `RAND()` and its
+        relatives, a non-negative integer) fix the volatile functions in every calculation of the
+        workbook (`calculate`, the recalculation that follows an edit, `inspect`), as `--now` and
+        `--seed` of `sheetc` do; without them the engine reads the clock. The `now` and `seed` of a single
+        call (`calculate(now=, seed=)`) win over them. Distinct seeds give distinct streams; `RAND` of
+        LibreOffice cannot be seeded, so `seed` is an extension of SheetRS."""
     @property
     def format(self) -> Literal["xlsx", "xlsm", "ods"]: ...
     @property
     def locale(self) -> str | None:
         """The locale given to the workbook, normalized (`"es-CO"`); `None` when it was not given one."""
+    @property
+    def now(self) -> float | None:
+        """The serial number of `NOW()` and `TODAY()` given to the workbook; `None` when it was not given one."""
+    @property
+    def seed(self) -> int | None:
+        """The seed of `RAND()` given to the workbook; `None` when it was not given one."""
     def stats(self) -> Stats:
         """The statistics of the workbook, as `sheetrs stats` reports them: the totals, the sheets, the
         macros and the defined names. It reads the workbook each time it is called; the `Book` keeps
@@ -379,15 +399,22 @@ class Book:
         ranges: Targets | None = None,
         *,
         major: Literal["rows", "columns"] = "rows",
+        now: float | None = None,
+        seed: int | None = None,
     ) -> Self:
         """An operation: the engine writes `inputs` and calculates every formula of the workbook as it
         is, before the conversions and the deletions of the same `save` (the operations are not a
         sequence: each is written against the workbook as it is, and the planner orders them);
         `save` writes the results and no mark to recalculate unless a deletion after leaves some stale.
         `ranges` are the ranges `value_ranges()` gives and `save(json=...)` writes, listed as `major` says
-        (`"rows"`, the default, or `"columns"`, the `majorDimension` of the request). Where the engine
+        (`"rows"`, the default, or `"columns"`, the `majorDimension` of the request); a range outside the
+        outputs the workbook declares is read, in memory and with no recalculation, from the workbook just
+        written (the workbook is its own template). Where the engine
         cannot calculate the workbook it is written marked to be recalculated, with a
-        `RecalculationWarning`."""
+        `RecalculationWarning`. `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
+        (the seed of `RAND()`) fix the volatile functions, as `--now` and `--seed` of `sheetc` do
+        (without them the engine reads the clock); they also fix the recalculation that the same `save`
+        runs after an edit that leaves results stale."""
     def value_ranges(self) -> ValueRanges:
         """The value ranges of the calculation, in memory: runs the operations and writes the workbook
         nowhere. Raises `Error` without a `calculate` step."""
@@ -439,8 +466,15 @@ class Book:
         """What `sheetc inspect` says: the sheets, the cells and formulas, the functions used and
         which of them the engine lacks. Compiles the workbook in memory; calculates nothing."""
 
-def evaluate(formula: str, *, locale: str | None = None) -> Cell:
-    """The value of one formula, as `sheetc evaluate` gives it."""
+def evaluate(
+    formula: str,
+    *,
+    locale: str | None = None,
+    now: float | None = None,
+    seed: int | None = None,
+) -> Cell:
+    """The value of one formula, as `sheetc evaluate` gives it. `now` and `seed` fix `NOW()`, `TODAY()`
+    and `RAND()`; without them the clock decides."""
 
 def lint_rules(config_path: Path | None = None) -> list[Rule]:
     """The rules ordered by id; `enabled` tells whether the configuration runs each one."""

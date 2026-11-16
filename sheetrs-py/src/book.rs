@@ -354,20 +354,35 @@ impl PyBook {
     /// `LANG`, read when it is needed; `en-US` when there is none). The `locale` of a single
     /// call (`evaluate`) wins over it.
     ///
+    /// `now` (the serial number that `NOW()` and `TODAY()` give) and `seed` (the seed of `RAND()` and
+    /// its relatives, a non-negative integer) fix the volatile functions in every calculation of the
+    /// workbook: `calculate`, the recalculation that follows an edit and `inspect`; they are the
+    /// `--now` and `--seed` of `sheetc`. Without them the engine reads the clock. The `now` and
+    /// `seed` of a single call (`calculate(now=, seed=)`) win over them. Distinct seeds give distinct
+    /// streams; `RAND` of `LibreOffice` cannot be seeded, so `seed` is an extension of `SheetRS`.
+    ///
     /// Raises `FileNotFoundError` for a path that is not a file, `FormatError` for a workbook
     /// that is not an XLSX, XLSM or ODS one and `ValueError` for a `locale` that is not a locale tag.
     #[new]
-    #[pyo3(signature = (source, *, locale=None))]
-    fn new(source: &Bound<'_, PyAny>, locale: Option<&str>) -> PyResult<Self> {
+    #[pyo3(signature = (source, *, locale=None, now=None, seed=None))]
+    fn new(
+        source: &Bound<'_, PyAny>,
+        locale: Option<&str>,
+        now: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
         let locale = locale
             .map(|tag| {
                 tag.parse::<sheetrs_io::locale::LocaleTag>()
                     .map_err(|error| PyValueError::new_err(error.to_string()))
             })
             .transpose()?;
-        let with_locale = |book: Book| match &locale {
-            Some(tag) => book.with_locale(tag.clone()),
-            None => book,
+        let with_locale = |book: Book| {
+            let book = book.with_volatile(sheetrs_io::Volatile { now, seed });
+            match &locale {
+                Some(tag) => book.with_locale(tag.clone()),
+                None => book,
+            }
         };
         let mut book = if let Ok(bytes) = source.cast::<PyBytes>() {
             Self::from_source(with_locale(
@@ -407,6 +422,20 @@ impl PyBook {
     #[getter]
     fn locale(&self) -> Option<String> {
         self.source.locale().map(ToString::to_string)
+    }
+
+    /// The serial number of `NOW()` and `TODAY()` given to the workbook (`Book(..., now=...)`); `None`
+    /// when it was not given one and the engine reads the clock.
+    #[getter]
+    fn now(&self) -> Option<f64> {
+        self.source.volatile().now
+    }
+
+    /// The seed of `RAND()` given to the workbook (`Book(..., seed=...)`); `None` when it was not
+    /// given one and the engine seeds from the clock.
+    #[getter]
+    fn seed(&self) -> Option<u64> {
+        self.source.volatile().seed
     }
 
     /// `"xlsx"`, `"xlsm"` or `"ods"`.
@@ -623,21 +652,30 @@ impl PyBook {
     ///
     /// `ranges` (a range, or a list of them: `["Summary!B2:B5"]`) are the ranges whose values
     /// `value_ranges()` gives and `save(json=...)` writes; without them, the outputs the workbook declares
-    /// or, with none declared, its formula cells. `major` is `"rows"` (the default) or `"columns"`:
-    /// how each range is listed, as the `majorDimension` of the request.
+    /// or, with none declared, its formula cells. A range outside the declared outputs is read,
+    /// in memory and with no recalculation, from the workbook just written (the workbook is its own
+    /// template here). `major` is `"rows"` (the default) or `"columns"`: how each
+    /// range is listed, as the `majorDimension` of the request.
+    ///
+    /// `now` (the serial number that `NOW()` and `TODAY()` give) and `seed` (the seed of `RAND()`)
+    /// fix the volatile functions, as `--now` and `--seed` of `sheetc` do; without them the engine
+    /// reads the clock. They also fix the recalculation that the same `save` runs after an edit that
+    /// leaves results stale.
     ///
     /// Where the engine cannot calculate the workbook (a function it does not have, a reference it
     /// does not read) `save` still writes it, marked to be recalculated when it is opened, and issues
     /// a `RecalculationWarning`: the recalculation that is needed will be done by the spreadsheet
     /// program that opens the file later. With `to_dict()` or `save(json=...)` there is no answer to
     /// give, and it is an error.
-    #[pyo3(signature = (inputs=None, ranges=None, *, major="rows"))]
+    #[pyo3(signature = (inputs=None, ranges=None, *, major="rows", now=None, seed=None))]
     fn calculate<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
         inputs: Option<&Bound<'py, PyDict>>,
         ranges: Option<&Bound<'py, PyAny>>,
         major: &str,
+        now: Option<f64>,
+        seed: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let inputs: Map<String, Value> = match inputs {
             Some(dict) => dict
@@ -660,6 +698,8 @@ impl PyBook {
             inputs,
             ranges,
             major,
+            now,
+            seed,
         });
         Ok(slf.into_pyobject(py)?.into_any())
     }
@@ -787,7 +827,8 @@ impl PyBook {
             let mut saved = Self::from_source(
                 Book::from_bytes(bytes)
                     .map_err(to_py_err)?
-                    .with_locale_of(&source),
+                    .with_locale_of(&source)
+                    .with_volatile_of(&source),
             );
             saved.stream = Some(stream.clone().unbind());
             saved.report = Some(report);
@@ -795,7 +836,8 @@ impl PyBook {
         } else if let Some(path) = path_dest {
             let saved_source = Book::from_file(path)
                 .map_err(to_py_err)?
-                .with_locale_of(&source);
+                .with_locale_of(&source)
+                .with_volatile_of(&source);
             let mut saved = Self::from_source(saved_source);
             saved.report = Some(report);
             Bound::new(py, saved)?.into_any()
@@ -807,7 +849,8 @@ impl PyBook {
                 rewrite_stream(py, stream, &bytes)?;
                 slf.source = Book::from_bytes(bytes)
                     .map_err(to_py_err)?
-                    .with_locale_of(&source);
+                    .with_locale_of(&source)
+                    .with_volatile_of(&source);
             }
             slf.steps.clear();
             slf.report = Some(report);
@@ -1094,10 +1137,19 @@ fn find_of(
 }
 
 /// The value of one formula, with the regional settings of `locale` (a BCP-47 tag, `"en"` by
-/// default).
-pub(crate) fn evaluate(py: Python<'_>, formula: &str, locale: Option<&str>) -> PyResult<Py<PyAny>> {
+/// default), and `now` and `seed` for the volatile functions.
+pub(crate) fn evaluate(
+    py: Python<'_>,
+    formula: &str,
+    locale: Option<&str>,
+    now: Option<f64>,
+    seed: Option<u64>,
+) -> PyResult<Py<PyAny>> {
+    let mut options = Options::default();
+    options.config.now = now;
+    options.config.seed = seed;
     let value = py
-        .detach(|| memory::evaluate(formula, locale, &Options::default()))
+        .detach(|| memory::evaluate(formula, locale, &options))
         .map_err(to_py_err)?;
     json_to_py(py, &value)
 }

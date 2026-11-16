@@ -47,6 +47,10 @@ pub(crate) enum Step {
         inputs: Map<String, Value>,
         ranges: Option<Vec<String>>,
         major: MajorDimension,
+        /// The serial number of `NOW()` and `TODAY()`; `None` is the clock.
+        now: Option<f64>,
+        /// The seed of `RAND()`; `None` is seeded from the clock.
+        seed: Option<u64>,
     },
 }
 
@@ -118,12 +122,16 @@ fn editor(source: &Book, steps: &[Step], keep_answer: bool) -> Book {
                 inputs,
                 ranges,
                 major,
+                now,
+                seed,
             } => {
                 editor.calculate(Calculation {
                     inputs: inputs.clone(),
                     ranges: ranges.clone(),
                     major: *major,
                     answer: keep_answer && Some(index) == last_calculation,
+                    now: *now,
+                    seed: *seed,
                 });
             }
         }

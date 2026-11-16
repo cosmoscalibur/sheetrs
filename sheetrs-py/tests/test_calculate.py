@@ -80,8 +80,8 @@ def test_an_error_in_the_values_is_a_cell_error(tmp_path):
 
 def test_what_is_not_an_output_or_an_input_is_an_error(structure):
     # Each case on a Book of its own: a calculation that was asked stays in the plan.
-    with pytest.raises(sheetrs.Error, match="outputs"):
-        value_ranges(sheetrs.Book(structure), ranges="F!B1")
+    # An empty cell outside the outputs is read as the workbook has it: empty.
+    assert value_ranges(sheetrs.Book(structure), ranges="F!B1") == {"F!B1": [[None]]}
     with pytest.raises(sheetrs.Error, match="not an input"):
         value_ranges(sheetrs.Book(structure), inputs={"T!C1": 1}, ranges="F!A1")
     with pytest.raises(sheetrs.Error, match="Nowhere"):
@@ -375,3 +375,186 @@ def test_the_report_of_a_save_is_typed_and_writes_itself(structure, tmp_path):
     assert all(isinstance(s, sheetrs.Skipped) for s in report.skipped)
     assert json.loads(report.to_json()) == report.to_dict()
     assert set(report.to_dict()) == {"replaced", "written", "skipped", "diagnostics"}
+
+
+# ---- now and seed: the volatile functions fixed by a calculation ---------------------------------
+
+NOW = 45366.75  # 2024-03-15 18:00
+
+
+@pytest.fixture(params=["xlsx", "ods"])
+def volatile(request, tmp_path):
+    """A copy of the workbook with `V!A1 =NOW()`, `V!B1 =TODAY()`, `V!C1 =RAND()` and rows to edit."""
+    source = ROOT / "sheetrs-edit/tests/assets/volatile" / f"volatile.{request.param}"
+    copy = tmp_path / source.name
+    shutil.copy(source, copy)
+    return copy
+
+
+def volatile_row(book):
+    return book.value_ranges().to_dict()["V!A1:C1"][0]
+
+
+def test_now_fixes_now_and_today(volatile):
+    now, today, _ = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", now=NOW))
+    assert now == pytest.approx(NOW)
+    assert today == 45366
+
+
+def test_seed_fixes_rand(volatile):
+    def rand(seed):
+        return volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=seed))[2]
+
+    assert 0 <= rand(42) < 1
+    assert rand(42) == rand(42)
+    assert rand(42) != rand(44)
+
+
+def test_an_even_seed_and_the_next_odd_one_give_distinct_streams(volatile):
+    def rand(seed):
+        return volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=seed))[2]
+
+    for even in (0, 42, 1000):
+        assert rand(even) != rand(even + 1)
+
+
+def test_without_now_the_clock_is_the_systems(volatile):
+    now = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1"))[0]
+    assert now > 45292 and now != pytest.approx(NOW)
+
+
+def test_the_recalculation_after_a_deletion_runs_with_the_now_and_the_seed_of_the_step(
+    volatile, tmp_path
+):
+    saved = (
+        sheetrs.Book(volatile)
+        .calculate(now=NOW, seed=7)
+        .delete_rows("V!3")
+        .save(tmp_path / f"out{volatile.suffix}")
+    )
+    now, today, rand = saved.range("V!A1:C1")["V!A1:C1"].values[0]
+    assert now == pytest.approx(NOW)
+    assert today == 45366
+    alone = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", now=NOW, seed=7))
+    assert rand == alone[2]
+
+
+def test_now_must_be_a_number_and_seed_a_non_negative_integer(volatile):
+    with pytest.raises(TypeError):
+        sheetrs.Book(volatile).calculate(now="today")
+    with pytest.raises((TypeError, OverflowError)):
+        sheetrs.Book(volatile).calculate(seed=-1)
+
+
+def test_now_and_seed_are_properties_of_the_book(volatile):
+    book = sheetrs.Book(volatile, now=NOW, seed=42)
+    assert (book.now, book.seed) == (NOW, 42)
+    assert (sheetrs.Book(volatile).now, sheetrs.Book(volatile).seed) == (None, None)
+    now, today, rand = volatile_row(book.calculate(ranges="V!A1:C1"))
+    assert now == pytest.approx(NOW)
+    assert today == 45366
+    same = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=42))
+    assert rand == same[2]
+
+
+def test_now_and_seed_of_the_book_fix_the_recalculation_an_edit_leaves(volatile, tmp_path):
+    saved = (
+        sheetrs.Book(volatile, now=NOW, seed=7)
+        .delete_rows("V!3")
+        .save(tmp_path / f"out{volatile.suffix}")
+    )
+    now, today, rand = saved.range("V!A1:C1")["V!A1:C1"].values[0]
+    assert now == pytest.approx(NOW)
+    assert today == 45366
+    alone = volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", now=NOW, seed=7))
+    assert rand == alone[2]
+    # The book that save returns keeps them.
+    assert (saved.now, saved.seed) == (NOW, 7)
+
+
+def test_now_and_seed_of_a_call_win_over_the_ones_of_the_book_field_by_field(volatile):
+    book = sheetrs.Book(volatile, now=40000, seed=42)
+    now, _, rand = volatile_row(book.calculate(ranges="V!A1:C1", now=NOW))
+    assert now == pytest.approx(NOW)
+    assert rand == volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=42))[2]
+    other = volatile_row(sheetrs.Book(volatile, now=40000, seed=42).calculate(ranges="V!A1:C1", seed=44))
+    assert other[0] == pytest.approx(40000)
+    assert other[2] == volatile_row(sheetrs.Book(volatile).calculate(ranges="V!A1:C1", seed=44))[2]
+
+
+def test_the_book_takes_now_and_seed_from_bytes_and_streams_too(volatile):
+    import io
+
+    data = volatile.read_bytes()
+    for source in (data, bytearray(data), io.BytesIO(data)):
+        book = sheetrs.Book(source, now=NOW, seed=42)
+        assert volatile_row(book.calculate(ranges="V!A1:C1"))[0] == pytest.approx(NOW)
+
+
+def test_now_and_seed_of_the_book_must_be_a_number_and_a_non_negative_integer(volatile):
+    with pytest.raises(TypeError):
+        sheetrs.Book(volatile, now="today")
+    with pytest.raises((TypeError, OverflowError)):
+        sheetrs.Book(volatile, seed=-1)
+
+
+def test_evaluate_takes_now_and_seed():
+    assert sheetrs.evaluate("=NOW()", now=NOW) == pytest.approx(NOW)
+    assert sheetrs.evaluate("=RAND()", seed=42) == sheetrs.evaluate("=RAND()", seed=42)
+    assert sheetrs.evaluate("=RAND()", seed=42) != sheetrs.evaluate("=RAND()", seed=44)
+
+
+# ---- the ranges of a calculation: the declared outputs, and what lies outside them ---------------
+
+LOANS = [ROOT / "sheetrs-compiler/tests/assets/loan.xlsx", ROOT / "sheetrs-compiler/tests/assets/loan.ods"]
+
+
+@pytest.fixture(params=LOANS, ids=lambda p: p.suffix[1:])
+def loan(request):
+    """The loan declares the outputs `payment` (`Loan!B4`), `interest` (`Loan!B6`) and `balance` (`Loan!B8`);
+    `Loan!B5` is a formula nothing declares and `Loan!B2` a constant."""
+    return request.param
+
+
+def test_declared_and_inside_the_outputs_the_ranges_are_a_selection(loan):
+    answer = sheetrs.Book(loan).calculate(ranges=["Loan!B6", "payment"]).value_ranges()
+    assert [block.range for block in answer.values()] == ["Loan!B6", "Loan!B4"]
+    assert answer["payment"].values[0][0] == pytest.approx(1073.6432460242795)
+
+
+def test_declared_and_outside_the_outputs_the_range_is_read_from_the_written_workbook(loan):
+    # Embedded: the workbook is its own template, so a range that is not an output is read, in memory and
+    # with no recalculation, from the workbook just written (the input is in it), in the order asked.
+    answer = (
+        sheetrs.Book(loan)
+        .calculate({"principal": 1000}, ranges=["Loan!B5", "payment", "Loan!B2", "Loan!B1"])
+        .value_ranges()
+    )
+    assert [block.range for block in answer.values()] == ["Loan!B5", "Loan!B4", "Loan!B2", "Loan!B1"]
+    assert answer["payment"].values[0][0] == pytest.approx(5.368216230121398)
+    assert answer["Loan!B2"].values[0][0] == pytest.approx(0.05)
+    assert answer["Loan!B1"].values[0][0] == 1000
+    # A formula the outputs left out keeps the result the template stored: it is read, not calculated.
+    assert answer["Loan!B5"].values[0][0] == pytest.approx(386511.5, abs=1)
+
+
+def test_a_range_outside_the_outputs_is_read_from_the_written_workbook_in_memory(loan):
+    # The calculation writes the workbook (the input is in it, the outputs are calculated) and `range`
+    # reads it from those bytes, with no recalculation and no file.
+    data = sheetrs.Book(loan).calculate({"principal": 1000}).to_bytes()
+    blocks = sheetrs.Book(data).range(["Loan!B1", "Loan!B2", "Loan!B4"])
+    assert blocks["Loan!B1"].values[0][0] == 1000
+    assert blocks["Loan!B2"].values[0][0] == pytest.approx(0.05)
+    assert blocks["Loan!B4"].values[0][0] == pytest.approx(5.368216230121398)
+    assert "Loan!A1" in [cell.sheet + "!" + cell.cell for cell in sheetrs.Book(data).find("Principal")]
+
+
+def test_a_range_that_is_not_one_of_the_workbook_is_an_error(loan):
+    with pytest.raises(sheetrs.Error, match="Nowhere!A1"):
+        sheetrs.Book(loan).calculate(ranges="Nowhere!A1").value_ranges()
+
+
+def test_with_none_declared_the_formula_cells_and_the_constants_are_answered(structure):
+    answer = sheetrs.Book(structure).calculate(ranges=["F!A5:A6", "T!A1:A3"]).value_ranges()
+    assert answer["F!A5:A6"].values == [[5], [9]]
+    assert answer["T!A1:A3"].values[0][0] == 1

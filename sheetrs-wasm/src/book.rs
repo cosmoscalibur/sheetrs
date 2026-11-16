@@ -29,6 +29,55 @@ pub struct Book {
     pub(crate) report: Option<crate::edit::Report>,
 }
 
+/// The `{now, seed}` of the options of a `Book`; absent, the clock. A key that is not one of them is
+/// an error that names it, as in the options of a call.
+fn volatile_of(options: &JsValue) -> Result<sheetrs_io::Volatile, JsValue> {
+    if options.is_undefined() || options.is_null() {
+        return Ok(sheetrs_io::Volatile::default());
+    }
+    if !options.is_object() {
+        return Err(JsValue::from_str(
+            "The options are not valid: an object {now, seed} is expected",
+        ));
+    }
+    let object = js_sys::Object::from(options.clone());
+    for key in js_sys::Object::keys(&object) {
+        let key = key.as_string().unwrap_or_default();
+        if key != "now" && key != "seed" {
+            return Err(JsValue::from_str(&format!(
+                "The options are not valid: unknown key `{key}` (the keys are now, seed)"
+            )));
+        }
+    }
+    let get = |key: &str| {
+        js_sys::Reflect::get(options, &JsValue::from_str(key))
+            .ok()
+            .filter(|value| !value.is_undefined() && !value.is_null())
+    };
+    let now = get("now")
+        .map(|value| {
+            value
+                .as_f64()
+                .filter(|now| now.is_finite())
+                .ok_or_else(|| JsValue::from_str("`now` is a number (a serial number)"))
+        })
+        .transpose()?;
+    let seed = get("seed")
+        .map(|value| {
+            let not_valid =
+                || JsValue::from_str("`seed` is an integer from 0 up to 2^53, or a BigInt");
+            match value.as_f64() {
+                Some(n) if n >= 0.0 && n.fract() == 0.0 && n <= 9_007_199_254_740_992.0 => {
+                    Ok(n as u64)
+                }
+                Some(_) => Err(not_valid()),
+                None => u64::try_from(value).map_err(|_| not_valid()),
+            }
+        })
+        .transpose()?;
+    Ok(sheetrs_io::Volatile { now, seed })
+}
+
 pub(crate) fn failure(prefix: &str, e: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&format!("{prefix}: {e}"))
 }
@@ -43,16 +92,25 @@ impl Book {
     /// number from a text, in `calculate`, in the recalculation that follows an edit and in the
     /// queries. Without it the workbook has the locale of the system, and WebAssembly has none: `en-US`. The `locale` of a single call wins over it.
     ///
+    /// `options` is `{now, seed}`: the serial number that `NOW()` and `TODAY()` give and the seed of
+    /// `RAND()` and its relatives (an integer from 0 up to 2^53, or a `BigInt`), the `now` and `seed`
+    /// of `sheetc`, in every calculation of the workbook: `calculate`, the recalculation that follows
+    /// an edit, `inspect` and `compile`. Without them the clock decides. The `now` and `seed` of a
+    /// single call (the options of `calculate`, `inspect`, `compile` and `evaluateFormula`) win over
+    /// them.
+    ///
     /// # Errors
     ///
-    /// A message when the bytes are not an XLSX, XLSM or ODS workbook, or `locale` is not a locale tag.
+    /// A message when the bytes are not an XLSX, XLSM or ODS workbook, `locale` is not a locale tag
+    /// or `options` has a key other than `now` and `seed` or a value that is not valid.
     #[wasm_bindgen(constructor)]
-    pub fn new(data: &[u8], locale: Option<String>) -> Result<Book, JsValue> {
+    pub fn new(data: &[u8], locale: Option<String>, options: JsValue) -> Result<Book, JsValue> {
         let mut inner = Inner::from_bytes(data).map_err(|e| failure("Reader error", e))?;
         if let Some(tag) = locale {
             let tag = tag.parse().map_err(|e| failure("Locale error", e))?;
             inner = inner.with_locale(tag);
         }
+        inner = inner.with_volatile(volatile_of(&options)?);
         Ok(Book {
             inner,
             on_diagnostic: None,
@@ -73,6 +131,20 @@ impl Book {
     #[wasm_bindgen(getter)]
     pub fn locale(&self) -> Option<String> {
         self.inner.locale().map(ToString::to_string)
+    }
+
+    /// The serial number of `NOW()` and `TODAY()` given to the workbook (`new Book(bytes, locale,
+    /// {now})`); `undefined` when it was not given one and the clock decides.
+    #[wasm_bindgen(getter)]
+    pub fn now(&self) -> Option<f64> {
+        self.inner.volatile().now
+    }
+
+    /// The seed of `RAND()` given to the workbook (`new Book(bytes, locale, {seed})`); `undefined`
+    /// when it was not given one and the engine seeds from the clock.
+    #[wasm_bindgen(getter)]
+    pub fn seed(&self) -> Option<f64> {
+        self.inner.volatile().seed.map(|seed| seed as f64)
     }
 
     /// The statistics of the workbook, as `sheetrs stats` reports them. It reads the workbook, in a

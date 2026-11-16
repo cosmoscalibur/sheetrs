@@ -32,14 +32,20 @@ workbook.
 
 ## `Book`
 
-`new Book(bytes, locale?)` detects the format from the content and reads nothing else, and a `Book` keeps nothing of
+`new Book(bytes, locale?, options?)` detects the format from the content and reads nothing else, and a `Book` keeps nothing of
 the workbook but its bytes and the operations to make to it. `locale` (a tag such as `"es-CO"`; an error when
 it is not one) is the locale of the workbook: the regional settings that give a text to a number and read a
 number from a text, in `calculate`, in the recalculation that follows an edit and in `query`, `range` and
 `find` (`display`); `book.locale` says it. Without it the workbook has `en-US`, because WebAssembly has
 no system to take the locale from (the language an ODS stores in its default cell style is not read, as in
 LibreOffice). The `locale` of a single call (`evaluateFormula`, the `locale` of a query, the
-options of `inspect` and `compile`) wins over it. What it says about the workbook is the
+options of `inspect` and `compile`) wins over it. `options` is `{now, seed}` (an error for any other key): the
+serial number that `NOW()` and `TODAY()` give and the seed of `RAND()` and its relatives (an integer from 0 up
+to 2^53, or a `BigInt`), the `now` and `seed` of `sheetc`, in every calculation of the workbook (`calculate`, the
+recalculation that follows an edit, `inspect`, `compile`); `book.now` and `book.seed` say them. The `now` and `seed`
+of a single call (the options of `calculate`, `inspect`, `compile` and `evaluateFormula`) win over them, field by
+field. Distinct seeds give distinct streams; `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of
+SheetRS. What it says about the workbook is the
 statistics, which are a tool like the others: `stats()` reads it.
 
 | | Member | Gives |
@@ -51,13 +57,13 @@ statistics, which are a tool like the others: `stats()` reads it.
 | | `range(ranges, options?)` | one block per range: `{range, values, formulas, numberFormats, displays, comments}` (the grids asked for, as lists of rows or of columns) |
 | | `find(text, options?)` | the cells that match: `[{sheet, cell, row, col, value, ...}]` |
 | | `inspect(options?)` | `Inspection`: `toJSON()` is `{sheets, date_system, cells, formulas, circular_groups, run_time_references, unsupported_functions, functions, diagnostics}` (`sheetc inspect`) |
-| **operations** | `deleteSheets(names)`, `deleteNames(names)`, `formulaToValue(scopes)`, `deleteRows(ranges)`, `deleteColumns(ranges)`, `hideRows(ranges)`, `showRows(ranges)`, `hideColumns(ranges)`, `showColumns(ranges)`, `hideSheets(names)`, `showSheets(names)`, `replace(replaces, options?)`, `calculate(request?)` | accumulate in the plan; nothing runs until `save` |
+| **operations** | `deleteSheets(names)`, `deleteNames(names)`, `formulaToValue(scopes)`, `deleteRows(ranges)`, `deleteColumns(ranges)`, `hideRows(ranges)`, `showRows(ranges)`, `hideColumns(ranges)`, `showColumns(ranges)`, `hideSheets(names)`, `showSheets(names)`, `replace(replaces, options?)`, `calculate(request?, options?)` | accumulate in the plan; nothing runs until `save` |
 | | `pending`, `explain()` | how many operations are pending; the passes over the file that `save` will make, one operation per line |
 | **the cut** | `save()` | the workbook the operations make, as a `Uint8Array` in the format of the `Book` (the plan is not consumed: saving again gives the same bytes). With none pending, the bytes as they are |
 | | `valueRanges()` | `ValueRanges` of the calculation (`toJSON()` is the answer of the protocol, `{valueRanges: [{range, name, values}]}`, `toObject()` is `{name: rows}`); runs the operations in memory and writes nothing |
 | | `report` | `Report` of the last `save` or `valueRanges`: `replaced`, `written`, `skipped` (`{sheet, cell, reason}`), `diagnostics`, `valueRanges`; `undefined` before |
 | **compile** | `compile(options?)` | `{module, cells, reachable, formulas, folded, kept, cycles, diagnostics}`: `module` is a `Uint8Array`, the WebAssembly module of the workbook (`sheetc build --target wasm`) |
-| **settings** | `locale` (read only), `dates`, `onDiagnostic` | `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
+| **settings** | `locale`, `now`, `seed` (read only), `dates`, `onDiagnostic` | `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
 
 Free functions: `lintRules()` (array of `{id, name, category, is_default}`), `evaluateFormula(formula,
 locale, options)` (the value of one formula, `sheetc evaluate`) and `initPanicHook()`.
@@ -82,7 +88,7 @@ of its targets (a sweep is one operation); where a list is expected a single tex
 | `formulaToValue` | scopes: `"Sheet"`, `"Sheet!B:D"`, `"Sheet!3:10"` |
 | `deleteRows`, `deleteColumns`, `hideRows`, `showRows`, `hideColumns`, `showColumns` | `"Sheet!3:10"`, `"Sheet!3"`, `"Sheet!B:D"`, `"Sheet!B"` |
 | `replace(replaces, options?)` | `replaces` is a list of `[text, with]` pairs or an object `{text: with}`; each pair is a replacement of its own, in order, that sees what the one before it left, so their order matters. `options`: `mode` (`literal`, `regex`, `wildcards`), `matchCase`, `entireCells`, `searchIn` (`value`, `formula`, `comment`), `formatted`, `filtered`, `scope` (sheets and ranges, the whole workbook when omitted). It looks inside formulas, as `sheetrs edit --replace` does |
-| `calculate(request?)` | `{inputs, ranges, majorDimension}`, the request of `sheetc calculate`: the engine writes the `inputs` (a cell, a range or a defined name each) and calculates every formula of the workbook as it is, before the conversions and the deletions; `ranges` are the ranges `valueRanges()` answers (the workbook's own outputs when omitted; with them `save` also keeps the answer in `report.valueRanges`); `majorDimension` is `"ROWS"` (the default) or `"COLUMNS"` |
+| `calculate(request?, options?)` | `{inputs, ranges, majorDimension}`, the request of `sheetc calculate`: the engine writes the `inputs` (a cell, a range or a defined name each) and calculates every formula of the workbook as it is, before the conversions and the deletions; `ranges` are the ranges `valueRanges()` answers (the workbook's own outputs when omitted; with them `save` also keeps the answer in `report.valueRanges`). The workbook is its own template here (the embedded mode): a range inside the outputs the workbook declares is a selection among them, and one **outside** them is read, in memory and with no recalculation, from the workbook just written, in the order asked (a constant has the value it holds, the `inputs` are in it, and a formula the outputs left out has the result the template stored); a range that is no range or name of the workbook throws. A compiled module (`compile`) refuses a range outside its declared outputs and lists them (see [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for)); the workbook that `save()` gives is read from memory with `new Book(saved).range(...)` (or `find`); `majorDimension` is `"ROWS"` (the default) or `"COLUMNS"`. `options` is `{now, seed}`: the serial number that `NOW()` and `TODAY()` give and the seed of `RAND()` (the `now` and `seed` of `sheetc`; the clock when absent, so the same workbook gives the same results on every run when both are given); they also fix the recalculation that the same `save` runs after an edit that leaves results stale. Any other key throws |
 
 A `calculate` is a step of the plan: the workbook is written with fresh results and without the mark that
 makes the application that opens it recalculate every formula; so is a workbook whose results a deletion or
@@ -110,10 +116,10 @@ text of the cell). A pattern that can match the empty text (`x*`, `^`, `$`, `a*$
 
 ### `calculate` and `valueRanges`
 
-The clock of `NOW()`, `TODAY()` and `RAND()` is `Date.now()`. The options of a `sheetc.toml` (`fold`,
-`strict`, `now`, `seed`, `host`, `locale`, ...) and `declarations` (the JSON of a `settings_file`: the
+The clock of `NOW()`, `TODAY()` and `RAND()` is `Date.now()`, unless the `Book` was given a `now` and a `seed` (`new Book(bytes, locale, {now, seed})`), which every tool below takes. The options of a `sheetc.toml` (`strict`, `now`, `seed`, `host`, `locale`, ...) and `declarations` (the JSON of a `settings_file`: the
 inputs and outputs of a workbook with no settings sheet) apply to `inspect(options)`, `compile(options)`
-and `evaluateFormula`; the calculation of a plan takes the request only.
+and `evaluateFormula`. The calculation of a plan takes the request and, as the options of the call, `now`
+and `seed` (see `calculate(request?, options?)` above), which win over the ones of the `Book`; `locale` is the one of the `Book`.
 
 ### `compile`
 

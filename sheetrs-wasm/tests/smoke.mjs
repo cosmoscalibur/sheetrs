@@ -355,6 +355,83 @@ for (const extension of ["xlsx", "ods"]) {
     assert.ok(planned.explain().includes("calculate every formula"));
   });
 }
+// `now` and `seed` of a calculation fix NOW(), TODAY() and RAND(), and the recalculation of the same plan.
+const volatileBook = (extension) => join(root, `sheetrs-edit/tests/assets/volatile/volatile.${extension}`);
+for (const extension of ["xlsx", "ods"]) {
+  check(`edit (calculate with now and seed fixes NOW, TODAY and RAND) ${extension}`, () => {
+    const row = (options) => {
+      const edited = open(volatileBook(extension));
+      edited.calculate({ ranges: ["V!A1:C1"] }, options);
+      return edited.valueRanges().toObject()["V!A1:C1"][0];
+    };
+    const [now, today, rand] = row({ now: 45366.75, seed: 42 });
+    assert.equal(now, 45366.75);
+    assert.equal(today, 45366);
+    assert.ok(rand >= 0 && rand < 1);
+    assert.equal(row({ seed: 42 })[2], rand);
+    assert.notEqual(row({ seed: 44 })[2], rand);
+    // An even seed and the next odd one are distinct streams.
+    for (const even of [0, 42, 1000]) {
+      assert.notEqual(row({ seed: even })[2], row({ seed: even + 1 })[2], `seeds ${even} and ${even + 1}`);
+    }
+    assert.ok(row(undefined)[0] > 45292, "without options the clock is the system's");
+    assert.throws(() => row({ nowish: 1 }), /unknown key `nowish`/);
+  });
+  check(`edit (the recalculation after a deletion runs with now and seed) ${extension}`, () => {
+    const edited = open(volatileBook(extension));
+    edited.calculate(undefined, { now: 45366.75, seed: 7 });
+    edited.deleteRows("V!3");
+    const saved = edited.save();
+    const cells = new wasm.Book(saved).range("V!A1:C1")[0].values[0];
+    assert.equal(cells[0], 45366.75);
+    assert.equal(cells[1], 45366);
+    const alone = open(volatileBook(extension));
+    alone.calculate({ ranges: ["V!A1:C1"] }, { now: 45366.75, seed: 7 });
+    assert.equal(cells[2], alone.valueRanges().toObject()["V!A1:C1"][0][2]);
+  });
+  // `now` and `seed` are properties of the Book: `new Book(bytes, locale, {now, seed})`.
+  const openWith = (options) => new wasm.Book(read(volatileBook(extension)), undefined, options);
+  const rowOf = (book, options) => {
+    book.calculate({ ranges: ["V!A1:C1"] }, options);
+    return book.valueRanges().toObject()["V!A1:C1"][0];
+  };
+  check(`Book (now and seed given to the Book fix the calculation) ${extension}`, () => {
+    const given = openWith({ now: 45366.75, seed: 42 });
+    assert.equal(given.now, 45366.75);
+    assert.equal(given.seed, 42);
+    assert.equal(open(volatileBook(extension)).now, undefined);
+    assert.equal(open(volatileBook(extension)).seed, undefined);
+    const [now, today, rand] = rowOf(given, undefined);
+    assert.equal(now, 45366.75);
+    assert.equal(today, 45366);
+    assert.equal(rand, rowOf(open(volatileBook(extension)), { seed: 42 })[2]);
+    // A BigInt is a seed too.
+    assert.equal(rowOf(openWith({ seed: 42n }), undefined)[2], rand);
+  });
+  check(`Book (the options of a call win over the ones of the Book, field by field) ${extension}`, () => {
+    const [now, , rand] = rowOf(openWith({ now: 40000, seed: 42 }), { now: 45366.75 });
+    assert.equal(now, 45366.75);
+    assert.equal(rand, rowOf(open(volatileBook(extension)), { seed: 42 })[2]);
+    const [kept, , other] = rowOf(openWith({ now: 40000, seed: 42 }), { seed: 44 });
+    assert.equal(kept, 40000);
+    assert.equal(other, rowOf(open(volatileBook(extension)), { seed: 44 })[2]);
+  });
+  check(`Book (now and seed of the Book fix the recalculation an edit leaves) ${extension}`, () => {
+    const edited = openWith({ now: 45366.75, seed: 7 });
+    edited.deleteRows("V!3");
+    const cells = new wasm.Book(edited.save()).range("V!A1:C1")[0].values[0];
+    assert.equal(cells[0], 45366.75);
+    assert.equal(cells[1], 45366);
+    assert.equal(cells[2], rowOf(open(volatileBook(extension)), { now: 45366.75, seed: 7 })[2]);
+  });
+  check(`Book (now and seed that are not valid are refused) ${extension}`, () => {
+    const data = read(volatileBook(extension));
+    assert.throws(() => new wasm.Book(data, undefined, { nowish: 1 }), /unknown key `nowish`/);
+    assert.throws(() => new wasm.Book(data, undefined, { seed: -1 }), /`seed`/);
+    assert.throws(() => new wasm.Book(data, undefined, { seed: 1.5 }), /`seed`/);
+    assert.throws(() => new wasm.Book(data, undefined, { now: "today" }), /`now`/);
+  });
+}
 check("edit (calculate with inputs and the ranges asked for)", () => {
   const edited = open(structure("xlsx"));
   edited.calculate({ inputs: { "T!A1": 100 }, ranges: ["T!C1"] });
@@ -427,6 +504,42 @@ check("calculate (an input the workbook does not have is an error; the layout of
   assert.deepEqual(rows.valueRanges().toJSON().valueRanges[0].values, [[2], [3]]);
   assert.deepEqual(columns.valueRanges().toJSON().valueRanges[0].values, [[2, 3]]);
 });
+// The loan declares `payment` (Loan!B4), `interest` and `balance`; Loan!B5 is a formula nothing declares and
+// Loan!B2 a constant. The workbook is its own template here: a range outside the declared outputs is read, in
+// memory and with no recalculation, from the workbook just written, in the order asked.
+for (const file of [loan, loanOds]) {
+  check(`calculate (ranges: the declared outputs are a selection, the rest is read from the written workbook) ${ext(file)}`, () => {
+    const inside = open(file);
+    inside.calculate({ ranges: ["Loan!B6", "payment"] });
+    assert.deepEqual(
+      inside.valueRanges().toJSON().valueRanges.map((r) => r.range),
+      ["Loan!B6", "Loan!B4"],
+    );
+    const outside = open(file);
+    outside.calculate({ inputs: { principal: 1000 }, ranges: ["Loan!B5", "payment", "Loan!B2", "Loan!B1"] });
+    const [total, payment, rate, principal] = outside.valueRanges().toJSON().valueRanges;
+    assert.deepEqual(
+      [total.range, payment.range, rate.range, principal.range],
+      ["Loan!B5", "Loan!B4", "Loan!B2", "Loan!B1"],
+    );
+    assert.ok(Math.abs(payment.values[0][0] - 5.368216230121398) < 1e-9);
+    assert.equal(rate.values[0][0], 0.05);
+    assert.equal(principal.values[0][0], 1000);
+    // Read, not calculated again: the formula the outputs left out holds what the template stored.
+    assert.ok(Math.abs(total.values[0][0] - 386511.5) < 1);
+    const nowhere = open(file);
+    nowhere.calculate({ ranges: ["Nowhere!A1"] });
+    assert.throws(() => nowhere.valueRanges(), /Nowhere!A1/);
+  });
+  check(`calculate (a workbook written in memory is read with range) ${ext(file)}`, () => {
+    const written = open(file);
+    written.calculate({ inputs: { principal: 1000 } });
+    const [principal, rate, payment] = new wasm.Book(written.save()).range(["Loan!B1", "Loan!B2", "Loan!B4"]);
+    assert.equal(principal.values[0][0], 1000);
+    assert.equal(rate.values[0][0], 0.05);
+    assert.ok(Math.abs(payment.values[0][0] - 5.368216230121398) < 1e-9);
+  });
+}
 check("calculate (the clock is Date.now(): NOW() is not the epoch)", () => {
   const before = Date.now() / 1000;
   const now = wasm.evaluateFormula("=NOW()", undefined, undefined);

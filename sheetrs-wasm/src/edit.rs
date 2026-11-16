@@ -23,6 +23,16 @@ where
         .collect()
 }
 
+/// The options of `calculate`: `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
+/// (the seed of `RAND()`), the `now` and `seed` of `sheetc`; absent, the clock. They also fix the
+/// recalculation that the same `save` runs after an edit that leaves results stale.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct CalculateOptions {
+    now: Option<f64>,
+    seed: Option<u64>,
+}
+
 /// The options of `replace`: the search of a query (`mode`, `matchCase`, `entireCells`, `searchIn`,
 /// `formatted`, `filtered`) and the `scope`: a sheet (`Data`) or a range (`Data!A1:C9`), or a list
 /// of them; the whole workbook when absent. A replacement always looks inside formulas, as
@@ -408,12 +418,15 @@ impl Book {
     /// calculated, and `ranges` are the ranges `valueRanges()` answers (`majorDimension`: `"ROWS"` or
     /// `"COLUMNS"`); with none, the outputs the workbook declares or its formula cells. `save()` writes
     /// the workbook with fresh results. Where the engine cannot calculate it, it is written marked
-    /// to be recalculated when it is opened, and a diagnostic says so.
+    /// to be recalculated when it is opened, and a diagnostic says so. `options` is `{now, seed}`:
+    /// the serial number that `NOW()` and `TODAY()` give and the seed of `RAND()` (the `now` and
+    /// `seed` of `sheetc`; without them the clock), which also fix the recalculation that the same
+    /// `save` runs after an edit that leaves results stale.
     ///
     /// # Errors
     ///
-    /// A message when the request is not valid.
-    pub fn calculate(&mut self, request: JsValue) -> Result<(), JsValue> {
+    /// A message when the request or the options are not valid.
+    pub fn calculate(&mut self, request: JsValue, options: JsValue) -> Result<(), JsValue> {
         let request: Request = if request.is_undefined() || request.is_null() {
             Request::default()
         } else {
@@ -423,11 +436,18 @@ impl Book {
                 &["inputs", "ranges", "majorDimension"],
             )?
         };
+        let options: CalculateOptions = if options.is_undefined() || options.is_null() {
+            CalculateOptions::default()
+        } else {
+            from_js_object(options, "The options", &["now", "seed"])?
+        };
         self.inner.calculate(Calculation {
             inputs: request.inputs.unwrap_or_default(),
             ranges: request.ranges,
             major: request.major_dimension.unwrap_or_default(),
             answer: false,
+            now: options.now,
+            seed: options.seed,
         });
         Ok(())
     }

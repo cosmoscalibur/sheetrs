@@ -9,7 +9,7 @@ use sheetrs_engine::ir::Mode;
 
 use wasm_bindgen::prelude::*;
 
-/// The options of a call: the keys of a `sheetc.toml` (`fold`, `strict`, `now`, `seed`, `host`,
+/// The options of a call: the keys of a `sheetc.toml` (`strict`, `now`, `seed`, `host`,
 /// `enable_features`, `locale`, `settings`), `declarations` (the JSON of a `settings_file`: the
 /// inputs and outputs of a workbook with no settings sheet) and, as the flags of the command do,
 /// `embed_template` (the workbook is the answer, as `-o OUT` of `sheetc calculate`) and `json` (which
