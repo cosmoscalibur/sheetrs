@@ -1,9 +1,8 @@
 //! `FORECAST.ETS.ADD`, `FORECAST.ETS.MULT`, `FORECAST.ETS.PI.ADD`, `FORECAST.ETS.PI.MULT`,
 //! `FORECAST.ETS.STAT.ADD`, `FORECAST.ETS.STAT.MULT` and `FORECAST.ETS.SEASONALITY`: the
-//! Holt-Winters exponential smoothing of `LibreOffice` (`ScETSForecastCalculation` of
-//! `sc/source/core/tool/interpr8.cxx`), with its search of the smoothing constants, its handling
-//! of gaps, repeated timeline values and month steps, and the Kahan sums it computes with. The
-//! results are checked against the oracle (`tests/assets/semantics.*`).
+//! Holt-Winters exponential smoothing of `LibreOffice`, with its search of the smoothing constants,
+//! its handling of gaps, repeated timeline values and month steps, and Kahan sums. The results are
+//! checked against the oracle (`tests/assets/semantics.*`).
 //!
 //! Not reproduced: the prediction interval of a series with seasons, which `LibreOffice` computes
 //! from random scenarios (the result changes with each calculation): the build stops.
@@ -117,7 +116,7 @@ impl Kahan {
     }
 }
 
-/// `rtl::math::approxEqual`.
+/// Whether two numbers are equal up to a relative tolerance of 2^-48 (and of half a unit of the 15th digit).
 fn approx_equal(a: f64, b: f64) -> bool {
     const E48: f64 = 1.0 / 281_474_976_710_656.0;
     const HALF_15TH: f64 = 5e-15;

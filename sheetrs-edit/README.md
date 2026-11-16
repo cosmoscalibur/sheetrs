@@ -456,7 +456,7 @@ is no longer valid; one that does not change keeps it.
   XLSX: a sheet that changes has tables, header or footer images or data tables; the workbook has pivot tables. In an ODS: the document has pivot tables, filters, consolidations or
   scenarios.
 - Shapes, images and charts (the drawings of an XLSX, the shapes in the cells of an ODS) are placed
-  as LibreOffice places them (`sheetrs_io::write::shapes`, from `ScDrawLayer`, checked against 26.8
+  as LibreOffice places them (`sheetrs_io::write::shapes`, checked against 26.8
   on every band of rows and of columns up to five wide of the fixtures:
   `tests/assets/oracle/shapes_delete.json`, made by `scripts/make_shapes_oracle.py` in the file LibreOffice saves after the deletion and opens again: the reference of the project; three bands of an ODS give another height there than the memory of LibreOffice, a difference proposed in `docs/approved-differences.md`). A shape that
   lies wholly inside the deleted band is deleted with it (its outline counts: one that starts where the

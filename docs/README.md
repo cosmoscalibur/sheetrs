@@ -10,6 +10,13 @@ getting-started instructions, see the root [README.md](../README.md).
 - [Coding Patterns](coding-patterns.md) — conventions, naming, SoC principle,
   WalkerRule trait pattern, CLI and library guidelines.
 
+- [Spike: interpreter, JIT and LLVM](spike-execution-backends.md) — what a direct mode, a JIT and an
+  LLVM compiler would add to the engine, with the measurements behind the verdicts.
+- [Rounding against LibreOffice: harness](spike-round/README.md) — the comparison of `ROUND`, `ROUNDUP` and `ROUNDDOWN` with
+  LibreOffice over 900 000 cases, behind the plan.
+- [Plan: dense index, `round_dec` and the writer](plan-engine-and-writer-performance.md) — the work that follows
+  from the spike, in order, with what to check when integrating and the gate of every task.
+
 ## API
 
 - [API alignment](api-alignment.md) — the rules that keep the command line, Rust, Python and WebAssembly

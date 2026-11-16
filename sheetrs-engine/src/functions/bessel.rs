@@ -1,6 +1,5 @@
-//! `BESSELI`, `BESSELJ`, `BESSELK` and `BESSELY`, with the algorithms of `LibreOffice`'s analysis
-//! add-in (`scaddins/source/analysis/bessel.cxx`): series and adjoint summation for the first
-//! kinds, polynomial approximations for the second, so that the digits are `LibreOffice`'s.
+//! `BESSELI`, `BESSELJ`, `BESSELK` and `BESSELY`: series and adjoint summation for the first
+//! kinds, polynomial approximations for the second, chosen so that the digits are `LibreOffice`'s.
 //! The result is checked against the oracle (`tests/assets/semantics.*`).
 
 use std::f64::consts::{EULER_GAMMA as EGAMMA, FRAC_2_PI, FRAC_PI_2, FRAC_PI_4, PI};
