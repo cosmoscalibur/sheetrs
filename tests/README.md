@@ -117,6 +117,6 @@ difference is the text of a qualified `Data!#REF!` that a run does not touch (pr
 (`sheetrs-edit/scripts/gen_book_fixtures.py`, `gen_recalculation_fixtures.py`, `make_shapes_oracle.py`,
 `compare_structure_with_libreoffice.py`, `sheetrs-edit/tests/assets/replace/make_fixtures.py`,
 `replace_anchors/make_anchors_oracle.py`) save what LibreOffice leaves after each operation and open it again before they
-read or keep it. `sheetrs-edit/tests/assets/from_cache/` (`make_fixtures.py`, `make_external.py`) are the
+read or keep it. `sheetrs-edit/tests/assets/writer_results/` (`make_oracle.py`, run the same way; `kinds.*`, `kinds_1904.*`, `oracle.json`) is what `sheetrs-edit/tests/writer_results.rs` compares the writers with: one formula and one constant of each kind of result (errors, numbers of every size, texts, booleans, dates, times, percentages, currencies, an array), converted to values, calculated or written as constants, against what `LibreOffice` shows when it opens its own file and the one of the writers (`sheetrs-io/README.md`, *What the writers change of a result when they write it*). `sheetrs-edit/tests/assets/from_cache/` (`make_fixtures.py`, `make_external.py`) are the
 workbooks, in both formats, of `tests/from_cache.rs`: another workbook, a macro and an extension; `probe.py` there is the probe of `LibreOffice` that the
 table of `FIDELITY.md` (*What depends on what the engine cannot calculate*) is from.

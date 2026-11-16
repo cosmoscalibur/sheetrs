@@ -992,8 +992,9 @@ fn parse_dollar_sheet_ref(
 static SHEET_RANGE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"([A-Za-z0-9_]+)\.([A-Z$0-9]+):([A-Za-z0-9_]+)\.([A-Z$0-9]+)").unwrap()
 });
+// The cell part is an address (`A1`, `$B$2`): a formula that is one decimal number (`1.5`) is not `Sheet1.A1`.
 static SHEET_SINGLE_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+)\.([A-Z$0-9]+)$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+)\.(\$?[A-Z]+\$?[0-9]+)$").unwrap());
 
 /// Strip local sheet references from formula (Sheet1.A1 → A1, Sheet1.A1:Sheet1.B2 → A1:B2)
 /// Also converts Sheet.Cell to Sheet!Cell format for multi-sheet ranges
@@ -3355,6 +3356,21 @@ mod tests {
         assert_eq!(
             normalize_ods_reference("of:=\"a\"\"[.A1]\"\"\"&[.B1]", false, None, &mut Vec::new()),
             "\"a\"\"[.A1]\"\"\"&B1"
+        );
+    }
+
+    #[test]
+    fn a_formula_that_is_one_decimal_number_stays_that_number() {
+        for number in ["1.5", "0.25", "12345.678", "1234567.891"] {
+            assert_eq!(
+                normalize_ods_reference(&format!("of:={number}"), false, None, &mut Vec::new()),
+                number
+            );
+        }
+        // A reference to a cell of a sheet is still the cell.
+        assert_eq!(
+            normalize_ods_reference("of:=Sheet1.A1", false, None, &mut Vec::new()),
+            "A1"
         );
     }
 
