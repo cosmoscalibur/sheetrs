@@ -63,7 +63,7 @@ statistics, which are a tool like the others: `stats()` reads it.
 | | `valueRanges()` | `ValueRanges` of the calculation (`toJSON()` is the answer of the protocol, `{valueRanges: [{range, name, values}]}`, `toObject()` is `{name: rows}`); runs the operations in memory and writes nothing |
 | | `report` | `Report` of the last `save` or `valueRanges`: `replaced`, `written`, `skipped` (`{sheet, cell, reason}`), `diagnostics`, `valueRanges`; `undefined` before |
 | **compile** | `compile(options?)` | `{module, cells, reachable, formulas, folded, kept, cycles, diagnostics}`: `module` is a `Uint8Array`, the WebAssembly module of the workbook (`sheetc build --target wasm`). By default the constants it folds are the values the workbook stores and the module keeps the cached result of the formulas it keeps; `calculateAll = true` on the `Book` (or `calculate_all` in the options) calculates the whole workbook first and stores those results; `force_calculate_all: true` (only here) stores no cached result, so the module calculates everything it kept in every run and is lighter |
-| **settings** | `locale`, `now`, `seed` (read only), `calculateAll`, `dates`, `onDiagnostic` | by default `save` calculates only the formulas the operations reach (and the ones that depend on them) and keeps, as the file has them, the results it caches for the rest, as `LibreOffice` does (see below); `calculateAll = true` calculates every formula (`calculateAll()` of `LibreOffice`, `--calculate-all` of the command line; `false` is the default), in `save`, `valueRanges` and `compile`; `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
+| **settings** | `locale`, `now`, `seed` (read only), `calculateAll`, `secureMode`, `dates`, `onDiagnostic` | by default `save` calculates only the formulas the operations reach (and the ones that depend on them) and keeps, as the file has them, the results it caches for the rest, as `LibreOffice` does (see below); `calculateAll = true` calculates every formula (`calculateAll()` of `LibreOffice`, `--calculate-all` of the command line; `false` is the default), in `save`, `valueRanges` and `compile`; `secureMode = true` makes the call of what the engine cannot calculate an error cell and a warning instead of a throw (see below); `dates = true` gives dates and times as `{type: "date" \| "time" \| "datetime", value: "<ISO 8601>"}` in `query`, `range` and `find` instead of serial numbers (the default); `onDiagnostic = fn` receives each diagnostic record `{level, code, message, context}` of a run after it ends (an exception it throws ends the call) |
 
 Free functions: `lintRules()` (array of `{id, name, category, is_default}`), `evaluateFormula(formula,
 locale, options)` (the value of one formula, `sheetc evaluate`) and `initPanicHook()`.
@@ -111,10 +111,19 @@ A `formulaToValue` converts, by default, the results the file caches for the for
 what the engine calculates for the ones it reaches (a replacement pushed with it, a deletion). With `calculateAll
 = true` the engine calculates the cells of its scopes (and what they read) in the pass that writes them as
 values, and those are the values. A cell that depends on what the engine
-cannot calculate (another workbook, a macro, an extension) keeps its cached result, as `LibreOffice` shows it until something dirties the cell, and the
+cannot calculate (another workbook, an extension, or a macro in secure mode) keeps its cached result, as `LibreOffice` shows it until something dirties the cell, and the
 report holds a warning with the code `EXTERNAL_FROM_CACHE`, `MACRO_FROM_CACHE` or `EXTENSION_FROM_CACHE`; one the run calculates and that only `LibreOffice`
-can answer (a macro, a function it has and the engine lacks) makes the call throw with a message that names the cause. An add-in that is not installed is `#NAME?`
+can answer (a function it has and the engine lacks) makes the call throw with a message that names the cause. A workbook with macros is refused by the build,
+whatever the call that builds (the same in every layer): it throws with a message that names secure mode; `inspect` and `stats` only read it. An add-in that is not installed is `#NAME?`
 in a cell the run calculates, as in `LibreOffice`.
+
+`secureMode = true` (a property of the `Book`, `false` by default; `secure_mode` in the options of `compile`, `inspect` and
+`evaluateFormula`) opens a workbook with macros and makes the run go on with what the engine cannot calculate: the call of a macro, of an add-in or of a
+function of `LibreOffice` the engine lacks that the run calculates is an error cell instead of a throw (`Err:531` for a
+macro, `Err:540` for `WEBSERVICE`, `#N/A` for `DDE`, `#NOT_IMPLEMENTED!` where `LibreOffice` shows a value the engine
+lacks), what reads it is calculated from it, the rest of the workbook is calculated, and the diagnostics of the report
+(and `onDiagnostic`) hold a warning with the code `UNSUPPORTED_AS_ERROR`. A cell that nothing reaches keeps the result the
+file caches, with a warning of its kind, in both modes.
 
 ### `query`
 
@@ -130,7 +139,7 @@ text of the cell). A pattern that can match the empty text (`x*`, `^`, `$`, `a*$
 
 ### `calculate` and `valueRanges`
 
-The clock of `NOW()`, `TODAY()` and `RAND()` is `Date.now()`, unless the `Book` was given a `now` and a `seed` (`new Book(bytes, locale, {now, seed})`), which every tool below takes. The options of a `sheetc.toml` (`strict`, `now`, `seed`, `host`, `locale`, ...) and `declarations` (the JSON of a `settings_file`: the
+The clock of `NOW()`, `TODAY()` and `RAND()` is `Date.now()`, unless the `Book` was given a `now` and a `seed` (`new Book(bytes, locale, {now, seed})`), which every tool below takes. The options of a `sheetc.toml` (`secure_mode`, `now`, `seed`, `host`, `locale`, ...) and `declarations` (the JSON of a `settings_file`: the
 inputs and outputs of a workbook with no settings sheet) apply to `inspect(options)`, `compile(options)`
 and `evaluateFormula`. The calculation of a plan takes the request and, as the options of the call, `now`
 and `seed` (see `calculate(request?, options?)` above), which win over the ones of the `Book`; `locale` is the one of the `Book`.

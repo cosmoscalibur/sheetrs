@@ -163,6 +163,14 @@ pub struct Args {
     #[arg(long)]
     pub calculate_all: bool,
 
+    /// Open a workbook with macros, and go on when a calculation meets what the engine cannot calculate and
+    /// has to (a call to a macro, to an add-in or to a function of `LibreOffice` it lacks, such as
+    /// `WEBSERVICE`): the call is an error cell, what reads it is calculated from it, and the report holds a
+    /// warning. By default a run that builds refuses a workbook with macros and stops at the others with an
+    /// error that names the cause
+    #[arg(long)]
+    pub secure_mode: bool,
+
     /// Output file (required unless `--in-place`)
     #[arg(short, long, conflicts_with = "in_place")]
     pub output: Option<PathBuf>,
@@ -222,7 +230,9 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
 
     // The flags of a command are all written against the input file, in no order: the planner
     // decides what runs first (see `sheetrs_edit::BookEdit`), as it does for every other caller.
-    let mut book = Book::from_file(&cli.file)?.with_calculate_all(cli.calculate_all);
+    let mut book = Book::from_file(&cli.file)?
+        .with_calculate_all(cli.calculate_all)
+        .with_secure_mode(cli.secure_mode);
     if let Some(tag) =
         sheetrs_io::locale::for_command(cli.locale.as_deref(), cli.config.as_deref())?
     {

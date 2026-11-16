@@ -343,10 +343,11 @@ class Book:
         the formulas the edit does not reach and what the engine calculates for the ones it reaches; with
         `calculate_all=True` on the terminal the engine calculates the cells of the scopes, and what they
         read, while the file is written. A cell that depends on what the engine cannot calculate (another
-        workbook, a macro, an extension) keeps the result the file caches, as LibreOffice shows it until
-        something dirties the cell, and the report of the save says so (`EXTERNAL_FROM_CACHE`,
+        workbook, an extension, or a macro in secure mode) keeps the result the file caches, as LibreOffice
+        shows it until something dirties the cell, and the report of the save says so (`EXTERNAL_FROM_CACHE`,
         `MACRO_FROM_CACHE`, `EXTENSION_FROM_CACHE`); one the run calculates and that only LibreOffice can
-        give a result for (a macro, a function the engine lacks) raises `Error`, naming the cause."""
+        give a result for (a function the engine lacks) raises `Error`, naming the cause. A workbook with
+        macros raises `Error` naming secure mode, whatever the run that builds (see `secure_mode`)."""
     def delete_rows(self, rows: Targets) -> Self:
         """Delete rows (`"Sheet!3:10"`, `"Sheet!3"`): one `str` or an iterable of them, simultaneous
         within the call."""
@@ -421,14 +422,15 @@ class Book:
         recalculated, with a `RecalculationWarning`. A cell that depends on another workbook, a macro
         or a function the engine does not implement keeps the result the file caches, as LibreOffice shows
         it until something dirties the cell, and the report holds a warning of its own; one the run
-        calculates and that only LibreOffice can give a result for (a macro, a function the engine lacks)
-        raises `Error` naming the cause. `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
+        calculates and that only LibreOffice can give a result for (a function the engine lacks)
+        raises `Error` naming the cause, and a workbook with macros raises `Error` naming secure mode. `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
         (the seed of `RAND()`) fix the volatile functions, as `--now` and `--seed` of `sheetc` do
         (without them the engine reads the clock); they also fix the recalculation that the same `save`
         runs after an edit that leaves results stale."""
-    def value_ranges(self, *, calculate_all: bool = False) -> ValueRanges:
+    def value_ranges(self, *, calculate_all: bool = False, secure_mode: bool = False) -> ValueRanges:
         """The value ranges of the calculation, in memory: runs the operations and writes the workbook
-        nowhere. Raises `Error` without a `calculate` step. `calculate_all` is the one of `save`."""
+        nowhere. Raises `Error` without a `calculate` step. `calculate_all` and `secure_mode` are the ones
+        of `save`."""
     def explain(self, *, calculate_all: bool = False) -> str: ...
     def save(
         self,
@@ -436,6 +438,7 @@ class Book:
         *,
         json: Destination | None = None,
         calculate_all: bool = False,
+        secure_mode: bool = False,
     ) -> Book:
         """The cut: run the operations and write the workbook.
 
@@ -451,14 +454,24 @@ class Book:
         edit). With `calculate_all=True` the engine calculates every formula of the workbook
         (`calculateAll()`). A workbook that reads cells at run time (`INDIRECT`, `OFFSET`), one the file
         says is stale, and one where a replacement and a deletion meet are calculated whole in both.
+
+        A workbook with macros is refused by the build, in any run that builds, with an `Error` that names
+        secure mode (`inspect` and `stats` only read it). What else the engine cannot calculate (an add-in, a
+        function of `LibreOffice` it lacks such as `WEBSERVICE`, `FILTERXML` or `DDE`) and a run has to
+        calculate raises `Error` naming the cause. With `secure_mode=True` the workbook is opened and the run
+        goes on: the call (of a macro too) is an error cell (the error `LibreOffice` shows where it
+        is documented: `Err:531` for a macro, `Err:540` for `WEBSERVICE`, `#N/A` for `DDE`, `#NOT_IMPLEMENTED!`
+        otherwise), what reads it is calculated from it, the rest of the workbook is calculated, and the report
+        holds a warning with the code `UNSUPPORTED_AS_ERROR` (also a `UserWarning` and a log record). A cell
+        that nothing reaches keeps the result the file caches and a warning of its kind, in both.
         """
-    def to_bytes(self, *, calculate_all: bool = False) -> bytes:
+    def to_bytes(self, *, calculate_all: bool = False, secure_mode: bool = False) -> bytes:
         """The workbook the operations make, as bytes in the format of the source: the cut like `save`,
         but to memory, with no file. The bytes are the ones `save(path)` writes for the same plan. Like
         `save(path)` it keeps the operations of this `Book`; `report` says what the run did and a
         `RecalculationWarning` is issued where `save` would issue it. With no operations it returns
-        the workbook as it is (the file, or the bytes the `Book` was made from). `calculate_all` is the one
-        of `save`."""
+        the workbook as it is (the file, or the bytes the `Book` was made from). `calculate_all` and `secure_mode`
+        are the ones of `save`."""
     def range(
         self,
         ranges: Targets,

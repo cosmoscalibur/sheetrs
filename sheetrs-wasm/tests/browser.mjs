@@ -125,10 +125,10 @@ const results = await page.evaluate(async () => {
     });
     for (const [kind, code, a1, error] of [
       ["external", "EXTERNAL_FROM_CACHE", 42, null],
-      ["macro", "MACRO_FROM_CACHE", 77, /MYFUNC/],
+      ["macro", "MACRO_FROM_CACHE", 77, /secure mode/],
       ["extension", "EXTENSION_FROM_CACHE", 77, /WEBSERVICE/],
     ]) {
-      await check(`from cache (${kind} ${ext}): the stored value of a link, an error for a macro or WEBSERVICE when every formula is calculated`, () => {
+      await check(`from cache (${kind} ${ext}): the stored value of a link, an error for WEBSERVICE when every formula is calculated, and the refusal of a workbook with macros`, () => {
         const book = open(`from_cache/${kind}`, ext);
         book.calculateAll = true;
         book.formulaToValue("Calc");

@@ -665,11 +665,14 @@ impl PyBook {
     /// reads the clock. They also fix the recalculation that the same `save` runs after an edit that
     /// leaves results stale.
     ///
-    /// A cell that depends on another workbook, a macro or a function the engine does not implement
+    /// A workbook with macros is refused by the build, in any run that builds (`Error` naming secure mode,
+    /// unless the terminal is given `secure_mode=True`).
+    ///
+    /// A cell that depends on another workbook, a macro (in secure mode) or a function the engine does not implement
     /// keeps the result the file caches, as `LibreOffice` shows it until something dirties the cell, and
     /// the report says so with a warning (`EXTERNAL_FROM_CACHE`, `MACRO_FROM_CACHE`,
     /// `EXTENSION_FROM_CACHE`); one the run calculates and that only `LibreOffice` can give a result for
-    /// (a macro, a function the engine lacks) raises `Error` with a message that names the cause.
+    /// (a function the engine lacks) raises `Error` with a message that names the cause.
     ///
     /// Where the engine cannot calculate the workbook for another reason (a reference it does not read)
     /// `save` still writes it, marked to be recalculated when it is opened, and issues
@@ -719,9 +722,14 @@ impl PyBook {
     /// It is a terminal like `save`: it runs the operations (the workbook goes through memory and is
     /// written nowhere), so it is allowed with operations pending. Raises `Error` when there is no
     /// `calculate` step, and `UnavailableFunctionError` when the engine cannot calculate the
-    /// workbook. `calculate_all` is the one of `save`.
-    #[pyo3(signature = (*, calculate_all=false))]
-    fn value_ranges(&self, py: Python<'_>, calculate_all: bool) -> PyResult<PyValueRanges> {
+    /// workbook. `calculate_all` and `secure_mode` are the ones of `save`.
+    #[pyo3(signature = (*, calculate_all=false, secure_mode=false))]
+    fn value_ranges(
+        &self,
+        py: Python<'_>,
+        calculate_all: bool,
+        secure_mode: bool,
+    ) -> PyResult<PyValueRanges> {
         if !plan::has_calculate(&self.steps) {
             return Err(raise(
                 "Error",
@@ -729,7 +737,11 @@ impl PyBook {
                  call calculate() first",
             ));
         }
-        let source = self.source.clone().with_calculate_all(calculate_all);
+        let source = self
+            .source
+            .clone()
+            .with_calculate_all(calculate_all)
+            .with_secure_mode(secure_mode);
         let steps = self.steps.clone();
         let done = py
             .detach(|| plan::run(&source, &steps, &Target::Nowhere, true))
@@ -773,16 +785,21 @@ impl PyBook {
     /// recalculates every formula, and a `RecalculationWarning` says so (also logged by `sheetrs`).
     /// By default (what `LibreOffice` does) only the formulas the operations reach, and the ones that depend on
     /// them, are calculated: every other formula keeps the result the file caches. With
-    /// `calculate_all=True` every formula is calculated (`calculateAll()`).
+    /// `calculate_all=True` every formula is calculated (`calculateAll()`). What the engine cannot calculate and
+    /// the run has to (a call to a macro, to an add-in or to a function of `LibreOffice` it lacks, such as
+    /// `WEBSERVICE`) raises `Error` naming the cause by default, and a workbook with macros raises `Error` naming secure mode;
+    /// with `secure_mode=True` the workbook is opened and the call is an error cell,
+    /// what reads it is calculated from it, and the report holds a warning (`UNSUPPORTED_AS_ERROR`).
     /// Raises `OSError` for a file that cannot be read or written and `sheetrs.Error` when the
     /// workbook cannot be edited (including when there are no operations).
-    #[pyo3(signature = (dest=None, *, json=None, calculate_all=false))]
+    #[pyo3(signature = (dest=None, *, json=None, calculate_all=false, secure_mode=false))]
     fn save<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
         dest: Option<&Bound<'py, PyAny>>,
         json: Option<&Bound<'py, PyAny>>,
         calculate_all: bool,
+        secure_mode: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         if json.is_some() && !plan::has_calculate(&slf.steps) {
             return Err(raise(
@@ -791,7 +808,11 @@ impl PyBook {
                  call calculate() first",
             ));
         }
-        let source = slf.source.clone().with_calculate_all(calculate_all);
+        let source = slf
+            .source
+            .clone()
+            .with_calculate_all(calculate_all)
+            .with_secure_mode(secure_mode);
         let steps = slf.steps.clone();
         let stream_dest = match dest {
             Some(dest) if is_stream(dest)? => Some(dest.clone()),
@@ -890,15 +911,20 @@ impl PyBook {
     /// made from).
     ///
     /// Raises `OSError` for a file that cannot be read when there are no operations, and
-    /// `sheetrs.Error` when the workbook cannot be read or edited to run them. `calculate_all` is the one
-    /// of `save`.
-    #[pyo3(signature = (*, calculate_all=false))]
+    /// `sheetrs.Error` when the workbook cannot be read or edited to run them. `calculate_all` and `secure_mode`
+    /// are the ones of `save`.
+    #[pyo3(signature = (*, calculate_all=false, secure_mode=false))]
     fn to_bytes<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
         calculate_all: bool,
+        secure_mode: bool,
     ) -> PyResult<Bound<'py, PyBytes>> {
-        let source = slf.source.clone().with_calculate_all(calculate_all);
+        let source = slf
+            .source
+            .clone()
+            .with_calculate_all(calculate_all)
+            .with_secure_mode(secure_mode);
         if slf.steps.is_empty() {
             let bytes = py
                 .detach(|| match (source.path(), source.bytes()) {

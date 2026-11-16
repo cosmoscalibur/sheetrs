@@ -142,6 +142,16 @@ content as Python dicts and lists, `to_json()` as JSON text (and, for the lint r
   default the results the file caches for the formulas the edit does not reach (and what the engine calculates for
   the ones it reaches); with `calculate_all=True` what the formulas calculate (the engine calculates the cells of
   the scopes while the file is written).
+- **`secure_mode=True` goes on with what the engine cannot calculate** (a keyword of `save`, `to_bytes` and
+  `value_ranges`; `False` is the default). The engine does not run a macro, call an add-in or implement `WEBSERVICE`,
+  `FILTERXML` or `DDE`. A workbook with macros is refused by default: any run that builds raises `sheetrs.Error`
+  naming secure mode (the refusal is the build's own, the same in every layer; `inspect` and `stats` only read and
+  do not raise it), and `secure_mode=True` opens it. A cell that no edit reaches keeps the result the file caches and
+  a warning of its kind (`EXTERNAL_FROM_CACHE`, `MACRO_FROM_CACHE` in secure mode, `EXTENSION_FROM_CACHE`), in both
+  modes; one the run calculates raises `sheetrs.Error` naming the cause by default, and with `secure_mode=True` is an error cell instead
+  (`Err:531` for a macro, `Err:540` for `WEBSERVICE`, `#N/A` for `DDE`, `#NOT_IMPLEMENTED!` where `LibreOffice`
+  shows a value the engine lacks), what reads it is calculated from it, the rest of the workbook is calculated, and
+  the report holds a warning with the code `UNSUPPORTED_AS_ERROR` (a `UserWarning` and a log record).
 - **Recalculation on open**, with no option: a workbook whose results the changes leave stale (rows,
   columns, sheets or names deleted) and that no `calculate` calculated again is saved marked so that
   the application that opens it recalculates every formula. When the engine cannot calculate the

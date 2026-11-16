@@ -475,6 +475,21 @@ impl Book {
         self.inner = self.inner.clone().with_calculate_all(calculate_all);
     }
 
+    /// Whether `save` (and `compile`) goes on with what the engine cannot calculate and has to (`true`): a call to a
+    /// macro, to an add-in or to a function of `LibreOffice` it lacks (`WEBSERVICE`, `FILTERXML`, `DDE`) is an error
+    /// cell, what reads it is calculated from it, and the diagnostics hold a warning (`UNSUPPORTED_AS_ERROR`).
+    /// `false`, the default, stops the run with an error that names the cause.
+    #[wasm_bindgen(getter, js_name = secureMode)]
+    pub fn secure_mode(&self) -> bool {
+        self.inner.secure_mode()
+    }
+
+    /// Sets [`secure_mode`](Self::secure_mode).
+    #[wasm_bindgen(setter, js_name = secureMode)]
+    pub fn set_secure_mode(&mut self, secure_mode: bool) {
+        self.inner = self.inner.clone().with_secure_mode(secure_mode);
+    }
+
     /// What `save` will do: the passes over the file, one operation per line.
     pub fn explain(&self) -> String {
         self.inner.explain()

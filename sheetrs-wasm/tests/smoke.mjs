@@ -557,18 +557,18 @@ check("edit (calculate on a workbook the engine cannot calculate: marked and a w
 // -- from-cache ------------------------------------------------------------------------------
 // What the engine cannot calculate (another workbook, a macro, an extension) has no option: a cell that nothing reaches keeps
 // the result the file caches and the report holds a warning of its kind; a cell the run calculates is what `LibreOffice` gives
-// (`#NAME?` for an add-in that is not installed, the stored value of a link) or, where only `LibreOffice` can answer (a macro,
-// `WEBSERVICE`), an error that names the cause (`sheetrs-edit/tests/from_cache.rs` has the logic; this is the package).
+// (`#NAME?` for an add-in that is not installed, the stored value of a link) or, where only `LibreOffice` can answer
+// (`WEBSERVICE`), an error that names the cause; a workbook with macros is refused by the build unless secure mode is on (`sheetrs-edit/tests/from_cache.rs` has the logic; this is the package).
 const fromCache = (kind, extension) => join(root, `sheetrs-edit/tests/assets/from_cache/${kind}.${extension}`);
 const kinds = [
   { kind: "external", code: "EXTERNAL_FROM_CACHE", cause: null, a1: 42 },
-  { kind: "macro", code: "MACRO_FROM_CACHE", cause: /MYFUNC/, a1: 77 },
+  { kind: "macro", code: "MACRO_FROM_CACHE", cause: /secure mode/, a1: 77 },
   { kind: "extension", code: "EXTENSION_FROM_CACHE", cause: /WEBSERVICE/, a1: 77 },
 ];
 for (const { kind, code, cause, a1 } of kinds) {
   for (const extension of ["xlsx", "ods"]) {
     const file = fromCache(kind, extension);
-    check(`from-cache (${kind} ${extension}: every formula calculated keeps a link, and a macro or WEBSERVICE is an error)`, () => {
+    check(`from-cache (${kind} ${extension}: every formula calculated keeps a link, WEBSERVICE is an error and a workbook with macros is refused)`, () => {
       const converting = open(file);
       converting.calculateAll = true;
       converting.formulaToValue("Calc");
@@ -587,6 +587,8 @@ for (const { kind, code, cause, a1 } of kinds) {
   }
   check(`from-cache (${kind} xlsx: a calculation nothing reaches keeps the cache and warns)`, () => {
     const book = open(fromCache(kind, "xlsx"));
+    // A workbook with macros is built only in secure mode.
+    book.secureMode = kind === "macro";
     book.calculate();
     const saved = book.save();
     const [row] = new wasm.Book(saved).range("Calc!A1:C1")[0].values;
@@ -595,6 +597,29 @@ for (const { kind, code, cause, a1 } of kinds) {
     assert.deepEqual(book.report.diagnostics.map((d) => d.code), [code]);
   });
 }
+for (const extension of ["xlsx", "ods"]) {
+  check(`secure mode (${extension}: the property reaches the run, a macro is an error cell and a warning)`, () => {
+    const secure = open(fromCache("macro", extension));
+    assert.equal(secure.secureMode, false);
+    secure.secureMode = true;
+    assert.equal(secure.secureMode, true);
+    secure.calculateAll = true;
+    secure.calculate();
+    const saved = secure.save();
+    const [row] = new wasm.Book(saved).range("Calc!A1:E1")[0].values;
+    assert.equal(row[2], 10, "the rest of the workbook is calculated");
+    assert.deepEqual(secure.report.diagnostics.map((d) => d.code), ["UNSUPPORTED_AS_ERROR"]);
+    // Off by default: the build refuses the workbook and names secure mode.
+    const plain = open(fromCache("macro", extension));
+    plain.calculateAll = true;
+    plain.calculate();
+    assert.throws(() => plain.save(), /secure mode/);
+    assert.doesNotThrow(() => open(fromCache("macro", extension)).inspect(), "inspect only reads");
+  });
+}
+check("secure mode (a key of the options of inspect)", () => {
+  assert.doesNotThrow(() => open(book).inspect({ secure_mode: true }));
+});
 check("from-cache (the options of an earlier version are gone)", () => {
   assert.throws(() => new wasm.Book(read(book), undefined, { externalFromCache: true }), /unknown key/);
   assert.throws(() => open(book).calculate(undefined, { macroFromCache: true }), /not valid|unknown/);
