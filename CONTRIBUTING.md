@@ -108,7 +108,15 @@ turns every regeneration into a diff of binary files that changed no cell.
 - Create both positive (expected behavior) and negative (error handling, edge
   cases) test cases.
 - **Name** a test for the behavior it checks, in a few words (`locale_flag_is_refused_at_run_time`), not
-  for how the code reaches it.
+  for how the code reaches it. The name says **what the test proves, by itself**: it does not start with
+  `test` (the module or the `tests/` directory already says it is a test), it has no comparative filler
+  (`too`, `also`: say the behavior, not that it resembles another test) and it is not a long sentence that
+  walks through the setup: short, concrete, stating the behavior (`a_bad_locale_tag_is_a_value_error`,
+  `unreached_formulas_keep_their_result`). The same rule in Python: pytest collects `[a-z]*` functions in
+  `sheetrs-py/tests` (`python_functions` in `pyproject.toml`), so a helper, a class or a constant starts
+  with an underscore or a capital and is never collected. The Python tests prove the interface contract
+  only (wiring, defaults, the mapping of errors and warnings); what the engine, the planner or the readers
+  do is tested in Rust.
 - **Test behavior, not design.** A test fails when what a user or a caller observes changes (a result, an
   error, an output). It does not pin that something does not exist or how it is built; a decision of
   design is recorded in the docs.

@@ -207,6 +207,21 @@ parsers and rules:
   applies to each fragment between references and drops the spaces around
   them.
 
+## Tests
+
+- **A test is named for what it proves**, by itself, in a few words, and the name does not start with
+  `test`: `the_empty_search_text_finds_nothing_in_every_mode`, not `test_empty_search`. No comparative
+  filler (`too`, `also`), and no sentence that tells the setup instead of the behavior. A name that needs
+  more than about 70 characters is testing more than one behavior or describing how: split the test or say
+  the behavior shorter. (Some older tests of the linter still start with `test_`; a test that is added or
+  touched follows this rule.)
+- **Python** (`sheetrs-py/tests`) follows the same rule: `python_functions = ["[a-z]*"]` in `pyproject.toml`
+  collects every public function of a test module, so a helper starts with an underscore (`_make_xlsx`) and
+  is never collected, and a class or a constant starts with a capital. Python has no logic of its own: its
+  tests prove the interface contract (arguments reach the engine, defaults, `sheetrs.Error` and the warnings
+  that Rust's errors and reports become). The order of a plan, what a change reaches, the stale rules and the
+  text of `explain` are asserted in Rust (`sheetrs-edit`), where the logic is.
+
 ## Performance Guidelines
 
 - Use streaming readers — avoid loading data that is not needed.
