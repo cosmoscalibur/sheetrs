@@ -99,7 +99,8 @@ or a list: `"workbook"`, `{sheet: "Data"}`, `{range: "Data!A1:C9"}`), `propertie
 `include_formulas`, `formatted`, `filtered`), `locale` and `dates`. `range` and `find` are the same
 reads in the shape they are used in: `range(ranges, {properties, major: "rows" | "columns", dates})`
 and `find(text, {mode, matchCase, entireCells, searchIn, includeFormulas, formatted, filtered, scope,
-properties, by, dates})`.
+properties, by, dates})`. A `regex` search reads the anchors `^` and `$` (the start and the end of the
+text of the cell). A pattern that can match the empty text (`x*`, `^`, `$`, `a*$`) is read by `find` and `replace` alike, as LibreOffice does: an empty match is a hit only at the very end of the text, so `find` gives the cells `replace` would change (`$` every cell that does not end in a line break, `^` none). The empty search text matches nothing in every mode: `find` gives `[]` and `replace` changes no cell, at once and with no error.
 
 ### `calculate` and `valueRanges`
 

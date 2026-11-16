@@ -83,10 +83,16 @@ def test_regular_expressions(texts):
     assert cells(texts.find("b(an)+a", regex=True)) == ["S!A3"]
 
 
+def test_the_anchors_of_a_regular_expression_are_those_of_the_text(texts):
+    assert cells(texts.find("^ban", regex=True)) == ["S!A3", "S!C3"]
+    assert cells(texts.find("^b(an)+a$", regex=True, entire_cells=True)) == ["S!A3"]
+    assert cells(texts.find("^(Banana|Apple pie)$", regex=True, match_case=True)) == ["S!A3"]
+
+
 def test_a_regular_expression_outside_the_subset_is_a_value_error(texts):
-    # The anchors are not reproduced yet: the search is refused, not answered differently.
+    # What is not reproduced is refused, not answered differently.
     with pytest.raises(ValueError, match="unsupported search"):
-        texts.find("^ban", regex=True)
+        texts.find("\\bban", regex=True)
 
 
 def test_wildcards(texts):
@@ -149,3 +155,23 @@ def test_a_search_with_operations_pending_raises(texts):
     texts.delete_sheets("R")
     with pytest.raises(sheetrs.PendingOperationsError):
         texts.find("apple")
+
+
+def test_the_empty_search_text_finds_nothing_in_every_mode(texts):
+    # LibreOffice: findAll with an empty search string reports no cell, in every mode.
+    for options in [{}, {"regex": True}, {"wildcards": True}, {"entire_cells": True}, {"regex": True, "entire_cells": True, "match_case": True}]:
+        assert texts.find("", **options) == []
+    # Nothing is read, so not even a sheet that is not there is an error.
+    assert texts.find("", scope="Nowhere") == []
+
+
+def test_a_pattern_that_matches_the_empty_text_finds_the_cells_replace_would_change(texts):
+    # An empty match is a hit only at the very end of the text (compared with findAll).
+    # Every text ends somewhere (the formula cell is not searched by value).
+    assert cells(texts.find("$", regex=True)) == [
+        "S!A1", "S!B1", "S!C1", "S!A2", "S!A3", "S!B3", "S!C3", "R!A1", "R!B2",
+    ]
+    assert texts.find("^", regex=True) == []
+    assert cells(texts.find("x*", regex=True)) == ["S!B3"]
+    assert texts.find("$", regex=True, entire_cells=True) == []
+    assert cells(texts.find("a*$", regex=True, scope="S!A1:A3")) == ["S!A1", "S!A2", "S!A3"]

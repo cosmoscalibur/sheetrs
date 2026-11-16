@@ -83,7 +83,8 @@ pub struct Args {
     /// replacement is entered as if it were typed (`12` makes a number, `=1+1` a formula, nothing an
     /// empty cell). Repeat it for a sweep: `--replace A --with B --replace C --with D` pairs each
     /// `--replace` with the `--with` in the same position, and every pair is an operation, in
-    /// order, that sees what the previous one left; the options below apply to all of them
+    /// order, that sees what the previous one left; the options below apply to all of them. An empty
+    /// text matches nothing: no cell is replaced
     #[arg(long, value_name = "TEXT", requires = "with")]
     pub replace: Vec<String>,
 
@@ -97,7 +98,7 @@ pub struct Args {
     )]
     pub with: Vec<String>,
 
-    /// `--replace` is a regular expression (the subset of ICU that is reproduced)
+    /// `--replace` is a regular expression (ICU, the subset that is reproduced; `^` and `$` anchor the text of the cell, and the pattern may match the empty text: that match is replaced only at the end of the text)
     #[arg(long, requires = "replace", conflicts_with = "wildcards")]
     pub regex: bool,
 
