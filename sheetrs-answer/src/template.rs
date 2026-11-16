@@ -143,7 +143,7 @@ pub fn fill_template(
     output: &Path,
 ) -> Result<Written> {
     let filled = fill(template, program, base, request, overrides, false)?;
-    write_cells(&filled.writes, template, output)
+    write_cells(filled.writes, template, output)
 }
 
 /// [`fill_template`] that also gives the answer of the program to the same request (its
@@ -174,7 +174,7 @@ pub fn fill_template_with_answer(
         return Ok((report, answer));
     }
     let filled = fill(template, program, base, request, overrides, true)?;
-    let report = write_cells(&filled.writes, template, output)?;
+    let report = write_cells(filled.writes, template, output)?;
     Ok((report, answer_of(filled.answer)))
 }
 
@@ -193,7 +193,7 @@ pub fn fill_template_to(
     out: impl std::io::Write,
 ) -> Result<Written> {
     let filled = fill(template, program, base, request, overrides, false)?;
-    write_cells_to(&filled.writes, template, out)
+    write_cells_to(filled.writes, template, out)
 }
 
 /// [`fill_template_to`] with what else the same pass over the file does: `also` are the modifications
@@ -257,7 +257,7 @@ pub fn fill_template_to_with_answer(
         return Ok((report, answer));
     }
     let filled = fill(template, program, base, request, overrides, true)?;
-    let report = write_cells_to(&filled.writes, template, out)?;
+    let report = write_cells_to(filled.writes, template, out)?;
     Ok((report, answer_of(filled.answer)))
 }
 
@@ -324,8 +324,9 @@ fn fill_with_outside(
             overrides,
             true,
         )?;
-        *out = template.modify_to_bytes(&modifications(&filled.writes))?;
-        (filled.writes.len(), answer_of(filled.answer).value_ranges)
+        let cells = filled.writes.len();
+        *out = template.modify_to_bytes(&modifications(filled.writes))?;
+        (cells, answer_of(filled.answer).value_ranges)
     } else if program.formula_cells.is_empty() && inputs.is_none() {
         // Nothing to write: the workbook is as it is.
         *out = match (template.bytes(), template.path()) {
@@ -347,8 +348,9 @@ fn fill_with_outside(
             overrides,
             false,
         )?;
-        *out = template.modify_to_bytes(&modifications(&filled.writes))?;
-        (filled.writes.len(), Vec::new())
+        let cells = filled.writes.len();
+        *out = template.modify_to_bytes(&modifications(filled.writes))?;
+        (cells, Vec::new())
     };
 
     // The rest is read from the workbook just written, as a query reads it.
@@ -451,9 +453,9 @@ struct Filled {
 
 /// What the writer is asked for the cells of a template: the replacements, and nothing else (the
 /// results written are taken as current, so the workbook is not marked to be recalculated).
-fn modifications(writes: &CellWrites) -> WorkbookModifications {
+fn modifications(writes: CellWrites) -> WorkbookModifications {
     WorkbookModifications {
-        replacements: writes.sheets().clone(),
+        replacements: writes.into_sheets(),
         // What the engine calculated is current: a template that came with the mark to recalculate (`fullCalcOnLoad`)
         // leaves without it. A workbook the engine could not calculate never gets here.
         clear_recalculation_mark: true,
@@ -461,24 +463,22 @@ fn modifications(writes: &CellWrites) -> WorkbookModifications {
     }
 }
 
-fn write_cells(writes: &CellWrites, template: &Book, output: &Path) -> Result<Written> {
+fn write_cells(writes: CellWrites, template: &Book, output: &Path) -> Result<Written> {
+    let cells = writes.len();
     template.modify(output, &modifications(writes))?;
-    Ok(Written {
-        cells: writes.len(),
-    })
+    Ok(Written { cells })
 }
 
 fn write_cells_to(
-    writes: &CellWrites,
+    writes: CellWrites,
     template: &Book,
     mut out: impl std::io::Write,
 ) -> Result<Written> {
+    let cells = writes.len();
     let bytes = template.modify_to_bytes(&modifications(writes))?;
     out.write_all(&bytes)
         .map_err(sheetrs_io::write::Error::from)?;
-    Ok(Written {
-        cells: writes.len(),
-    })
+    Ok(Written { cells })
 }
 
 fn fill(
