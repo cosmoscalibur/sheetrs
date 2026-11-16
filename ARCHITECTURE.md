@@ -54,7 +54,8 @@ Dependencies point inward: adapters → tool libraries → `sheetrs-io` / `sheet
   engine (the executable is larger by what the engine is: the sizes are in `docs/performance.md`).
 - `sheetrs-compiler` and `sheetrs-edit` both depend on `sheetrs-answer`, the code that runs a
   program over a workbook and writes the answer into it (`fill_template*`); it depends on the
-  engine and on the writers of `sheetrs-io`, and on nothing of the compiler or the editor.
+  engine, on the writers of `sheetrs-io` and on `sheetrs-query` (a range of the request that lies outside
+  the outputs is read from the workbook just written), and on nothing of the compiler or the editor.
 
 The writers are a **feature** of the kernel, `sheetrs-io/write`, off by default: the tools that only
 read (`sheetrs lint`, `sheetrs stats`, `sheetrs query`, the compiler without its loader) do not compile them.
@@ -73,6 +74,7 @@ graph TD
     linter[sheetrs-linter] --> io
     stats[sheetrs-stats] --> io
     answer[sheetrs-answer] --> engine
+    answer --> query
     answer -->|write| io
     compiler[sheetrs-compiler] --> engine
     compiler --> answer
@@ -144,12 +146,17 @@ The input of the suite and its shared kernel: the format-agnostic workbook model
 
 - **`Book`** (`book.rs`, the one interface of the suite): a workbook that is a reference: where it
   comes from (a file, or the bytes of one), its `Format` (read from the content, never from the
-  extension or an argument) and, with the feature `write`, the operations pending on it. It reads nothing
+  extension or an argument), its locale (`with_locale`, `locale`, `default_locale`, the system's: the tools that give
+  a text to a number follow it, see *The locale of a `Book`* in `docs/coding-patterns.md`) and, with the
+  feature `write`, the operations pending on it. It reads nothing
   until a tool does, so it is cheap to make and to clone, and it is not a model of the workbook (that is
   `Workbook`, `Book::workbook()`). Every tool is a trait to import that adds what it does to a `Book`
   (`BookQuery`, `BookEdit`, `BookCompile`, `BookLint`, `BookStats`); `Book::push`, `operations` and
   `clear_operations` are the seam they use. The data of the operations (`write::Operation`,
   `ReplaceSpec`, `Calculation`) lives next to the writers.
+- **`locale`**: `LocaleTag` (a language and a region, `FromStr`), the locale of the system as
+  `LibreOffice` reads it on Linux (`system`, `from_environment`) and, with the feature `config`, the
+  `locale` of a `sheetrs.toml` (`from_config`). What a tag means (separators, names) is the engine's table.
 - **`reader`**: Abstracts over file formats (XLSX, ODS) and holds `Format`; the free functions that read
   from a path or a reader are internal: a `Book` is the way in.
   - Uses `zip` and matching XML parsers (`quick-xml` or custom) for efficient data reading.
@@ -227,7 +234,11 @@ Two crates, split along the line that matters for reuse and build time:
 - **`sheetrs-compiler`** turns a workbook into a `Program`: `loader` (the only code
   that knows the file format, on top of `sheetrs-io`) → `Model` → lowering of the
   `sheetrs-formula` AST to the IR → cone of influence, SCC order, constant
-  folding. Its binary is `sheetc`.
+  folding. Its binary is `sheetc`. **The calculation mode** is `LibreOffice`'s: by default the constants it folds
+  are the values the workbook stores and the program carries the cached result of the formulas it keeps
+  (`Program::cache`, taken by `Engine::take_cached` for what no changed input reaches); `calculate_all`
+  calculates the whole workbook first and stores those results, and `force_calculate_all` (a build) stores none
+  (`sheetrs-compiler/README.md`, *The calculation mode*).
 
 The date system (one of three, `DateSystem`: 1899-12-30, 1900-01-01 and 1904-01-01; another is an
 error), iteration, search settings and reference syntax come from the document;
@@ -301,7 +312,10 @@ libraries stay free of clap when the feature is off (`sheetrs-wasm` and `sheetrs
     engine calculates again the results a conversion of formulas to values reads after a change that
     leaves them stale. Rows and columns are typed (`RowRange`,
     `ColumnRange`, with `FromStr`/`Display`), so a deletion with the wrong kind of range cannot
-    be built. What a deletion leaves stale is calculated again by the engine as the last pass (every formula; no analysis decides which); the output is marked to be recalculated when
+    be built. What a deletion leaves stale is calculated again by the engine as the last pass: by default
+    the formulas the plan reaches and what depends on them, which the compiler finds with its dependency graph
+    (`sheetrs_compiler::Cache`), the others keeping the result the file caches, as `LibreOffice` does; with
+    `calculate_all` (`calculateAll()`) every formula. The output is marked to be recalculated when
     opened only if the engine cannot calculate the workbook (the mark is never decided before the engine
     has run, and there is no option to ask for it or avoid it).
   - `plan` (private): the planner behind `BookEdit`, a set of functions that take the operations of

@@ -33,7 +33,8 @@ sheetrs query -i book.xlsx --list-names                                    # the
 | `--include-formulas` | A search by value also looks at the results of formulas (off by default: it reaches what was typed, not what was computed) |
 | `--formatted` | Search the text each cell **shows** (`1,234.50`, `15 Mar 2023`, `$10.00`) instead of its input line (`SearchFormatted` of LibreOffice) |
 | `--filtered` | Also search the rows an autofilter has hidden (`SearchFiltered` of LibreOffice); off by default, as there |
-| `--locale TAG` | Locale of `display` and of the dates a search sees (default `en-US`) |
+| `--locale TAG` | Locale of `display` and of the dates a search sees (a tag such as `es-CO`). Default: the `locale` of `--config`, else the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none), for an XLSX and an ODS alike. A cell whose format names a language (`[$-C0A]#,##0.00`) is shown in that language |
+| `-c, --config FILE` | A TOML file whose `locale` in `[global]` is the default of `--locale` (default: `sheetrs.toml` of the current directory, when there is one). A `locale` that is not a tag is an error |
 | `--dates` | Give the numbers that are dates or times as dates (see below); without it, the serial the file stores |
 | `--query JSON\|@file` | The whole query as JSON; replaces the options above |
 | `--list-sheets`, `--list-names` | The names of the sheets (a JSON list, in order) or the defined names with what they refer to (a JSON object); nothing else is read |
@@ -86,8 +87,11 @@ The rules are the ones LibreOffice shows (the tests compare them with it, in the
 
 ## What a person sees and what a search sees
 
-`display` is the value written with its number format in a locale. A **search** looks at another
-text, the one LibreOffice puts in the input line of the cell (observed in 26.8, `en-US`):
+`display` is the value written with its number format in a locale: the locale of the workbook (see
+`--locale`; in Rust, `Book::with_locale`). A **search** looks at another
+text, the one LibreOffice puts in the input line of the cell (observed in 26.8, `en-US`; the
+formats of the input line, of a typed replacement and of the built-in number formats 14 to 22 are
+those of `en-US` in every locale, issue #84):
 
 - a number as it was typed: `1234.5` for a cell that shows `1,234.50`, `25.6%` for a percentage;
 - a date as the input line writes it: `03/15/2023`, or the ISO date when the format of the cell is
@@ -128,6 +132,35 @@ reads an XLSX sheet to its end, because the range of the autofilter comes after 
 
 A regular expression outside the subset of ICU that was compared with LibreOffice
 (`sheetrs_engine::regex_subset`) is refused instead of giving another result.
+
+The anchors `^` and `$` are in that subset for a search, as LibreOffice reads them in a cell: `^` is
+the start of the text and `$` its end (or the place before the line terminator that ends it), never
+the start or the end of a line, so `^(Code|Resumen Contadia)$` finds the cells with exactly one of
+the two texts, in the middle of a pattern (`a^b`, `a$b`) they match nothing, and they work inside
+groups and alternations (`(^a|b$)`). `.` still leaves out the line breaks. The searches with anchors
+are compared with `findAll` of LibreOffice in `tests/libreoffice_find.rs` (workbooks
+`tests/assets/anchors.*`, made by `tests/assets/make_anchors_fixtures.py`).
+
+A pattern that can match the empty text (`^`, `$`, `^$`, `x*`, `a*$`, `(^|$)`) is read, and finds
+the cells that `sheetrs edit --replace` would change, which are the ones `findAll` reports: a match of
+no characters is a hit only at the very end of the text, and no search begins there. So `$` finds
+every cell whose text does not end in a line break (the empty match before that one is skipped, and
+so is the end), `^` and `x*` find only what they match with characters (`x*` the cells with an `x`),
+and with `--entire-cells` an empty first match is not the whole text (`$`, `^$` find nothing). Compared
+with `findAll` in XLSX and ODS for 119 patterns with `match_case` and `entire_cells` on and off
+(`tests/find_empty.rs`; oracle `tests/assets/find_empty/oracle.json`, made by
+`make_find_empty_oracle.py` from the patterns of the replace oracle).
+
+The empty search text (`--find ''`) matches nothing, in every mode, as `findAll` reports no cell for
+it (probed in XLSX and ODS: `tests/assets/probe_empty_search.py`): the answer is `{"cells": []}` at once, with no error and nothing read (not even a sheet in
+`--scope` that is not there).
+
+What a regular expression search still refuses, because it was not compared (not an approved
+difference): a repetition of something that can match the empty text (`(a*)*`, `^*`, `(^)+a`,
+`(^|$)*`), `\b` and the other escapes of ICU (`\B`, `\A`, `\z`, `\h`, `\p{..}`, `\1`), look-around
+and groups with options or names (`(?=a)`, `(?i)`, `(?<n>a)`), possessive quantifiers (`a++`),
+POSIX classes and set operations in a set (`[[:alpha:]]`, `[a-z&&[^b]]`, `[a--b]`), a set inside a
+set, and a pattern that is not valid. It is the subset of `sheetrs_engine::regex_subset`.
 
 ## The format of a formula cell
 

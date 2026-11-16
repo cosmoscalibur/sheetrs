@@ -35,8 +35,47 @@ pub static SHEETRS_SLOT: [u8; 24] = *b"SHEETRS-WASM-SLT\0\0\0\0\0\0\0\0";
 /// The bytes that mark the slot; also what `sheetc` looks for in the base.
 pub const SLOT_MARKER: &[u8; 16] = b"SHEETRS-WASM-SLT";
 
-/// The version of the interface of the module (the exports of [`ffi`]).
-pub const ABI_VERSION: u32 = 1;
+/// The version of the interface of the module (the exports of [`ffi`]): an integer bumped **only on an
+/// incompatible change of the exports or of what they mean** for a host (a changed signature, a removed
+/// export, another meaning of an argument or a result). An export that is only added (as
+/// `sheetrs_set_calculate_all` and `sheetrs_payload_schema` were) never bumps it: a host finds out whether
+/// a module has it by looking for the export. It is [`sheetrs_engine::bundle::WASM_ABI_VERSION`], which `sheetc` knows.
+///
+/// The layout of the payload the module carries has a number of its own, [`PAYLOAD_SCHEMA`]
+/// ([`sheetrs_engine::bundle::SCHEMA`]), written by `sheetc` and checked by the module before it runs the program.
+/// A module is only valid with the `sheetc` that built it, and `sheetc` refuses a base module whose ABI or schema is not its own.
+pub const ABI_VERSION: u32 = sheetrs_engine::bundle::WASM_ABI_VERSION;
+
+/// The schema of the payload this module reads ([`sheetrs_engine::bundle::SCHEMA`]).
+pub const PAYLOAD_SCHEMA: u32 = sheetrs_engine::bundle::SCHEMA;
+
+/// What the base module says of itself, in its data: [`INFO_MARKER`], then [`ABI_VERSION`] and
+/// [`PAYLOAD_SCHEMA`] as two little-endian 32-bit integers. `sheetc` reads it from the base before it completes it, and refuses a
+/// base whose numbers are not its own.
+#[unsafe(no_mangle)]
+#[used]
+pub static SHEETRS_INFO: [u8; 24] = info();
+
+/// The bytes that mark [`SHEETRS_INFO`]; also what `sheetc` looks for in the base.
+pub const INFO_MARKER: &[u8; 16] = b"SHEETRS-WASM-ABI";
+
+const fn info() -> [u8; 24] {
+    let mut out = [0u8; 24];
+    let mut i = 0;
+    while i < 16 {
+        out[i] = INFO_MARKER[i];
+        i += 1;
+    }
+    let abi = ABI_VERSION.to_le_bytes();
+    let schema = PAYLOAD_SCHEMA.to_le_bytes();
+    let mut j = 0;
+    while j < 4 {
+        out[16 + j] = abi[j];
+        out[20 + j] = schema[j];
+        j += 1;
+    }
+    out
+}
 
 /// A workbook compiled into the module.
 pub struct Book {
@@ -52,7 +91,12 @@ impl Book {
     pub fn from_payload(payload: &'static [u8]) -> Result<Self, String> {
         bundle::read_payload(payload)
             .map(|embedded| Self { embedded })
-            .ok_or_else(|| "the program of this module is damaged or is not there".into())
+            .map_err(|error| match error {
+                bundle::PayloadError::Schema { .. } => error.to_string(),
+                bundle::PayloadError::Damaged => {
+                    "the program of this module is damaged or is not there".into()
+                }
+            })
     }
 
     fn base(&self) -> Option<&dyn ConstSource> {

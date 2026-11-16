@@ -25,8 +25,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, BufWriter, Cursor, Read, Seek, Write};
 use zip::{ZipArchive, ZipWriter};
 
-const WORKBOOK_PART: &str = "xl/workbook.xml";
-const WORKBOOK_RELS_PART: &str = "xl/_rels/workbook.xml.rels";
+pub(super) const WORKBOOK_PART: &str = "xl/workbook.xml";
+pub(super) const WORKBOOK_RELS_PART: &str = "xl/_rels/workbook.xml.rels";
 const CONTENT_TYPES_PART: &str = "[Content_Types].xml";
 /// Part name of the calculation chain, which lists every formula cell.
 const CALC_CHAIN_PART: &str = "xl/calcChain.xml";
@@ -34,10 +34,10 @@ const STYLES_PART: &str = "xl/styles.xml";
 
 /// A `<sheet>` entry of `workbook.xml`.
 #[derive(Debug, PartialEq)]
-struct SheetEntry {
-    name: String,
+pub(super) struct SheetEntry {
+    pub(super) name: String,
     /// Relationship id of the sheet part in `workbook.xml.rels`.
-    rel_id: String,
+    pub(super) rel_id: String,
 }
 
 /// Modify an XLSX file by applying specified modifications
@@ -52,7 +52,27 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
 ) -> Result<()> {
     let archive = ZipArchive::new(input)?;
     let mut zip_writer = ZipWriter::new(super::Quiet::new(output));
-    let result = apply_xlsx(archive, &mut zip_writer, modifications);
+    let result = if modifications.visibility.is_empty() {
+        apply_xlsx(archive, &mut zip_writer, modifications)
+    } else {
+        // Visibility is applied to the input, and the rest to what that leaves.
+        let visibilities = super::visibility::Visibilities::new(&modifications.visibility);
+        if modifications.asks_nothing_else() {
+            super::xlsx_visibility::apply(archive, &mut zip_writer, &visibilities)
+        } else {
+            let mut shown = Cursor::new(Vec::new());
+            {
+                let mut first = ZipWriter::new(&mut shown);
+                super::xlsx_visibility::apply(archive, &mut first, &visibilities)?;
+                first.finish()?;
+            }
+            apply_xlsx(
+                ZipArchive::new(shown)?,
+                &mut zip_writer,
+                &modifications.without_visibility(),
+            )
+        }
+    };
     // The writer is closed in both cases: dropped open it would try to finish the archive and print
     // a line of its own to the standard error when the output refuses the bytes.
     let closed = zip_writer.finish();
@@ -359,7 +379,7 @@ fn apply_xlsx<R: Read + Seek, W: Write + Seek>(
 
 // Helper functions
 
-fn read_part<R: Read + Seek>(archive: &mut ZipArchive<R>, name: &str) -> Result<String> {
+pub(super) fn read_part<R: Read + Seek>(archive: &mut ZipArchive<R>, name: &str) -> Result<String> {
     let mut content = String::new();
     archive
         .by_name(name)
@@ -422,7 +442,7 @@ fn sheet_relationships_part(part: &str) -> String {
     format!("{folder}/_rels/{file}.rels")
 }
 
-fn parse_sheets(workbook_xml: &str) -> Result<Vec<SheetEntry>> {
+pub(super) fn parse_sheets(workbook_xml: &str) -> Result<Vec<SheetEntry>> {
     let mut reader = Reader::from_str(workbook_xml);
     let mut sheets = Vec::new();
     loop {
@@ -441,7 +461,7 @@ fn parse_sheets(workbook_xml: &str) -> Result<Vec<SheetEntry>> {
 }
 
 /// Map each relationship id of a relationships part to its `Target`.
-fn parse_relationship_targets(rels_xml: &str) -> Result<HashMap<String, String>> {
+pub(super) fn parse_relationship_targets(rels_xml: &str) -> Result<HashMap<String, String>> {
     let mut reader = Reader::from_str(rels_xml);
     let mut targets = HashMap::new();
     loop {
@@ -909,6 +929,33 @@ struct SharedMaster {
     text: String,
     /// The master was replaced by its value: the group has no formula text left.
     converted: bool,
+    /// Some cell of the group would read outside the sheet: those cells get a formula of their own, with the
+    /// reference that went written as `LibreOffice` saves it (a bare `#REF!`).
+    leaves: bool,
+}
+
+impl SharedMaster {
+    /// The master of the group whose first cell is `(row, col)` and whose `<f>` is `formula`, in `sheet`.
+    fn new(formula: &CellFormula, row: u32, col: u32, converted: bool, sheet: &str) -> Self {
+        // Every copy of a group is at or after the first cell, so the one in the last cell of its `ref` is the
+        // one that reaches farthest: if it stays inside the sheet, they all do.
+        let leaves = formula.range.is_some_and(|(_, _, r1, c1)| {
+            let corner = translate_shared_formula(
+                &formula.text,
+                i32::try_from(r1.saturating_sub(row)).unwrap_or(i32::MAX),
+                i32::try_from(c1.saturating_sub(col)).unwrap_or(i32::MAX),
+                sheet,
+            );
+            corner.matches("#REF!").count() > formula.text.matches("#REF!").count()
+        });
+        Self {
+            row,
+            col,
+            text: formula.text.clone(),
+            converted,
+            leaves,
+        }
+    }
 }
 
 /// Position of the `<c>` elements, which may omit their `r` attribute.
@@ -1125,15 +1172,7 @@ fn transform_sheet<R: BufRead, W: Write>(
                     && let Some(si) = f.shared_index
                     && !f.text.is_empty()
                 {
-                    masters.insert(
-                        si,
-                        SharedMaster {
-                            row,
-                            col,
-                            text: f.text.clone(),
-                            converted: false,
-                        },
-                    );
+                    masters.insert(si, SharedMaster::new(f, row, col, false, sheet));
                 }
                 let at = match layout {
                     Some(s) => {
@@ -1168,7 +1207,57 @@ fn transform_sheet<R: BufRead, W: Write>(
                     .and_then(|m| m.get(&(row, col)))
                     .filter(|e| !matches!(e, CellEdit::Note(_)));
                 if let Some(CellEdit::Cached(result)) = edit_here {
-                    write_cached_cell(&mut writer, &start, &body, result)?;
+                    // A formula the pass converts to its value becomes the result it is given: the
+                    // value a program calculated for it, not the one the file cached.
+                    let converts = formula
+                        .as_ref()
+                        .is_some_and(|f| converts_to_value(scopes, row, col, f, true));
+                    if converts {
+                        if let Some(f) = &formula
+                            && f.is_shared()
+                            && let Some(si) = f.shared_index
+                            && !f.text.is_empty()
+                        {
+                            masters.insert(si, SharedMaster::new(f, row, col, true, sheet));
+                        }
+                        let (cell, events) = cached_cell(&start, &body, result)?;
+                        write_value_cell(&mut writer, &cell, &events)?;
+                    } else if let Some(formula) = &formula {
+                        // The formula stays and the plan applies to it as to any other (its references
+                        // move with the deleted rows and columns, a shared group is kept or expanded,
+                        // an array is moved), with the result it is given: it is the result of the
+                        // formula where it now is, so the text is not the one that result was
+                        // calculated from, but the one the workbook has after the plan.
+                        let shared_index = formula.shared_index.filter(|_| formula.is_shared());
+                        if let Some(si) = shared_index
+                            && !formula.text.is_empty()
+                        {
+                            masters.insert(si, SharedMaster::new(formula, row, col, false, sheet));
+                        }
+                        let (out, _) = match structure {
+                            Some(s) => rewritten_formula(s, formula, row, col, &masters)?,
+                            None => (FormulaOut::Keep, false),
+                        };
+                        let out = shared_group_formula(
+                            out,
+                            shared_index,
+                            formula,
+                            (row, col),
+                            sheet,
+                            &masters,
+                        )?;
+                        match out {
+                            FormulaOut::Keep => {
+                                write_cached_cell(&mut writer, &start, &body, result)?;
+                            }
+                            out => {
+                                let (cell, events) = cached_cell(&start, &body, result)?;
+                                write_formula_cell(&mut writer, cell, &events, &out, false)?;
+                            }
+                        }
+                    } else {
+                        write_cached_cell(&mut writer, &start, &body, result)?;
+                    }
                     continue;
                 }
                 if let Some(edit) = edit_here
@@ -1197,15 +1286,7 @@ fn transform_sheet<R: BufRead, W: Write>(
                 if let Some(si) = shared_index
                     && !formula.text.is_empty()
                 {
-                    masters.insert(
-                        si,
-                        SharedMaster {
-                            row,
-                            col,
-                            text: formula.text.clone(),
-                            converted: converts,
-                        },
-                    );
+                    masters.insert(si, SharedMaster::new(&formula, row, col, converts, sheet));
                 }
                 if converts {
                     write_value_cell(&mut writer, &start, &body)?;
@@ -1216,15 +1297,8 @@ fn transform_sheet<R: BufRead, W: Write>(
                     None => (FormulaOut::Keep, false),
                 };
                 // A cell of a group whose first cell became a value needs a formula of its own.
-                let out = match (out, shared_index) {
-                    (FormulaOut::Keep, Some(si)) if formula.text.is_empty() => {
-                        match masters.get(&si).filter(|m| m.converted) {
-                            Some(m) => FormulaOut::Plain(shared_text(m, row, col, sheet)?),
-                            None => FormulaOut::Keep,
-                        }
-                    }
-                    (out, _) => out,
-                };
+                let out =
+                    shared_group_formula(out, shared_index, &formula, (row, col), sheet, &masters)?;
                 let start = relocated_cell(&e, at, changed)?;
                 match out {
                     FormulaOut::Keep => write_element(&mut writer, start, Some(&body))?,
@@ -1308,6 +1382,48 @@ fn transform_sheet<R: BufRead, W: Write>(
     Ok(())
 }
 
+/// The formula of the copy at `(row, col)` of the shared group of `master`, when the group reads outside the sheet there:
+/// the text with the bare `#REF!` that `LibreOffice` saves (`None` when the copy stays inside the sheet).
+fn leaving_copy_text(
+    master: &SharedMaster,
+    row: u32,
+    col: u32,
+    sheet: &str,
+) -> Result<Option<String>> {
+    let text = shared_text(master, row, col, sheet)?;
+    if !text.contains("#REF!") {
+        return Ok(None);
+    }
+    Ok(Some(
+        sheetrs_formula::edit::bare_ref_errors(&text).unwrap_or(text),
+    ))
+}
+
+/// What a cell of a shared group writes: a cell that kept its formula (`out` is `Keep`) and has no text of its own reads
+/// it from the first cell of the group, so when that one became a value or reads outside the sheet it needs a formula of its own.
+fn shared_group_formula(
+    out: FormulaOut,
+    shared_index: Option<u32>,
+    formula: &CellFormula,
+    (row, col): (u32, u32),
+    sheet: &str,
+    masters: &HashMap<u32, SharedMaster>,
+) -> Result<FormulaOut> {
+    match (out, shared_index) {
+        (FormulaOut::Keep, Some(si)) if formula.text.is_empty() => {
+            match masters.get(&si) {
+                Some(m) if m.converted => Ok(FormulaOut::Plain(shared_text(m, row, col, sheet)?)),
+                // The copy reads outside the sheet: its own formula, with the bare `#REF!`
+                // `LibreOffice` saves, which it reads back as an unknown name.
+                Some(m) if m.leaves => Ok(leaving_copy_text(m, row, col, sheet)?
+                    .map_or(FormulaOut::Keep, FormulaOut::Plain)),
+                _ => Ok(FormulaOut::Keep),
+            }
+        }
+        (out, _) => Ok(out),
+    }
+}
+
 /// The text of the formula of the cell `(row, col)` of the shared group of `master`.
 fn shared_text(master: &SharedMaster, row: u32, col: u32, sheet: &str) -> Result<String> {
     Ok(translate_shared_formula(
@@ -1351,14 +1467,12 @@ fn rewritten_formula(
         )));
     }
     let rewritten = s
-        .rewrite_tracked(&original)
+        .rewrite_detailed(&original)
         .with_context(|| format!("formula in {}!{}{}", s.sheet, column_letters(col), row + 1))?;
     // A formula that reads the same cells in other places gives the result it cached: only the
     // others lose it.
-    let changed = rewritten
-        .as_ref()
-        .is_some_and(|(_, only_moved)| !only_moved);
-    let rewritten = rewritten.map(|(text, _)| text);
+    let changed = rewritten.as_ref().is_some_and(|r| !r.only_moved);
+    let rewritten = rewritten.map(|r| r.text);
     let text = rewritten.clone().unwrap_or(original);
     if formula.kind.as_deref() == Some("array") {
         let (r0, c0, r1, c1) = formula.range.unwrap_or((row, col, row, col));
@@ -1474,12 +1588,13 @@ fn skip_row<R: BufRead>(
             {
                 masters.insert(
                     si,
-                    SharedMaster {
+                    SharedMaster::new(
+                        &formula,
                         row,
                         col,
-                        text: formula.text.clone(),
-                        converted: false,
-                    },
+                        false,
+                        structure.map_or("", |s| s.sheet.as_str()),
+                    ),
                 );
             }
             check_array_goes_whole(structure, Some(&formula), row, col)?;
@@ -1711,6 +1826,23 @@ fn write_cached_cell<W: Write>(
     body: &[Event],
     result: &CachedResult,
 ) -> Result<()> {
+    let (cell, events) = cached_cell(start, body, result)?;
+    let end = cell.to_end().into_owned();
+    writer.write_event(Event::Start(cell))?;
+    for event in &events {
+        writer.write_event(event.borrow())?;
+    }
+    writer.write_event(Event::End(end))?;
+    Ok(())
+}
+
+/// The cell `start` and `body` with `result` as the result it shows: its element and what is inside
+/// it, the formula and the rest as they were.
+fn cached_cell(
+    start: &BytesStart,
+    body: &[Event],
+    result: &CachedResult,
+) -> Result<(BytesStart<'static>, Vec<Event<'static>>)> {
     let has_formula = body
         .iter()
         .any(|e| matches!(e, Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "f"));
@@ -1732,8 +1864,7 @@ fn write_cached_cell<W: Write>(
     if let Some(kind) = kind {
         cell.push_attribute(("t", kind));
     }
-    let end = cell.to_end().into_owned();
-    writer.write_event(Event::Start(cell))?;
+    let mut events: Vec<Event<'static>> = Vec::with_capacity(body.len() + 4);
     // What was there stays, but for the old result.
     let mut skipping = None;
     for event in body {
@@ -1744,24 +1875,23 @@ fn write_cached_cell<W: Write>(
             Event::End(e) if skipping.as_deref() == Some(e.name().as_ref()) => skipping = None,
             Event::Empty(e) if matches!(e.name().as_ref(), "v" | "is") => {}
             _ if skipping.is_some() => {}
-            event => writer.write_event(event.borrow())?,
+            event => events.push(event.clone().into_owned()),
         }
     }
     if kind == Some("inlineStr") {
-        writer.write_event(Event::Start(BytesStart::new("is")))?;
         let mut t = BytesStart::new("t");
         t.push_attribute(("xml:space", "preserve"));
-        writer.write_event(Event::Start(t))?;
-        writer.write_event(Event::Text(BytesText::new(&value)))?;
-        writer.write_event(Event::End(BytesEnd::new("t")))?;
-        writer.write_event(Event::End(BytesEnd::new("is")))?;
+        events.push(Event::Start(BytesStart::new("is")));
+        events.push(Event::Start(t));
+        events.push(Event::Text(BytesText::new(&value).into_owned()));
+        events.push(Event::End(BytesEnd::new("t")));
+        events.push(Event::End(BytesEnd::new("is")));
     } else {
-        writer.write_event(Event::Start(BytesStart::new("v")))?;
-        writer.write_event(Event::Text(BytesText::new(&value)))?;
-        writer.write_event(Event::End(BytesEnd::new("v")))?;
+        events.push(Event::Start(BytesStart::new("v")));
+        events.push(Event::Text(BytesText::new(&value).into_owned()));
+        events.push(Event::End(BytesEnd::new("v")));
     }
-    writer.write_event(Event::End(end))?;
-    Ok(())
+    Ok((cell, events))
 }
 
 /// Write a cell without its `<f>` element. A formula string result

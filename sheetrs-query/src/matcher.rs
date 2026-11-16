@@ -10,26 +10,46 @@
 //! - `Regex`: ICU syntax; the part of it that was compared with `LibreOffice` is the subset of
 //!   `sheetrs_engine::regex_subset`, and a pattern outside it is refused instead of giving another
 //!   result. `.` does not match a line break.
-//! - A match of no characters is not a hit.
+//! - `^` and `$` anchor the text of the cell, not its lines: `^` is its start, `$` its end or the
+//!   place before a line terminator that ends it. A search and a replacement read them alike.
+//! - The empty search text matches nothing, in every mode: `findAll` reports no cell and
+//!   `replaceAll` changes none (probed on an XLSX and an ODS, `entire_cells` on and off, every mode,
+//!   an empty and a non-empty replacement; `tests/assets/probe_empty_search.py`). Nothing is translated or compiled for it, and the
+//!   callers answer it before any cell is read ([`sheetrs_protocol::Find::matches_nothing`]).
+//! - A match of no characters is not a hit, with one exception: at the very end of the text it is
+//!   (`abc` with `$` replaced by `X` gives `abcX`, with `^` or `x*` nothing changes). `findAll`
+//!   reports the cells that `replaceAll` would change: the cell is found when the first search of
+//!   that loop has a hit (`$` finds every text that does not end in a line break, `^` and `x*`
+//!   only what they match with characters; compared in both formats, `tests/find_empty.rs`). The hits are
+//!   found as `LibreOffice` finds them: from the start of the text, each search begins where the
+//!   replacement of the last hit ended (the replacement is made in the text itself, so `^a` replaced
+//!   by nothing empties `aa`), or one character after an empty match that was skipped, and none
+//!   begins at the end of the text (`a` with `a*` replaced by `X` gives `X`, not `XX`; `a` and a line break with
+//!   `$` is not changed: the one empty match, before the line break, is skipped, and the end is
+//!   not searched).
 //! - Every hit of a cell is replaced. In a regular expression the replacement reads `&` as the
 //!   whole match, `$0` to `$9` as the groups, `\t` as a tab, and `\&`, `\$` and `\\` as the
 //!   character they escape; in the other modes the replacement is taken as it is.
 
 use crate::error::{Error, Result};
-use regex::Regex;
+use fancy_regex::{Captures, Regex};
 use sheetrs_protocol::{Find, Mode};
 
 /// A [`Find`] ready to test texts.
 #[derive(Debug)]
 pub struct Matcher {
-    re: Regex,
+    /// `None` for the empty search text, which matches nothing.
+    re: Option<Regex>,
     regex_mode: bool,
     entire: bool,
+    /// Whether the pattern matches the empty text in the middle of a text (`x*` does, `$` and `^`
+    /// do not): see [`Matcher::next_hit`].
+    empty_inside: bool,
 }
 
 /// The pattern of a literal text.
 fn escape(text: &str) -> String {
-    regex::escape(text)
+    fancy_regex::escape(text).into_owned()
 }
 
 /// The pattern of a text with wildcards.
@@ -54,74 +74,135 @@ fn wildcards(text: &str) -> String {
 }
 
 impl Matcher {
+    /// A matcher for a search (`find`) or a replacement (`replace`): a regular expression may have
+    /// the anchors `^` and `$` and may match the empty text (`x*`, `^`, `$`, `a*$`). The empty
+    /// search text matches nothing, in every mode.
+    ///
     /// # Errors
     ///
     /// When the regular expression is outside what is reproduced, or does not compile.
     pub fn new(find: &Find) -> Result<Self> {
+        if find.text.is_empty() {
+            // `LibreOffice` finds nothing and replaces nothing with the empty text, in every mode:
+            // nothing is translated or compiled.
+            return Ok(Self {
+                re: None,
+                regex_mode: false,
+                entire: false,
+                empty_inside: false,
+            });
+        }
         let body = match find.mode {
             Mode::Literal => escape(&find.text),
             Mode::Wildcards => wildcards(&find.text),
-            Mode::Regex => sheetrs_engine::regex_subset::translate_capturing(&find.text)
+            Mode::Regex => sheetrs_engine::regex_subset::translate_find(&find.text)
                 .map_err(|e| Error::Unsupported(e.to_string()))?,
         };
         let flags = if find.match_case { "" } else { "(?i)" };
         let re =
             Regex::new(&format!("{flags}{body}")).map_err(|e| Error::Unsupported(e.to_string()))?;
+        // A text of three characters that no pattern of a search names, and its middle.
+        let probe = "\u{E000}\u{E000}\u{E000}";
+        let empty_inside = re
+            .captures_from_pos(probe, '\u{E000}'.len_utf8())
+            .ok()
+            .flatten()
+            .and_then(|c| c.get(0).map(|m| m.start() == 3 && m.end() == 3))
+            .unwrap_or(false);
         Ok(Self {
-            re,
+            re: Some(re),
             regex_mode: find.mode == Mode::Regex,
             entire: find.entire_cells,
+            empty_inside,
         })
+    }
+
+    /// The same as [`Matcher::new`]: a search and a replacement read a pattern alike.
+    ///
+    /// # Errors
+    ///
+    /// When the regular expression is outside what is reproduced, or does not compile.
+    pub fn for_find(find: &Find) -> Result<Self> {
+        Self::new(find)
     }
 
     /// Whether the text holds a hit.
     #[must_use]
     pub fn is_match(&self, text: &str) -> bool {
-        self.hits(text).next().is_some()
+        self.next_hit(text, 0, false).is_some_and(|caps| {
+            !self.entire
+                || caps
+                    .get(0)
+                    .is_some_and(|m| m.start() == 0 && m.end() == text.len())
+        })
     }
 
-    /// The hits to take: every non-empty match, or, when the whole cell is asked, the first match if
-    /// it covers the text.
-    fn hits<'a>(&'a self, text: &'a str) -> impl Iterator<Item = regex::Captures<'a>> {
-        let whole = |c: &regex::Captures<'_>| {
-            c.get(0)
-                .is_some_and(|m| m.start() == 0 && m.end() == text.len())
-        };
-        let entire = self.entire;
-        self.re
-            .captures_iter(text)
-            .filter(|c| c.get(0).is_some_and(|m| !m.as_str().is_empty()))
-            .take(if entire { 1 } else { usize::MAX })
-            .filter(move |c| !entire || whole(c))
+    /// The next hit that begins at or after `start`, as `LibreOffice` searches: an empty match is
+    /// not a hit, unless it is at the end of the text, and no search begins at the end of it.
+    ///
+    /// `LibreOffice` counts in UTF-16 units and goes on one unit after a skipped empty match, so
+    /// after one before a character outside the Basic Multilingual Plane its next search begins
+    /// inside that character (`mid`), which is not the end of the text yet when the character is
+    /// the last one. There a pattern that matches the empty text anywhere (`x*`) matches it again
+    /// and is skipped again; one that does not (`$`) finds its match after the character, at the
+    /// end of the text if the character is the last one. A pattern that matches the half of the
+    /// character (`.`) gives a text that is not valid: that is not reproduced.
+    fn next_hit<'a>(
+        &self,
+        text: &'a str,
+        mut start: usize,
+        mut mid: bool,
+    ) -> Option<Captures<'a, str>> {
+        while start < text.len() || mid {
+            let re = self.re.as_ref()?;
+            let caps = re.captures_from_pos(text, start).ok().flatten()?;
+            let whole = caps.get(0)?;
+            if !whole.as_str().is_empty() || whole.start() == text.len() {
+                return Some(caps);
+            }
+            // Skipped: the next search begins one character on.
+            let skipped = text[whole.start()..].chars().next()?;
+            start = whole.start() + skipped.len_utf8();
+            mid = skipped.len_utf16() == 2 && !self.empty_inside;
+        }
+        None
     }
 
     /// The text with every hit replaced by `with`, or `None` when it holds none.
+    ///
+    /// The replacement is made in the text itself and the next search begins after it, in what is
+    /// left: `^a` replaced by nothing empties `aa`, since the second `a` is then at the start.
+    /// With `entire_cells` only the first hit is taken, and only if it covers the text.
     #[must_use]
     pub fn replace_all(&self, text: &str, with: &str) -> Option<String> {
-        let mut out = String::with_capacity(text.len());
-        let mut last = 0;
-        let mut hit = false;
-        for caps in self.hits(text) {
+        let mut text = text.to_string();
+        let mut start = 0;
+        let mut replaced = false;
+        while let Some(caps) = self.next_hit(&text, start, false) {
             let whole = caps.get(0)?;
-            hit = true;
-            out.push_str(&text[last..whole.start()]);
-            if self.regex_mode {
-                expand(with, &caps, &mut out);
-            } else {
-                out.push_str(with);
+            let range = whole.start()..whole.end();
+            if self.entire && range != (0..text.len()) {
+                return None;
             }
-            last = whole.end();
+            let mut new = String::new();
+            if self.regex_mode {
+                expand(with, &caps, &mut new);
+            } else {
+                new.push_str(with);
+            }
+            start = range.start + new.len();
+            text.replace_range(range, &new);
+            replaced = true;
+            if self.entire {
+                break;
+            }
         }
-        if !hit {
-            return None;
-        }
-        out.push_str(&text[last..]);
-        Some(out)
+        replaced.then_some(text)
     }
 }
 
 /// The replacement of a regular expression, with its `&`, `$n` and escapes.
-fn expand(with: &str, caps: &regex::Captures<'_>, out: &mut String) {
+fn expand(with: &str, caps: &Captures<'_, str>, out: &mut String) {
     let mut chars = with.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
@@ -285,13 +366,102 @@ mod tests {
         );
     }
 
+    fn found(pattern: &str, entire_cells: bool, text: &str) -> bool {
+        let f = Find {
+            entire_cells,
+            ..find(pattern, Mode::Regex)
+        };
+        Matcher::for_find(&f).unwrap().is_match(text)
+    }
+
     #[test]
-    fn a_pattern_that_is_not_reproduced_is_refused() {
-        // `LibreOffice` replaces at the end of the text with `$` but not at the start with `^`:
-        // behaviours the subset does not promise.
-        assert!(matches!(
-            Matcher::new(&find("^", Mode::Regex)),
-            Err(Error::Unsupported(_))
-        ));
+    fn a_replacement_reads_the_anchors_as_libreoffice_does() {
+        let r = |p: &str, text: &str, with: &str| replaced(&find(p, Mode::Regex), text, with);
+        assert_eq!(r("^a", "aa", "X").as_deref(), Some("Xa"));
+        assert_eq!(r("a$", "aa", "X").as_deref(), Some("aX"));
+        assert_eq!(r("^(a|b)$", "b", "X").as_deref(), Some("X"));
+        // An empty match is not replaced, but one at the end of the text is.
+        assert_eq!(r("^", "abc", "X"), None);
+        assert_eq!(r("$", "abc", "X").as_deref(), Some("abcX"));
+        assert_eq!(r("x*", "abc", "X"), None);
+        // No search begins at the end of the text.
+        assert_eq!(r("a*", "ab", "X").as_deref(), Some("Xb"));
+        assert_eq!(r("(^|$)", "a", "X"), None);
+        // The empty match before the line break that ends the text is skipped, and so is the end.
+        assert_eq!(r("$", "a\n", "X"), None);
+        assert_eq!(r("a$", "a\n", "X").as_deref(), Some("X\n"));
+    }
+
+    #[test]
+    fn a_search_and_a_replacement_refuse_what_is_not_reproduced() {
+        for pattern in ["^*", "\\b", "(a*)*", "(^)+a", "^+", "(^|$)*"] {
+            assert!(
+                matches!(
+                    Matcher::new(&find(pattern, Mode::Regex)),
+                    Err(Error::Unsupported(_))
+                ),
+                "{pattern}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_search_reads_the_anchors_of_the_text_of_the_cell() {
+        assert!(found("^ab", false, "abc"));
+        assert!(!found("^bc", false, "abc"));
+        assert!(found("bc$", false, "abc"));
+        assert!(!found("ab$", false, "abc"));
+        // The text, not its lines.
+        assert!(!found("^b", false, "a\nb"));
+        assert!(!found("a$", false, "a\nb"));
+        // `$` is also the place before the line terminator that ends the text.
+        for end in [
+            "\n", "\r", "\r\n", "\u{b}", "\u{c}", "\u{85}", "\u{2028}", "\u{2029}",
+        ] {
+            assert!(found("a$", false, &format!("a{end}")), "{end:?}");
+        }
+        assert!(!found("a$", false, "a\n\n"));
+        assert!(!found("a$", false, "a\r\nb"));
+    }
+
+    #[test]
+    fn an_anchor_in_a_group_or_in_the_middle_of_a_pattern() {
+        assert!(found("^(Code|Resumen Contadia)$", true, "Resumen Contadia"));
+        assert!(!found("^(Code|Resumen Contadia)$", false, "Code x"));
+        assert!(found("(^a|b$)", false, "xxb"));
+        assert!(found("(^a|b$)", false, "axx"));
+        assert!(!found("(^a|b$)", false, "xax"));
+        assert!(!found("a^b", false, "ab"));
+        assert!(!found("a$b", false, "ab"));
+        // The first match must be the whole text with `entire_cells`, anchors or not.
+        assert!(!found("^a|ab$", true, "ab"));
+        assert!(found("^ab|a$", true, "ab"));
+    }
+
+    #[test]
+    fn a_dot_next_to_an_anchor_leaves_out_a_line_break() {
+        assert!(!found("^.b", false, "\nb"));
+        assert!(!found("a.$", false, "a\n"));
+        assert!(found("^a.$", false, "ab"));
+    }
+
+    #[test]
+    fn a_search_matches_the_empty_text_as_a_replacement_does() {
+        // `findAll` reports the cells that `replaceAll` would change: an empty match is a hit only
+        // at the very end of the text.
+        assert!(found("$", false, "abc"));
+        assert!(!found("^", false, "abc"));
+        assert!(!found("x*", false, "abc"));
+        assert!(found("x*", false, "axc"));
+        assert!(found("a*$", false, "bba"));
+        assert!(found("a*$", false, "bb"));
+        assert!(!found("^$", false, "abc"));
+        assert!(!found("(^|$)", false, "a"));
+        // The empty match before the line break that ends the text is skipped, and so is the end.
+        assert!(!found("$", false, "a\n"));
+        // The first match must be the whole text with `entire_cells`: an empty one is not.
+        assert!(!found("$", true, "abc"));
+        assert!(!found("x*", true, "abc"));
+        assert!(found("a*", true, "aaa"));
     }
 }

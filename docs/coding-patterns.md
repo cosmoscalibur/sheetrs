@@ -15,6 +15,17 @@ parser handles the "dirt" of the file format.
 - Common general logic belongs in `parser_utils.rs`, `workbook.rs`, or a new
   file (requires approval).
 
+### One used area
+
+The bounds of a sheet's cells are found once, in `sheetrs-io` (`reader/used_area.rs`): the readers
+put an `AreaSink` in front of whatever `CellSink` they are given, so the loaded model and every
+streaming consumer get the same numbers, in an XLSX and in an ODS. `Sheet::used_area` is the
+rectangle of the **used cells** (a value or a formula), 0-based, which is what `sheetrs stats` shows
+(`used_range`); `Sheet::kept_area` also holds the cells kept only for their style and the hidden rows
+and columns, which is what REF304 and REF305 measure (`Sheet::kept_extent`, rows `0..=last_row` and
+columns `0..=last_col`). The `<dimension>` element is not read. A tool needing the area never
+tallies its own.
+
 ### Format-Agnostic Design
 
 Rules and logic operate on abstract `Cell` and `Workbook` models, not on
@@ -148,6 +159,14 @@ Rules may accept configuration parameters via `LinterConfig`:
 
 - `calc203_allow_double_negative` (bool) — If `true`, `--` (double negative /
   coercion to number) is not flagged by CALC203.
+- `locale` (a locale tag such as `"es-CO"`, in `[global]`; not set by default) — The locale of the
+  workbook for the tools that read the same file (`sheetrs query`, `sheetrs edit`; the lint rules do
+  not use it). A value that is not a tag is a configuration error. In `sheetc.toml` the key is
+  `tag` of the `[locale]` table. The resolution order is in *The locale of a `Book`*.
+- `now` (a number, in `[global]`; not set by default) and `seed` (a non-negative integer) — The serial
+  number of `NOW()`/`TODAY()` and the seed of `RAND()` in the recalculation of `sheetrs edit`, under its
+  `--now` and `--seed` flags (the lint rules do not use them). A value of another type is a configuration
+  error. In `sheetc.toml` they are the keys `now` and `seed`.
 - `enable_features` (array of names, default empty) — Compatibility features,
   all off unless listed; known: `LONGTEXT` (ERR102 accepts the `#NAME?` of
   `_xlfn._LONGTEXT(…)`). Unknown names make the configuration invalid.
@@ -187,6 +206,21 @@ parsers and rules:
   handle `GeneralRef` too, and must read with `trim_text(false)`: trimming
   applies to each fragment between references and drops the spaces around
   them.
+
+## Tests
+
+- **A test is named for what it proves**, by itself, in a few words, and the name does not start with
+  `test`: `the_empty_search_text_finds_nothing_in_every_mode`, not `test_empty_search`. No comparative
+  filler (`too`, `also`), and no sentence that tells the setup instead of the behavior. A name that needs
+  more than about 70 characters is testing more than one behavior or describing how: split the test or say
+  the behavior shorter. (Some older tests of the linter still start with `test_`; a test that is added or
+  touched follows this rule.)
+- **Python** (`sheetrs-py/tests`) follows the same rule: `python_functions = ["[a-z]*"]` in `pyproject.toml`
+  collects every public function of a test module, so a helper starts with an underscore (`_make_xlsx`) and
+  is never collected, and a class or a constant starts with a capital. Python has no logic of its own: its
+  tests prove the interface contract (arguments reach the engine, defaults, `sheetrs.Error` and the warnings
+  that Rust's errors and reports become). The order of a plan, what a change reaches, the stale rules and the
+  text of `explain` are asserted in Rust (`sheetrs-edit`), where the logic is.
 
 ## Performance Guidelines
 
@@ -281,7 +315,114 @@ idiomatic Rust where that differs (`write` and not Save, `io::Write` sinks, cons
 - **The clock is an input.** The engine reads `NOW()`, `TODAY()` and the seed from the options of the
   run (`now`, `seed`) and, when they are absent, from `clock::unix_now`, a system clock that a host
   without one (WebAssembly) replaces once with `clock::set_wall_clock`; nothing else in the workspace reads
-  the time.
+  the time. The names are the same in every layer: `now` and `seed` of `sheetc`, of a `Calculation`
+  (Rust), of `Book.calculate(now=, seed=)` (Python) and of the options of `calculate(request, {now, seed})`
+  (WebAssembly), and `--now`/`--seed` of `sheetrs edit` (`Book::with_volatile`) for the recalculation an
+  edit leaves to do.
+- **The clock and the seed are properties of the `Book`, like its locale.** Every tool that builds or
+  calculates (`calculate`, the recalculation of an edit, `build`, `inspect`, `verify`) takes them from the
+  book: `Book::with_volatile(Volatile { now, seed })` in Rust (`sheetrs_compiler::memory::Options::with_book`
+  applies it under the options of a call), `Book(..., now=, seed=)` in Python, `new Book(bytes, locale,
+  {now, seed})` in WebAssembly. The order, from the one that wins: the `now`/`seed` of a single call (a
+  `calculate` step, the options of `inspect`, `compile` and `evaluate`), those of the book, the configuration
+  file (`now` and `seed` in `[global]` of `sheetrs.toml`, `Volatile::configured`; `sheetc` has its own
+  `sheetc.toml`) and the clock. A command line has its own flags that feed the book internally
+  (`--now`/`--seed` of `sheetrs edit`) or the build configuration (`sheetc build`, `calculate`, `evaluate`,
+  `verify`, and the executables it makes), and a new tool that evaluates volatile functions gets the same two
+  flags and the same order. The seed is a SheetRS extension: `RAND` of LibreOffice cannot be seeded.
+
+### The locale of a `Book`
+
+The locale (the regional settings that give a text to a number and read a number from a text) is a
+property of the workbook: `Book::with_locale` (a `sheetrs_io::locale::LocaleTag`, which parses with
+`FromStr`) and `Book::locale`. Every tool that takes the `Book` follows it: `TEXT` and the conversion of
+a number to text in `calculate` and in the recalculation that follows an edit (`sheetrs-edit` gives
+every intermediate `Book` of a plan the one of its source, `Book::with_locale_of`), the `display` of
+a query and the dates a search reads. The first of these that is set decides, and the same name,
+`locale`, is the argument in every layer:
+
+1. the `locale` of a single call, which wins over the rest: the `locale` of a `Query` (`--locale` of
+   `sheetrs query`), of `evaluate`, of the options of `inspect` and `compile`, and `--locale` and the
+   `[locale]` table of `sheetc` (the build configuration of a program is one thing: its flags win over
+   its file);
+2. the locale given to the `Book`: `Book::with_locale`, `--locale` of `sheetrs edit`,
+   `Book(..., locale=...)` in Python, `new Book(bytes, locale)` in WebAssembly;
+3. the configuration file: `locale` in `[global]` of `sheetrs.toml` (`--config`, else the one of the
+   working directory) for `sheetrs query` and `sheetrs edit`; these command lines read it
+   (`sheetrs_io::locale::configured`, feature `config`) and give it to the `Book` as the item above,
+   so that a flag wins over it. (`sheetc` has its own build configuration, `[locale] tag` of
+   `sheetc.toml`, which is item 1.) An invalid value fails when the
+   configuration is read (the shape of the tag) or when it is first used (a locale the engine's table
+   lacks), before any work;
+4. the locale of the system (`Book::default_locale`, `locale::system`), for an XLSX and an ODS alike:
+   `LC_ALL`, `LC_CTYPE`, then `LANG`, the ones `LibreOffice` reads on Linux (`C` and `POSIX` ask for none),
+   read when it is needed, and `en-US` when there is none and in WebAssembly. The language an ODS stores in
+   its default cell style is not read: `LibreOffice` does not calculate with it. A system locale that the
+   engine's table lacks is `en-US` (it is not an error, as it is not one for `LibreOffice`), and a locale
+   that was asked for is an error. **Tests** never depend on the system: `.cargo/config.toml` pins
+   `LC_ALL` for `cargo test`, `conftest.py` does for pytest, and a test of the system's locale sets
+   the variables in a child process.
+
+`sheetrs_compiler::locale::resolve` is the one place that applies the order for the engine. The
+adapters (`sheetrs-py`, `sheetrs-wasm`, the command lines) only convert the argument.
+
+### The calculation mode: the cache is the default, `calculate_all` calculates everything
+
+The default of every run is what `LibreOffice` does when it opens a file and when a cell changes: a
+formula that has a result keeps it, and the formulas that a change reaches (and what depends on them)
+are calculated. The opt-in is `calculate_all`, which emulates `calculateAll()` of the UNO API: every
+formula is calculated. The option is a property of the run, off by default, and its name is
+`calculate_all` in every layer, converted only to the convention of each language:
+`Book::with_calculate_all` and `Book::calculate_all` (`sheetrs-io`; the planner of `sheetrs-edit` and the
+compiler read it), `--calculate-all` of `sheetrs edit`, `sheetc calculate`, `sheetc build` and the
+compiled executables, the keyword `calculate_all` of `save`, `to_bytes`, `explain` and `value_ranges` in
+Python, and the property `calculateAll` of the `Book` in WebAssembly (`sheetrs_set_calculate_all` in the
+module of a compiled workbook). `force_calculate_all` is the option of a build only (`sheetc build
+--force-calculate-all`, the key `force_calculate_all` of the options of `compile`): the program stores
+no cached result for the formulas it keeps. The option is never implied by another.
+
+What each tool does with it:
+
+- A **build** folds, as constants, the values the workbook stores (what `calculate_all` replaces by the
+  results of calculating the whole workbook first) and keeps in the program (`Program::cache`) the cached
+  result of every formula it keeps: a run whose inputs leave a formula and what it reads as they were takes
+  it (`Engine::take_cached`), and only what a changed input reaches is calculated. A run with
+  `calculate_all` (`Overrides::calculate_all`) ignores it. `sheetrs_compiler::Spec` has `calculate_all` and
+  `force_calculate_all`.
+- A **calculation** (`calculate`, in `sheetrs-edit`, `sheetrs-answer` and `sheetc calculate`) builds in the
+  mode it is given (`force_calculate_all` does not apply) and runs the program with it. It is the calculation that
+  tells its build what it is for: the workbook as the answer (`Spec::whole_workbook`) and the inputs it was given
+  (`Spec::given_inputs`, the only cells that can change, so the only cone that is calculated). A build, embedded or
+  not, keeps its own rules whatever calls it.
+- An **edit** (`sheetrs edit`) hands the compiler what its plan changed (`sheetrs_compiler::Cache`, built
+  by the planner from the operations it has run, `sheetrs-edit/src/plan.rs`): the formulas those changes
+  reach, and the ones that depend on them, are calculated, and the rest keep their result; with
+  `calculate_all` the whole workbook is calculated. The conversion of formulas to values converts the
+  cached results of the cells nothing reaches and what the engine calculates for the others (all of it
+  calculated first, with `calculate_all`).
+
+### What `LibreOffice` calculates on load is a root of the cache, not a walk
+
+A formula that `LibreOffice` calculates when it opens a file is calculated by the default mode too (`keep_cached`, `sheetrs-compiler`), and the
+kind of root says whether what reads it is: the functions it calculates on load in both formats (`HYPERLINK`, `CELL`, `INFO`, `FORMULATEXT`, the
+volatile ones, `INDIRECT`, `OFFSET`) are roots **with** the walk (`Flags::volatile`, `Flags::on_load`: what reads them is calculated), and the
+ODS cells whose cached result it recalculates (`ModelCell::recalculated_on_load`, told by the reader through `CellSink::recalculated_on_load`
+before the cell) are roots **without** it (a cell that caches a text, or a number in a cell with a format, keeps its result whatever the cell it
+reads gives). A rule of this kind is written from a probe of `LibreOffice` (`sheetrs-edit/tests/assets/write_to/probe_*.py`), checked in the oracle
+(`make_oracle.py`) and run now against it by `write_to_libreoffice.rs` for every fixture and both formats; a fixture whose cells give another
+result each time (`NOW`, `RAND`) cannot be compared, so it is only probed.
+
+### The payload schema and the ABI of a module
+
+The program a compiled executable or WebAssembly module carries is serialized with `postcard`, which is positional: a field
+inserted, removed, moved or retyped in `Program` or in what it holds changes what the same bytes mean, and an old payload is
+read as garbage or fails far from the cause. So `sheetrs_engine::bundle::SCHEMA` is the number of that layout, written next to
+the magic of the payload and checked by the runtime before it decodes (a refusal names both numbers); `sheetc` refuses a stub or
+a base module whose schema or ABI is not its own. **A change of the order or of the type of a field of what is serialized bumps
+`SCHEMA`** (the test `the_schema_number_follows_the_layout_of_the_program` pins the bytes of a program that sets every field and
+fails until you bump it and write the bytes again). `bundle::WASM_ABI_VERSION` (`sheetrs_abi`) is another number: an integer
+bumped only on an incompatible change of the exports of a module or of what they mean; an added export (`sheetrs_set_calculate_all`,
+`sheetrs_payload_schema`) never bumps it, a host looks for the export. A module is only valid with the `sheetc` that built it.
 
 ### Versioning
 
@@ -300,7 +441,8 @@ Every tool is a library plus an executable; the bindings are adapters
 over those libraries. Where code lives follows who uses it (see `ARCHITECTURE.md`, *Layering*):
 
 - `sheetrs-io` (shared kernel): `reader` (the `Workbook` model, `Grid`, `CellSink`, `ExcelError`,
-  the XLSX/ODS parsers, and `Format`) and `Book` (`sheetrs_io::Book`: the one reference to a workbook that every tool takes, with the operations pending on it). Add to it only what two tools need and has no meaning outside the
+  the XLSX/ODS parsers, and `Format`), `locale` (`LocaleTag`, the locale of the system and of a
+  configuration file) and `Book` (`sheetrs_io::Book`: the one reference to a workbook that every tool takes, with its locale and the operations pending on it). Add to it only what two tools need and has no meaning outside the
   workbook model; code used by one tool belongs to that tool's crate.
 - `sheetrs-linter`: `rules` (`WalkerRule`, the registry and the catalog), `config`, `violation`,
   `report` (`group_by_scope`, `ViolationRecord`), the output formats (`human`, `json`, `sarif`, and

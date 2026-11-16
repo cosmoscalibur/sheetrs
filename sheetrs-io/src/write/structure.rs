@@ -222,6 +222,9 @@ impl<R: std::io::Read> std::io::Read for SpanTap<'_, R> {
     }
 }
 
+/// A qualified `#REF!`, which the rewrite of a formula writes bare.
+const QUALIFIED_REF_ERROR: &str = "!#REF!";
+
 /// The rows and columns deleted from each sheet and the sheets deleted, by sheet name.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct StructureEdits {
@@ -292,9 +295,16 @@ impl StructureEdits {
             .chain(deleted_sheets)
             .collect();
         let mentions = (!names.is_empty() && names.iter().all(|name| name.is_ascii())).then(|| {
+            // `!#REF!` too: a qualified error that a file holds is written bare (see `bare_ref_errors`), in
+            // every formula, so a formula that holds one is reached whatever sheet it names.
+            let patterns: Vec<&str> = names
+                .iter()
+                .map(|name| name.as_str())
+                .chain([QUALIFIED_REF_ERROR])
+                .collect();
             aho_corasick::AhoCorasick::builder()
                 .ascii_case_insensitive(true)
-                .build(names)
+                .build(patterns)
                 .expect("sheet names are valid patterns")
         });
         Ok(Self {
@@ -425,16 +435,16 @@ impl StructureEdits {
         source: &str,
         home_sheet: &str,
     ) -> Result<Option<String>> {
-        Ok(Self::rewrite_formula_tracked(edits, source, home_sheet)?.map(|(text, _)| text))
+        Ok(Self::rewrite_formula_detailed(edits, source, home_sheet)?.map(|r| r.text))
     }
 
-    /// As [`rewrite_formula`](Self::rewrite_formula), and whether the plan only moved what the
-    /// formula reads, so that the result it cached is still its result.
-    pub(crate) fn rewrite_formula_tracked(
+    /// As [`rewrite_formula`](Self::rewrite_formula), whether the plan only moved what the formula reads
+    /// (the result it cached is then still its result).
+    pub(crate) fn rewrite_formula_detailed(
         edits: &[Edit<'_>],
         source: &str,
         home_sheet: &str,
-    ) -> Result<Option<(String, bool)>> {
+    ) -> Result<Option<sheetrs_formula::edit::Rewritten>> {
         let formula = parse_spanned(source).map_err(|e| Error::Formula {
             formula: source.to_string(),
             message: e.to_string(),
@@ -442,7 +452,21 @@ impl StructureEdits {
         if formula.has_three_d() {
             return Err(three_d_unsupported(source));
         }
-        Ok(formula.rewrite_all_tracked(edits, home_sheet))
+        let rewritten = formula.rewrite_all_detailed(edits, home_sheet);
+        // A qualified error (`Data!#REF!`, as Excel writes it and as an earlier version of this tool did) is
+        // written bare: LibreOffice saves it so, and the file then reads back as the one LibreOffice saves
+        // (`COUNT` 0, not `#REF!`).
+        let current = rewritten.as_ref().map_or(source, |r| r.text.as_str());
+        if let Some(text) = sheetrs_formula::edit::bare_ref_errors(current) {
+            // Only the spelling of the error changes: the result the file caches stays the formula's result
+            // unless the plan also removed something the formula read (`LibreOffice` keeps the result of a
+            // formula that already held an error `#REF!` and recalculates the ones the deletion reaches).
+            return Ok(Some(sheetrs_formula::edit::Rewritten {
+                text,
+                only_moved: rewritten.as_ref().is_none_or(|r| r.only_moved),
+            }));
+        }
+        Ok(rewritten)
     }
 
     /// The range `r0..=r1` by `c0..=c1` of `sheet` once the plan is applied, `None` when no cell

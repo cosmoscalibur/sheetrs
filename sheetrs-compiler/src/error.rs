@@ -53,6 +53,19 @@ pub enum Error {
     /// A workbook that cannot be compiled, or a range that cannot be resolved against it.
     #[error("{0}")]
     Compile(String),
+    /// A workbook that depends on something the engine cannot calculate (a macro, an extension) in a cell that the run
+    /// calculates, which only `LibreOffice` can give a result for: `message` names the cause.
+    #[error("{message}")]
+    Unsupported {
+        kind: crate::compile::Unsupported,
+        message: String,
+    },
+    /// A workbook that carries macros, built with secure mode off: the macros are never run, so what depends on them
+    /// would differ from `LibreOffice`, which opens the workbook and runs them (or gives `#MACRO?`, by its security
+    /// level). The build refuses it, in every tool that builds; secure mode opens it and turns the cells that depend
+    /// on a macro into error cells. `inspect` and `verify` only read the workbook and never refuse it.
+    #[error("{0}")]
+    Macros(String),
     /// `SOURCE_DATE_EPOCH` set to something that is not a number of seconds.
     #[error("SOURCE_DATE_EPOCH must be a number of seconds since 1970, not `{0}`")]
     BuildTime(String),

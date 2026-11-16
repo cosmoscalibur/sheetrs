@@ -10,9 +10,11 @@
 //! | Export | |
 //! |---|---|
 //! | `memory` | the linear memory |
-//! | `sheetrs_abi() -> i32` | the version of this interface |
+//! | `sheetrs_abi() -> i32` | the version of this interface: an integer bumped only on an incompatible change of the exports or of what they mean; an export that is added never bumps it (look for the export, as for `sheetrs_set_calculate_all`) |
+//! | `sheetrs_payload_schema() -> i32` | the schema number of the payload this module reads, which `sheetc` wrote next to the program and the module checks before it runs it (added without bumping `sheetrs_abi`). A module is only valid with the `sheetc` that built it |
 //! | `sheetrs_alloc(len) -> ptr`, `sheetrs_free(ptr, len)` | memory for a request |
 //! | `sheetrs_set_clock(seconds: f64)`, `sheetrs_set_seed(seed: f64)` | the clock and the random seed (an integer up to 2^53) |
+//! | `sheetrs_set_calculate_all(flag: i32)` | `1`: the next calls ignore the results the program caches and calculate every formula (`calculateAll()`); `0` (the default): a formula whose inputs did not change keeps its cached result. A program built with `--force-calculate-all` caches none |
 //! | `sheetrs_meta() -> status` | the `--meta` of an executable, in the result buffer |
 //! | `sheetrs_info() -> status` | the `--info` |
 //! | `sheetrs_calculate(ptr, len) -> status` | the JSON answer to a request |
@@ -30,6 +32,7 @@ thread_local! {
     static WORKBOOK: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static CLOCK: Cell<f64> = const { Cell::new(0.0) };
     static SEED: Cell<Option<u64>> = const { Cell::new(None) };
+    static CALCULATE_ALL: Cell<bool> = const { Cell::new(false) };
 }
 
 fn clock() -> f64 {
@@ -41,6 +44,7 @@ fn overrides() -> Overrides {
     Overrides {
         now: None,
         rand_seed: SEED.with(Cell::get),
+        calculate_all: CALCULATE_ALL.with(Cell::get),
         ..Overrides::default()
     }
 }
@@ -93,6 +97,12 @@ pub extern "C" fn sheetrs_abi() -> i32 {
     ABI_VERSION as i32
 }
 
+/// The schema of the payload this module reads (an export added to the interface version 1: found by looking for it).
+#[unsafe(no_mangle)]
+pub extern "C" fn sheetrs_payload_schema() -> i32 {
+    super::PAYLOAD_SCHEMA as i32
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn sheetrs_has_writer() -> i32 {
     i32::from(cfg!(feature = "template"))
@@ -123,6 +133,11 @@ pub extern "C" fn sheetrs_set_clock(seconds: f64) {
 #[unsafe(no_mangle)]
 pub extern "C" fn sheetrs_set_seed(seed: f64) {
     SEED.with(|s| s.set((seed.is_finite() && seed >= 0.0).then_some(seed as u64)));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn sheetrs_set_calculate_all(flag: i32) {
+    CALCULATE_ALL.with(|c| c.set(flag != 0));
 }
 
 #[unsafe(no_mangle)]

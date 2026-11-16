@@ -5,12 +5,11 @@
 //! settings = "settings"   # sheet that declares inputs, outputs and metadata
 //! settings_file = "model.json"   # the same declarations as JSON, for a workbook with no such
 //!                                # sheet (or one that must not change); path relative to this file
-//! fold = true
 //! enable_features = ["LONGTEXT"]   # compatibility features, all off unless listed
-//! strict = true           # refuse workbooks with macros (false: warn)
+//! secure_mode = false     # true: what the engine cannot calculate is an error cell and a warning, not a build error
 //!
 //! [locale]                # the user's regional settings, fixed at build time
-//! tag = "es-CO"
+//! tag = "es-CO"           # default: the locale of the workbook (see `locale::resolve`)
 //! decimal = ","
 //! group = "."
 //! date_order = "dmy"
@@ -43,14 +42,25 @@ pub struct Config {
     /// both is an error.
     #[serde(alias = "settings-file")]
     pub settings_file: Option<PathBuf>,
-    /// Evaluate input-independent formulas at build time (default true).
-    pub fold: Option<bool>,
-    /// Refuse what the compiler cannot reproduce (macros); default true. When
-    /// false they are reported and the build goes on.
-    pub strict: Option<bool>,
-    /// Fixed value of `NOW()`, as a serial number.
-    /// Engine whose behavior is reproduced: `libreoffice` (default) or `excel`.
+    /// What the compiler cannot reproduce (a workbook with macros, a call to a macro, an add-in or a
+    /// function of `LibreOffice` the engine lacks, such as `WEBSERVICE`) stops the build and names the cause;
+    /// default false. When true the build goes on: the cells that call them are an error (the one
+    /// `LibreOffice` shows, where it is documented) and the report holds a warning.
+    #[serde(alias = "secure-mode")]
+    pub secure_mode: Option<bool>,
+    /// Emulates `calculateAll()` of `LibreOffice` (`calculate_all`): the whole workbook is calculated first,
+    /// the constants a build folds are the results of that calculation and are stored as the cache of the
+    /// formulas it keeps, and a run ignores the cache. Off by default: the values the workbook stores
+    /// are the constants and the cache (what `LibreOffice` does when it opens a file).
+    #[serde(alias = "calculate-all")]
+    pub calculate_all: Option<bool>,
+    /// A build only (`force_calculate_all`): the program stores no cache for the formulas it keeps, so it
+    /// calculates all of them in every run, and is lighter. It has no effect on `calculate`.
+    #[serde(alias = "force-calculate-all")]
+    pub force_calculate_all: Option<bool>,
+    /// Fixed value of `NOW()`, as a serial number (`TODAY()` is its integer part); absent, the clock.
     pub now: Option<f64>,
+    /// Seed of `RAND()` and its relatives; absent, seeded from the clock.
     pub seed: Option<u64>,
     /// What `INFO` (`system`, `osversion`, `release`) and `CELL("filename")` (`directory`,
     /// `filename`) say; absent, the machine the program runs on.
@@ -94,8 +104,9 @@ impl Config {
         Self {
             settings: self.settings.or(base.settings),
             settings_file: self.settings_file.or(base.settings_file),
-            fold: self.fold.or(base.fold),
-            strict: self.strict.or(base.strict),
+            secure_mode: self.secure_mode.or(base.secure_mode),
+            calculate_all: self.calculate_all.or(base.calculate_all),
+            force_calculate_all: self.force_calculate_all.or(base.force_calculate_all),
             now: self.now.or(base.now),
             seed: self.seed.or(base.seed),
             host: match (self.host, base.host) {
@@ -182,17 +193,19 @@ impl Config {
     }
 
     /// Everything of the spec that does not come from the settings sheet: the
-    /// level, folding, clock, seed, locale and the macro policy.
+    /// clock, seed, locale and the secure mode (folding is always on: [`Spec::fold`] is a
+    /// Rust-library option for tests and low-level use, with no key of the file).
     ///
     /// # Errors
     ///
     /// When a target of the configuration cannot be resolved against `model`.
     pub fn base_spec(&self, model: &Model) -> Result<Spec> {
         let mut spec = Spec {
-            fold: self.fold.unwrap_or(true),
             now: self.now,
             rand_seed: self.seed,
             host: self.host.clone().unwrap_or_default(),
+            calculate_all: self.calculate_all.unwrap_or(false),
+            force_calculate_all: self.force_calculate_all.unwrap_or(false),
             features: match &self.enable_features {
                 None => Features::default(),
                 Some(names) => Features::parse(names)?,
@@ -200,20 +213,13 @@ impl Config {
             ..Spec::default()
         };
         let loc = self.locale.clone().unwrap_or_default();
-        let (l, notes) = locale::from_tag(loc.tag.as_deref().unwrap_or("en"), &loc)?;
+        let (l, notes) = locale::resolve(&loc, &model.settings)?;
         spec.locale = Some(l);
         spec.notes = notes;
-        if model.macros {
-            if self.strict.unwrap_or(true) {
-                return Err(Error::Config(
-                    "the workbook contains macros, which are never run, so what depends on them would differ; \
-                     build with --no-strict (strict = false) to compile anyway"
-                        .into(),
-                ));
-            }
+        spec.secure_mode = self.secure_mode.unwrap_or(false);
+        if model.macros && spec.secure_mode {
             spec.notes.push(
-                "warning: the workbook contains macros; they are ignored (strict mode is off)"
-                    .into(),
+                "warning: the workbook contains macros; they are ignored (secure mode)".into(),
             );
         }
 
@@ -268,7 +274,7 @@ mod tests {
         let c = parse("settings = \"cfg\"\nouts = 1\n", "t");
         assert!(c.is_err(), "unknown keys are rejected");
         let c = parse(
-            "settings = \"cfg\"\nfold = false\n[locale]\ntag = \"es-CO\"\ndecimal = \",\"\n",
+            "settings = \"cfg\"\n[locale]\ntag = \"es-CO\"\ndecimal = \",\"\n",
             "t",
         )
         .unwrap();
@@ -276,6 +282,10 @@ mod tests {
         assert!(
             parse("outputs = \"any\"\n", "t").is_err(),
             "no level of outputs any more"
+        );
+        assert!(
+            parse("fold = false\n", "t").is_err(),
+            "folding is not configurable: `fold` is an unknown key"
         );
         let l = c.locale.unwrap();
         assert_eq!((l.tag.as_deref(), l.decimal), (Some("es-CO"), Some(',')));

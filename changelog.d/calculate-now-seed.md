@@ -1,0 +1,3 @@
+### Added
+
+- `now` and `seed` fix the volatile functions in `calculate`, in every layer with the same names (issue #106): `Calculation { now, seed }` in Rust, `Book.calculate(..., now=, seed=)` in Python, `calculate(request, { now, seed })` in WebAssembly and `--now`/`--seed` in `sheetrs edit` (through `Book::with_volatile`). `now` is the serial number of `NOW()` (`TODAY()` is its integer part) and `seed` the seed of `RAND()`, as in `sheetc`; without them the clock decides. They also fix the recalculation that the plan runs after an edit that leaves results stale, so a plan gives the same workbook whichever pass calculates.

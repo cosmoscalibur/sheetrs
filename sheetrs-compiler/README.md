@@ -26,9 +26,9 @@ loan.ods  ──┘  (format independent)          └─ Program::calculate() (
   [docs/FIDELITY.md](docs/FIDELITY.md).
 * **Execution is configurable where the file is silent:** the document decides
   the date system, iterative calculation and search settings; the build
-  configuration (`sheetc.toml` and flags) decides the locale (any BCP-47 tag,
-  fixed at build time), the clock, the seed and how much of the workbook stays
-  queryable.
+  configuration (`sheetc.toml` and flags) decides the clock, the seed and how much of the workbook
+  stays queryable, and the locale where the workbook does not give it (see *Locale*): any
+  tag of the table, fixed at build time.
 
 Architecture and decisions: [docs/DESIGN.md](docs/DESIGN.md). Differences between
 Excel and LibreOffice: [docs/FIDELITY.md](docs/FIDELITY.md). Which functions and
@@ -74,7 +74,7 @@ sheetc inspect -i model.xlsx      # sizes, unsupported functions, cycles, run-ti
 
 | Command | Purpose |
 | ------- | ------- |
-| `build FILE [-o OUT]` | Compile to an executable. `--emit-ir PATH` also writes the IR as JSON. `--target wasm` writes a WebAssembly module instead ([below](#webassembly-target)). |
+| `build FILE [-o OUT]` | Compile to an executable (`--calculate-all`, `--force-calculate-all`: see [the calculation mode](#the-calculation-mode-the-cache---calculate-all-and---force-calculate-all)). `--emit-ir PATH` also writes the IR as JSON. `--target wasm` writes a WebAssembly module instead ([below](#webassembly-target)). |
 | `calculate FILE\|PROGRAM.json` | Compile in memory (or load an IR file) and calculate once. |
 | `evaluate "=FORMULA"` | Evaluate a single formula. |
 | `inspect FILE` | Report what the compiler sees. |
@@ -199,7 +199,14 @@ sheetc calculate -i model.xlsx --in-place                                    # r
 * **The workbook answer writes what the program computed**: the inputs given in their cells and the
   outputs that are formulas. The formulas outside the program keep the result the template stored,
   so with outputs declared the answer refreshes only those; to refresh every formula, declare no
-  outputs.
+  outputs. That is the rule of a **build** (`sheetc build --embed-template`, a template module of
+  WebAssembly): it keeps its own rules, whatever calls it.
+* **`sheetc calculate` tells the build what it is for.** A calculation that writes a workbook has the workbook
+  as its answer, so it passes the build its inputs only (`Spec::whole_workbook`) and every formula is calculated
+  and written (under the rules of the cache: only what the inputs and the dirty cells reach is calculated, and the rest
+  is copied from what the workbook caches); the declared outputs are then the names a request may use and what the
+  JSON lists, not a selection of what is refreshed. A calculation with no workbook passes the ranges asked as the
+  declared outputs when the workbook declares none. Neither changes what a build does when you build.
 * **Recalculating a workbook** is `sheetc calculate -i FILE -o OUT` with nothing declared and
   nothing given: every formula is calculated again. `-o` never
   overwrites the input; `--in-place` replaces it through a temporary file and a rename, so a failure
@@ -244,10 +251,13 @@ All of these fail the build, reporting every offender at once:
   an input must be a constant.
 * An output range with **no value and no formula** in it.
 * The settings-sheet rules above (duplicates, unknown ranges, collisions).
-* **Macros** (VBA, Basic, scripts): they are never run, so what depends on them
-  would differ. This is *strict* mode, the default; `--no-strict` (or
-  `strict = false`) compiles anyway and reports a warning, and `--strict` undoes
-  a `strict = false` of the file.
+* **A workbook with macros** (VBA, Basic, scripts): the macros are never run, so what depends on them would differ
+  from `LibreOffice`, and the build refuses the workbook and names secure mode. The refusal is the build's own
+  (`compile`), so every tool that builds has it, with no policy of its own (`sheetc build`, `calculate` and `evaluate`,
+  `sheetrs edit`, the Rust library, Python and WebAssembly); `inspect` and `verify` only read and never refuse it.
+  This is the default; [secure mode](#secure-mode) (`--secure-mode`, or `secure_mode = true`) opens it.
+* **What else the engine cannot calculate** (a call to an add-in or to a function of `LibreOffice` the engine lacks:
+  `WEBSERVICE`, `FILTERXML`, `DDE`, in a cell the run calculates): the build stops and names the cause, unless secure mode.
 
 A declared input is optional at run time: the value the workbook holds in that
 cell is its default (a blank cell defaults to blank), and a request overrides it
@@ -280,6 +290,50 @@ outside the repository.
 `sheetc inspect -i FILE` counts the functions a workbook uses, most used first, with
 the cumulative share and whether the engine has each one: the way to see which
 functions matter for a given model.
+
+### Secure mode
+
+`--secure-mode` (`secure_mode = true` in `sheetc.toml`; `Book::with_secure_mode(true)`, `secure_mode=True` in Python,
+`secureMode = true` in WebAssembly, `--secure-mode` of `sheetrs edit`) is off by default. By default what the engine
+cannot calculate stops the build with an error that names the cause: a workbook with macros (refused by the build itself,
+in every tool that builds, with no policy of the layer: the error names secure mode and the option of each layer), and a
+call to a function of `LibreOffice` the engine lacks (`WEBSERVICE`, `FILTERXML`, `DDE`) in a cell that the run
+calculates. `inspect` and `verify` only read the workbook and do not refuse it. With secure mode the build goes on: the
+workbook with macros is opened, each call to a macro (a function no spreadsheet program has) or to such a function that
+the run calculates is an error cell, what reads it is calculated from it, the rest of the workbook is calculated, and
+the build warns (`sheetc` on the standard error, the `Report` of the library in `warnings`
+and in `from_cache` with `error` set, `sheetrs edit`, Python and WebAssembly in the diagnostics with the code
+`UNSUPPORTED_AS_ERROR`). The error is the one `LibreOffice` shows where it was observed (*What depends on what the engine
+cannot calculate* in [`FIDELITY.md`](docs/FIDELITY.md)): `Err:531` (`#MACRO?`) for a macro, `Err:540` for `WEBSERVICE`,
+`#N/A` for `DDE`; `FILTERXML` gives a value in `LibreOffice` that the engine lacks, and no error of `LibreOffice` is
+observable for it, so it is the generic error of the engine, `#NOT_IMPLEMENTED!`. A cell that no edit reaches keeps the
+result the file caches with a warning of its kind (`*_FROM_CACHE`), and a reference to another workbook keeps the stored
+value of the link, in both modes. An add-in that is not installed is `#NAME?` in both.
+
+### The calculation mode: the cache, `--calculate-all` and `--force-calculate-all`
+
+The default is what `LibreOffice` does when it opens a file and when a cell changes: a formula that has a
+result keeps it, and only what a change reaches is calculated. `--calculate-all` emulates `calculateAll()` of the
+UNO API (`calculate_all` in `sheetc.toml`, `calculateAll` in WebAssembly, `calculate_all` in Python and Rust).
+
+| | default (the cache) | `--calculate-all` | `--force-calculate-all` (`build` only) |
+| - | - | - | - |
+| **`build`: constants the build folds** | the values the workbook stores | the results of calculating the whole workbook first | as the default (or as `--calculate-all` if both are given) |
+| **`build`: the formulas the program keeps** | each keeps the cached result in the program (`--info`: `build.options`) | the results of that calculation are what is stored | no cached result is stored: the program is lighter and calculates all of them in every run |
+| **a run of the executable** | calculates only the formulas a changed input reaches; the others answer their cached result | `--calculate-all` of the executable ignores the cached results and calculates every formula it kept (the folded constants stay what they are) | no cache to take, so no effect |
+| **`calculate`** | builds in the default mode and runs it: what the inputs given reach is calculated | calculates the whole workbook | does not apply (a calculation has no program to keep) |
+
+A formula whose result is kept is one that has a cached result in the file, is not volatile (`NOW`, `RAND`,
+`CELL("address")`...) and does not read cells at run time (`INDIRECT`, `OFFSET`: a program that has one
+keeps no cache at all); the others are calculated, with what reads them. An input counts as changed when the
+request gives it a value other than the one the workbook holds. The build does not fold what has no cached result:
+the engine calculates it. A workbook whose file says its results are stale (an XLSX with `fullCalcOnLoad` in its `calcPr`) is taken as
+a run with `--calculate-all` by every path that builds or calculates it (`sheetc build` and `calculate`, `BookCompile`,
+`sheetrs edit`, which is a calculation and a writer): `Book::recalculation_marked` reads the mark in one place and the
+loader hands it to the compiler. The workbook a calculation writes leaves with no mark, since what it holds is
+calculated; if `sheetrs edit` cannot calculate the workbook (a function the engine lacks) its writer leaves the mark so
+that the spreadsheet program finishes the calculation. An ODS has no such mark (LibreOffice writes none): it keeps what
+it caches, and an ODS whose formulas have no cached result is calculated where it has none.
 
 ### The request and the answer
 
@@ -319,10 +373,23 @@ reads ranges the way the batch read of a spreadsheet API does (`ranges`,
   starting the process for each request. A bad request gets
   `{"error_message": "..."}` and the loop goes on; blank lines are skipped.
 
-What may be asked is decided when the program is built, by what is declared: `ranges` may name an
-output, a defined name that lies inside the outputs, or a range inside them. Without `ranges` the
-answer is the outputs as value ranges (the declared ones, or the formula cells as rectangles). A range outside the
-outputs is an error saying so.
+### Which ranges can be asked for
+
+What may be asked is decided when the program is built, by what is declared. Without `ranges` the
+answer is the outputs as value ranges (the declared ones, or the formula cells as rectangles). With
+`ranges`, whether a workbook is written decides what a range outside the outputs does:
+
+| Declared outputs (settings sheet or `settings_file`) | `ranges` outside them | Where |
+| --- | --- | --- |
+| yes, **compiled program** (JSON answer: `sheetc calculate` without `-o`, an executable run without `--output`, `BookCompile::calculate` with `Mode::Values`, a WebAssembly module from `compile`) | **an error** that lists the declared outputs (`sheetrs_engine::Error::OutsideOutputs`, `declared: Some(["payment (Loan!B4)", ...])`): `ranges` is a selection among the declared outputs (an output's name, a defined name that lies inside them, or a range inside one) | the program has pruned the workbook to what the outputs read, and writes no workbook to read the rest from |
+| yes, **a workbook is written** (the workbook is its own template: `sheetc calculate -o OUT --json`, `--in-place --json`, an embedded executable or module with `--output OUT --json`, `BookCompile::calculate` with `Mode::Embedded`, and the `calculate` of `sheetrs edit`, Python and WebAssembly, which are all this) | **read from the workbook just written**, in memory, with the machinery of `query` and no recalculation: a constant has the value it holds, the input given is in it, and the workbook is the answer, so **every formula is calculated**, the ones no output includes too (a calculation declares only its inputs: the outputs the workbook declares are the names a request may use and what the answer lists by default). The answer keeps the order of the request and an outside range is named as it was asked | the workbook is there to read. A text that is no range or name of the workbook is still an error |
+| no | in the compiled program (no workbook is written) the **`ranges` of the request are the declared outputs of the build** (`Options::request_outputs`, filled by `BookCompile::calculate` and by the `calculate` of `sheetrs edit`): the program is pruned to what they read, whatever is not on their path is not in it (and is not calculated: only the declared ones are returned), and a constant may be asked for too. With no `ranges` the outputs are the formula cells (as the rectangles that hold them). Where a workbook is written every formula is calculated (previous row) | |
+
+The read is made by `sheetrs_answer` (`fill_template_to_with_answer` and `fill_template_with_answer`, which
+every path above calls), so it needs no compiler: the WebAssembly base module that writes workbooks
+(`sheetrs-rt-template.wasm`) answers a range outside the declared outputs the same way. The same read is available
+to any caller on any workbook held in memory: `BookQuery::range` on a `Book::from_bytes` (Rust), `Book(bytes).range`
+(Python) and `new Book(bytes).range` (WebAssembly).
 
 ### Logs
 
@@ -354,14 +421,14 @@ where it is started). Unknown keys are errors.
 ```toml
 settings = "settings"   # --settings
 # settings_file = "model.json"   # --settings-file: the same declarations as JSON
-fold     = true         # --no-fold
-strict   = true         # --strict / --no-strict: refuse (or only warn about) macros
+secure_mode = false     # --secure-mode: what the engine cannot calculate is an error cell and a warning, not a build error
 now      = 45292.5      # --now SERIAL: fix NOW()/TODAY() (default: the clock, at each run)
 seed     = 42           # --seed N: fix RAND (default: seeded from the clock)
 enable_features = ["LONGTEXT"]   # --enable-features L: compatibility features (default: none)
 
 [locale]                # the user's regional settings; --locale TAG sets `tag`
-tag = "es-CO"           # default en; en-US, en-GB, es-ES, es-CO, es-MX need nothing else
+tag = "es-CO"           # default: the locale of the workbook (see Locale); en-US, en-GB, es-ES,
+                        # es-CO, es-MX and de-DE need nothing else
 # A region the table lacks (es-BO) states these three; a language it lacks (sw) also
 # months (12), days (7, Sunday first), true_text, false_text, currency:
 # decimal = "."
@@ -380,22 +447,47 @@ characters that way, and LibreOffice 26.8 reads the function as `#NAME?`. Only c
 are joined; any other argument leaves the function unknown, as without the feature.
 
 **Locale** is fixed when the program is built: folding already used it, so a run
-cannot change it (`--locale` on an executable is an error). Five locales are supported:
-`en-US`, `en-GB`, `es-ES`, `es-CO` and `es-MX` (`en` and `es` mean the first of each), the ones the
-engine reproduces row by row against LibreOffice; their data is generated from LibreOffice
+cannot change it (`--locale` on an executable is an error). The locale is a property of the workbook
+(`sheetrs_io::Book::with_locale`, `Book(..., locale=...)` in Python, `new Book(bytes, locale)` in
+WebAssembly, `--locale` here), and a build takes the first of these that is set: the `--locale` flag or the
+`tag` of `[locale]` (or the `locale` option of a call in the bindings), the locale given to the workbook,
+the locale of the system, for an XLSX and an ODS alike (`LC_ALL`, `LC_CTYPE`, then `LANG`, as LibreOffice
+reads them on Linux, at the time of the build; `en-US` when there is none), so a program built from the
+same workbook with the same configuration is the same on every machine only when the configuration
+states the locale. A system locale that the table lacks is `en-US` with a diagnostic, as for LibreOffice; a
+locale asked for that it lacks is an error. `sheetc evaluate` has no workbook: `en` unless `--locale` says another. Six locales are
+supported: `en-US`, `en-GB`, `es-ES`, `es-CO`, `es-MX` and `de-DE` (`en`, `es` and `de` mean the first of
+each), the ones the engine reproduces row by row against LibreOffice (`de-DE` but for the keywords of a
+format code, see FIDELITY.md); their data is generated from LibreOffice
 (`scripts/gen_locale_table.py`). `[locale]` is the user's own regional setting, like the one a user
 defines in LibreOffice: it changes any field of a supported locale, and defines a region or language
 the table lacks from what it states (the user's responsibility). A locale that is neither in the table
 nor stated stops the build. Dates written as text, `TEXT`, `DOLLAR`,
 number text and text ordering follow the locale (see
 [docs/FIDELITY.md](docs/FIDELITY.md#locale-support) for what is checked against LibreOffice and
-what differs). The document's *language* is informational and does not change evaluation
-(LibreOffice evaluates an `es-ES` document with the system locale).
+what differs). The language an ODS stores in its default cell style is informational: LibreOffice calculates with
+the regional setting of the machine (see *Locale* in FIDELITY.md for the two components of its locale).
 
 The `[locale]` keys are the application-wide regional settings that Excel and
 LibreOffice let a user change outside any document (separators, two-digit-year
 window, list and currency conventions). Other application-wide settings can be
 added to the file as they are verified; per-document ones stay the document's.
+
+**The clock and the seed** (`now`, `seed`) are an input of every tool that builds or calculates, and each
+accepts them with the same names and the same order, from the one that wins: the flag or option of the
+call, the clock and seed of the workbook (`Book::with_volatile`, `Book(..., now=, seed=)`,
+`new Book(bytes, locale, {now, seed})`), the configuration file and the system clock (the seed is taken
+from it). `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of SheetRS: distinct seeds give
+distinct streams, and there is no LibreOffice result to match.
+
+| Tool | Flags | Configuration file |
+|---|---|---|
+| `sheetc build`, `sheetc calculate`, `sheetc verify` | `--now SERIAL`, `--seed N` | `now`, `seed` of `sheetc.toml` |
+| `sheetc evaluate` | `--now SERIAL`, `--seed N` | none (it has no workbook) |
+| an executable of `sheetc build` (and `--embed-template`), `sheetrs-rt` | `--now SERIAL`, `--seed N` at run time, over the ones the build fixed | the build's |
+| `sheetc inspect` | none: it calculates nothing | `now`, `seed` are read and unused |
+| `sheetrs edit` | `--now SERIAL`, `--seed N` | `now`, `seed` in `[global]` of `sheetrs.toml` (`--config`) |
+| `sheetrs lint`, `query`, `stats` | none: they read what the file caches and calculate nothing | none |
 
 ## Function support
 

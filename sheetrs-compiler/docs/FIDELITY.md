@@ -10,7 +10,7 @@ another is not a mode but what the file carries and how its functions are named:
 | The file's **format** | How it is read: the settings the document stores (iteration, search criteria, case sensitivity, null date, the syntax `INDIRECT` reads), the syntax of defined names, the reading of a bare `#REF!`. |
 | The function's **namespace** | Which function a name is, where the same text names two (`CEILING`, `FLOOR`, …): `core` (the OpenDocument standard, no prefix), `microsoft`, `libreoffice`, `openoffice`, `legacy`; see *Document state and namespace*. |
 | The build configuration (`[locale]`, `--locale`) | Application-wide regional settings (separators, date order, month and day names, boolean names, currency). Fixed at build time. |
-| The run | Only the clock (`NOW()`) and the random seed. |
+| The run | Only the clock (`NOW()`) and the random seed. `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of SheetRS with no LibreOffice counterpart: distinct seeds give distinct streams and no LibreOffice result matches them. |
 
 The tables below say where that behavior differs from Excel's. The Excel column is Excel's
 **documented** behavior, not an Excel run: no Excel is available here, which makes it the
@@ -130,7 +130,7 @@ resolved into engine options by the loader:
 | Case sensitivity | — (Excel: insensitive) | `table:case-sensitive` (default true) | `search.case_sensitive`, **comparison operators only**: with it on, `"a"="A"` is false and `"abc"<"ABD"` is true (letters first, case as tie-break, lowercase first). `COUNTIF`, `MATCH`, `VLOOKUP`, `SEARCH` stay case-insensitive: LibreOffice returns 3 for `COUNTIF(r,"APPLE")` over `apple` cells with the setting on. |
 | Two-digit-year window | — | `table:null-year` | `Locale::two_digit_year_start` (default 1930): text dates and LibreOffice `DATE(yy,…)`. |
 | Precision as shown | `fullPrecision="0"` | `table:precision-as-shown` | Not applied; the loader adds a diagnostic. |
-| Document language | — | default cell style `fo:language`/`fo:country` | Read; informational only (see below). |
+| Document language | — | default cell style `fo:language`/`fo:country` | Read; informational only (see *Locales*). |
 
 Regular expressions are run by LibreOffice with ICU's engine, whose results differ from other
 engines' in details (what an empty match is, where `$` and `\b` match, what `.` and `\s` stand
@@ -161,25 +161,44 @@ matching and case-insensitive comparisons, and so does the engine.
 | ---------- | ---- |
 | The document | Date system, iteration, search settings (ODS), two-digit-year window. The command line cannot override them. |
 | The build configuration (`[locale]`, `--locale`) | Application-wide regional settings that Excel and LibreOffice let the user change outside any document: separators, date order of text dates, month/day names, boolean names, currency, two-digit-year window. Fixed at build time. |
-| The run | Only the clock (`NOW()`) and the random seed. |
+| The run | Only the clock (`NOW()`) and the random seed. `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of SheetRS with no LibreOffice counterpart: distinct seeds give distinct streams and no LibreOffice result matches them. |
 | Nobody (informational) | The document's language (`fo:language`/`fo:country` of the default cell style). |
 
-The language is not an input to evaluation. Evidence: a probe document
-recalculated by LibreOffice with its default style switched to `es-ES` still gave
-`TEXT(DATE(2024,3,1),"mmmm dddd")` = `March Friday`, `TRUE&""` = `1`,
-`1.5&""` = `1.5`, `DATEVALUE("3/1/2024")` = March 1st and `VALUE("1,5")` = error:
-LibreOffice evaluates with the system regional settings, as Excel does, and a
-file does not store them. The compiler therefore reports the language as a
-diagnostic when it differs from the locale in use, and nothing more.
+The language is not an input to evaluation, and the locale of a calculation is the one of the
+**system**, for an XLSX and an ODS alike.
+
+**The model, probed against LibreOffice 26.8** (the same cells in an XLSX and in an ODS, each recalculated
+under an `en-US` and under an `es-CO` regional setting, with the language of the default cell style,
+of the data style and of the `[$-C0A]` tag of the format switched):
+
+| Component | Where it comes from | What uses it |
+| --------- | ------------------- | ------------ |
+| **System** (the regional setting of the machine) | `LC_ALL`, then `LC_CTYPE`, then `LANG` on Linux (`LC_MESSAGES`, `LC_NUMERIC`, `LC_TIME`, `LC_MONETARY` and `LANGUAGE` change only the interface; `C`, `POSIX` and an unknown `xx_YY` give `en-US`) | the conversion of a number to text (`1234.5&""`, `0.5543*100&"%"`), `VALUE` and every text read as a number or a date, the text of booleans, `TEXT` and the display of a cell whose format names no language, the order of text. A file does not store it |
+| **Format of the cell** | `[$-C0A]` in the number format of an XLSX; `number:language`/`number:country` of the data style of an ODS | `TEXT` in a formula cell with that format (`TEXT(1234.5,"#,##0.00")` is `1.234,50` there and `1,234.50` in the cell next to it, under an `en-US` system) and the display of that cell (`[$-C0A]#,##0.00` shows `1.234,50`; `[$-407]mmmm` shows `März`). Not the conversion in a `&`, not `VALUE` |
+| The language of the default cell style (`fo:language`, `fo:country`) and `dc:language` | the ODS | **nothing**: a document with an `es-CO` default style, under an `en-US` regional setting, gave `55.43%`, `Err:502` for `VALUE("1.234,5")` and `1,234.50` for `TEXT`. A LibreOffice writes its regional setting there when it saves, which is why the file looks like it carries it |
+
+What SheetRS implements: the **system** component (`Book` locale, the configuration, then the system's; see
+below) for a calculation and a display, in both formats, and the **format of the cell** for the display of an
+XLSX cell whose format has a language tag (`format_number_shown`). Not yet: `TEXT` in a formula cell
+that takes the language of the format of that cell (the engine has no formats of cells when it calculates),
+and the language of the data style of an ODS, which the reader does not keep in `number_format`; both are
+reported, not approved. The compiler reports the language of the default cell style as a diagnostic
+when it differs from the locale in use.
+
+Which locale is in use is a property of the workbook, the first of: the `locale` of a call or of the
+build configuration, the one given to the `Book` (`--locale`, `locale=`), the configuration file, and the
+system's, read when it is needed.
 
 ### Locale support
 
-Five locales are supported: `en-US`, `en-GB`, `es-ES`, `es-CO` and `es-MX` (a bare `en` or `es` is
-the first of each). The criterion is fidelity: a locale is in the table only when the engine
+Six locales are supported: `en-US`, `en-GB`, `es-ES`, `es-CO`, `es-MX` and `de-DE` (a bare `en`, `es` or
+`de` is the first of each). The criterion is fidelity: a locale is in the table only when the engine
 reproduces, row by row, what a LibreOffice running with that regional setting computes
 (`tests/assets/semantics.*` for `en-US`, `semantics_<tag>.*` for the others, XLSX and ODS), so
 the table is not a list of what LibreOffice offers. Any other locale is not supported: a build with
-`--locale de-DE` fails.
+`--locale fr-FR` fails. `de-DE` is there for its separators, names and dates: every row of its fixture
+matches but the 19 that use the keywords of a format code (below), which the test lists as known
+differences.
 
 The `[locale]` table of `sheetc.toml` (and `--locale`) is the user's own regional setting, the
 equivalent of what LibreOffice lets a user define globally and per document: it changes any field
@@ -193,7 +212,11 @@ setting gives the separators, the names of months and days (full and abbreviated
 accepts for a date typed as text, the order of the short date, the currency format, the texts of
 AM, PM, TRUE and FALSE, and the probes of how its scanner reads a date with a month name. **Adding a
 locale** means adding its tag to the script *and* its fixture to `scripts/gen_semantics_fixture.py`,
-and only keeping it once every row passes. A first attempt with ten more locales (`de`, `fr`, `ja`,
+and only keeping it once every row passes. `de-DE` was added in the end for the separators (`1.234,5`), the names and the text dates, with the
+rows whose code uses a German keyword listed as known differences of its fixture (a German
+`dd.mm.yyyy` gives `dd.03.yyyy`, `[Red]` is an error and `[$-409]dddd d` keeps `dddd d`): the keywords of
+a code are `TT`, `MM`, `JJJJ`, `[ROT]` there, and the engine reads them in English (a proposal in
+`docs/approved-differences.md`). A first attempt with ten more locales (`de`, `fr`, `ja`,
 `pt`, `ru`, `sv`, `nl`…) was dropped because the engine could not reproduce them: the letters of a
 `TEXT` date code are read in the locale's language and, in some codes, English letters are text
 (German `dd.mm.yyyy` gives `dd.03.yyyy`); the order of `a-b-c` dates depends on the first number
@@ -228,7 +251,7 @@ text, and a language tag in the code (`[$-409]`, `[$-C0A]`, `[$-809]`, `[$-80A]`
 language. `[$-40A]`, the traditional sort of Spanish, LibreOffice does not know and TEXT keeps the
 locale it runs with, as the engine does; a tag that is not a hexadecimal id and has no currency
 symbol (`[$-en-US]dddd`, `[$-ZZZ]0`) is `#VALUE!` (LibreOffice's `Err:502`). A `.` in a code that has
-no decimal separator of the locale is read as one (`0.0%`). A tag of another language (`[$-407]`)
+no decimal separator of the locale is read as one (`0.0%`). A tag of another language (`[$-40C]`)
 stops the build when the code is a literal (see *What stops a build*).
 
 Dates reach the year 32767 (`DATE(32767,12,31)` is 11,274,306), as in LibreOffice, and a year of
@@ -461,7 +484,7 @@ the build with an error that names it, instead of a value that would differ:
 | A function of LibreOffice's catalogue that the engine does not implement (the inventory is `CATALOGUE` in `functions/namespaces.rs`, generated by `scripts/function_namespaces.py`; the list is in `COVERAGE.md`) | Error, naming the function, the number of calls and the first cell. This includes `FILTER`, `SORT`, `XMATCH`, the statistical, financial and engineering functions in the list. |
 | A name that is not in LibreOffice's catalogue (`NOPE(1)`, `_xlfn._longtext(…)`) | Not an error: LibreOffice gives `#NAME?` for it too, and the build lists it. |
 | Syntax the parser does not read: external workbook references, structured references (`Table1[Col]`), `#` spills, intersections | Error, naming the first cells and the reason. |
-| `TEXT` with a code that carries the language tag of a language the engine has no names for (`[$-407]`), when the build knows the code (a literal, a constant cell, a join of those, or a formula it evaluates) | Error. If the code depends on an input, the build warns and, in a run that gives such a code, the cell is `#NOT_IMPLEMENTED!`. |
+| `TEXT` with a code that carries the language tag of a language the engine has no names for (`[$-40C]`), when the build knows the code (a literal, a constant cell, a join of those, or a formula it evaluates) | Error. If the code depends on an input, the build warns and, in a run that gives such a code, the cell is `#NOT_IMPLEMENTED!`. |
 | `XLOOKUP` with search mode 2 or -2 (binary search) over a range, when the build knows the mode | Error. If the mode depends on an input, warning, and `#NOT_IMPLEMENTED!` in a run with such a mode. Over an array they are reproduced. |
 | A date serial outside 0001-01-01 … 32768-01-01 handled while the build evaluates | Error, naming the cell. With an input that gives such a serial at run time: `#NOT_IMPLEMENTED!` (no warning: every date function would have one). |
 | A regular expression (document search mode, or `XLOOKUP` match mode 3) outside the subset of ICU's syntax that is reproduced, when the build knows the pattern | Error, naming the cell, the function and what is outside. A pattern that depends on an input: warning, and `#NOT_IMPLEMENTED!` in a run whose pattern is outside the subset or whose text has letters of several-character case folding. |
@@ -545,7 +568,7 @@ constants, or evaluated from constants), so no program is built that differs fro
 it depends on an input the build cannot tell: it compiles with a warning that names the cell, and a
 run that meets the case gives the error value `#NOT_IMPLEMENTED!` in that cell (and what depends
 on it) instead of a value that would differ. The cases: a `TEXT` code with the language tag of a
-language outside the table (`[$-407]`), `XLOOKUP` search modes 2 and -2 over a range (LibreOffice
+language outside the table (`[$-40C]`), `XLOOKUP` search modes 2 and -2 over a range (LibreOffice
 runs them through an iterator of its own, and the probes of it did not finish), regular
 expressions outside the reproduced subset or over text with letters of several-character case
 folding, date serials outside 0001-01-01 … 32768-01-01, and the t, F and beta distributions with
@@ -554,12 +577,51 @@ more than 10 million degrees of freedom or shape (see *Distributions* below).
 ### References that go
 
 A reference that leaves the sheet or is deleted is `#REF!`, and what is written in the file is
-what LibreOffice writes:
+what LibreOffice writes. **The reference is what LibreOffice shows when the workbook is saved and opened
+again (re-read), in both formats** (`CONTRIBUTING.md`, *Parity and fidelity*): the memory of LibreOffice right after the
+edit is not one (a deleted reference is a token with no cell there, `COUNT` of it is `#REF!`, and the same workbook,
+saved and opened by someone else, gives 0), so it is a defect of LibreOffice and the engine does not copy it.
 
-* A deleted cell or range, in an XLSX: `Sheet!#REF!`; LibreOffice reads it as `#REF!`. A bare
-  `#REF!` (what is left of a reference to a removed sheet, and what Excel writes for it) is the
-  unknown name `#NAME?` in LibreOffice, **also in an XLSX it saved itself**.
-* In an ODS: `[#REF!]` in a formula and `#REF!` as the `table:cell-range-address` of a name.
+* A deleted cell or range, or a deleted sheet, in an XLSX: the bare `#REF!` that LibreOffice and Excel write; LibreOffice
+  reads it back as an unknown name (`#NAME?`, **also in an XLSX it saved itself**). In an ODS: `[#REF!]` in a formula
+  (read back as the error value `#REF!`) and `#REF!` as the `table:cell-range-address` of a name.
+* The text LibreOffice shows for a reference that went (`=$Data.A#REF!*2`) exists only in memory; the files
+  spell it `#REF!` (see *Approved differences* in `docs/approved-differences.md` for what SheetRS writes and
+  what each program reads back).
+* **What a function does with a reference that went** is what it does with the error in the file, read as
+  LibreOffice reads it when it opens it (`oracle.json`, `reread`, fixtures `refs` and `preref` of `cached/`; the
+  default load and a hard recalculation, `calculateAll`, agree in every case of the oracle). In both formats and for
+  deleted cells and sheets: `COUNT` 0, `COUNTA` 1, `COUNT(ref;5)` 1, `IFERROR(ref;7)` 7, `ISERROR` `TRUE`, `ISREF`
+  `FALSE`. `SUM`, `AVERAGE`, `MAX`, `MIN`, `COUNTIF`, `SUMIF`, `INDEX`, `ROWS`, `SUMPRODUCT` and a calculation over it
+  are `#REF!` in an ODS and `#NAME?` in an XLSX (the bare `#REF!` of the file is the unknown name `#ref!`). The engine reads
+  the `#REF!` of the text as that error, so the text of the file is all it needs: there is no
+  "reference that went" different from "an error written in the formula" (a `#REF!` typed or read from a file gives the same
+  values as one an edit left). `COUNTBLANK(#REF!)` and `SUMIF(#REF!;...)` are `Err:504` in an ODS and `#NAME?` in
+  an XLSX, as in LibreOffice (an error value where a reference is wanted); `COUNTIF(#REF!;...)` is `#REF!` in an ODS.
+  There is no difference: the bare `#REF!` that a **deleted sheet** leaves in an XLSX is read as the unknown name like the one
+  deleted cells leave (`SUM` is `#NAME?` there and in the engine, in every function above), and so is the definition of a
+  defined name that went with the sheet (`rate*2` is `#NAME?`). An earlier version gave `#REF!` for the deleted sheet only
+  (an approved difference that followed the memory of LibreOffice, which is not the reference); the writer no longer logs
+  where it left the error (`RemovedRefs`) and the compiler no longer tells it apart (`Removed`).
+* **`Sheet!#REF!`** (`Data!#REF!`, a form a file can hold and `sheetrs edit` no longer writes) is read by the compiler as the plain
+  error `#REF!` as a whole, in every spelling (the same as a bare one: `COUNT` 0, `COUNTA` 1, `IFERROR` catches it, `SUM`
+  `#NAME?` in an XLSX), which is what a file saved and opened again by LibreOffice gives: it saves the error bare. LibreOffice
+  itself reads the qualified form, when it loads a file, as a reference with no cell (`COUNT` is `#REF!`, `IFERROR` does not
+  catch it); SheetRS does not, because the reference is the saved-and-re-read file. No text is rewritten for it: a formula
+  that a run does not touch keeps `Data!#REF!` (the values are the re-read ones; only the text differs from the file
+  LibreOffice would save, and a hard recalculation of SheetRS's file by LibreOffice gives `COUNT` `#REF!` where its own file gives 0:
+  proposed, not approved, `docs/approved-differences.md`). A deletion that rewrites a formula writes a reference that went as a whole
+  bare `#REF!`.
+* **An error written in a formula** is what it says in LibreOffice, whatever the run deletes (`preref`, in both
+  formats): the same values as the ones above.
+* **XLSX, a sheet that was deleted.** LibreOffice 26.8 (load, delete the sheet, calculate, save as XLSX, probed
+  with `refs.xlsx`) saves `COUNT(#REF!)` with `<v>#REF!</v>` (`t="e"`) when its memory has `COUNT` `#REF!`; opened again,
+  that file gives `#NAME?`, 0 in `COUNT` and 1 in `COUNTA`. The edit of `sheetrs edit` writes the same formula text and
+  caches what LibreOffice shows when it opens the file: 0 and 1 for `COUNT` and `COUNTA`, `IFERROR` caught, and `#REF!`
+  for `SUM` and the rest (`#NAME?` there: approved, see `docs/approved-differences.md`). `Book` reads a cell with such an
+  error as `#NAME?`, so a test that wants what the file caches reads the XML (`write_to_libreoffice.rs`). A form that
+  LibreOffice reads back as `#REF!` exists (`#REF!!A3`, `'#REF!'!A3`) and Excel does not write it: it is not used
+  (unverified in Excel).
 * A shared formula whose cell would read a column past `XFD` or a row past 1,048,576 (or before
   the first) reads `Sheet!#REF!` for that reference. LibreOffice 26.8 opens such an XLSX with the
   cell as `#REF!` (formula `=#REF!1+1` for a column past `XFD`), not `#NAME?`. The workbook
@@ -1034,7 +1096,147 @@ Not reproduced (the build stops, `#NOT_IMPLEMENTED!` when the text comes from an
 formula is calculated), `FILTERXML` (an XPath over an XML document, which needs an XML engine) and
 `GETPIVOTDATA` (a pivot table of the document, whose definition the compiler does not read; without
 one LibreOffice gives `#REF!`) are not implemented: a workbook that calls one does not build, and the
-error names it.
+error names it (when the run calculates the cell: see the next section).
+
+## What depends on what the engine cannot calculate (another workbook, a macro, an extension)
+
+The engine does not open another workbook, run a macro, call an add-in or implement `WEBSERVICE`, `FILTERXML` or `DDE`. There is no option for it: the
+engine does what `LibreOffice` does. OBSERVED (LibreOffice 26.8, headless, `UNO`; `probe.py` of `sheetrs-edit/tests/assets/from_cache`): one fixture per
+format with each kind in `Calc!A:A` (`B` reads `A`), every cached result a stale number or text, then the default load, `calculate()`,
+`calculateAll()`, an edit of the cell a formula reads (`Data!D1` 5 → 6), the deletion of an unrelated row and of the row of `D1`, each saved and opened again.
+
+| Kind | Default load (macro security as installed: High) | After `calculateAll()`, or an edit that dirties the cell | After save and re-open of the untouched file |
+|---|---|---|---|
+| Another workbook, `[1]Sheet1!A1` / `'file:///x.ods'#$Sheet1.A1` | the cached result (an ODS that caches a number in a cell with no format is calculated: the stored value of the link, 42, which a consistent file caches) | the stored value of the link (42; with a local cell, `A1+D1`, 48 after the edit: it is calculated from the stored value) | the same |
+| `MYFUNC(x)`, a function no program has, in a workbook with no macro (XLSX, or ODS with no `Basic/`) | the cached result | `#NAME?` | the cached result |
+| `MYFUNC(x)` of a `Basic/` module of an ODS | `#MACRO?` (`Err:531`), whatever the cell caches; with macro execution allowed (`MacroExecutionMode` 4) the macro runs (15) | `#MACRO?` / the result of the macro; `#REF!` when the argument went | `#MACRO?` |
+| `_xll.NAME(x)` (an add-in that is not installed) | the cached result | `#NAME?` | the cached result |
+| `COM.SUN.STAR.SHEET.ADDIN.X.Y(x)` | the cached result (an ODS with a `Basic/` module: `#MACRO?`) | `#NAME?` | the cached result |
+| `WEBSERVICE("http://...")` | the cached result | `Err:540` offline (what a request gives is the environment's) | the cached result |
+| `FILTERXML("<a><b>7</b></a>";"//b")` | the cached result | `7` (a value `LibreOffice` calculates and the engine lacks) | the cached result |
+| `DDE(...)` | XLSX: the cached result; ODS: `#N/A` (the link is updated on load) | `#N/A` | XLSX: the cached result; ODS: `#N/A` |
+
+A cell that the edit does not reach keeps its result (the edit of `D1` and the deletion of an unrelated row change none of the `WEBSERVICE`, `FILTERXML`,
+`DDE` or external cells, which read no `D1`), and what reads it is calculated from that result. IMPLEMENTED (`sheetrs_compiler::Unsupported`,
+`compile.rs` `settle_found`; the same in the three layers, in `sheetrs edit` and in `sheetc`):
+
+* **Not reached: the cache is kept and the report says so** (a warning per kind: `EXTERNAL_FROM_CACHE`, `MACRO_FROM_CACHE`, `EXTENSION_FROM_CACHE`; where the engine
+  runs). A formula that reads another workbook is never in the program (the parser does not read the reference): its result is the stored value of the link, also
+  with `calculate_all`. The ODS rule of the load (a cached number in a cell with no format is calculated) does not take these cells in: `LibreOffice` gives what
+  its engine and its links give, and the engine cannot, so the file's result stays (it is the same in a file `LibreOffice` wrote).
+* **Reached (an edit reaches the cell, or every formula is calculated): an add-in that is not installed** (`_xll.NAME`, `COM.SUN.STAR.SHEET.ADDIN.*`) **is `#NAME?`**, as
+  in `LibreOffice`, and what reads it too. **A function only `LibreOffice` has is an error that names the cause**, because the result is the one that
+  only `LibreOffice` gives (`Err:540` or the response of a server; `7`): the engine cannot represent it, so the run stops instead of writing another value.
+  **A workbook that carries macros is refused by the build itself** (`compile`: `Error::Macros`), in every tool that builds (`sheetc build`, `calculate`, `evaluate`, `sheetrs edit`, Python,
+  WebAssembly and the library), with no policy of the layer, because the result of what depends on a macro is the one that only `LibreOffice` gives (`#MACRO?` or the macro's value by
+  the security level) and the engine does not run macros. `inspect` and `verify` only read (they compile with `inspect`) and do not refuse it. The refusal is proposed, not approved, in
+  `docs/approved-differences.md`.
+* **Secure mode** (`--secure-mode`, `secure_mode = true`, `Book::with_secure_mode`; off by default; proposed in `docs/approved-differences.md`) goes on instead of stopping: the
+  call that only `LibreOffice` can answer is an error value, what reads it is calculated from it (`IFERROR` catches it), the rest of the workbook is calculated, and the
+  report holds a warning (`UNSUPPORTED_AS_ERROR`; `sheetc` prints it). The error is the one observed in the table above: a macro is `#MACRO?` (`Err:531`; an XLSX holds it as `#VALUE!`, as the
+  export of `LibreOffice` does), `WEBSERVICE` is `Err:540` (offline), `DDE` is `#N/A`. `FILTERXML` and any other function that `LibreOffice` has and the engine lacks has no error to
+  copy (`LibreOffice` calculates a value, `7`), so the generic error of the engine, `#NOT_IMPLEMENTED!`, is used. Secure mode is also what opens a workbook with macros, which the build refuses by default (the macro rows of
+  `MACRO_FROM_CACHE` and of this mode are reachable only there). The cells that no edit reaches and the references to another workbook are as above in both modes, and an add-in that is not installed is `#NAME?` in both.
+* Not reproduced, with the reason: the `#MACRO?` an ODS with a `Basic/` library shows on load for a name it takes for a macro (its value depends on the macro security of
+  the installation, which the file does not hold); the `#N/A` of a `DDE` link of an ODS on load (a server); a formula that mixes another workbook with local cells
+  and that an edit reaches (`LibreOffice` calculates it from the stored value, `A1+D1` is 48; the parser does not read the reference, so the dependency walk cannot see
+  the local cells of the formula and the cell keeps its cache); VBA of an XLSX (a real `vbaProject.bin` cannot be written by hand: only an unresolved name was observed).
+
+## A reference that went (`#REF!`), in the file saved and opened again
+
+What a user sees is what `LibreOffice` shows when the file it saved is opened again (`CONTRIBUTING.md`); its memory right
+after the deletion differs (`COUNT` of a reference that went is `#REF!` there). `scripts/probe_lost_references.py` writes
+each formula by hand, loads it, saves it, loads it again and prints the three states (`first`, `reread`, `hardcalc`).
+
+**How `LibreOffice` writes it.** A reference that went is `#REF!` bare in an XLSX (`SUM(#REF!)`, a defined name whose
+formula is `#REF!`) and `[#REF!]` in an ODS (`cell-range-address="#REF!"` in a name), for a deleted sheet, deleted cells, a
+whole row or column and a range that lost all its cells, in both formats; a range that lost only some shrinks, and one
+that keeps one cell is that cell in an XLSX (`Data!A2`) and `[$Data.A2:.A2]` in an ODS. `SheetRS` writes the same text in
+every case compared (9 deletions, both formats, 24 formulas and 2 names).
+
+**What the token is after the file is opened again** (the question of `COUNT`/`COUNTA` of a lost reference).
+
+| | XLSX bare `#REF!` | ODS `[#REF!]` | error constant `#N/A`, `#DIV/0!` | unknown name |
+| --- | --- | --- | --- | --- |
+| `COUNT` / `COUNTA` | 0 / 1 | 0 / 1 | 0 / 1 | 0 / 1 |
+| `#REF!+1`, `SUM(#REF!)` | `#NAME?` | `#REF!` | the error itself | `#NAME?` |
+| `ERROR.TYPE` | 5 (`#NAME?`) | 4 (`#REF!`) | its own (2, 7) | 5 |
+| `COUNTBLANK` | `#NAME?` | `Err:504` | `Err:504` | `#NAME?` |
+| `ISREF` / `ISERROR` / `IFERROR(...,7)` | FALSE / TRUE / 7 | FALSE / TRUE / 7 | | |
+
+So the token is a **scalar value, never a reference that defines no cells**: `COUNTA(#REF!)` is 1 as `COUNTA(NA())`
+is 1 (and `COUNTA(1/0)`, `COUNTA(unknownname)`), and `COUNT` is 0. In an XLSX it behaves exactly as an unknown name
+(`LibreOffice` reads the bare `#REF!` of the file as a name it does not know); in an ODS it is an error value like `#N/A`. `Sheet!#REF!` is a reference with no cell on the
+first load (`COUNT` `#REF!`) and the bare token after saving and opening again (`COUNT` 0). With one end that went
+(`A1:#REF!`, `Data!A1:#REF!`) the range is an error of that end (`SUM` is `#NAME?` in an XLSX, `#REF!` in an ODS; `COUNT` 0,
+`COUNTA` 1), as `A1:unknownname` and `A1:#DIV/0!` are. An alternative reading, "a lost reference defines no cells"
+(`COUNTA` 0, or `COUNT` `#REF!`), is what the memory of `LibreOffice` shows and what a hard recalculation of a file that
+writes `Sheet!#REF!` gives; it differs from the saved file in `COUNTA` (0 against 1) and in `COUNT` (`#REF!` against 0).
+
+Not reproduced (a foreign file only, `LibreOffice` never writes them): in an ODS, `[$Data.#REF!:.B2]` and a span of
+sheets with an end that went (`[$Data.#REF!:$Other.#REF!]`) are `#REF!` as a whole where `SheetRS` reads the one end and
+answers `COUNTA` 1 and `COUNT` 0.
+
+## What LibreOffice calculates when it opens a file, and when rows are hidden (the default mode)
+
+The default mode keeps the result a file caches for a formula that nothing reaches, and `LibreOffice` itself calculates some formulas when
+it opens a file, whatever they cache. OBSERVED (LibreOffice 26.8, the default load; `sheetrs-edit/tests/assets/write_to`:
+`probe_dirty.py classes`, `probe_ods_recalculation.py`, `probe_hide_groups.py`, `probe_cell_format.py`), IMPLEMENTED in
+`sheetrs_compiler::Cache` (`keep_cached`), `sheetrs_io::reader::CellSink::recalculated_on_load` and `sheetrs-edit/src/stale.rs`, and run now against
+`LibreOffice` by `write_to_libreoffice.rs` for every fixture of the oracle in both formats:
+
+* **Both formats, by function** (an XLSX, an ODS, with a stale `S` cached; unedited): `HYPERLINK` (every form), every type of `CELL` (`"filename"` and
+  `CELL("row")` with no reference too), `INFO`, `FORMULATEXT`, `NOW`, `TODAY`, `RAND`, `RANDBETWEEN`, `INDIRECT` and `OFFSET` are calculated, **and what reads
+  them is too** (the formula that reads one shows its new result). `ROW`, `COLUMN`, `ROWS`, `COLUMNS`, the reads of whole columns and rows (`COUNT(Data!A:A)`),
+  `ISFORMULA`, `SHEET`, `SHEETS`, `AREAS` and the rest keep what the file caches: the premise that `ROW()` and `COUNT(A:A)` are calculated on load of an XLSX was not
+  what 26.8 does. `INDIRECT` and `OFFSET` are such roots like the others: the workbook that holds one is not calculated whole, the formulas that do not depend on it keep
+  their results, and what it may read holds the result the file caches (the experiment that showed the difference: `indirect` of the oracle, a formula that does not
+  read the `INDIRECT` caches a number the engine does not give, which `LibreOffice` keeps).
+* **An ODS, by the cached result** (a formula cell that caches a result): the generator and the version of the document do not decide it (seven generators and
+  three versions, the same table); the type of the cached result and the format of the cell do. A cached error, a cell of an array formula and a result with no
+  `office:value-type` are calculated whatever the cell is; a cached text is kept; in a column the table does not declare (`table:table-column`) every other type
+  is calculated; a cell that names a style of its own (`table:style-name`, even one that does not exist) keeps its result; one that takes the default of its row (first) or of its column keeps it when that
+  style has a number format that `LibreOffice` does not take for General (a style with no `number:number-style`, or with one that holds a single `number:number`
+  with `number:min-integer-digits` and no `number:decimal-places`, is General; decimals, text around the number, a bare `<number:number/>`, scientific, percentage, currency, date,
+  time, boolean and text styles are not); in a cell with no format `float`, `currency` and `date` are calculated, `percentage`, `boolean` and `time` are kept. Of a run of repeated
+  cells the first is calculated. **What reads such a cell is not calculated** (a formula that caches a text, or a number in a cell with a format, keeps its result whatever the cell it
+  reads gives), which is why these cells are roots with no walk. A formula that reads another workbook, and any formula of a workbook with macros, is left as the file caches it.
+* **What `sheetrs edit` does with it: the startup of an ODS.** `LibreOffice` runs this rule every time it opens an ODS, so the plan of `sheetrs edit` on an ODS
+  starts with it, in the mode of the run: the formulas of the rule are calculated (the default) or every formula (`calculate_all`); the roots are all that differs. The
+  startup is the first pass that runs the engine, and a pass of its own, the first, when nothing else in the plan needs the engine (hiding a column). The roots are found in
+  the read that compiles the workbook (the reader tells the cells, `CellSink::recalculated_on_load`): nothing scans the file before. After the startup each operation
+  applies its own rule (a deletion reaches a cone, a conversion writes what `LibreOffice` has calculated, hiding a row reaches its cells). An XLSX has no startup: it
+  keeps the functions of the rule above only. OBSERVED against `oracle.json` for every fixture, `book.ods` `hide columns Data!B`: `rate*2` 14 and `ROW()` 8 where an
+  XLSX keeps 140 and 99, and a cached text (`from-excel`) kept.
+* **Hiding or showing rows** (both formats): a `SUBTOTAL` that reads a range with a row whose visibility changed is calculated; so is any formula that reads such a range (a range, not a single
+  cell) and sits in a group, which is what `LibreOffice` makes of adjacent formulas of a column that read the same cells relative to themselves (`SUM(A1:A3)` in `D4` and `SUM(A2:A4)` in `D5`; the same text twice,
+  with relative references, is not a group; with absolute references it is; a gap of a row between them, a row of cells and groups of single cells are not). `AGGREGATE`, a formula alone and a formula that reads
+  no hidden row keep their result. Hiding columns calculates nothing. Only a row whose visibility **changes** counts, and `sheetrs edit` reads which rows the input hides before it decides (`Book::row_state`; the cache of the plan, `rows_hidden`, holds only the rows that flip): hiding a hidden row or showing a visible one calculates nothing, the bands that overlap the hidden rows count for the rows that are not hidden, a repeated hidden row of an ODS is read as its rows, and a row hidden and shown again in one plan counts as one that changed (it flipped twice). OBSERVED (`visibility.{xlsx,ods}`, 16 edits of `oracle.json`): a row with **no cell** (no value, no formula), hidden or shown, calculates nothing either: `LibreOffice` notifies the formulas that read a row through the cells of the row (`show rows Data!6`, empty and between values, and `show rows Data!10:15` over empty rows leave every result as the file has it), so only the flipped rows that hold a value or a formula are noted. The oracle records both formats. **A difference between the formats** (OBSERVED, `visibility.{xlsx,ods}`, `probe_hide_subtotal.py`): in an ODS a `SUBTOTAL` that reads a *single cell* of a row that flipped is calculated too (`SUBTOTAL(109;Data!A2)` after hiding `Data` row 2 is 0), and in an XLSX it keeps its result; both calculate a `SUBTOTAL` that reads a range with such a row.
+* **`ISFORMULA` and `FORMULATEXT` of a cell a deletion removed**: `FALSE`, and `#NAME?` in an XLSX and `#REF!` in an ODS, which the engine answers when it lowers the call (they are not extensions).
+  A calculation that is given the cell asks about it as an edit that changes it does.
+
+## What a deletion reaches in the default mode (the cache), in the file saved and opened again
+
+The default mode keeps the result a file caches for a formula that nothing reaches, and calculates what an edit reaches, as
+`LibreOffice` does. Which formulas a deletion reaches was probed on `tests/assets/cached/dirty.{xlsx,ods}` of `sheetrs-edit`
+(`write_to/probe_dirty.py`; every result cached is the text `S`, which an ODS keeps where it calculates its numbers on load):
+the workbook is edited through UNO, saved, opened again, and a formula that does not show `S` was calculated. **Both formats give the
+same table** (the 19 edits of `oracle.json`, fixture `dirty`, compare `SheetRS` with it, in both). Observed (and implemented in
+`sheetrs_compiler::Cache`, `keep_cached`):
+
+| An edit that deletes | The formulas calculated again | The ones that keep their result |
+|---|---|---|
+| rows or columns | those that read a deleted cell or a range that shrank (the writer leaves them with no result); a range to the last row (or column) of a sheet that lost rows (or columns); `ROW` and `COLUMN` when their own cell moved (`=ROW()` in a row that moved) or when the cell or range they are given moved or went; what depends on them | `=Data!A5` when row 3 went and A5 moved up, `ROWS`, `COLUMNS`, `AREAS`, `SHEET`, `ISFORMULA` of cells that only move, `ROW()` in a sheet that lost rows of another, a formula of another sheet |
+| rows or columns, **through a defined name** | the formulas that read a name whose target a band moved, shrank or removed: a band of the sheet that begins at or before the last row (or column) of the target (`Data!$A$5` moves when row 3 goes, `Data!$A:$A` shrinks with any row, `Data!$C$1` moves when column B goes); a name made of other names (`cell5+1`, `SUM(range)`) only when one of them lost cells (a band meets it), not when it only moves | the names whose target is before every band or on another sheet, a name that holds a constant (`5`) |
+| a sheet | **every formula of the workbook** (`ROW()`, `Calc!E1`, a name that holds a constant: all of them) | nothing |
+| a name | every formula that reads through a name (any name, the deleted one or not); in an XLSX, also a formula that holds a bare error `#REF!` (it reads it as a name it cannot resolve), and not one that holds `Data!#REF!` | the rest |
+
+A formula that already held an error `#REF!` in the file (`COUNT(#REF!)` caching 777) keeps its result when rows or columns are deleted:
+`SheetRS` used to calculate it (the writer wrote the bare spelling and dropped the result), and used to calculate every formula that read
+through a name, or `ROW`, after any deletion (14 of the 94 edits of the earlier oracle showed it, `docs/approved-differences.md`).
+What is calculated is what the engine gives (the result of `calculate_all`); what is kept is what the file caches, wrong or not.
+
+What a deletion does not reach and `LibreOffice` calculates on load is the section above. What is not reproduced is in `docs/approved-differences.md`, *Proposed*.
 
 ## Open: cases not reproduced, reported
 
@@ -1115,10 +1317,11 @@ error names it.
     `Err:502`, or the text with what is left open closed (`{1,2` is `{1,2}`, `SUM({1,2},{3` is
     `SUM({1,2},{3})`); `SUM(1,` is `Err:511`, `1+` `Err:520`, `1)` `Err:508`. What an array holds is read
     when its text is read, before the rest of the formula: `{1,2}{3 4}` is `Err:539`, not `Err:509`;
-  * **Approved difference** (`docs/approved-differences.md`): the form of a whole column over several sheets
-    (`SUM(Data!A1:Wide!A1048576)`, `SUM(Data:Wide!A:A)`) is `#NAME?` in the headless LibreOffice that recalculates
-    an XLSX; LibreOffice itself writes that form when it saves and Excel writes it, and SheetRS reads it and
-    adds the cells;
+  * the form of a whole column over several sheets (`SUM(Data!A1:Wide!A1048576)`, `SUM(Data:Wide!A:A)`): LibreOffice
+    writes it when it saves and Excel writes it, and SheetRS reads it and adds the cells. The file LibreOffice saves,
+    opened again, shows the cached sum (33 in the probe `sheetrs-compiler/scripts/probe_reread_whole_columns.py`), which is
+    the result of the engine; only a hard recalculation (`calculateAll`) of that file gives `#NAME?`, and that is the
+    cross-check of the rule, not the reference (it was an approved difference before the rule of the re-read);
   * a reference over several sheets (`Data:Wide!A1:A3`, as an XLSX writes it, or `Data!A1:Wide!A3`) is the
     same area on each sheet from the first to the last, the sheets in between included, in the order of the
     workbook. The functions that go through the cells take all of it (`SUM`, `COUNT`, `AVERAGE`, `MAX`,

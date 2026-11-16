@@ -113,3 +113,40 @@ fn a_replacement_and_a_conversion_go_in_one_invocation() {
         assert!(found.formula.is_none(), "{extension}: no formula is left");
     }
 }
+
+/// An empty search matches nothing, as in `LibreOffice` (`replaceAll` changes no cell): the command
+/// reports no cell and leaves every text as it was, in every mode.
+#[test]
+fn the_empty_search_replaces_nothing_in_every_mode() {
+    for extension in ["xlsx", "ods"] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("book.{extension}"));
+        std::fs::copy(asset(&format!("input.{extension}")), &path).unwrap();
+        for mode in [None, Some("--regex"), Some("--wildcards")] {
+            for entire in [None, Some("--entire-cells")] {
+                let out = std::process::Command::new(env!("CARGO_BIN_EXE_sheetrs"))
+                    .arg("edit")
+                    .arg("-i")
+                    .arg(&path)
+                    .args(["--replace", "", "--with", "Z", "--in-place"])
+                    .args(mode)
+                    .args(entire)
+                    .output()
+                    .unwrap();
+                let text = String::from_utf8_lossy(&out.stdout).to_string();
+                assert!(
+                    out.status.success(),
+                    "{text}{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                assert!(text.contains("Replaced in 0 cells"), "{text}");
+                assert!(!text.contains("not replaced"), "{text}");
+                assert_eq!(
+                    cell(&path, "T", (0, 0)).value,
+                    CellValue::Text("Hello World hello".into()),
+                    "{extension} {mode:?} {entire:?}"
+                );
+            }
+        }
+    }
+}

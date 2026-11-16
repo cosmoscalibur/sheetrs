@@ -203,6 +203,12 @@ pub struct Program {
     #[serde(default)]
     pub subtotal_cells: Vec<CellRef>,
     pub cycles: Vec<(u32, u32)>,
+    /// The result the workbook cached for formula cells of `cells`, as `(slot, value)` in order of
+    /// slot: a run whose inputs leave a formula and everything it reads as they were takes the cached
+    /// result instead of calculating it (the default of every run, as in `LibreOffice`); a run that
+    /// asks for `calculate_all` ignores it. A program built with `force_calculate_all` has none.
+    #[serde(default)]
+    pub cache: Vec<(u32, Value)>,
     pub inputs: Vec<Binding>,
     pub outputs: Vec<Binding>,
     /// The names, besides the bindings, a caller may use when running.
@@ -289,6 +295,14 @@ pub struct BuildOptions {
     pub locale: String,
     /// Whether input-independent cells were evaluated at build time.
     pub fold: bool,
+    /// The build calculated the whole workbook first (`calculate_all`): the constants it folded and
+    /// the results it stores are those of that calculation, not the values the workbook stored.
+    #[serde(default)]
+    pub calculate_all: bool,
+    /// The build stored no cached result for the formulas it kept (`force_calculate_all`): the program
+    /// calculates all of them in every run.
+    #[serde(default)]
+    pub force_calculate_all: bool,
     /// The compatibility features that were on.
     pub features: Vec<String>,
 }

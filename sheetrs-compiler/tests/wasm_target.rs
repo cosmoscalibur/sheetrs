@@ -3,15 +3,28 @@
 //! real base completed answers requests is the test of `sheetrs-wasm` (Node).
 
 use sheetrs_compiler::wasm_target::complete;
+use sheetrs_engine::bundle::{SCHEMA, WASM_ABI_VERSION};
 use wasm_encoder::{
     ConstExpr, DataSection, ExportKind, ExportSection, MemorySection, MemoryType, Module,
 };
 
 const SLOT: &[u8; 24] = b"SHEETRS-WASM-SLT\0\0\0\0\0\0\0\0";
 
+/// What the real base says of itself: the marker, the ABI version and the schema of the payload it reads.
+fn info(abi: u32, schema: u32) -> Vec<u8> {
+    let mut bytes = b"SHEETRS-WASM-ABI".to_vec();
+    bytes.extend_from_slice(&abi.to_le_bytes());
+    bytes.extend_from_slice(&schema.to_le_bytes());
+    bytes
+}
+
 /// A module with a memory of `pages` (and `max`), a segment of 100 bytes at 1 KiB that holds the slot
-/// after 8 bytes, and a second segment after it.
+/// after 8 bytes and what the base says of itself after the slot, and a second segment after it.
 fn base(pages: u64, max: Option<u64>) -> Vec<u8> {
+    base_saying(pages, max, Some(info(WASM_ABI_VERSION, SCHEMA)))
+}
+
+fn base_saying(pages: u64, max: Option<u64>, says: Option<Vec<u8>>) -> Vec<u8> {
     let mut module = Module::new();
     let mut memory = MemorySection::new();
     memory.memory(MemoryType {
@@ -28,7 +41,8 @@ fn base(pages: u64, max: Option<u64>) -> Vec<u8> {
     let mut data = DataSection::new();
     let mut first = vec![7u8; 8];
     first.extend_from_slice(SLOT);
-    first.extend(vec![9u8; 68]);
+    first.extend_from_slice(&says.unwrap_or_default());
+    first.resize(100, 9);
     data.active(0, &ConstExpr::i32_const(1024), first);
     data.active(0, &ConstExpr::i32_const(4096), vec![1u8, 2, 3]);
     module.section(&data);
@@ -100,7 +114,8 @@ fn the_program_goes_after_the_memory_of_the_base_and_the_slot_points_to_it() {
         program.len()
     );
     assert_eq!(&segments[0].1[..8], &[7u8; 8]);
-    assert_eq!(&segments[0].1[32..], &[9u8; 68][..]);
+    assert_eq!(&segments[0].1[32..56], &info(WASM_ABI_VERSION, SCHEMA)[..]);
+    assert_eq!(&segments[0].1[56..], &[9u8; 44][..]);
     assert_eq!(segments[1], (4096, vec![1, 2, 3]));
 }
 
@@ -152,4 +167,33 @@ fn a_program_that_does_not_fit_is_refused() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("too big"), "{error}");
+}
+
+/// A program is only valid with the runtime of the `sheetc` that writes it: a base of another interface version or of another
+/// payload schema is refused, naming both, and so is one that says nothing (a base of before the numbers were written).
+#[test]
+fn a_base_of_another_abi_or_schema_is_refused_naming_both() {
+    for (abi, schema) in [
+        (WASM_ABI_VERSION + 1, SCHEMA),
+        (WASM_ABI_VERSION, SCHEMA + 1),
+        (WASM_ABI_VERSION, 0),
+    ] {
+        let base = base_saying(1, None, Some(info(abi, schema)));
+        let error = complete(&base, b"program").unwrap_err().to_string();
+        for expected in [
+            format!("ABI version {abi}"),
+            format!("payload schema {schema}"),
+            format!("ABI version {WASM_ABI_VERSION}"),
+            format!("payload schema {SCHEMA}"),
+        ] {
+            assert!(error.contains(&expected), "{error}");
+        }
+    }
+    let silent = complete(&base_saying(1, None, None), b"program")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        silent.contains("does not say which ABI and payload schema"),
+        "{silent}"
+    );
 }

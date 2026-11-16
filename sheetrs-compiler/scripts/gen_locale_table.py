@@ -36,7 +36,7 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "locale_data.rs"
 # (a fixture `semantics_<tag>` in tests/assets, see scripts/gen_semantics_fixture.py). A locale
 # is added here only together with its fixture and once the engine reproduces it; the data of a
 # locale is not support for it. The first of each language is what the bare language tag means.
-LOCALES = ["en-US", "en-GB", "es-ES", "es-CO", "es-MX"]
+LOCALES = ["en-US", "en-GB", "es-ES", "es-CO", "es-MX", "de-DE"]
 
 # Day 13 and year 2024 cannot be mistaken for a month, so the result of a probe says which role
 # LibreOffice gave each number: `M` the month (March, written as the locale does), `A` 13, `B` 2024,
@@ -143,7 +143,7 @@ def rust_char(ch):
 # Microsoft's language ids, which `[$-409]` in a format code names. LibreOffice reads the ones it has
 # a locale for (`C0A` is Spanish of Spain; its traditional-sort `40A` it does not know, and TEXT then
 # keeps the locale it runs with). Each is checked below against a LibreOffice running in en-US.
-LCIDS = {"en-US": 0x409, "en-GB": 0x809, "es-ES": 0xC0A, "es-CO": 0x240A, "es-MX": 0x80A}
+LCIDS = {"en-US": 0x409, "en-GB": 0x809, "es-ES": 0xC0A, "es-CO": 0x240A, "es-MX": 0x80A, "de-DE": 0x407}
 
 
 def honored(en, lcid, days, months):

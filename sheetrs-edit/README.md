@@ -53,8 +53,13 @@ same `replaceAll`, in XLSX and ODS; `tests/assets/replace/make_fixtures.py` make
 - Case is ignored unless `--match-case`. `--entire-cells` asks the whole text of the cell, and the
   **first** match must be the whole text (`a|ab` does not match `ab`; `a*b` does not match `abab`).
 - `--wildcards`: `*` (as little as it can), `?`, and `\` to escape (not `~`, which is `COUNTIF`'s).
+- An empty `--replace ''` matches nothing, in every mode (literal, regex, wildcards; with or without
+  `--entire-cells`; with an empty or a non-empty `--with`), as `replaceAll` does: the run is answered
+  at once, with no error (not even for a sheet in `--scope` that is not there), no cell is read or
+  replaced (`Replaced in 0 cells`) and the report is empty (probed in XLSX and ODS,
+  `tests/replace_anchors.rs`).
 - `--regex`: ICU syntax, the subset that was compared with LibreOffice (groups `$1`, `&` for the
-  whole match, `\t`, `\&`, `\$`, `\\` in the replacement); a pattern outside it is refused.
+  whole match, `\t`, `\&`, `\$`, `\\` in the replacement); a pattern outside it is refused. The anchors `^` and `$` anchor the text of the cell, not its lines (`^` is its start; `$` its end or the place before the line terminator that ends it), and a pattern may match the empty text (`x*`, `^`, `$`, `a*$`). A replacement does what LibreOffice does: it is made in the text itself and the search goes on after it, in what is left (`^a` replaced by nothing empties `aa`); a match of no characters is not replaced, except at the very end of the text (`abc` with `$` replaced by `X` gives `abcX`; with `^` or `x*` it does not change) and no search begins at the end of the text (`a` with `a*` replaced by `X` gives `X`; `a` and a line break with `$` is not changed, because the one empty match, before the line break, is skipped). LibreOffice counts in UTF-16 units, and so does the replacement after a skipped empty match (a cell that ends in an emoji is not given a `$` match by `x*`). Approved difference (`docs/approved-differences.md`): when a pattern that skipped an empty match before a character outside the Basic Multilingual Plane can match half of it (`^|.`), LibreOffice writes a text that is not valid (it brought a LibreOffice server down in the probe); the replacement goes on after the whole character, because that text cannot be stored. Compared with `Sheet.replaceAll` in XLSX and ODS: `tests/replace_anchors.rs` (oracle `tests/assets/replace_anchors/oracle.json`, made by `make_anchors_oracle.py`).
 - The text searched in a cell is the one of its **input line**: `1234.5` for a cell that shows
   `1,234.50`, `25.6%`, the date `03/15/2023` (the ISO date when the format of the cell is an ISO
   one). Every hit of the cell is replaced.
@@ -164,16 +169,17 @@ byte. The rule is one canonical order:
    workbook as the ones before it leave it; the operations of one kind keep the order they were
    given in (a sweep of replacements is a sequence of texts: each one sees what the previous one
    left);
-2. the calculation: the inputs are written and every formula calculated (one step; several keep
-   their order);
-3. in one pass over the file: formulas converted to values, while every cached result is still there
-   (a conversion on a sheet that is removed goes with it); in each sheet, rows deleted **from the
+2. the calculation: the inputs are written and the formulas they reach calculated, or every formula with `calculate_all` (one
+   step; several keep their order);
+3. in one pass over the file: formulas converted to values (the cells they name are calculated by the
+   engine and written as values in that same pass; a conversion on a sheet that is removed goes with
+   it); in each sheet, rows deleted **from the
    last to the first**, overlapping or touching ranges merged, so a deletion shifts only what is
    below it; in each sheet, columns deleted the same way; names deleted; sheets deleted (the
    deletions of a deleted sheet go with it);
 4. when the deletions left cached results stale, the formulas that are stale (see *Recalculation*
-   below) are given their new result as the last pass: `#REF!` written directly where it follows from
-   a deleted reference, the engine for the others; only if the engine cannot is the workbook marked
+   below) are given their new result as the last pass by the engine (a reference that went is `#REF!`
+   in the functions that read it, see *Delete rows and columns*); only if the engine cannot is the workbook marked
    to be recalculated when it is opened, and the run says why.
 
 **The planner takes as many passes as the operations need, and no plan fails because of how its
@@ -188,17 +194,31 @@ results are stale and are calculated again first). Two deletions that touch are 
 writer does for any band (the shapes in it are placed by the sizes of the rows and columns: see
 below), so they never need to be split.
 
-A conversion reads the results the workbook caches. When what runs before it (a replacement) left
-them stale, or the file itself says it is stale, they are calculated again first, with the engine of
-`LibreOffice`'s semantics, in a pass of its own. A conversion **does not** see a deletion pushed with
+A conversion converts, by default, **what LibreOffice converts**: the results the file caches for the cells nothing reaches
+(*Data ▸ Calculate ▸ Formula to Value* reads the value a cell holds), and what the engine calculates for the cells the plan
+reaches (a replacement pushed with it, a deletion, volatile formulas; and, in an ODS, the formulas `LibreOffice` calculates when it opens the file:
+*The startup of an ODS*, below; *The cache is the default*, below). With
+`--calculate-all` (`calculate_all=True` in Python, `calculateAll = true` in WebAssembly) it converts **what the formulas
+calculate**: the engine (the semantics of `LibreOffice`) calculates the cells it names and what they read in an XLSX, and every formula in an ODS (its startup),
+and the pass that writes the file writes them as values (so a conversion costs
+the engine's reading of the workbook, not a calculation of every formula followed by a pass of its own). **A conversion is one pass in every mode**: where the
+engine runs for it (always for an ODS; for an XLSX when its results are stale or the run calculates every formula) it calculates in the pass that writes the
+conversion, and the cells of the scopes that it did not calculate are converted with the result the file caches, which the same pass reads. What runs before
+it (a replacement) is seen. A cell that depends on something the engine cannot calculate (another workbook, a macro, an extension:
+*What the engine cannot calculate*, below) keeps the result the file caches, as `LibreOffice` shows it, and the report says so; one that the run calculates and
+that only `LibreOffice` can give a result for (a function it has and the engine lacks) is an error that names the cause; a workbook with macros is refused by the
+build that runs the engine, unless secure mode. An XLSX whose results are right and that keeps the cache converts the cached results and needs no engine (nothing
+builds, so nothing refuses). Two scenarios, both documented and measured (`docs/performance.md`, *sheetrs edit*;
+2.4 M formulas, 300 000 rows).
+A conversion **does not** see a deletion pushed with
 it: the deletion runs after, as in `--formula-to-value F --delete-rows T!4`. To convert what a
 deletion leaves (what `LibreOffice` shows after deleting and then converting) make two cuts: save the
 deletion and convert in the next command or the next `write`; the saved workbook is the input of the
-second step, which finds its results stale and calculates them again. There is no sequential mode.
+second step. There is no sequential mode.
 
 Operations on different sheets do not depend on each other, because a reference moves only with the
 rows and columns of the sheet it names. That holds because references across sheets are not
-supported (below). `--dry-run` prints the passes.
+supported (below). `--dry-run` prints the passes. `--locale TAG` (and `--config FILE`, whose `locale`, `now` and `seed` in `[global]` are the defaults of `--locale`, `--now` and `--seed`; `sheetrs.toml` of the current directory when there is one) is the locale of the calculation that an edit leaves to do (`TEXT`, the conversion of a number to text): by default the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none), for an XLSX and an ODS alike. The typed replacement of `--replace` still reads its text in `en-US` (issue #84). `--now SERIAL` and `--seed N` fix `NOW()`/`TODAY()` and `RAND()` in that calculation (the `now` and `seed` of `sheetc`, and of a `calculate` step of the library; their defaults are the `now` and `seed` of `[global]` in the configuration file); without any the engine reads the clock, as a spreadsheet does. `--external-from-cache`, `--macro-from-cache` and `--extension-from-cache` (defaults: the keys of the same name in `[global]` of the configuration file; off) are explained in *What the engine cannot calculate*.
 
 **As a library** (`sheetrs_edit::BookEdit`, a trait for `sheetrs_io::Book`), the changes are collected
 in the `Book` (`Book::from_file(..)?`, `Book::from_bytes(..)?`; its operations are `book.operations()`)
@@ -227,16 +247,17 @@ spec is an operation as if `replace` were called once per spec: it sees what the
 so the order of the specs matters. The options of a spec are its own (a replacement that needs
 other options is another element); one replacement is `[spec]`.
 
-**Recalculation is the planner's, with no option for it, and the mark is never decided beforehand.**
+**Recalculation is the planner's, and the mark is never decided beforehand.**
 A plan that deletes rows, columns, sheets or names, or replaces text, ends with a pass in which the engine
-(the semantics of LibreOffice) calculates every formula again. The result a file cached is not a goal
-(see [approved differences](../docs/approved-differences.md)): what a cell holds is the value its formula
-gives now, whatever the workbook cached, so no analysis decides which formulas are stale and the plan is
-the same for every workbook.
+(the semantics of LibreOffice) calculates the formulas the plan reaches and what depends on them and leaves the others
+as the file caches them (the default, as LibreOffice does), or, with `--calculate-all`, calculates every formula
+again (*The cache is the default*, below). The plan is the same for every workbook; what the engine is asked for in its
+last pass depends on the mode.
 
 The workbook is written with fresh results and no mark. Only when the engine cannot calculate it (a
-function it does not have, a reference it does not read) is the workbook marked to be recalculated
-when it is opened (`fullCalcOnLoad` in an XLSX; an ODS has no marker, so the cached results of its
+syntax it does not read; **not** for a function only `LibreOffice` has in a cell the run calculates, which is an error, nor for a workbook with macros, which is
+refused: *What the engine cannot calculate*) is the workbook marked to be recalculated
+when it is opened (`fullCalcOnLoad` in an XLSX, which `sheetc` reads too: a marked workbook is a run with `calculate_all` in both; an ODS has no marker, so the cached results of its
 formulas are dropped) and the run says why (a `Diagnostic` with the code `RECALC_NOT_SUPPORTED` in `Report::diagnostics`,
 written by the command line to the standard error): the spreadsheet program that opens it does the recalculation then. Nothing
 assigns the mark before the engine has run, and nothing takes it off except the engine having
@@ -244,12 +265,99 @@ calculated a workbook that came with it. A run that only converts formulas to va
 result and has nothing to calculate. The mark cannot be asked for or avoided, in the command line or in the library. What the engine costs is in
 [`docs/performance.md`](../docs/performance.md#sheetrs-edit). `--dry-run` says the passes and the calculation that ends them.
 
+**What the engine cannot calculate.** Three things a workbook can depend on that the engine does not reproduce, each
+detected explicitly while the formulas are read (the cause is a typed `sheetrs_compiler::Unsupported`). There is no option for them: the engine
+does what `LibreOffice` does, which was observed (the table is in [`FIDELITY.md`](../sheetrs-compiler/docs/FIDELITY.md), *What depends on what the engine cannot
+calculate*, with `tests/assets/from_cache/probe.py`):
+
+| Kind | Detected as | A cell no edit reaches | A cell the run calculates | Warning in the `Report` |
+| ---- | ----------- | ---------------------- | ------------------------- | ----------------------- |
+| external | a reference to another workbook (`[1]Sheet1!A1` in an XLSX; an ODS is read the same way) or a defined name that holds one | the result the file caches (the stored value of the link), also with `calculate_all` | the same (a formula that mixes it with local cells that an edit reaches keeps it too) | `EXTERNAL_FROM_CACHE` |
+| macro (secure mode only: by default the build refuses the workbook, below) | a workbook that carries macros (`vbaProject.bin`, macrosheets, a `Basic/` or `Scripts/` library, event macros) and a function that no spreadsheet program has, which a macro may define; the macros are never run | the result the file caches | `Err:531` (`#MACRO?`), an error cell; `LibreOffice` gives `#MACRO?` or the macro's value, by the security level | `MACRO_FROM_CACHE` (and `UNSUPPORTED_AS_ERROR` for the cells the run calculates) |
+| extension | a function the engine does not implement: an add-in that is not installed (`_xll.NAME`, `COM.SUN.STAR.SHEET.ADDIN.*`) or a function of `LibreOffice` it lacks (`WEBSERVICE`, `FILTERXML`, `DDE`) | the result the file caches | an add-in: `#NAME?`, as `LibreOffice`; `WEBSERVICE`, `FILTERXML`, `DDE`: an error that names the function (their result is the one only `LibreOffice` gives) | `EXTENSION_FROM_CACHE` |
+
+A cell that no edit reaches keeps the result the file caches, as it is, and what reads it is calculated from it; the `Report` carries one warning per kind (`Diagnostic`,
+level warning) with the number of formulas, the first cell and what they depend on (where the engine runs: an XLSX conversion that keeps the cache and has
+nothing stale converts the file's results and runs no engine, so it says nothing). The result the file caches is the one of the program that wrote it: an external
+workbook may have changed, a macro may give another value, an extension may compute what the cache does not say, and `LibreOffice` keeps it all the same until
+something dirties the cell. **A workbook that carries macros is refused by the build that runs the engine**, in every layer and by default (the macros are never run, so what depends on them
+would differ from `LibreOffice`, which runs them or shows `#MACRO?`): the run stops with an error that names secure mode, whatever the edit, in a calculation, a
+conversion that runs the engine and a recalculation. A run that builds nothing (an XLSX conversion of results that are right, which converts the cached results with
+no engine) does not refuse. With `--secure-mode` the workbook is opened (below). A name no
+spreadsheet program has, in a workbook without macros, is `#NAME?`, as in `LibreOffice`.
+
+**Secure mode.** `--secure-mode` (`Book::with_secure_mode(true)`, `secure_mode=True` in Python, `secureMode = true` in WebAssembly; off by default)
+opens a workbook with macros, and makes a cell the run calculates and that only `LibreOffice` can answer (a macro, or the "an error that names the function" of the
+table) an error cell instead of an error of the run: `Err:531` (`#MACRO?`) for a macro, `Err:540` for `WEBSERVICE`, `#N/A` for `DDE`, `#NOT_IMPLEMENTED!` for `FILTERXML` (a value of `LibreOffice` that the engine
+lacks, with no error to copy). What reads the cell is calculated from the error, the rest of the workbook is calculated, and the `Report` holds a warning with the code
+`UNSUPPORTED_AS_ERROR` (the number of formulas, the first cell, what they call and the errors). The cells no edit reaches and the references to another workbook are
+as above in both modes. An XLSX holds the codes of `LibreOffice` as `#VALUE!`, as its own export does; an ODS holds `Err:531`.
+
+**The startup of an ODS.** `LibreOffice` runs the rule of the load every time it opens an ODS (the formulas that cache a number in a cell with no format, a cached error,
+no result, a few functions), so `sheetrs edit` on an ODS **starts** with that calculation, in the mode the run was asked: the roots of the load by default, every formula with
+`--calculate-all`. The roots are the only difference between the modes at the start. The startup is the first pass that runs the engine, and a pass of its own, the first,
+when nothing else in the plan needs the engine (hiding columns, hiding a sheet); `--dry-run` says it first (`startup of an ODS: ...`). The roots are found in the one read that
+compiles the workbook: no scan of the file comes before. After the startup each operation applies its own rule (a deletion reaches a cone in the default mode and every formula with
+`--calculate-all`; a conversion writes what `LibreOffice` has calculated; hiding or showing rows reaches the cells that read them). An ODS has no mode of its own: the one of the run
+decides the startup and the operations. An XLSX has no startup: it keeps the functions of the rule only. OBSERVED (`oracle.json`, every fixture, both formats): an ODS edit
+that leaves nothing stale (`book.ods`, hide `Data!B`) shows the numbers `LibreOffice` calculates on load (`rate*2` 14, `ROW()` 8) and keeps a cached text (`from-excel`).
+
+**The cache is the default, `--calculate-all` calculates everything.** What `LibreOffice` does when it opens a file and
+when a cell changes is to keep the results the file caches and to calculate what the change reaches: that is what
+`sheetrs edit` does by default, and `--calculate-all` (`Book::with_calculate_all(true)`, `calculate_all=True` in Python,
+`calculateAll = true` in WebAssembly) emulates `calculateAll()`: every formula is calculated. By default the recalculation
+calculates only the formulas the plan reaches and the ones that depend on them; every other formula is read as a constant
+that holds the result the file caches, and keeps it, byte for byte (what LibreOffice saves of a workbook it opened and
+edited; the probes and the oracle that compares them, `tests/assets/write_to/make_oracle.py`: `reread_default`). A formula is
+reached when:
+
+- the writer left it with no cached result (the formula read a deleted cell or a range that shrank, so the
+  plan rewrote it; a formula the file never gave a result, as in an ODS written by a program that does not store them);
+- `LibreOffice` calculates it when it opens the file, whatever it caches (in both formats: `HYPERLINK`, every type of `CELL`, `INFO`,
+  `FORMULATEXT`, the volatile functions, `INDIRECT` and `OFFSET`, and what reads them; in an ODS also a formula that caches a number, a currency
+  or a date in a cell with no number format, a cached error, an array formula, or a result with no type, and not what reads those: *What
+  LibreOffice calculates when it opens a file*, in `FIDELITY.md`), and a run that keeps the cache does the same, even when no edit reaches
+  anything: an ODS starts with them (*The startup of an ODS*, below), an XLSX that holds one of those functions ends with the recalculation that load does; a
+  cell that depends on another workbook, an extension (or a macro, in secure mode) the engine cannot calculate keeps the result the file caches;
+- it reads a cell a replacement wrote, or reads a range with a row that was hidden or shown and is a `SUBTOTAL`, or sits in a group of
+  adjacent formulas of one shape (`LibreOffice` groups them; hiding calculates the members that read the row);
+- rows or columns were deleted and it calls `ROW` or `COLUMN` and its own cell moved, or the cell or range it is given moved
+  or went (`ROWS`, `COLUMNS`, `SHEET`, `ISFORMULA`... keep their result when cells only move), or it reads a range that
+  goes to the last row (or column) of a sheet that lost rows (or columns), or it reads through a defined name whose target the
+  deletion moved, shrank or removed (a band that begins at or before the last row, or column, of the target; a name made of
+  other names is reached when one of them loses cells, not when it only moves);
+- a sheet was deleted: every formula is reached (`LibreOffice` calculates all of them);
+- a defined name was deleted and it reads through a name (any name; in an XLSX also one that holds a bare `#REF!`).
+
+What `LibreOffice` keeps is kept too: a formula that only reads cells that moved, a formula that already held an error `#REF!`
+(`COUNT(#REF!)` caching 777 stays 777 when rows go), a formula of another sheet. These rules are what the probes of
+`tests/assets/write_to/probe_dirty.py` show for both formats (the same in an XLSX and in an ODS that caches text) and the oracle
+`oracle.json` (fixtures `dirty`, `classes` and `indirect` and the older ones) holds against `LibreOffice` re-read; `write_to_libreoffice.rs` runs
+the default mode now against it for every fixture in both formats; they are in
+[`sheetrs-compiler/docs/FIDELITY.md`](../sheetrs-compiler/docs/FIDELITY.md) (*What LibreOffice calculates when it opens a file*, *What a deletion reaches*).
+
+What depends on those is found with the dependency graph the compiler already builds (through names, ranges and whole
+columns), and is calculated too: for the cells reached the result is that of `--calculate-all`. The run calculates **every**
+formula, as `--calculate-all` does, where the file says its results are stale (an XLSX marked to be
+recalculated when it is opened), where a replacement and a deletion meet (the cells of the
+replacement are not where they were). A workbook that reads cells at run time (`INDIRECT`, `OFFSET` with an argument that is not known) is not
+calculated whole: those formulas are calculated, as `LibreOffice` does, and the cells they may read hold what the file caches. However many formulas are stale, the others keep their result (an earlier version calculated
+everything where more than a quarter were; the walk that finds the cone costs 1-1.3 s on 2.4 M formulas, see `docs/performance.md`). The result a file caches is not a goal of
+the project's fidelity (see [approved differences](../docs/approved-differences.md)) but the default is LibreOffice's, and
+what `--calculate-all` gives is the choice of the caller who wants every formula to hold what the engine gives (the issue that
+asked for the cache, [#126](https://github.com/cosmoscalibur/sheetrs/issues/126), shows cells where Excel and the engine
+differ, and a `TEXT` calculated with another locale than the one the workbook was written with). What the cache costs and
+saves is in [`docs/performance.md`](../docs/performance.md#the-cache-and-calculate-all): the engine, the writing of the
+results and the memory of the calculation shrink with what is not reached; the reading of the workbook and the passes of the plan do not.
+
 **`calculate` is an operation, and `sheetrs edit` has no flag for it.** In the library,
-`BookEdit::calculate(Calculation { inputs, ranges, major, answer })` writes the inputs and calculates every
-formula of the workbook as it is, before the conversions and the deletions (*Data ▸ Calculate* in
-LibreOffice). The engine is the one of `sheetrs-compiler` (the semantics of LibreOffice), which this
-crate depends on: nothing is handed in, and the same one recalculates the results that a conversion of
-formulas to values reads after a change that leaves them stale.
+`BookEdit::calculate(Calculation { inputs, ranges, major, answer, now, seed })` writes the inputs and calculates the
+formulas they reach (every formula with `calculate_all`, as `Book::with_calculate_all(true)` asks) before the conversions and
+the deletions (*Data ▸ Calculate* in LibreOffice): the inputs it is given are the declared inputs of the build of the engine's
+program, so what they do not reach keeps the result the file caches. A calculation has the mode of the run, as `sheetc
+calculate` does; `force_calculate_all` does not apply to it. The engine is the one of `sheetrs-compiler` (the semantics of LibreOffice), which this
+crate depends on: nothing is handed in, and the same one calculates the cells that a conversion of
+formulas to values converts and recalculates what the deletions leave stale.
 
 - **The engine can calculate the workbook:** it is written with fresh results and **without** the mark
   to recalculate it when it is opened (unless a deletion that comes after it leaves results stale).
@@ -261,18 +369,41 @@ formulas to values reads after a change that leaves them stale.
   program that opens the file later. The command line writes it to the standard error (see
   *Diagnostics* in `sheetrs-protocol`).
 - **The value ranges** (`ranges`: ranges, in the cells of the workbook as it is; the workbook's own outputs
-  when omitted) are kept in the `Report` when the `Calculation` asks for the `answer`: `Report::value_ranges` is
+  when omitted; see *Which ranges* below) are kept in the `Report` when the `Calculation` asks for the `answer`: `Report::value_ranges` is
   the answer of the protocol (`sheetrs_protocol::ValueRanges`, `{"valueRanges": [...]}`) and `Report::write_json(out)` writes it as JSON, the way `write` writes
   the workbook; to read them without writing the workbook anywhere, `write_to(std::io::sink())`. With
   the answer asked for, a workbook the engine cannot calculate is an error (`Error::Calculation`),
   since there is no answer to give; `write_json` of a report that kept none is `Error::NoCalculation`.
 
-`sheetrs edit` has no `--calculate` flag: calculating is a step the planner inserts where a conversion needs fresh results (`BookEdit::calculate` is the explicit step in the library). To calculate a file with inputs and ranges, `sheetc calculate -i FILE -o OUT` (with `--request` to give them).
+**The clock and the seed.** `Calculation::now` (the serial number of `NOW()`, from which `TODAY()` follows) and
+`Calculation::seed` (`RAND()`) are the `now` and `seed` of `sheetc`, and reach the engine as the options of the
+build and of the run it already has; `None` is the system clock. They are the clock of the whole plan, not only
+of the step: the recalculation that the planner adds after what leaves results stale (a deletion, a
+replacement) takes the `now` and `seed` of the last `calculate` step that sets them, so a plan that fixes the
+clock gives the same workbook whichever pass calculates. Where a plan has no `calculate` step the recalculation
+takes the ones given to the book (`Book::with_volatile`, `sheetrs_io::Volatile`; `sheetrs edit --now --seed`
+set it, with `now` and `seed` of `[global]` in `sheetrs.toml` as their defaults), and a step's own value wins
+over the book's. The book's `now` and `seed` also reach the engine in `sheetrs_compiler::memory`
+(`Options::with_book`), where the options of a call win over them.
+
+**Which ranges.** `calculate` is the embedded mode of the engine (the workbook is its own template: inputs,
+`ranges` or the `answer` need no compiled program). With no output declared (a settings sheet named `settings`
+with `output` rows; the library takes no `settings_file`) the outputs are the formula cells, and with some
+declared they are those; `ranges` is a selection among them when it lies inside, and a range **outside** them is
+not refused as it is in a compiled program (`sheetc calculate` without `-o`, which lists the declared outputs in its
+error): it is read, in memory and with no recalculation, from the workbook just written, with the machinery of
+`query` (`sheetrs_answer` does it for every path that writes a workbook). A constant has the value it holds, the
+`inputs` are in it, and a formula the outputs left out is calculated too (the workbook is the answer, so the build
+declares only the inputs and the whole workbook comes out calculated, under the rules of the cache); the answer keeps
+the order of the request. A text that is no range or name of the workbook is an
+error (`Error::Calculation`). Details and the table of the cases: [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for).
+
+`sheetrs edit` has no `--calculate` flag: calculating is a step the planner inserts at the end of what leaves results stale and in a conversion (`BookEdit::calculate` is the explicit step in the library). To calculate a file with inputs and ranges, `sheetc calculate -i FILE -o OUT` (with `--request` to give them).
 
 A pass reads and writes each worksheet as a stream, one
 cell (XLSX) or row (ODS) at a time, and the plan is a handful of bands and names, so a plan with no recalculation
-(a conversion of an ODS, whose results are stored) keeps the memory flat; a plan that leaves formulas stale that only the engine can calculate ends with
-the engine running, which holds the formulas of the workbook (the times and the memory per scenario are in
+(a default conversion of an ODS, whose results are stored) keeps the memory flat; a plan that leaves formulas stale, or converts with `--calculate-all`, that only the engine can calculate ends with
+the engine running, which holds the formulas of the workbook it needs (the times and the memory per scenario are in
 [`docs/performance.md`](../docs/performance.md#sheetrs-edit)). Only the parts that are small by nature are read whole (the
 workbook part, its relationships and, for a sheet whose cells move, its notes and drawings). A
 plan of several passes keeps the file between them in a temporary folder.
@@ -302,7 +433,7 @@ The formulas of **every sheet** follow, as LibreOffice does it:
 | A reference to… | Becomes |
 |-----------------|---------|
 | cells after the deletion | the cells' new place (`A6` with rows 4-5 deleted is `A4`) |
-| a deleted cell or a range with no cell left | `Sheet!#REF!` (`#REF!` in an ODS); a removed sheet leaves a bare `#REF!` (see the last item of this list) |
+| a deleted cell or a range with no cell left | `#REF!` (`[#REF!]` in an ODS), as the files of LibreOffice and Excel spell it; a removed sheet leaves the same `#REF!` (see the last items of this list) |
 | a range that loses cells | the range of what is left (`A4:A8` is `A4:A6`) |
 | whole rows or columns | whole rows or columns (`A:A` stays when rows go), `#REF!` when all go |
 
@@ -327,7 +458,7 @@ is no longer valid; one that does not change keeps it.
 - Shapes, images and charts (the drawings of an XLSX, the shapes in the cells of an ODS) are placed
   as LibreOffice places them (`sheetrs_io::write::shapes`, from `ScDrawLayer`, checked against 26.8
   on every band of rows and of columns up to five wide of the fixtures:
-  `tests/assets/oracle/shapes_delete.json`, made by `scripts/make_shapes_oracle.py`). A shape that
+  `tests/assets/oracle/shapes_delete.json`, made by `scripts/make_shapes_oracle.py` in the file LibreOffice saves after the deletion and opens again: the reference of the project; three bands of an ODS give another height there than the memory of LibreOffice, a difference proposed in `docs/approved-differences.md`). A shape that
   lies wholly inside the deleted band is deleted with it (its outline counts: one that starts where the
   band starts stays). The cell it is anchored to keeps its index when it is deleted and moves up
   otherwise; a rectangle, picture or chart whose two ends cross has them put in order. Its size, when
@@ -336,9 +467,27 @@ is no longer valid; one that does not change keeps it.
   the rows and columns, which are in the file: the `ht` of each row and the `width` of each column of
   an XLSX (the width of a column is in characters, so a column that differs from the default is an
   approximation by the width of a digit of 7.4 pixels), the styles of the rows and columns of an ODS.
-- A bare `#REF!` in an XLSX formula is read by LibreOffice as an unknown name (`#NAME?`), also
-  in the files it saves itself; a deleted cell is written `Sheet!#REF!`, which it reads as `#REF!`.
-  The references to a removed sheet have no sheet to write: they are the bare `#REF!`.
+- **The reference is the file saved and opened again.** What LibreOffice shows in memory right after the
+  same deletion is not what it shows when someone opens the file it saves (a reference that went is `#REF!`
+  there and `COUNT` of it is `#REF!`; opened again it is 0), so the result of `sheetrs edit` is the one of the
+  re-read, in both formats (`CONTRIBUTING.md`, *Parity and fidelity*; the oracle is
+  `tests/assets/write_to/oracle.json`, `reread`).
+- A deleted cell, range or sheet is written as the bare `#REF!` in an XLSX and `[#REF!]` in an ODS, the text the
+  files of LibreOffice and Excel hold for both: LibreOffice reads the bare `#REF!` in an XLSX as an unknown name
+  (`#NAME?`), also in the files it saves itself, and `[#REF!]` in an ODS as the error value `#REF!`. Written so, the file
+  shows the same values as the file LibreOffice saves after the same edit (`COUNT` 0, `COUNTA` 1,
+  `COUNT(ref;5)` 1, `IFERROR(ref;7)` 7, `SUM`, `MAX`... `#REF!` in an ODS and `#NAME?` in an XLSX), which
+  `Sheet!#REF!`, the spelling of earlier versions for deleted cells, does not give (LibreOffice reads it as a reference with no
+  cell: `COUNT` is `#REF!` and `IFERROR` does not catch it). The engine caches what LibreOffice shows when it opens
+  the file saved after the same edit, for deleted cells and for a **deleted sheet** alike (`SUM`, `AVERAGE`, `MAX`,
+  `COUNTIF`... are `#NAME?` in an XLSX there and here); a qualified `#REF!` of the input (`Data!#REF!`) is read as the plain error, and its text is kept in a formula the run does not touch.
+- **The spelling of a reference that went is the one of the files, not the one LibreOffice shows in
+  memory** (`=$Data.A#REF!*2` there; `[#REF!]*2` in the ODS it saves, `#REF!*2` in the XLSX it saves, and the same
+  in the files of `sheetrs edit`): the memory of LibreOffice is not the reference (`CONTRIBUTING.md`, *Parity and
+  fidelity*), so this is not a difference.
+- **A `#REF!` in the text is read as the error it is.** The text does not tell a reference that a deletion
+  removed from an error written in the formula, and LibreOffice does not either when it opens the file, so the
+  recalculation reads both the same way and with the semantics of the format (see above).
 
 #### Convert formulas to values
 
@@ -355,15 +504,16 @@ sheetrs edit -i master.xlsx --formula-to-value "Inputs" "Model!B:D" "Model!3:10"
 sheetrs edit -i master.xlsx --formula-to-value "Model!F" "'R!D'!2" -o run.xlsx
 ```
 
-- Values are the results the spreadsheet application stored when it last saved the file, as long as
-  they are fresh. When they are not (an XLSX marked to recalculate when it is opened, an ODS with no
-  stored result in its formulas, or a change earlier in the same run that leaves results stale: a
-  deletion, a replacement), the results are calculated again with the engine before they are
-  converted, as an application that calculates as it goes shows them, so a run such as
-  `--replace A --with B --formula-to-value S` in one invocation converts what the formulas give
-  after the replacement. When the engine cannot calculate the workbook (a function or syntax it does
-  not have), the conversion is an error and nothing is written. A formula without a stored value
-  keeps its formula.
+- By default the values are the results the file caches for the formulas the plan does not reach, as
+  `LibreOffice` converts them, and what the engine calculates for the formulas it reaches (the cells that a
+  deleted row, a replacement or a hidden row changes, what has no stored value, a volatile formula, and in an ODS
+  what `LibreOffice` calculates when it opens the file): the engine calculates them in the pass that writes the
+  conversion, and `--replace A --with B --formula-to-value S` in one invocation converts what
+  the formulas give after the replacement. With `--calculate-all` the values are what the formulas **calculate**: the
+  engine calculates the cells to convert (and what they read) in the pass that writes them (every formula in an ODS). A cell
+  that depends on what the engine cannot calculate (below) keeps the result the file caches; one the run calculates and that only `LibreOffice` can give a result for is
+  an error that names the cause; nothing is written then. A formula without a stored value that
+  the engine does not calculate (it cannot) keeps its formula.
 - Formulas that return text become text cells. Error results become empty
   texts, as in LibreOffice's *Data ▸ Calculate ▸ Formula to Value* (checked on
   `=1/0`, `=NA()`, `=SQRT(-1)` and an error the file caches), in XLSX and in
@@ -421,6 +571,33 @@ Each operation is judged against `LibreOffice` 26.8 in each format on its own:
 - `tests/replace.rs` does the same for Find & Replace on `tests/assets/replace/`.
 - The tests of rows, columns, sheets and names deleted start from `tests/assets/structure/`
   (`scripts/gen_structure_fixtures.py`).
+- `tests/calculation_mode.rs` runs the same edits by default (the cache) and with `calculate_all` on `tests/assets/cached/`
+  (`make_fixtures.py`: formulas that cache a result the engine would not give, so that a formula that kept its
+  cache is told from one calculated again): the cells reached are those of a full calculation, the others are the
+  file's (the XML of the cell, byte for byte, in an XLSX), and the cases that are calculated whole are equal to a run
+  without the option; in each format.
 
 
 XLSX, deleting the cell a chart is anchored to.
+
+## Hide and show
+
+`--hide-rows`, `--show-rows`, `--hide-columns`, `--show-columns`, `--hide-sheets` and `--show-sheets`
+(`hide_rows`, `show_rows`, … in the Rust, Python and WebAssembly `Book`) change the visibility of
+rows, columns and sheets, and keep them in the file (`hidden` of `<row>`, `<col>` and `<sheet>` in an
+XLSX; `table:visibility` and the `table:display` of the table style in an ODS).
+
+- The rows and columns are those of the workbook as it is: the changes run in a pass of their own
+  before any deletion, so `--delete-rows T!3 --hide-rows T!5` hides the row that is the fifth of the
+  input. A later change of the same row wins; on the command line `--show-*` is applied after
+  `--hide-*`.
+- A row hidden here is hidden by hand: a search or replacement with `filtered` off still reaches it.
+  Showing a row shows it whatever hid it (by hand or by a filter).
+- A hidden row changes what `SUBTOTAL` and `AGGREGATE` add up, so the results are calculated again
+  after it; hiding columns or sheets changes no result.
+- One sheet must stay visible (the run fails otherwise). Hiding a very hidden XLSX sheet leaves it very
+  hidden; showing makes it visible. If the sheet that opens first is hidden, the workbook opens on the
+  first visible one.
+- A row or column that the file does not declare is added (a hidden `<row>`, a `<col>`).
+
+Checked by opening the results in LibreOffice 26.8 (rows, columns and sheet states read back).

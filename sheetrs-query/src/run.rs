@@ -186,6 +186,22 @@ impl BookQuery for Book {
     }
 }
 
+/// The locale of a query: the one it states, else the one given to the book, else the one of the
+/// system (for an XLSX and an ODS alike). A system locale that the engine has no locale for is
+/// `en-US`, as it is for `LibreOffice`.
+fn locale_of(source: &Book, query: &Query) -> Option<String> {
+    if let Some(tag) = &query.locale {
+        return Some(tag.clone());
+    }
+    if let Some(tag) = source.locale() {
+        return Some(tag.to_string());
+    }
+    source
+        .default_locale()
+        .map(|tag| tag.to_string())
+        .filter(|tag| sheetrs_engine::options::Locale::by_tag(tag).is_some())
+}
+
 /// Answers `query` over the workbook in `source`.
 ///
 /// The cells come sheet by sheet in the order of the workbook, each sheet by rows; empty cells are
@@ -196,6 +212,11 @@ impl BookQuery for Book {
 /// When the workbook cannot be read, the query names a sheet it does not have, the locale is
 /// unknown, or the search is one the matcher does not reproduce.
 pub(crate) fn run(source: &Book, query: &Query) -> Result<QueryResponse> {
+    // The empty search text matches nothing (`LibreOffice`'s `findAll` gives no cell): answered
+    // before anything is read or compiled.
+    if query.find.as_ref().is_some_and(Find::matches_nothing) {
+        return Ok(QueryResponse { cells: Vec::new() });
+    }
     let wants = |p: Property| query.properties.contains(&p);
     let searching = query.find.is_some();
     // Only the value is given as a date, and only when it is asked for.
@@ -243,7 +264,7 @@ pub(crate) fn run(source: &Book, query: &Query) -> Result<QueryResponse> {
 
     let needs_text = wants(Property::Display) || searching || as_dates;
     let text = if needs_text {
-        TextContext::new(query.locale.as_deref(), source.date_system()?)?
+        TextContext::new(locale_of(source, query).as_deref(), source.date_system()?)?
             .for_format(source.format())
             .for_book(source)
     } else {
@@ -254,7 +275,7 @@ pub(crate) fn run(source: &Book, query: &Query) -> Result<QueryResponse> {
     let matcher = query
         .find
         .as_ref()
-        .map(|f| Matcher::new(f).map(|m| (f, m)))
+        .map(|f| Matcher::for_find(f).map(|m| (f, m)))
         .transpose()?;
 
     // A search in formulas needs the name of the sheet of each cell (the formula says `$Sheet.A1`

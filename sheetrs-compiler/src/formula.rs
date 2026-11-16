@@ -19,6 +19,7 @@ pub use sheetrs_formula::ParseError;
 
 /// Name resolution context of a formula.
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)] // what the file format and the options say about how a formula is read
 pub struct ParseCtx<'a> {
     pub sheets: &'a [String],
     pub current_sheet: u16,
@@ -239,15 +240,15 @@ impl Lowering<'_, '_> {
     fn error_literal(&self, text: &str) -> ErrorKind {
         // `Sheet!#REF!`, what a reference that went leaves in an XLSX: `#REF!` when the sheet is
         // there, as LibreOffice reads it, and an unknown name when it is not.
-        if let Some(qualifier) = text.strip_suffix("#REF!").filter(|q| q.ends_with('!')) {
-            // The qualifier, read as the one of a cell, gives the sheet name unquoted.
-            let (sheet, _) = sheetrs_formula::addr::split_sheet(&format!("{qualifier}A1"));
-            return if sheet.is_some_and(|name| self.ctx.sheet_id(&name).is_some()) {
-                ErrorKind::Ref
-            } else {
-                ErrorKind::Name
-            };
-        }
+        // A reference that is `#REF!` in any spelling (`Data!#REF!`, `'My Sheet'!#REF!`) is the error `#REF!` as a whole,
+        // the one a bare `#REF!` is: LibreOffice saves it bare, so that is what its file gives when it is opened again.
+        let text = match text.strip_suffix("#REF!") {
+            Some(qualifier) if qualifier.ends_with('!') => "#REF!",
+            _ => text,
+        };
+        // A bare `#REF!` of an XLSX is the unknown name `LibreOffice` reads when it opens the file (`COUNT` 0,
+        // `COUNTA` 1, `SUM` `#NAME?`), whatever left it there (deleted cells or a deleted sheet). Of an ODS,
+        // `[#REF!]` is the error value it says.
         if text != text.to_ascii_uppercase() || (self.ctx.xlsx && text == "#REF!") {
             return ErrorKind::Name;
         }
@@ -413,7 +414,6 @@ impl Lowering<'_, '_> {
     /// holds is known when the workbook is read, and neither function depends on
     /// the cell's value.
     fn formula_info(&mut self, c: &ast::Call, name: &str) -> Option<Expr> {
-        let cells = self.ctx.cells?;
         if !matches!(name, "ISFORMULA" | "FORMULATEXT" | "FORMULA") || c.args.len() != 1 {
             return None;
         }
@@ -421,6 +421,19 @@ impl Lowering<'_, '_> {
         while let ast::Expr::Paren(x) | ast::Expr::Unary(ast::UnOp::Implicit, x) = arg {
             arg = x;
         }
+        // The cell the formula asked about went (a deletion left `#REF!`): `LibreOffice` answers `FALSE` to `ISFORMULA`, and to the
+        // text of the formula (OBSERVED, the file saved and opened again, `rules` and `classes` of the oracle) `#NAME?` in an XLSX and
+        // `#REF!` in an ODS.
+        if matches!(arg, ast::Expr::Error(e) if e.eq_ignore_ascii_case("#REF!")) {
+            return Some(Expr::Const(if name == "ISFORMULA" {
+                Value::Bool(false)
+            } else if self.ctx.ods {
+                Value::Error(ErrorKind::Ref)
+            } else {
+                Value::Error(ErrorKind::Name)
+            }));
+        }
+        let cells = self.ctx.cells?;
         let ast::Expr::Ref(r) = arg else { return None };
         let ast::RefArea::Cell(a) = r.area else {
             return None;
@@ -972,6 +985,14 @@ fn range_of(a: Expr, b: Expr) -> Expr {
     if literal_array(&a) || literal_array(&b) {
         return Expr::Const(Value::Error(ErrorKind::Libre(502)));
     }
+    // An end that is an error written in the formula (`A1:#REF!`, `A1:#DIV/0!`, an unknown name) makes the whole
+    // an error of that kind, the first end's first: `COUNT` is 0 and `COUNTA` 1 as for any error value
+    // (`LibreOffice`, the file saved and opened again).
+    for end in [&a, &b] {
+        if let Expr::Const(Value::Error(e)) = end {
+            return Expr::Const(Value::Error(*e));
+        }
+    }
     // References on two sheets joined by `:` are one over all the sheets from one to the other.
     if let (Some(x), Some(y)) = (rect(&a), rect(&b))
         && x.sheet != y.sheet
@@ -1029,6 +1050,73 @@ mod tests {
         let mut c = ctx(&sheets, &names);
         c.xlsx = xlsx;
         parse(f, &c, &mut vec![]).unwrap()
+    }
+
+    /// The formula `f` lowered for a workbook of a format: an edit leaves the same text whatever it removed
+    /// (cells or a sheet), and that is what is read.
+    fn after_edit(f: &str, xlsx: bool) -> Expr {
+        let (sheets, names) = (vec!["Data".to_string()], HashMap::new());
+        let mut c = ctx(&sheets, &names);
+        c.xlsx = xlsx;
+        c.ods = !xlsx;
+        parse(f, &c, &mut vec![]).unwrap()
+    }
+
+    /// What `COUNT`, `COUNTA` and `IFERROR` read in their argument: the bare `#REF!` is an error value
+    /// (an ODS) or an unknown name (an XLSX) like any other, which the call reads with its own rules.
+    #[test]
+    fn a_bare_ref_is_read_as_the_error_it_is_by_every_function() {
+        for xlsx in [false, true] {
+            let kind = if xlsx {
+                ErrorKind::Name
+            } else {
+                ErrorKind::Ref
+            };
+            for call in ["COUNT", "COUNTA", "SUM"] {
+                let Expr::Call(_, args) = after_edit(&format!("{call}(#REF!)"), xlsx) else {
+                    panic!("{call} is a call: the error is not the answer");
+                };
+                assert_eq!(args, [Expr::Const(Value::Error(kind))], "{call}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_bare_ref_in_an_xlsx_is_the_unknown_name_whatever_left_it() {
+        // Deleted cells and a deleted sheet leave the same text, which `LibreOffice` reads, when it opens the
+        // file, as an unknown name (`SUM` is `#NAME?`; the oracle of the edits, `reread`).
+        let name = Expr::Const(Value::Error(ErrorKind::Name));
+        let Expr::Call(_, args) = after_edit("SUM(#REF!,5)", true) else {
+            panic!("SUM is a call");
+        };
+        assert_eq!(args[0], name);
+        let Expr::Call(_, args) = after_edit("COUNT(#REF!)", true) else {
+            panic!("COUNT is a call");
+        };
+        assert_eq!(args, [name]);
+    }
+
+    #[test]
+    fn a_qualified_ref_error_is_the_plain_error_whatever_the_spelling() {
+        // `Data!#REF!` and `'My Sheet'!#REF!` are the error `#REF!` as a whole, as the bare one is.
+        for (qualified, bare, xlsx) in [
+            ("COUNT(Data!#REF!)", "COUNT(#REF!)", true),
+            ("IFERROR(Data!#REF!,7)", "IFERROR(#REF!,7)", true),
+            ("ISERROR('Data'!#REF!)", "ISERROR(#REF!)", true),
+            ("COUNT(Data!#REF!)", "COUNT(#REF!)", false),
+        ] {
+            assert_eq!(
+                after_edit(qualified, xlsx),
+                after_edit(bare, xlsx),
+                "{qualified}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lost_operand_is_an_unknown_name_in_an_xlsx_and_ref_in_an_ods() {
+        assert_eq!(after_edit("#REF!+1", true), after_edit("#NAME?+1", true));
+        assert_ne!(after_edit("#REF!+1", false), after_edit("#NAME?+1", false));
     }
 
     #[test]
@@ -1275,7 +1363,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reference_that_went_is_a_ref_error_on_a_sheet_that_exists() {
+    fn a_reference_that_went_is_the_error_ref_whatever_the_sheet() {
         let sheets = vec!["Sheet1".to_string(), "My Data".to_string()];
         let names = HashMap::new();
         let mut diags = vec![];
@@ -1289,8 +1377,8 @@ mod tests {
         assert_eq!(lower("Sheet1!#REF!"), ErrorKind::Ref);
         assert_eq!(lower("'My Data'!#REF!"), ErrorKind::Ref);
         assert_eq!(lower("sheet1!#REF!"), ErrorKind::Ref);
-        // A sheet the workbook does not have is an unknown name, as in LibreOffice.
-        assert_eq!(lower("Gone!#REF!"), ErrorKind::Name);
+        // Whether the sheet is there or not, it is the error as a whole.
+        assert_eq!(lower("Gone!#REF!"), ErrorKind::Ref);
     }
 
     #[test]

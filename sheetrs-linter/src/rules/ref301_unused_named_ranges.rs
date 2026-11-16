@@ -197,7 +197,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: cells.into(),
-            used_range: Some((1, 1)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(0, 0)),
             ..Default::default()
         };
 

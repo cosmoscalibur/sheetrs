@@ -4,7 +4,7 @@
 use crate::options::LocaleRow;
 
 /// The locale a bare language tag means.
-pub const DEFAULT_REGION: &[(&str, &str)] = &[("en", "en-US"), ("es", "es-ES")];
+pub const DEFAULT_REGION: &[(&str, &str)] = &[("en", "en-US"), ("es", "es-ES"), ("de", "de-DE")];
 
 /// Forms of a date with a month name, in the order of the `named` string: M A B [ ], A M B [ ], B M A [ ], M A [ ], A M [ ], M B [ ], B M [ ], M A b [ ], A M b [ ], M A B [-], A M B [-], B M A [-], M A [-], A M [-], M B [-], B M [-], M A b [-], A M b [-], M A B [/], A M B [/], B M A [/], M A [/], A M [/], M B [/], B M [/], M A b [/], A M b [/], A. M B, A. M, M A, B.
 pub const LOCALES: &[LocaleRow] = &[
@@ -227,5 +227,49 @@ pub const LOCALES: &[LocaleRow] = &[
         days_abbr: ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"],
         date_patterns: &["D/M", "D/M/Y"],
         named: "dd-ydd-dd-ddy-d--dd--ydd-d--d-",
+    },
+    LocaleRow {
+        tag: "de-DE",
+        lcid: 0x407,
+        order: "dmy",
+        decimal: ',',
+        group: '.',
+        date_sep: '.',
+        true_text: "WAHR",
+        false_text: "FALSCH",
+        am: "vorm.",
+        pm: "nachm.",
+        currency: "€",
+        currency_pos: "# ¤",
+        currency_neg: "-# ¤",
+        months: [
+            "Januar",
+            "Februar",
+            "März",
+            "April",
+            "Mai",
+            "Juni",
+            "Juli",
+            "August",
+            "September",
+            "Oktober",
+            "November",
+            "Dezember",
+        ],
+        months_abbr: [
+            "Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
+        ],
+        days: [
+            "Sonntag",
+            "Montag",
+            "Dienstag",
+            "Mittwoch",
+            "Donnerstag",
+            "Freitag",
+            "Samstag",
+        ],
+        days_abbr: ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"],
+        date_patterns: &["D.M.", "D.M.Y"],
+        named: "dd-ydd-dd-ddy-d--d---y-d---dd-",
     },
 ];

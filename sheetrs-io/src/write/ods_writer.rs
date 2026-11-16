@@ -45,7 +45,27 @@ pub fn modify_workbook_ods<R: Read + Seek, W: Write + Seek>(
 ) -> Result<()> {
     let archive = ZipArchive::new(input)?;
     let mut zip_writer = ZipWriter::new(super::Quiet::new(output));
-    let result = apply_ods(archive, &mut zip_writer, modifications);
+    let result = if modifications.visibility.is_empty() {
+        apply_ods(archive, &mut zip_writer, modifications)
+    } else {
+        // Visibility is applied to the input, and the rest to what that leaves.
+        let visibilities = super::visibility::Visibilities::new(&modifications.visibility);
+        if modifications.asks_nothing_else() {
+            super::ods_visibility::apply(archive, &mut zip_writer, &visibilities)
+        } else {
+            let mut shown = std::io::Cursor::new(Vec::new());
+            {
+                let mut first = ZipWriter::new(&mut shown);
+                super::ods_visibility::apply(archive, &mut first, &visibilities)?;
+                first.finish()?;
+            }
+            apply_ods(
+                ZipArchive::new(shown)?,
+                &mut zip_writer,
+                &modifications.without_visibility(),
+            )
+        }
+    };
     // The writer is closed in both cases: dropped open it would try to finish the archive and print
     // a line of its own to the standard error when the output refuses the bytes.
     let closed = zip_writer.finish();
@@ -1497,7 +1517,7 @@ fn write_cells<W: Write>(
             None if s.recalculate && !caches_a_syntax_error(start, content, f)? => {
                 (Some(f.to_string()), true)
             }
-            Some((text, only_moved)) => (Some(text), !only_moved),
+            Some(r) => (Some(r.text), !r.only_moved),
             None => (None, false),
         },
         _ => (None, false),
@@ -1882,6 +1902,24 @@ mod tests {
         let xml = formula_to_value(SHEET, &["Data"]);
         assert!(!xml.contains("table:formula"), "{xml}");
         assert!(xml.contains(r#"<table:table-cell office:value-type="float" office:value="2"><text:p>2</text:p></table:table-cell>"#), "{xml}");
+    }
+
+    #[test]
+    fn formula_to_value_takes_the_calculated_result_not_the_cached_one() {
+        // `B1` caches 2 and `C1` caches nothing; each is given the result a program calculated.
+        let xml = r#"<table:table table:name="Data"><table:table-row><table:table-cell office:value-type="float" office:value="1"><text:p>1</text:p></table:table-cell><table:table-cell table:formula="of:=[.A1]*2" office:value-type="float" office:value="2"><text:p>2</text:p></table:table-cell><table:table-cell table:formula="of:=[.A1]+1"/></table:table-row></table:table>"#;
+        let mut edits = SheetEdits::new();
+        edits.insert((0, 1), CellEdit::Cached(CachedResult::Number(20.0)));
+        edits.insert((0, 2), CellEdit::Cached(CachedResult::Text("t".into())));
+        let mut mods = WorkbookModifications {
+            formula_to_value: scopes(&["Data"]),
+            ..Default::default()
+        };
+        mods.replacements.insert("Data".into(), edits);
+        let out = modify_xml(xml, &mods).unwrap();
+        assert!(!out.contains("table:formula"), "{out}");
+        assert!(out.contains(r#"<table:table-cell office:value-type="float" office:value="20" calcext:value-type="float"><text:p>20</text:p></table:table-cell>"#), "{out}");
+        assert!(out.contains(r#"<table:table-cell office:value-type="string" office:string-value="t" calcext:value-type="string"><text:p>t</text:p></table:table-cell>"#), "{out}");
     }
 
     #[test]

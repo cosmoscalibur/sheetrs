@@ -15,6 +15,7 @@ pub mod ods_parser;
 mod ods_styles;
 pub mod parser_utils;
 mod selection;
+pub mod used_area;
 pub mod workbook;
 pub mod xlsx_parser;
 
@@ -25,6 +26,7 @@ pub use external::{ExternalUrl, external_url};
 pub use format::Format;
 pub use selection::{Properties, Selection, SheetInfo, Window};
 pub use sheetrs_formula::grid::Grid;
+pub use used_area::{AreaSink, SheetAreas, UsedArea, is_used};
 pub use workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, NameConflict,
     NameScope, NumFmt, Sheet, SheetState, Workbook,
@@ -61,6 +63,25 @@ pub trait CellSink {
     /// rows inside that range are the filtered ones. Whoever uses it keeps the ranges and applies
     /// them when the sheet is done, in either format.
     fn filtered_rows(&mut self, _sheet: u16, _first: u32, _last: u32) {}
+
+    /// The cell of the sheet at `(row, column)` (0-based) is a member of an array formula, and sits
+    /// `offset` = (rows, columns) below and to the right of the top-left cell of the block the
+    /// formula fills. It comes **before** the [`cell`](CellSink::cell) it is about, and only for the
+    /// members that are not the top-left cell (a formula that holds one value has none): each member
+    /// shows its own element of the result.
+    fn array_member(&mut self, _sheet: u16, _at: (u32, u32), _offset: (u32, u32)) {}
+
+    /// The formula of the cell at `(row, column)` (0-based) is one that `LibreOffice` calculates when it opens the
+    /// file, whatever result the file caches: only an ODS says it (an XLSX keeps what it caches), by the type of the
+    /// cached result and the format of the cell ([`CellSink::cell`] of an ODS). It comes **before** the
+    /// [`cell`](CellSink::cell) it is about.
+    fn recalculated_on_load(&mut self, _sheet: u16, _at: (u32, u32)) {}
+
+    /// Whether the sink wants more cells: a reader of an ODS stops after the cell that makes it `false` (checked where it tells
+    /// [`recalculated_on_load`](CellSink::recalculated_on_load)). A sink that only asks whether some cell is one needs no more.
+    fn wants_more(&self) -> bool {
+        true
+    }
 }
 
 /// A sink that hands on the cells of `inner` with their formulas in Excel's notation, the
@@ -88,6 +109,14 @@ impl CellSink for ExcelFormulas<'_> {
         self.inner.hint(sheet, cells);
     }
 
+    fn recalculated_on_load(&mut self, sheet: u16, at: (u32, u32)) {
+        self.inner.recalculated_on_load(sheet, at);
+    }
+
+    fn wants_more(&self) -> bool {
+        self.inner.wants_more()
+    }
+
     fn sheet(&mut self, index: u16, name: &str) {
         let i = usize::from(index);
         if self.names.len() <= i {
@@ -99,6 +128,10 @@ impl CellSink for ExcelFormulas<'_> {
 
     fn filtered_rows(&mut self, sheet: u16, first: u32, last: u32) {
         self.inner.filtered_rows(sheet, first, last);
+    }
+
+    fn array_member(&mut self, sheet: u16, at: (u32, u32), offset: (u32, u32)) {
+        self.inner.array_member(sheet, at, offset);
     }
 
     fn cell(&mut self, sheet: u16, at: (u32, u32), mut cell: Cell) {
@@ -439,6 +472,18 @@ pub(crate) fn read_defined_names_from_reader<R: std::io::Read + std::io::Seek>(
     } else {
         let mut reader = XlsxReader::new(&mut archive)?;
         Ok((reader.read_defined_names()?, reader.read_name_conflicts()?))
+    }
+}
+
+/// The definitions of the defined names only (not the names that live in more than one scope: an ODS is read once less).
+pub(crate) fn read_defined_name_definitions_from_reader<R: std::io::Read + std::io::Seek>(
+    reader: R,
+) -> Result<HashMap<String, String>> {
+    let mut archive = open_archive(reader)?;
+    if detect::detect_archive(&mut archive)? == Format::Ods {
+        OdsReader::new(&mut archive)?.read_defined_names()
+    } else {
+        XlsxReader::new(&mut archive)?.read_defined_names()
     }
 }
 

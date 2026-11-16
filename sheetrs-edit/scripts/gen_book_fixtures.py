@@ -30,6 +30,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import time
 
 import uno
@@ -82,6 +83,17 @@ def load(path):
 def save(doc, stem, ext):
     doc.storeToURL("file://%s/%s.%s" % (OUT, stem, ext), pv(FilterName=FILTERS[ext]))
     fixture_determinism.normalize("%s/%s.%s" % (OUT, stem, ext))
+
+
+def reread(doc, ext):
+    """The document saved and loaded again: what a user sees when someone else opens the file."""
+    folder = tempfile.mkdtemp()
+    tmp = os.path.join(folder, "step." + ext)
+    doc.storeToURL("file://" + tmp, pv(FilterName=FILTERS[ext]))
+    doc.close(True)
+    again = load(tmp)
+    shutil.rmtree(folder, ignore_errors=True)
+    return again
 
 
 def build():
@@ -338,6 +350,7 @@ def main(only):
             doc = load("%s/book.%s" % (OUT, ext))
             for op in case["ops"]:
                 run(op, doc)
+                doc = reread(doc, ext)  # the reference is the file saved and opened again (CONTRIBUTING.md)
             save(doc, "expected_" + case["name"], ext)
             doc.close(True)
     if not only:

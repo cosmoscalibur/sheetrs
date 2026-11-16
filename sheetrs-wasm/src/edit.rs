@@ -23,6 +23,17 @@ where
         .collect()
 }
 
+/// The options of `calculate`: `now` (the serial number that `NOW()` and `TODAY()` give) and `seed`
+/// (the seed of `RAND()`), the `now` and `seed` of `sheetc`; absent, the clock. They also fix the
+/// recalculation that the same `save` runs after an edit that leaves results stale.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+struct CalculateOptions {
+    now: Option<f64>,
+    seed: Option<u64>,
+}
+
 /// The options of `replace`: the search of a query (`mode`, `matchCase`, `entireCells`, `searchIn`,
 /// `formatted`, `filtered`) and the `scope`: a sheet (`Data`) or a range (`Data!A1:C9`), or a list
 /// of them; the whole workbook when absent. A replacement always looks inside formulas, as
@@ -214,7 +225,8 @@ impl Book {
     }
 
     /// Replace the formulas by the values they have (*Data ▸ Calculate ▸ Formula to Value*):
-    /// `Sheet`, `Sheet!B:D` or `Sheet!3:10`, or a list of them.
+    /// `Sheet`, `Sheet!B:D` or `Sheet!3:10`, or a list of them. The values are what the formulas
+    /// calculate, by default the results the file caches for the formulas the plan does not reach and what the engine calculates for the ones it reaches (with `calculateAll` the engine calculates what the scopes name).
     ///
     /// # Errors
     ///
@@ -254,6 +266,91 @@ impl Book {
         let columns = parse_all::<ColumnRange>(&targets(columns, "`columns`")?)?;
         if !columns.is_empty() {
             self.inner.delete_columns(columns);
+        }
+        Ok(())
+    }
+
+    /// Hide rows, in the rows of the workbook as it is: `Sheet!3:10` or `Sheet!3`, or a list of
+    /// them. They stay in the file.
+    ///
+    /// # Errors
+    ///
+    /// A message when a range is not valid.
+    #[wasm_bindgen(js_name = hideRows)]
+    pub fn hide_rows(&mut self, rows: JsValue) -> Result<(), JsValue> {
+        let rows = parse_all::<RowRange>(&targets(rows, "`rows`")?)?;
+        if !rows.is_empty() {
+            self.inner.hide_rows(rows);
+        }
+        Ok(())
+    }
+
+    /// Show rows, whatever hid them.
+    ///
+    /// # Errors
+    ///
+    /// A message when a range is not valid.
+    #[wasm_bindgen(js_name = showRows)]
+    pub fn show_rows(&mut self, rows: JsValue) -> Result<(), JsValue> {
+        let rows = parse_all::<RowRange>(&targets(rows, "`rows`")?)?;
+        if !rows.is_empty() {
+            self.inner.show_rows(rows);
+        }
+        Ok(())
+    }
+
+    /// Hide columns: `Sheet!B:D` or `Sheet!B`, or a list of them.
+    ///
+    /// # Errors
+    ///
+    /// A message when a range is not valid.
+    #[wasm_bindgen(js_name = hideColumns)]
+    pub fn hide_columns(&mut self, columns: JsValue) -> Result<(), JsValue> {
+        let columns = parse_all::<ColumnRange>(&targets(columns, "`columns`")?)?;
+        if !columns.is_empty() {
+            self.inner.hide_columns(columns);
+        }
+        Ok(())
+    }
+
+    /// Show columns.
+    ///
+    /// # Errors
+    ///
+    /// A message when a range is not valid.
+    #[wasm_bindgen(js_name = showColumns)]
+    pub fn show_columns(&mut self, columns: JsValue) -> Result<(), JsValue> {
+        let columns = parse_all::<ColumnRange>(&targets(columns, "`columns`")?)?;
+        if !columns.is_empty() {
+            self.inner.show_columns(columns);
+        }
+        Ok(())
+    }
+
+    /// Hide sheets by name (one sheet must stay visible): a name or a list of them.
+    ///
+    /// # Errors
+    ///
+    /// A message when the argument is not a text or a list of texts.
+    #[wasm_bindgen(js_name = hideSheets)]
+    pub fn hide_sheets(&mut self, names: JsValue) -> Result<(), JsValue> {
+        let names = targets(names, "`names`")?;
+        if !names.is_empty() {
+            self.inner.hide_sheets(names);
+        }
+        Ok(())
+    }
+
+    /// Show sheets by name: a name or a list of them.
+    ///
+    /// # Errors
+    ///
+    /// A message when the argument is not a text or a list of texts.
+    #[wasm_bindgen(js_name = showSheets)]
+    pub fn show_sheets(&mut self, names: JsValue) -> Result<(), JsValue> {
+        let names = targets(names, "`names`")?;
+        if !names.is_empty() {
+            self.inner.show_sheets(names);
         }
         Ok(())
     }
@@ -323,12 +420,15 @@ impl Book {
     /// calculated, and `ranges` are the ranges `valueRanges()` answers (`majorDimension`: `"ROWS"` or
     /// `"COLUMNS"`); with none, the outputs the workbook declares or its formula cells. `save()` writes
     /// the workbook with fresh results. Where the engine cannot calculate it, it is written marked
-    /// to be recalculated when it is opened, and a diagnostic says so.
+    /// to be recalculated when it is opened, and a diagnostic says so. `options` is `{now, seed}`:
+    /// the serial number that `NOW()` and `TODAY()` give and the seed of `RAND()` (the `now` and
+    /// `seed` of `sheetc`; without them the clock), which also fix the recalculation that the same
+    /// `save` runs after an edit that leaves results stale.
     ///
     /// # Errors
     ///
-    /// A message when the request is not valid.
-    pub fn calculate(&mut self, request: JsValue) -> Result<(), JsValue> {
+    /// A message when the request or the options are not valid.
+    pub fn calculate(&mut self, request: JsValue, options: JsValue) -> Result<(), JsValue> {
         let request: Request = if request.is_undefined() || request.is_null() {
             Request::default()
         } else {
@@ -338,11 +438,18 @@ impl Book {
                 &["inputs", "ranges", "majorDimension"],
             )?
         };
+        let options: CalculateOptions = if options.is_undefined() || options.is_null() {
+            CalculateOptions::default()
+        } else {
+            from_js_object(options, "The options", &["now", "seed"])?
+        };
         self.inner.calculate(Calculation {
             inputs: request.inputs.unwrap_or_default(),
             ranges: request.ranges,
             major: request.major_dimension.unwrap_or_default(),
             answer: false,
+            now: options.now,
+            seed: options.seed,
         });
         Ok(())
     }
@@ -351,6 +458,36 @@ impl Book {
     #[wasm_bindgen(getter)]
     pub fn pending(&self) -> usize {
         self.inner.operations().len()
+    }
+
+    /// Whether `save` (and `compile`) calculates every formula (`true`, `calculateAll()` of `LibreOffice`).
+    /// `false`, the default, is what `LibreOffice` does: only the formulas the operations reach, and the
+    /// ones that depend on them, are calculated again, and every other keeps the result the file
+    /// caches.
+    #[wasm_bindgen(getter, js_name = calculateAll)]
+    pub fn calculate_all(&self) -> bool {
+        self.inner.calculate_all()
+    }
+
+    /// Sets [`calculate_all`](Self::calculate_all).
+    #[wasm_bindgen(setter, js_name = calculateAll)]
+    pub fn set_calculate_all(&mut self, calculate_all: bool) {
+        self.inner = self.inner.clone().with_calculate_all(calculate_all);
+    }
+
+    /// Whether `save` (and `compile`) goes on with what the engine cannot calculate and has to (`true`): a call to a
+    /// macro, to an add-in or to a function of `LibreOffice` it lacks (`WEBSERVICE`, `FILTERXML`, `DDE`) is an error
+    /// cell, what reads it is calculated from it, and the diagnostics hold a warning (`UNSUPPORTED_AS_ERROR`).
+    /// `false`, the default, stops the run with an error that names the cause.
+    #[wasm_bindgen(getter, js_name = secureMode)]
+    pub fn secure_mode(&self) -> bool {
+        self.inner.secure_mode()
+    }
+
+    /// Sets [`secure_mode`](Self::secure_mode).
+    #[wasm_bindgen(setter, js_name = secureMode)]
+    pub fn set_secure_mode(&mut self, secure_mode: bool) {
+        self.inner = self.inner.clone().with_secure_mode(secure_mode);
     }
 
     /// What `save` will do: the passes over the file, one operation per line.

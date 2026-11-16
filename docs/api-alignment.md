@@ -71,9 +71,14 @@ aligned and the table that maps each operation to its form in every layer.
 | Delete defined names | `--delete-names N...` | `delete_names(names)` | `book.delete_names(names)` | `book.deleteNames(names)` |
 | Formulas to values | `--formula-to-value SCOPE...` | `formula_to_value(scopes)` | `book.formula_to_value(scopes)` | `book.formulaToValue(scopes)` |
 | Delete rows | `--delete-rows ROWS...` | `delete_rows(rows)` | `book.delete_rows(rows)` | `book.deleteRows(ranges)` |
+| Hide / show rows | `--hide-rows ROWS...` / `--show-rows ROWS...` | `hide_rows(rows)` / `show_rows(rows)` | `book.hide_rows(rows)` / `book.show_rows(rows)` | `book.hideRows(ranges)` / `book.showRows(ranges)` |
+| Hide / show columns | `--hide-columns COLUMNS...` / `--show-columns COLUMNS...` | `hide_columns(columns)` / `show_columns(columns)` | `book.hide_columns(columns)` / `book.show_columns(columns)` | `book.hideColumns(ranges)` / `book.showColumns(ranges)` |
+| Hide / show sheets | `--hide-sheets SHEET...` / `--show-sheets SHEET...` | `hide_sheets(names)` / `show_sheets(names)` | `book.hide_sheets(names)` / `book.show_sheets(names)` | `book.hideSheets(names)` / `book.showSheets(names)` |
 | Delete columns | `--delete-columns COLUMNS...` | `delete_columns(columns)` | `book.delete_columns(columns)` | `book.deleteColumns(ranges)` |
 | Find and replace | `--replace TEXT --with TEXT` (repeatable), `--regex`, `--wildcards`, `--match-case`, `--entire-cells`, `--formatted`, `--filtered`, `--in`, `--scope` | `replace(...)` | `book.replace(...)` | `book.replace(replaces, options?)` |
 | Calculate with a request | `sheetc calculate -i FILE --request JSON --range R [-o OUT]` | `BookEdit::calculate(Calculation { inputs, ranges, major, .. })`, `BookCompile::calculate(...)` | `book.calculate(inputs, ranges, major=)` | `book.calculate({inputs, ranges, majorDimension})` |
+| Calculation mode (default: the cache; opt-in: every formula, `calculateAll()`) | `--calculate-all` (`sheetrs edit`, `sheetc calculate`, `sheetc build`, an executable) | `Book::with_calculate_all(bool)`, `Spec::calculate_all`, `Overrides::calculate_all` | `calculate_all=` of `save`, `to_bytes`, `explain`, `value_ranges` | `book.calculateAll`, `sheetrs_set_calculate_all` (a compiled module) |
+| Build without a cache (the program calculates what it kept every time) | `sheetc build --force-calculate-all` | `Spec::force_calculate_all`, `force_calculate_all` of the options of `compile` | not exposed | `book.compile({force_calculate_all: true})` |
 | The answer in memory | `sheetc calculate` without `-o` (the JSON on the standard output) | `value_ranges()` | `book.value_ranges()` | `book.valueRanges()` |
 | Plan | `--dry-run` | `explain()` | `book.explain()` | `book.explain()`, `book.pending` |
 | The cut | `-o OUT`, `--in-place` | `write(path)`, `write_to(writer)`, `write_in_place()` | `book.save(dest=None)`, `book.to_bytes()` | `book.save()` (`Uint8Array`) |

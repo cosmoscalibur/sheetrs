@@ -189,17 +189,17 @@ fn deleting_rows_adjusts_references_as_libreoffice() {
         formulas(&part(&out, "xl/worksheets/sheet2.xml")),
         [
             "T!A2",
-            "T!#REF!",
-            "T!#REF!",
+            "#REF!",
+            "#REF!",
             "T!A4",
             "SUM(T!A2:A3)",
             "SUM(T!A2:A3)",
-            "SUM(T!#REF!)",
+            "SUM(#REF!)",
             "SUM(T!A4:A6)",
             "SUM(T!A2:A6)",
-            "SUM(T!A4:A4)",
+            "SUM(T!A4)",
             "SUM(T!A:A)",
-            "SUM(T!#REF!)",
+            "SUM(#REF!)",
             "SUM(T!3:4)",
             "SUM(T!1:3)",
             "T!$A$4",
@@ -215,7 +215,7 @@ fn deleting_rows_adjusts_references_as_libreoffice() {
         "{workbook}"
     );
     assert!(workbook.contains(r#"<definedName name="NameTwo">T!$A$1:$A$8</definedName>"#));
-    assert!(workbook.contains(r#"<definedName name="Gone">T!#REF!</definedName>"#));
+    assert!(workbook.contains(r#"<definedName name="Gone">#REF!</definedName>"#));
     // The sheet itself: rows renumbered, the merged areas and the dimension moved.
     let t = part(&out, "xl/worksheets/sheet1.xml");
     assert!(t.contains(r#"<dimension ref="A1:B8"/>"#), "{t}");
@@ -240,7 +240,7 @@ fn a_formula_that_reads_other_cells_loses_its_value_and_one_that_reads_the_same_
     // they have none.
     assert!(f.contains(r#"<c r="A1"><f>T!A2</f><v>99</v></c>"#), "{f}");
     assert!(f.contains(r#"<c r="A4"><f>T!A4</f><v>"#), "{f}");
-    assert!(f.contains(r#"<c r="A2"><f>T!#REF!</f></c>"#), "{f}");
+    assert!(f.contains(r#"<c r="A2"><f>#REF!</f></c>"#), "{f}");
     assert!(f.contains(r#"<c r="A6"><f>SUM(T!A2:A3)</f></c>"#), "{f}");
 }
 
@@ -280,17 +280,17 @@ fn deleting_columns_adjusts_references_as_libreoffice() {
         formulas(&part(&out, "xl/worksheets/sheet2.xml")),
         [
             "T!B1",
-            "T!#REF!",
-            "T!#REF!",
+            "#REF!",
+            "#REF!",
             "T!C1",
-            "SUM(T!B1:B1)",
-            "SUM(T!B1:B1)",
-            "SUM(T!#REF!)",
+            "SUM(T!B1)",
+            "SUM(T!B1)",
+            "SUM(#REF!)",
             "SUM(T!C1:E1)",
             "SUM(T!B1:E1)",
-            "SUM(T!C1:C1)",
+            "SUM(T!C1)",
             "SUM(T!1:1)",
-            "SUM(T!#REF!)",
+            "SUM(#REF!)",
             "SUM(T!B:C)",
             "SUM(T!A:B)",
             "T!$C$1",
@@ -314,7 +314,7 @@ fn several_deletions_read_the_coordinates_of_the_input() {
     let out = run(dir.path(), &[sheet("T", number_rows(10)), f], "", &mods).unwrap();
     assert_eq!(
         formulas(&part(&out, "xl/worksheets/sheet2.xml")),
-        ["T!A3", "T!A5", "T!#REF!", "SUM(T!A1:A7)"]
+        ["T!A3", "T!A5", "#REF!", "SUM(T!A1:A7)"]
     );
 }
 
@@ -583,6 +583,28 @@ fn the_cells_of_a_shared_group_keep_their_formula_when_its_first_cell_goes() {
     };
     let out = run(dir.path(), &[sheet("T", rows.into())], "", &mods).unwrap();
     assert_eq!(formulas(&part(&out, "xl/worksheets/sheet1.xml")), ["C1+1"]);
+}
+
+/// A copy of a shared group that would read outside the sheet is written with a formula of its own and the bare `#REF!`
+/// that `LibreOffice` saves (probe `shared formula shifted outside the sheet`): it reads that back as an unknown name,
+/// where the group, kept as it is, reads `XFE2` as a reference that went (`#REF!`) in the same program.
+#[test]
+fn a_copy_of_a_shared_group_that_leaves_the_sheet_is_written_with_the_bare_ref() {
+    let dir = tempfile::tempdir().unwrap();
+    // `XFC2+1` shared by XFB1:XFD1: the copy in XFD1 reads XFE2, which is not a cell. Row 3 is the one a run touches.
+    let rows = r#"<row r="1"><c r="XFB1"><f t="shared" ref="XFB1:XFD1" si="0">XFC2+1</f><v>1</v></c><c r="XFC1"><f t="shared" si="0"/><v>2</v></c><c r="XFD1"><f t="shared" si="0"/><v>3</v></c></row><row r="3"><c r="A3"><f>1+1</f><v>2</v></c></row>"#;
+    let mods = WorkbookModifications {
+        formula_to_value: vec![scope("T!A:A")],
+        ..Default::default()
+    };
+    let out = run(dir.path(), &[sheet("T", rows.into())], "", &mods).unwrap();
+    let t = part(&out, "xl/worksheets/sheet1.xml");
+    assert!(
+        t.contains(r#"<f t="shared" ref="XFB1:XFD1" si="0">XFC2+1</f>"#),
+        "{t}"
+    );
+    assert!(t.contains(r#"<c r="XFC1"><f t="shared" si="0"/>"#), "{t}");
+    assert!(t.contains(r#"<c r="XFD1"><f>#REF!+1</f>"#), "{t}");
 }
 
 #[test]

@@ -102,7 +102,7 @@ fn main() {
     }
     m.set_formula(s, "C1", "SUM(B1:B50000)");
     run("50k folded formulas", &m, &[], &["C1"], &json!(null));
-    // Inputs that may be any cell leave nothing to fold: the cost of `--no-fold`.
+    // Inputs that may be any cell leave nothing to fold: the cost of switching folding off.
     let spec = Spec {
         outputs: vec![BindingSpec::parse("C1")],
         fold: false,

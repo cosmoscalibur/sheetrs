@@ -10,13 +10,14 @@ its own errors: `=SQRT(-1)` is cached as `#VALUE!` where LibreOffice shows `Err:
 the file), the rules that look at values see the cache. **Recalculate first, then lint**:
 
 ```bash
-sheetc calculate -i book.xlsx -o recalculated.xlsx   # nothing declared or given: every formula computed again
+sheetc calculate -i book.xlsx --calculate-all -o recalculated.xlsx   # nothing declared or given: every formula computed again
 sheetrs lint -i recalculated.xlsx                                     # the rules see fresh results
 sheetrs query -i recalculated.xlsx --workbook -p value,display        # or read them
 ```
 
-- `calculate` with an output and no inputs, no `--range` and no declarations calculates every formula
-  again. The output is a copy of the workbook with the same formulas,
+- `calculate --calculate-all` (`calculateAll()` of LibreOffice) with an output and no inputs, no `--range` and no
+  declarations calculates every formula again; without `--calculate-all` the results a file caches are kept (what
+  LibreOffice does when it opens it), which is no use here. The output is a copy of the workbook with the same formulas,
   styles and formats, and the results of this calculation.
 - The results are the ones the engine computes with LibreOffice's semantics, not the cache. The
   codes only LibreOffice has are written as the format can: an XLSX has none (`#VALUE!`), an ODS

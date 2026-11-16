@@ -11,13 +11,14 @@
 //!
 //! - blank rows before the first data row, when there are more than 2 of them;
 //! - blank columns before the first data column, when there are more than 2 of them;
-//! - blank rows from the first data row to the last row of the declared used range, counting only
+//! - blank rows from the first data row to the last row of the used range, counting only
 //!   runs of more than 2 consecutive blank rows;
 //! - the same for columns.
 //!
 //! A row or column is blank when no cell in it has a non-empty value. A formula whose saved value
 //! is empty and a text cell holding only spaces are judged by that value: the former is blank, the
-//! latter is not. The used range comes from the sheet metadata, so blank rows or columns at its
+//! latter is not. The used range is the one of REF304 (`Sheet::kept_area`, derived from the same
+//! accumulator as `Sheet::used_area`), so blank rows or columns at its
 //! end (after the last data) are reported when the run is longer than 2.
 //!
 //! # Does not report
@@ -49,35 +50,18 @@ const MAX_BLANK_ROW: u32 = 2;
 const MAX_BLANK_COLUMN: u32 = 2;
 
 /// Per-sheet occupied tracking.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct SheetOccupancy {
     /// Rows that contain at least one non-empty cell.
     occupied_rows: HashSet<u32>,
     /// Columns that contain at least one non-empty cell.
     occupied_cols: HashSet<u32>,
-    /// Minimum row seen.
-    min_row: u32,
-    /// Minimum column seen.
-    min_col: u32,
-}
-
-impl Default for SheetOccupancy {
-    fn default() -> Self {
-        Self {
-            occupied_rows: HashSet::new(),
-            occupied_cols: HashSet::new(),
-            min_row: u32::MAX,
-            min_col: u32::MAX,
-        }
-    }
 }
 
 impl SheetOccupancy {
     fn record(&mut self, at: (u32, u32)) {
         self.occupied_rows.insert(at.0);
         self.occupied_cols.insert(at.1);
-        self.min_row = self.min_row.min(at.0);
-        self.min_col = self.min_col.min(at.1);
     }
 }
 
@@ -182,13 +166,18 @@ impl WalkerRule for BlankRowsColumnsRule {
             return; // No non-empty cells → skip
         };
 
-        let (max_row, max_col) = match sheet.used_range {
+        let (max_row, max_col) = match sheet.kept_extent() {
             Some((ur, uc)) => (ur.saturating_sub(1), uc.saturating_sub(1)),
             None => return,
         };
 
-        let min_row = data.min_row;
-        let min_col = data.min_col;
+        // The blank band before the data is the complement of the rectangle that starts at the
+        // first used cell: it follows from the corner.
+        let Some(content) = sheet.used_area else {
+            return;
+        };
+        let min_row = content.first_row;
+        let min_col = content.first_col;
 
         // Build merged-cell coverage sets for exclusion
         let mut merged_rows: HashSet<u32> = HashSet::new();
@@ -361,6 +350,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The rectangle of the cells with a value (the corners the rule reads from the model).
+    fn area_of(
+        cells: &std::collections::HashMap<(u32, u32), sheetrs_io::reader::workbook::Cell>,
+    ) -> Option<sheetrs_io::reader::UsedArea> {
+        cells
+            .iter()
+            .filter(|(_, cell)| !cell.value.is_empty())
+            .map(|(&(row, col), _)| sheetrs_io::reader::UsedArea::at(row, col))
+            .reduce(|a, b| {
+                a.including(b.first_row, b.first_col)
+                    .including(b.last_row, b.last_col)
+            })
+    }
     use crate::rules::collect_violations;
     use sheetrs_io::reader::workbook::{Cell, CellValue, Sheet};
     use std::collections::HashMap;
@@ -412,8 +415,9 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
+            used_area: area_of(&cells),
             cells: cells.into(),
-            used_range: Some((5, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(4, 1)),
             ..Default::default()
         };
 
@@ -478,8 +482,9 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
+            used_area: area_of(&cells),
             cells: cells.into(),
-            used_range: Some((2, 5)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 4)),
             ..Default::default()
         };
 
@@ -541,8 +546,9 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
+            used_area: area_of(&cells),
             cells: cells.into(),
-            used_range: Some((2, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 1)),
             ..Default::default()
         };
 
@@ -600,8 +606,9 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
+            used_area: area_of(&cells),
             cells: cells.into(),
-            used_range: Some((3, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(2, 1)),
             ..Default::default()
         };
 
@@ -659,8 +666,9 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
+            used_area: area_of(&cells),
             cells: cells.into(),
-            used_range: Some((4, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(3, 1)),
             ..Default::default()
         };
 
@@ -719,8 +727,9 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
+            used_area: area_of(&cells),
             cells: cells.into(),
-            used_range: Some((2, 3)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 2)),
             ..Default::default()
         };
 
@@ -778,8 +787,9 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
+            used_area: area_of(&cells),
             cells: cells.into(),
-            used_range: Some((2, 4)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(1, 3)),
             ..Default::default()
         };
 
@@ -821,8 +831,9 @@ mod tests {
         let sheet = Sheet {
             name: "Sheet1".to_string(),
             sheet_index: 0,
+            used_area: area_of(&cells),
             cells: cells.into(),
-            used_range: Some((5, 2)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(4, 1)),
             merged_cells: vec![(1, 1, 3, 1)], // B2:B4 merged
             ..Default::default()
         };
@@ -844,7 +855,7 @@ mod tests {
             name: "Sheet1".to_string(),
             sheet_index: 0,
             cells: sheetrs_io::reader::Grid::default(),
-            used_range: Some((100, 100)),
+            kept_area: Some(sheetrs_io::reader::UsedArea::from_a1(99, 99)),
             ..Default::default()
         };
 

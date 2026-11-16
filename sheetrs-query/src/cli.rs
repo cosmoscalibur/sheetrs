@@ -69,11 +69,12 @@ pub struct Args {
     )]
     pub property: Vec<Prop>,
 
-    /// Keep only the cells where this text is found (as `LibreOffice`'s Find & Replace finds it)
+    /// Keep only the cells where this text is found (as `LibreOffice`'s Find & Replace finds it); the
+    /// empty text matches nothing
     #[arg(long, value_name = "TEXT")]
     pub find: Option<String>,
 
-    /// The search is a regular expression (ICU, the subset that is reproduced)
+    /// The search is a regular expression (ICU, the subset that is reproduced; `^` and `$` anchor the text of the cell, and the pattern may match the empty text: that match is a hit only at the end of the text)
     #[arg(long, conflicts_with = "wildcards")]
     pub regex: bool,
 
@@ -106,9 +107,16 @@ pub struct Args {
     #[arg(long)]
     pub filtered: bool,
 
-    /// Locale of `display` and of the dates a search sees (default `en-US`)
+    /// Locale of `display` and of the dates a search sees (a tag such as `es-CO`). Default: the
+    /// `locale` of `--config`, else the one of the system (`LC_ALL`, `LC_CTYPE`, then `LANG`;
+    /// `en-US` when it has none), for an XLSX and an ODS alike
     #[arg(long, value_name = "TAG")]
     pub locale: Option<String>,
+
+    /// Configuration file (TOML) whose `locale` in `[global]` is the default of `--locale`
+    /// (default: `sheetrs.toml` in the current directory, when there is one)
+    #[arg(short = 'c', long, value_name = "FILE")]
+    pub config: Option<PathBuf>,
 
     /// Give the numbers whose format is a date or a time as `{"type": "date" | "time" | "datetime",
     /// "value": "<ISO 8601>"}`, worked out with the date system of the file (the serial number the file
@@ -222,7 +230,7 @@ pub fn run(cli: Args) -> Result<ExitCode> {
         return list(&cli);
     }
     let query = build(&cli)?;
-    let source = Book::from_file(&cli.file)?;
+    let source = book(&cli)?;
     let response = source.query(&query)?;
     let out = std::io::stdout();
     let mut out = std::io::BufWriter::new(out.lock());
@@ -240,6 +248,16 @@ pub fn run(cli: Args) -> Result<ExitCode> {
     }
     out.flush()?;
     Ok(ExitCode::SUCCESS)
+}
+
+/// The workbook of the command, with the locale that the configuration gives it: a `--locale` goes in
+/// the query and wins over it.
+fn book(cli: &Args) -> Result<Book> {
+    let mut book = Book::from_file(&cli.file)?;
+    if let Some(tag) = sheetrs_io::locale::configured(cli.config.as_deref())? {
+        book = book.with_locale(tag);
+    }
+    Ok(book)
 }
 
 /// `--list-sheets` and `--list-names`: what the reader knows of the workbook, as JSON, with nothing

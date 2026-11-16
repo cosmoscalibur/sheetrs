@@ -2,11 +2,14 @@
 """Compares `sheetrs edit` with LibreOffice 26.8 on one operation at a time.
 
 For each operation (rows and columns deleted, a sheet removed) it makes the operation in
-LibreOffice through UNO on the workbook, and with `sheetrs edit` on the same file; LibreOffice opens
-both results and the formulas and values of sheet `F` (column A), and the notes, manual page
-breaks and shapes of sheet `T`, are compared. A reference that
-goes is `#REF!` in both, whatever its spelling. Removing a sheet differs in an XLSX: LibreOffice
-reads the bare `#REF!` that it writes itself as `#NAME?` (docs/FIDELITY.md of sheetrs-compiler).
+LibreOffice through UNO on the workbook, SAVES it and LOADS it again: what LibreOffice shows of that file is the
+expected result (the project's rule, `CONTRIBUTING.md`: the state of its memory right after an edit is not a
+reference, because the same workbook saved and opened by someone else shows other values). `sheetrs edit` makes
+the same operation on the same file; LibreOffice opens the result, and the formulas and values of sheet `F`
+(column A), and the notes, manual page breaks and shapes of `T`, are compared, with the default load of both
+files and, as a cross-check, after a hard recalculation (`calculateAll`) of both. A reference that
+goes is `#REF!` in both, whatever its spelling, and `#NAME?` in an XLSX after a removed sheet as well as after
+deleted cells (LibreOffice reads the bare `#REF!` that it writes itself as an unknown name, and so does the engine).
 
 Usage (LibreOffice 26.8, python3-uno and a built `sheetrs`):
     cargo build -p sheetrs-cli
@@ -104,8 +107,9 @@ def same_reference(formula):
     return re.sub(r"(\$?[A-Z]+\$?\d+):\1\b", r"\1", formula)
 
 
-def column_a(doc, sheet):
-    doc.calculateAll()
+def column_a(doc, sheet, hard=False):
+    if hard:
+        doc.calculateAll()
     cells = doc.Sheets.getByName(sheet)
     return [(c.getFormula(), c.getString()) for c in (cells.getCellRangeByName(f"A{i}") for i in range(1, ROWS + 1))]
 
@@ -157,29 +161,30 @@ def main(book):
             out = current
             expected_doc = load(book)
             native(expected_doc)
-            expected = column_a(expected_doc, "F")
-            expected_layout = {}
-            if not label.startswith("remove sheet"):
-                expected_layout = layout(expected_doc)
-                # The page breaks are what LibreOffice reads back from the file it writes: in memory it
-                # keeps a manual break before the first row, which no file holds.
-                saved = tempfile.mktemp(suffix=extension)
-                expected_doc.storeToURL("file://" + saved, props(FilterName=FILTERS[extension]))
-                reread = load(saved)
-                expected_layout["page breaks (rows)"] = layout(reread)["page breaks (rows)"]
-                reread.close(True)
-                os.remove(saved)
+            expected_doc.calculateAll()  # the recalculation the screen does as it repaints
+            saved = tempfile.mktemp(suffix=extension)
+            expected_doc.storeToURL("file://" + saved, props(FilterName=FILTERS[extension]))
             expected_doc.close(True)
+            # The expected result is the file saved and opened again.
+            reread = load(saved)
+            expected = column_a(reread, "F")
+            expected_layout = layout(reread) if not label.startswith("remove sheet") else {}
+            expected_hard = column_a(reread, "F", hard=True)
+            reread.close(True)
+            os.remove(saved)
             got_doc = load(out)
             got = column_a(got_doc, "F")
             got_layout = layout(got_doc) if not label.startswith("remove sheet") else {}
+            got_hard = column_a(got_doc, "F", hard=True)
             got_doc.close(True)
             os.remove(out)
-            # LibreOffice reads the bare `#REF!` of an XLSX as an unknown name, also in the files it
-            # writes itself: `#NAME?` where it had `#REF!` is the known difference.
-            known = extension == ".xlsx" and label.startswith("remove sheet")
+            # The same cells after a hard recalculation of both files: the two are the same program for LibreOffice.
+            hard_differ = [(i + 1, e, g) for i, (e, g) in enumerate(zip(expected_hard, got_hard)) if e[1] != g[1]]
+            if hard_differ:
+                print("DIFFERENT after calculateAll", label, hard_differ[:3])
+                ok = False
             differ = [(i + 1, e, g) for i, (e, g) in enumerate(zip(expected, got))
-                      if (e[1] != g[1] and not (known and (e[1], g[1]) == ("#REF!", "#NAME?")))
+                      if e[1] != g[1]
                       or (same_reference(e[0]) != same_reference(g[0]) and "REF!" not in (e[0] + g[0]).upper())]
             def close(a, b):
                 """Equal, the numbers of a shape to two hundredths of a millimetre (LibreOffice rounds

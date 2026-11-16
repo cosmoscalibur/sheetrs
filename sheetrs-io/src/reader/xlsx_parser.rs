@@ -15,12 +15,13 @@ use super::parser_utils::{
     attr_value, column_letters, parse_cell_range, parse_cell_ref, push_general_ref, read_text_node,
 };
 use super::{
-    Cell, CellSink, CellValue, DocumentSettings, IterationSettings, NameConflict, NameScope,
-    NumFmt, Properties, Selection, Sheet, SheetInfo, SheetState, WorkbookReader,
+    AreaSink, Cell, CellSink, CellValue, DocumentSettings, IterationSettings, NameConflict,
+    NameScope, NumFmt, Properties, Selection, Sheet, SheetInfo, SheetState, WorkbookReader,
 };
 use crate::reader::ExcelError;
 use crate::reader::conflicts_of;
 use crate::reader::selection::SheetSelection;
+use crate::reader::used_area;
 
 /// Resolve sheet name to its XML path in the XLSX archive
 ///
@@ -475,6 +476,7 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'_, R> {
         let mut sheets = Vec::new();
         let sheet_names = self.get_sheet_names()?;
         let states = extract_sheet_states_from_xlsx(self.archive)?;
+        let mut sink = AreaSink::new(sink);
 
         for (idx, name) in sheet_names.into_iter().enumerate() {
             let path = xlsx_sheet_path(self.archive, &name)?;
@@ -488,8 +490,8 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'_, R> {
                 .map_or(SheetState::Visible, |(_, state)| *state);
 
             // Parse sheet data
-            let (hidden_cols, hidden_rows, merged_cells, cf_count, cf_ranges, dim_range) =
-                self.parse_sheet_xml(&path, sheet_index, &name, sink, None, Properties::ALL)?;
+            let (hidden_cols, hidden_rows, merged_cells, cf_count, cf_ranges) =
+                self.parse_sheet_xml(&path, sheet_index, &name, &mut sink, None, Properties::ALL)?;
 
             sheet.hidden_columns = hidden_cols;
             sheet.hidden_rows = hidden_rows;
@@ -497,12 +499,12 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for XlsxReader<'_, R> {
             sheet.conditional_formatting_count = cf_count;
             sheet.conditional_formatting_ranges = cf_ranges;
 
-            sheet.used_range = dim_range;
             (sheet.comments, sheet.charts, sheet.tables) =
                 count_sheet_objects(self.archive, &path)?;
             sheets.push(sheet);
         }
 
+        used_area::assign(&mut sheets, &sink.into_areas());
         Ok(sheets)
     }
 
@@ -1327,7 +1329,6 @@ type ParsedSheetData = (
     Vec<(u32, u32, u32, u32)>,
     usize,
     Vec<String>,
-    Option<(u32, u32)>,
 );
 
 // Type alias to avoid clippy::type_complexity warning
@@ -1577,19 +1578,22 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         // The cells of the range of an array formula show its formula, as `LibreOffice`
                         // shows it: every cell holds it. It is known when the formulas are read.
                         let mut in_array = false;
+                        let mut array_offset = None;
                         if props.formula {
                             if let (Some(f), Some(range)) = (formula.as_ref(), array_range) {
                                 array_ranges.push((range, f.clone()));
                             } else if formula.is_none() && !array_ranges.is_empty() {
                                 array_ranges.retain(|((_, _, last_row, _), _)| *last_row >= row);
-                                if let Some((_, master)) = array_ranges.iter().find(
-                                    |((first_row, first_col, last_row, last_col), _)| {
+                                if let Some(((first_row, first_col, _, _), master)) = array_ranges
+                                    .iter()
+                                    .find(|((first_row, first_col, last_row, last_col), _)| {
                                         (*first_row..=*last_row).contains(&row)
                                             && (*first_col..=*last_col).contains(&col)
-                                    },
-                                ) {
+                                    })
+                                {
                                     formula = Some(master.clone());
                                     in_array = true;
+                                    array_offset = Some((row - first_row, col - first_col));
                                 }
                             }
                         }
@@ -1612,6 +1616,9 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                                 f = f[1..].to_string();
                             }
                             cell.formula = Some(f.into());
+                        }
+                        if let Some(offset) = array_offset {
+                            sink.array_member(sheet_index, (row, col), offset);
                         }
                         sink.cell(sheet_index, (row, col), cell);
                     }
@@ -1803,35 +1810,12 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
             }
         }
 
-        // Include hidden rows/columns in used_range for format parity
-        // Both ODS and XLSX should report ALL empty rows/columns (visible or hidden) if they have properties
-        if let Some((mut rows, mut cols)) = dim_range {
-            if let Some(max_hidden_row) = hidden_rows.iter().map(|&(_, end)| end).max() {
-                rows = rows.max(max_hidden_row + 1);
-            }
-            if let Some(max_hidden_col) = hidden_columns.iter().map(|&(_, end)| end).max() {
-                cols = cols.max(max_hidden_col + 1);
-            }
-            dim_range = Some((rows, cols));
-        } else if !hidden_rows.is_empty() || !hidden_columns.is_empty() {
-            let mut rows = 1u32;
-            let mut cols = 1u32;
-            if let Some(max_hidden_row) = hidden_rows.iter().map(|&(_, end)| end).max() {
-                rows = rows.max(max_hidden_row + 1);
-            }
-            if let Some(max_hidden_col) = hidden_columns.iter().map(|&(_, end)| end).max() {
-                cols = cols.max(max_hidden_col + 1);
-            }
-            dim_range = Some((rows, cols));
-        }
-
         Ok((
             hidden_columns,
             hidden_rows,
             merged_cells,
             cf_count,
             cf_ranges,
-            dim_range,
         ))
     }
 }
@@ -1942,6 +1926,10 @@ fn parse_cell_contents<R: std::io::BufRead>(
                                 // LibreOffice (text is `t="s"`/`t="str"`).
                                 if let Ok(n) = v_typed.parse::<f64>() {
                                     CellValue::Number(n)
+                                } else if v_typed.is_empty() {
+                                    // `<v></v>` and `<v/>` hold nothing, as no `<v>` does (a text
+                                    // result is `t="str"`).
+                                    CellValue::Empty
                                 } else {
                                     CellValue::Text(Arc::from(v_text))
                                 }
@@ -2361,6 +2349,84 @@ pub fn extract_hidden_columns_rows_from_xlsx(
     }
 
     Ok((hidden_columns, hidden_rows))
+}
+
+/// The rows of a worksheet up to `last` (0-based, inclusive) that are hidden and the ones that hold a value or a formula, as bands
+/// `(first, last)`: the sheet is read as a stream and the read stops at the first row after `last`. A row with no `r` follows the
+/// previous one.
+///
+/// # Errors
+///
+/// When a part is missing from the archive or its XML is malformed.
+pub fn extract_row_state_from_xlsx(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+    sheet_name: &str,
+    last: u32,
+) -> Result<HiddenColumnsRows> {
+    let mut hidden: Vec<(u32, u32)> = Vec::new();
+    let mut filled: Vec<(u32, u32)> = Vec::new();
+    let Ok(sheet_path) = xlsx_sheet_path(archive, sheet_name) else {
+        return Ok((hidden, filled));
+    };
+    let Ok(sheet_xml) = archive.by_name(&sheet_path) else {
+        return Ok((hidden, filled));
+    };
+    let mut reader = Reader::from_reader(BufReader::new(sheet_xml));
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    let mut row = 0u32;
+    let mut next_row = 0u32;
+    let mut in_row = false;
+    let mut counted = false;
+    let band = |bands: &mut Vec<(u32, u32)>, row: u32| match bands.last_mut() {
+        Some(last) if last.1 + 1 == row => last.1 = row,
+        _ => bands.push((row, row)),
+    };
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e) | Event::Empty(e)) => match e.name().as_ref() {
+                "row" => {
+                    row = next_row;
+                    let mut is_hidden = false;
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            "r" => {
+                                if let Ok(val) = attr_value(&attr)?.parse::<u32>() {
+                                    row = val.saturating_sub(1);
+                                }
+                            }
+                            "hidden" => {
+                                is_hidden = attr_value(&attr)? == "1"
+                                    || attr_value(&attr)?.to_lowercase() == "true";
+                            }
+                            _ => {}
+                        }
+                    }
+                    if row > last {
+                        break;
+                    }
+                    next_row = row + 1;
+                    in_row = true;
+                    counted = false;
+                    if is_hidden {
+                        band(&mut hidden, row);
+                    }
+                }
+                // A value, a formula or an inline text inside a cell: the row holds something.
+                "v" | "f" | "is" if in_row && !counted => {
+                    counted = true;
+                    band(&mut filled, row);
+                }
+                _ => {}
+            },
+            Ok(Event::End(e)) if e.name().as_ref() == "row" => in_row = false,
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(Error::malformed(format!("XML parsing error: {e}"))),
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok((hidden, filled))
 }
 
 /// Extract merged cell ranges from a worksheet
@@ -3335,7 +3401,7 @@ mod tests {
 
         let mut archive = ZipArchive::new(Cursor::new(buf)).unwrap();
         let mut reader = XlsxReader::new(&mut archive).unwrap();
-        let (hidden_columns, hidden_rows, _, _, _, used_range) = reader
+        let (hidden_columns, hidden_rows, _, _, _) = reader
             .parse_sheet_xml(
                 "xl/worksheets/sheet1.xml",
                 0,
@@ -3348,7 +3414,6 @@ mod tests {
 
         assert_eq!(hidden_columns, vec![(0, 2)]);
         assert_eq!(hidden_rows, vec![(1, 1), (2, 2), (1_048_575, 1_048_575)]);
-        assert_eq!(used_range, Some((1_048_576, 3)));
     }
 }
 

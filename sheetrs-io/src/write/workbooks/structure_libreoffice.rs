@@ -20,7 +20,7 @@ fn scopes(specs: &[&str]) -> Vec<ValueScope> {
 }
 
 /// The formulas of column A of sheet `F` after `mods`, as the reader gives them. A reference that
-/// went reads `T!#REF!` in an XLSX and `#REF!` in an ODS: both are `#REF!`.
+/// went reads `#REF!` in both formats.
 fn run(extension: &str, mods: &WorkbookModifications) -> Vec<String> {
     let dir = tempfile::tempdir().unwrap();
     let output = dir.path().join(format!("out.{extension}"));
@@ -31,8 +31,7 @@ fn run(extension: &str, mods: &WorkbookModifications) -> Vec<String> {
     cells.sort_by_key(|(at, _)| at.0);
     cells
         .into_iter()
-        .filter_map(|(_, cell)| cell.formula.as_deref())
-        .map(|f| f.replace("T!#REF!", "#REF!"))
+        .filter_map(|(_, cell)| cell.formula.as_deref().map(str::to_string))
         .collect()
 }
 

@@ -150,6 +150,7 @@ pub fn parse_overrides(args: &mut Args) -> crate::Result<Overrides> {
                 .map_err(|_| Error::Usage(format!("bad --seed `{v}`")))?,
         );
     }
+    o.calculate_all = args.flag("--calculate-all");
     o.host = crate::options::Host {
         system: args.value("--system")?,
         osversion: args.value("--osversion")?,
@@ -205,7 +206,7 @@ Options:
                        (inputs, outputs, custom) and the exported defined names
   --info               technical description of the program and how it was built
   --version            the versions of the runtime and of the compiler that built it
-  --now SERIAL   --seed N
+  --now SERIAL   --seed N   --calculate-all
   (date system, iteration and search settings come from the document; the
   locale is fixed when the program is built)";
 

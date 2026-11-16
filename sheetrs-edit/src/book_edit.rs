@@ -6,6 +6,7 @@ use crate::replace::Report;
 use sheetrs_io::Book;
 use sheetrs_io::write::{
     Calculation, CellWrites, ColumnRange, Operation, ReplaceSpec, RowRange, ValueScope,
+    VisibilityChange,
 };
 use sheetrs_protocol::{Replace, Scope, ValueRanges};
 use std::path::Path;
@@ -72,7 +73,17 @@ pub trait BookEdit {
     fn delete_names(&mut self, names: impl IntoIterator<Item = impl Into<String>>) -> &mut Self;
 
     /// Replace the formulas of the scopes by the values they have (*Data ▸ Calculate ▸ Formula to
-    /// Value* in `LibreOffice`).
+    /// Value* in `LibreOffice`): by default the results the file caches for the formulas the plan does
+    /// not reach and what the engine calculates for the ones it reaches; with
+    /// [`with_calculate_all`](sheetrs_io::Book::with_calculate_all) the engine calculates the cells of the
+    /// scopes (and what they read) in the pass that writes them as values. A cell that depends on what the engine
+    /// cannot calculate (another workbook, an extension, a macro in secure mode) keeps the result the file caches, as `LibreOffice`
+    /// shows it until something dirties the cell, and the [`Report`] says so
+    /// ([`EXTERNAL_FROM_CACHE`](crate::EXTERNAL_FROM_CACHE), [`MACRO_FROM_CACHE`](crate::MACRO_FROM_CACHE),
+    /// [`EXTENSION_FROM_CACHE`](crate::EXTENSION_FROM_CACHE)); one the run calculates and that only `LibreOffice` can give
+    /// a result for (a function the engine lacks) is an error that names the cause. A workbook with macros is refused
+    /// by the build that runs the engine ([`Error::Refused`]) unless
+    /// [`Book::with_secure_mode`](sheetrs_io::Book::with_secure_mode).
     fn formula_to_value(&mut self, scopes: impl IntoIterator<Item = ValueScope>) -> &mut Self;
 
     /// Delete rows, in the rows of the workbook; the references to them become `#REF!` and the
@@ -81,6 +92,28 @@ pub trait BookEdit {
 
     /// Delete columns, in the columns of the workbook.
     fn delete_columns(&mut self, columns: impl IntoIterator<Item = ColumnRange>) -> &mut Self;
+
+    /// Hide rows (*Format ▸ Rows ▸ Hide* in `LibreOffice`), in the rows of the workbook. The rows
+    /// stay in the file; a row hidden this way counts as hidden by hand for a search with
+    /// `filtered` off. Changes of visibility are applied before any deletion, so the rows are those
+    /// of the input.
+    fn hide_rows(&mut self, rows: impl IntoIterator<Item = RowRange>) -> &mut Self;
+
+    /// Show rows (*Format ▸ Rows ▸ Show*), whatever hid them (by hand or by a filter).
+    fn show_rows(&mut self, rows: impl IntoIterator<Item = RowRange>) -> &mut Self;
+
+    /// Hide columns (*Format ▸ Columns ▸ Hide*), in the columns of the workbook.
+    fn hide_columns(&mut self, columns: impl IntoIterator<Item = ColumnRange>) -> &mut Self;
+
+    /// Show columns (*Format ▸ Columns ▸ Show*).
+    fn show_columns(&mut self, columns: impl IntoIterator<Item = ColumnRange>) -> &mut Self;
+
+    /// Hide the sheets of these names (*Sheet ▸ Hide Sheet*). One sheet must stay visible. A very
+    /// hidden sheet of an XLSX stays very hidden.
+    fn hide_sheets(&mut self, names: impl IntoIterator<Item = impl Into<String>>) -> &mut Self;
+
+    /// Show the sheets of these names (*Sheet ▸ Show Sheet*), hidden or very hidden.
+    fn show_sheets(&mut self, names: impl IntoIterator<Item = impl Into<String>>) -> &mut Self;
 
     /// Find and replace text in the cells of `scopes` (the whole workbook when there are none), as
     /// `LibreOffice`'s Find & Replace does: see [`sheetrs_protocol::Replace`] for what is searched
@@ -198,6 +231,54 @@ impl BookEdit for Book {
 
     fn delete_columns(&mut self, columns: impl IntoIterator<Item = ColumnRange>) -> &mut Self {
         self.push(Operation::DeleteColumns(columns.into_iter().collect()))
+    }
+
+    fn hide_rows(&mut self, rows: impl IntoIterator<Item = RowRange>) -> &mut Self {
+        let changes = rows.into_iter().map(|range| VisibilityChange::Rows {
+            range,
+            visible: false,
+        });
+        self.push(Operation::SetVisibility(changes.collect()))
+    }
+
+    fn show_rows(&mut self, rows: impl IntoIterator<Item = RowRange>) -> &mut Self {
+        let changes = rows.into_iter().map(|range| VisibilityChange::Rows {
+            range,
+            visible: true,
+        });
+        self.push(Operation::SetVisibility(changes.collect()))
+    }
+
+    fn hide_columns(&mut self, columns: impl IntoIterator<Item = ColumnRange>) -> &mut Self {
+        let changes = columns.into_iter().map(|range| VisibilityChange::Columns {
+            range,
+            visible: false,
+        });
+        self.push(Operation::SetVisibility(changes.collect()))
+    }
+
+    fn show_columns(&mut self, columns: impl IntoIterator<Item = ColumnRange>) -> &mut Self {
+        let changes = columns.into_iter().map(|range| VisibilityChange::Columns {
+            range,
+            visible: true,
+        });
+        self.push(Operation::SetVisibility(changes.collect()))
+    }
+
+    fn hide_sheets(&mut self, names: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
+        let changes = names.into_iter().map(|name| VisibilityChange::Sheet {
+            name: name.into(),
+            visible: false,
+        });
+        self.push(Operation::SetVisibility(changes.collect()))
+    }
+
+    fn show_sheets(&mut self, names: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
+        let changes = names.into_iter().map(|name| VisibilityChange::Sheet {
+            name: name.into(),
+            visible: true,
+        });
+        self.push(Operation::SetVisibility(changes.collect()))
     }
 
     fn replace(
