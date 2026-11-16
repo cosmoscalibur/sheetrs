@@ -1586,6 +1586,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             meta: Vec::new(),
             diagnostics: Vec::new(),
             build: BuildInfo::default(),
+            layout: sheetrs_engine::engine::Layout::default(),
         };
         let mut eng = Engine::with_base(&tmp, opts.clone(), &view);
         eng.calculate();
@@ -2117,6 +2118,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             queryable,
             diagnostics: diags,
             build: build_info(model, spec),
+            layout: sheetrs_engine::engine::Layout::default(),
         },
         report,
     ))

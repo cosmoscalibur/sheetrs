@@ -272,8 +272,8 @@ The equality of text (`=`, `<>`, `MATCH`, `COUNTIF`, `VLOOKUP`, `SEARCH`…) is 
 ignoring case it compares the uppercase of both texts, as LibreOffice does with its case mapping
 (ICU's full mappings with `ß` as `ẞ`, and the final sigma), and with case it compares the characters.
 So `ñ` and `n` plus a combining tilde are different, a soft hyphen is not ignored, and
-`"straße"="STRASSE"` is false. `UPPER`, `LOWER` and `PROPER` follow the same mapping (`PROPER` as
-LibreOffice's code, position by position in UTF-16 units). Compared with LibreOffice 26.8 on equality checks and case mappings: no difference.
+`"straße"="STRASSE"` is false. `UPPER`, `LOWER` and `PROPER` follow the same mapping (`PROPER` position by
+position in UTF-16 units). Compared with LibreOffice 26.8 on equality checks and case mappings: no difference.
 Number and date *formatting* is hand-written and tested rather than taken from
 CLDR on purpose: CLDR and Excel disagree there (e.g. Spanish does not group
 four-digit numbers in CLDR, Excel does).
@@ -531,8 +531,8 @@ rows of the oracle (`scripts/intersection_formulas.txt`) are from it.
 ### Lookups over an array that is not a range
 
 `MATCH` of type 1 or -1, `LOOKUP`, `VLOOKUP` and `HLOOKUP` over an inline or computed array use code
-of their own in LibreOffice (`ScMatch`, `ScLookup`, `CalculateLookup`), which gives other positions
-than for a range when the data are not sorted. They follow that code (`functions/matrix_lookup.rs`)
+of their own in LibreOffice, which gives other positions
+than for a range when the data are not sorted. They give those positions (`functions/matrix_lookup.rs`)
 and were compared with LibreOffice 26.8 on 18,000 arrays (numbers, booleans, text, mixed,
 duplicates). Also as there: `MATCH` of a type that is not -1, 0 or 1 (after truncating) and of a
 two-dimensional range or array is an error, and a square range or array is searched down its first
@@ -641,6 +641,16 @@ Two behaviors of LibreOffice that the engine and the tools do not copy: its impo
 ODS groups neighboring cells that hold one relative formula, and after a deletion the group
 moves a range of its own whose first cell is deleted (`SUM(A5:A7)` with rows 4-5 gone) differently
 from the same formula in a single cell; the tools give the result of the single cell.
+
+### Rounding (`ROUND`, `ROUNDUP`, `ROUNDDOWN`)
+
+The three functions do what LibreOffice does. The count of digits is cut to a whole number with a 15-digit tolerance
+(`ROUND(x; 2.9999999999999996)` has 3 digits) and clamped to 16 bits; `ROUNDUP` and `ROUNDDOWN` of a value with a
+fractional part and fewer than 12 digits first bring it to 12 significant digits, so that `ROUNDUP(8.06-8; 2)` is `0.06`. Then the number is scaled by `10^digits`, the product is brought to 15 significant digits (a product that is a hair under an
+integer is that integer), the floor (plus one half for `ROUND`) or the ceiling is taken, and it is scaled back; the digits are cut to the
+fractional bits of the number, a whole number is left alone, and a negative number that rounds to nothing is `-0`. It is not the rounding on the
+15 digits of the value (`ROUND(1.005; 2)` is `1.01` by both), which the number formats use. The oracle is
+`sheetrs-engine/tests/assets/round_oracle.tsv` and `round_forms.tsv` (results of LibreOffice 26.8.2) and has no difference.
 
 ### The C library
 
@@ -929,9 +939,9 @@ trigonometric and hyperbolic functions and their reciprocals), `BESSELI`, `BESSE
   `exp(n log z)`. A sine or cosine with an argument of `2^64` or more, a tangent of `2^63` or
   more, a logarithm of zero, a division by zero and a result that is not finite are `#VALUE!`
   (`Err:502`/`Err:504`).
-* **`BESSELI`, `BESSELJ`, `BESSELK` and `BESSELY`** use LibreOffice's algorithms (series for
+* **`BESSELI`, `BESSELJ`, `BESSELK` and `BESSELY`** use series for
   `I`, adjoint summation for `J` and `Y`, polynomial approximations for `K`, with the recurrence
-  of `K` and `Y` above order 1), so the digits agree with the oracle, not only to the
+  of `K` and `Y` above order 1, so the digits agree with the oracle, not only to the
   precision of the function. The order is truncated (`1.9` is 1, `-0.5` is 0); a negative order
   (after that), `K` or `Y` with `x <= 0`, an order out of the 32-bit range and a result that
   is not finite are `#VALUE!`; a series that does not converge (`J` for large `x` and order,
@@ -987,7 +997,7 @@ oracle rows (random series and options among them).
 * **`OPT_BARRIER`, `OPT_TOUCH`, `OPT_PROB_HIT` and `OPT_PROB_INMONEY`** (the pricing add-in:
   an ODS names them `COM.SUN.STAR.SHEET.ADDIN.PRICINGFUNCTIONS.GETOPT…`, an XLSX by their own
   name) price barrier and touch options in the Black-Scholes model with their greeks, as
-  `black_scholes.cxx` does. The texts are case-sensitive and by their first letter (`call` or
+  LibreOffice does. The texts are case-sensitive and by their first letter (`call` or
   `put`; `in` or `out`; `cont` or `end`; `for` or `dom`; the greek `value`, `price`, `delta`,
   `gamma`, `theta`, `vega`, `volga`, `vanna`, `rho`, `rhof` or their initials), a missing put or call is a
   call, a missing greek the value, a missing strike of `OPT_PROB_INMONEY` is no strike; a number
@@ -1015,7 +1025,7 @@ oracle rows (random series and options among them).
 (random series with trend and seasons, month and day timelines, gaps, repeated and unsorted
 values, every aggregation, the argument errors).
 
-* **The method is LibreOffice's** (`ScETSForecastCalculation`): Holt-Winters additive or
+* **The method is LibreOffice's**: Holt-Winters additive or
   multiplicative, with the smoothing constants found by bisection on the mean squared error (to a
   resolution of 0.001, each constant inside the previous one), Kahan sums, the length of the
   period found by comparing the differences a period apart when the seasonality is 1 (and a

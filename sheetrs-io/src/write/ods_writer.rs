@@ -38,7 +38,7 @@ const MATRIX_ROWS: &str = "table:number-matrix-rows-spanned";
 /// # Errors
 ///
 /// When the document cannot be read or written, or an operation cannot be applied to it.
-pub fn modify_workbook_ods<R: Read + Seek, W: Write + Seek>(
+pub fn modify_workbook_ods<R: Read + Seek, W: Write + Seek + Send>(
     input: R,
     output: W,
     modifications: &WorkbookModifications,
@@ -74,7 +74,7 @@ pub fn modify_workbook_ods<R: Read + Seek, W: Write + Seek>(
     Ok(())
 }
 
-fn apply_ods<R: Read + Seek, W: Write + Seek>(
+fn apply_ods<R: Read + Seek, W: Write + Seek + Send>(
     mut archive: ZipArchive<R>,
     zip_writer: &mut ZipWriter<W>,
     modifications: &WorkbookModifications,
@@ -128,15 +128,18 @@ fn apply_ods<R: Read + Seek, W: Write + Seek>(
             continue;
         }
         zip_writer.start_file(CONTENT_PART, part_options())?;
-        modify_content_xml(
-            BufReader::new(archive.by_index(i)?),
-            &mut *zip_writer,
-            modifications,
-            &extra_styles,
-            &extents,
-            &no_break,
-        )
-        .with_context(|| format!("Failed to modify {CONTENT_PART}"))?;
+        // The archive compresses what is written in another thread.
+        super::pipe::through(&mut *zip_writer, |out| {
+            modify_content_xml(
+                BufReader::new(archive.by_index(i)?),
+                out,
+                modifications,
+                &extra_styles,
+                &extents,
+                &no_break,
+            )
+            .with_context(|| format!("Failed to modify {CONTENT_PART}"))
+        })?;
     }
 
     Ok(())

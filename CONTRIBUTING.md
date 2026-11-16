@@ -74,6 +74,22 @@ Two requirements, and a rule about how to test them:
   therefore not a goal of SheetRS but a behavior to emulate, in both modes, and where the default shows other values than
   `LibreOffice` after the same edit (`reread_default` of the oracle) the case is recorded in
   [docs/approved-differences.md](docs/approved-differences.md) as proposed, not approved.
+- **A difference with LibreOffice is adjusted, not asked about** (a human developer and an agent alike).
+  When SheetRS and LibreOffice differ and nothing prevents it, the difference is fixed in the same work. What
+  prevents it is a technical impediment, a significant increase of complexity, or a regression or a
+  degradation that has to be validated. Only then is a decision requested, and the request carries the
+  justification for keeping the difference (permanent, or temporary, as when it is resolved in another pull
+  request), says what is being asked, and says what the developer resolves without asking. With none of those
+  reasons the developer resolves it.
+- **The source code of LibreOffice is not read.** It is forbidden to a human developer and to an agent, in any
+  version and in any form (its repository, a mirror, an excerpt, a tool that attaches it). The behavior is
+  learned by running LibreOffice and from its own results, by a **clean room**: the behavior is observed with
+  probes and oracles (`sheetrs-io/tests/assets/oracle/make_oracle.py` and the scripts of the fixtures) and written
+  down as a specification of inputs and results, with no code and no internal name; the implementation is written
+  from that specification and from the observations, never from the code; and every behavior is pinned by an
+  oracle of results that LibreOffice itself gave. A developer who has seen the code of a function does not
+  implement it. If a behavior cannot be derived from observations, it is reported to the maintainer as a pending
+  decision, with what was tried: reading the code is not the way out.
 - **How it is tested.** A file is tested against what LibreOffice reports for that file: the
   fixtures are made by LibreOffice and `sheetrs-io/tests/assets/oracle/make_oracle.py` records what it
   says of each cell (see `sheetrs-query/tests/libreoffice_oracle.rs`); the effect of an edit is tested against

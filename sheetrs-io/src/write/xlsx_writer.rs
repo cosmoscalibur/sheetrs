@@ -45,7 +45,7 @@ pub(super) struct SheetEntry {
 /// # Errors
 ///
 /// When the workbook cannot be read or written, or an operation cannot be applied to it.
-pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
+pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek + Send>(
     input: R,
     output: W,
     modifications: &WorkbookModifications,
@@ -81,7 +81,7 @@ pub fn modify_workbook_xlsx<R: Read + Seek, W: Write + Seek>(
     Ok(())
 }
 
-fn apply_xlsx<R: Read + Seek, W: Write + Seek>(
+fn apply_xlsx<R: Read + Seek, W: Write + Seek + Send>(
     mut archive: ZipArchive<R>,
     zip_writer: &mut ZipWriter<W>,
     modifications: &WorkbookModifications,
@@ -314,16 +314,19 @@ fn apply_xlsx<R: Read + Seek, W: Write + Seek>(
                     zip_writer.raw_copy_file(archive.by_index_raw(i)?)?;
                 } else if !scopes.is_empty() || structure.is_some() || cell_edits.is_some() {
                     zip_writer.start_file(&name, part_options())?;
-                    transform_sheet(
-                        BufReader::new(archive.by_index(i)?),
-                        &mut *zip_writer,
-                        scopes,
-                        structure.as_ref(),
-                        cell_edits,
-                        sheet_of_part.get(&name).copied().unwrap_or_default(),
-                        &mut styles,
-                    )
-                    .with_context(|| format!("Failed to rewrite {name}"))?;
+                    // The archive compresses what is written in another thread.
+                    super::pipe::through(&mut *zip_writer, |out| {
+                        transform_sheet(
+                            BufReader::new(archive.by_index(i)?),
+                            out,
+                            scopes,
+                            structure.as_ref(),
+                            cell_edits,
+                            sheet_of_part.get(&name).copied().unwrap_or_default(),
+                            &mut styles,
+                        )
+                        .with_context(|| format!("Failed to rewrite {name}"))
+                    })?;
                 } else if let Some(&(kind, sheet)) = comment_parts.get(&name) {
                     let content = read_part(&mut archive, &name)?;
                     let structure = SheetStructure {

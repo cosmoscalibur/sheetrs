@@ -15,6 +15,7 @@ mod ods_structure;
 mod ods_visibility;
 mod ods_writer;
 mod operation;
+mod pipe;
 mod shapes;
 pub(crate) mod structure;
 mod visibility;

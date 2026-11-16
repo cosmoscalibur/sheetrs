@@ -1,6 +1,6 @@
-//! `CONVERT`: the units of `LibreOffice`'s analysis add-in (`scaddins/source/analysis/
-//! analysishelper.cxx`, `ConvertDataList`), with its table in its order, since the lookup of a
-//! unit with a prefix takes the last unit that matches and an exact name wins over all of them.
+//! `CONVERT`: the units of `LibreOffice`'s analysis add-in, with its table in its order, since the
+//! lookup of a unit with a prefix takes the last unit that matches and an exact name wins over all
+//! of them.
 //! The result is checked against the oracle (`tests/assets/semantics.*`).
 
 use super::{Reg, num};

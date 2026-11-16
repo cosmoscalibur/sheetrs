@@ -2,9 +2,8 @@
 //!
 //! A shape anchored to a cell has its position and size from the sizes of the rows and columns, so
 //! where it ends up depends on them: they are in the file (the height of each row and the width of
-//! each column), and this is the model of what `LibreOffice` does with them, read from its source
-//! (`ScDrawLayer::DeleteObjectsInArea`, `MoveCells`, `RecalcPos`, `ResizeLastRectFromAnchor`) and
-//! checked against `LibreOffice` 26.8 on every band of the fixtures:
+//! each column), and this is the model of what `LibreOffice` does with them, checked against
+//! `LibreOffice` 26.8 on every band of the fixtures:
 //!
 //! 1. A shape that lies wholly inside the deleted band is deleted with it.
 //! 2. The cell it is anchored to (its start, and its end when it has one) moves up by the size of the
