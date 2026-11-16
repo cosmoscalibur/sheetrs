@@ -1297,14 +1297,8 @@ fn transform_sheet<R: BufRead, W: Write>(
                     None => (FormulaOut::Keep, false),
                 };
                 // A cell of a group whose first cell became a value needs a formula of its own.
-                let out = shared_group_formula(
-                    out,
-                    shared_index,
-                    &formula,
-                    (row, col),
-                    sheet,
-                    &masters,
-                )?;
+                let out =
+                    shared_group_formula(out, shared_index, &formula, (row, col), sheet, &masters)?;
                 let start = relocated_cell(&e, at, changed)?;
                 match out {
                     FormulaOut::Keep => write_element(&mut writer, start, Some(&body))?,
@@ -1416,14 +1410,16 @@ fn shared_group_formula(
     masters: &HashMap<u32, SharedMaster>,
 ) -> Result<FormulaOut> {
     match (out, shared_index) {
-        (FormulaOut::Keep, Some(si)) if formula.text.is_empty() => match masters.get(&si) {
-            Some(m) if m.converted => Ok(FormulaOut::Plain(shared_text(m, row, col, sheet)?)),
-            // The copy reads outside the sheet: its own formula, with the bare `#REF!`
-            // `LibreOffice` saves, which it reads back as an unknown name.
-            Some(m) if m.leaves => Ok(leaving_copy_text(m, row, col, sheet)?
-                .map_or(FormulaOut::Keep, FormulaOut::Plain)),
-            _ => Ok(FormulaOut::Keep),
-        },
+        (FormulaOut::Keep, Some(si)) if formula.text.is_empty() => {
+            match masters.get(&si) {
+                Some(m) if m.converted => Ok(FormulaOut::Plain(shared_text(m, row, col, sheet)?)),
+                // The copy reads outside the sheet: its own formula, with the bare `#REF!`
+                // `LibreOffice` saves, which it reads back as an unknown name.
+                Some(m) if m.leaves => Ok(leaving_copy_text(m, row, col, sheet)?
+                    .map_or(FormulaOut::Keep, FormulaOut::Plain)),
+                _ => Ok(FormulaOut::Keep),
+            }
+        }
         (out, _) => Ok(out),
     }
 }

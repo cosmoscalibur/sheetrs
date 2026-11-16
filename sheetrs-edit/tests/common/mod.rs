@@ -3,7 +3,9 @@
 //! Nothing else is in the file (no styles, no `<dimension>`, no marks), so it is the workbook of
 //! a program that caches its results and says nothing else.
 
-#![allow(dead_code)]
+// Each test file uses part of the helpers; and the XML of a few cells is built with `format!` for
+// readability, which costs nothing that matters in a test.
+#![allow(dead_code, clippy::format_collect, clippy::format_push_string)]
 
 use sheetrs_io::Book;
 use sheetrs_io::reader::CellValue;

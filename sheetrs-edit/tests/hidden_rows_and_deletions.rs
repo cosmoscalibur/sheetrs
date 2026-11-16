@@ -22,7 +22,11 @@ fn book(extension: &str) -> std::path::PathBuf {
                 "Calc",
                 vec![(
                     "A1",
-                    Cell::Formula("SUBTOTAL(109,Data!A4:A5)", "SUBTOTAL(109;[$Data.A4:.A5])", 9.0),
+                    Cell::Formula(
+                        "SUBTOTAL(109,Data!A4:A5)",
+                        "SUBTOTAL(109;[$Data.A4:.A5])",
+                        9.0,
+                    ),
                 )],
             ),
         ],

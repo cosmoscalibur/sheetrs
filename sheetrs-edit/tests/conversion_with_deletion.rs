@@ -89,11 +89,7 @@ fn shared_group(extension: &str) -> Vec<(&'static str, Cell)> {
             Cell::Raw(r#"<f t="shared" si="0"/><v>0</v>"#, ""),
         )
     } else {
-        (
-            ods("NOW()+[.A2]"),
-            ods("NOW()+[.A3]"),
-            ods("NOW()+[.A4]"),
-        )
+        (ods("NOW()+[.A2]"), ods("NOW()+[.A3]"), ods("NOW()+[.A4]"))
     };
     vec![
         ("A2", Cell::Number(2.0)),
