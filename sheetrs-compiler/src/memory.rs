@@ -27,7 +27,7 @@ use sheetrs_engine::calculate::{Overrides, ValueRanges};
 use sheetrs_engine::ir::{Mode, Program};
 use sheetrs_io::Book;
 
-/// What a build is configured with: the keys of a `sheetc.toml` (`fold`, `strict`, `now`, `seed`,
+/// What a build is configured with: the keys of a `sheetc.toml` (`strict`, `now`, `seed`,
 /// `host`, `enable_features`, `locale`, `settings`) and, for a workbook with no settings sheet, the
 /// declarations of its inputs and outputs.
 #[derive(Debug, Clone, Default)]
@@ -79,6 +79,19 @@ impl Options {
         };
         spec.mode = mode;
         Ok(spec)
+    }
+
+    /// These options with the clock and the seed of `book` ([`Book::with_volatile`]) where they leave
+    /// them open: the `now` and `seed` of the options win, the book's come next, and what neither
+    /// fixes is the clock. Every function of this module that builds or calculates a [`Book`]
+    /// applies it, so the book is the one place to initialise them.
+    #[must_use]
+    pub fn with_book(&self, book: &Book) -> Self {
+        let volatile = book.volatile();
+        let mut options = self.clone();
+        options.config.now = options.config.now.or(volatile.now);
+        options.config.seed = options.config.seed.or(volatile.seed);
+        options
     }
 
     /// The values the run overrides: the clock, the seed and the host the options fix.
@@ -232,7 +245,7 @@ impl BookCompile for Book {
 /// When the workbook cannot be read or compiled.
 fn build(source: &Book, options: &Options, mode: Mode) -> Result<(Program, Report)> {
     let model = loader::load(source)?;
-    let spec = options.spec(&model, mode)?;
+    let spec = options.with_book(source).spec(&model, mode)?;
     let (mut program, report) = compile(model, &spec)?;
     program.build.built_at = crate::compile::build_time()?;
     Ok((program, report))
@@ -329,7 +342,7 @@ fn calculate(
     with_json: bool,
 ) -> Result<Calculated> {
     let (program, _) = build(source, options, mode)?;
-    let overrides = options.overrides();
+    let overrides = options.with_book(source).overrides();
     let diagnostics = program.diagnostics.clone();
     if !mode.is_workbook() {
         let answer = program.handle(request, &overrides)?;
@@ -344,8 +357,11 @@ fn calculate(
             "a workbook recalculated as it is gives no JSON".into(),
         ));
     }
-    if with_json {
-        let mut workbook = Vec::new();
+    // The workbook is written with the answer of the program in it: the ranges it can be asked for
+    // are the declared outputs or the formula cells (`Error::OutsideOutputs` otherwise). A range
+    // outside them is not an answer of `calculate`: it is read from the workbook written, with `query`.
+    let mut workbook = Vec::new();
+    let (written, answer) = if with_json {
         let (report, answer) = sheetrs_answer::fill_template_to_with_answer(
             source,
             &program,
@@ -354,14 +370,8 @@ fn calculate(
             &overrides,
             &mut workbook,
         )?;
-        Ok(Calculated {
-            answer: Some(answer),
-            workbook: Some(workbook),
-            written: report.cells,
-            diagnostics,
-        })
+        (report.cells, Some(answer))
     } else {
-        let mut workbook = Vec::new();
         let report = sheetrs_answer::fill_template_to(
             source,
             &program,
@@ -370,13 +380,14 @@ fn calculate(
             &overrides,
             &mut workbook,
         )?;
-        Ok(Calculated {
-            answer: None,
-            workbook: Some(workbook),
-            written: report.cells,
-            diagnostics,
-        })
-    }
+        (report.cells, None)
+    };
+    Ok(Calculated {
+        answer,
+        workbook: Some(workbook),
+        written,
+        diagnostics,
+    })
 }
 
 /// What `sheetc inspect` says about a workbook.
@@ -422,7 +433,7 @@ pub struct FunctionUse {
 /// When the workbook cannot be read or compiled.
 fn inspect(source: &Book, options: &Options) -> Result<Inspection> {
     let model = loader::load(source)?;
-    let mut config = options.config.clone();
+    let mut config = options.with_book(source).config;
     config.strict = Some(false);
     let mut spec = match &options.declarations {
         Some(text) => config.spec_with_declarations(&model, text)?,
@@ -468,7 +479,7 @@ fn verify(
     abs_tolerance: Option<f64>,
 ) -> Result<Json> {
     let model = loader::load(source)?;
-    let mut config = options.config.clone();
+    let mut config = options.with_book(source).config;
     config.strict = Some(false);
     let spec = match &options.declarations {
         Some(text) => config.spec_with_declarations(&model, text)?,

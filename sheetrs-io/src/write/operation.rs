@@ -29,6 +29,12 @@ pub struct Calculation {
     pub major: MajorDimension,
     /// Whether the answer (the value ranges) is wanted besides the workbook.
     pub answer: bool,
+    /// The serial number that `NOW()` and `TODAY()` give in this calculation (the `now` of `sheetc`);
+    /// `None` is the clock. It also fixes the recalculation that the same plan runs after this step.
+    pub now: Option<f64>,
+    /// The seed of `RAND()` and its relatives in this calculation (the `seed` of `sheetc`); `None` is
+    /// seeded from the clock. It also fixes the recalculation that the same plan runs after this step.
+    pub seed: Option<u64>,
 }
 
 /// One operation on a workbook, on the workbook as the operations before it leave it. The

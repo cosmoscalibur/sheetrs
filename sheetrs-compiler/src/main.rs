@@ -74,7 +74,6 @@ BUILD OPTIONS (each also a key of sheetc.toml; the command line wins)
                        the pieces of `_xlfn._LONGTEXT(a,b,...)` (a text literal
                        over 255 characters written by LibreOffice 26.2);
                        constant text pieces only
-  --no-fold            keep every reachable formula (no build-time evaluation)
   --no-strict          compile a workbook with macros (reported as a warning);
                        by default (strict) it is an error. --strict undoes a
                        `strict = false` of the file
@@ -318,6 +317,8 @@ fn embedded_answer(
         return write_workbook(program, base, template, &request, &o, &out, &named);
     }
     let request = cli::with_ranges(cli::read_request(input.as_deref())?, &ranges)?;
+    // A range outside the declared outputs is an error: the workbook is written, and it is read with
+    // `sheetrs query`.
     let (report, answer) = sheetrs_answer::fill_template_with_answer(
         template,
         program,
@@ -327,7 +328,8 @@ fn embedded_answer(
         Path::new(&out),
     )
     .map_err(|e| Fail::Run(format!("{e:#}")))?;
-    log(&wrote_workbook(&named, report.cells));
+    let cells = report.cells;
+    log(&wrote_workbook(&named, cells));
     println!(
         "{}",
         if pretty {
@@ -432,7 +434,6 @@ fn config_from(args: &mut Args) -> Result<(Config, Option<String>), Fail> {
     let mut cli = Config {
         settings: args.value("--settings")?,
         settings_file: args.value("--settings-file")?.map(PathBuf::from),
-        fold: args.flag("--no-fold").then_some(false),
         strict: if args.flag("--no-strict") {
             Some(false)
         } else {

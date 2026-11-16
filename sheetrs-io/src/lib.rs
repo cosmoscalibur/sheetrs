@@ -18,7 +18,7 @@ pub mod reader;
 #[cfg(feature = "write")]
 pub mod write;
 
-pub use book::Book;
+pub use book::{Book, Volatile};
 pub use entry_format::EntryFormat;
 pub use error::{Error, Result};
 pub use sheetrs_formula::{DateSystem, UnsupportedDateSystem};

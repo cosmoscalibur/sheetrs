@@ -7,8 +7,8 @@
 use serde_json::{Map, Value as Json};
 use sheetrs_compiler::memory::{BookCompile, Options};
 use sheetrs_engine::ir::Mode;
-use sheetrs_io::Book;
 use sheetrs_io::write::Calculation;
+use sheetrs_io::{Book, Volatile};
 use sheetrs_protocol::ValueRanges;
 use std::fmt;
 
@@ -51,7 +51,11 @@ pub(crate) fn calculate(
     source: &Book,
     calculation: &Calculation,
 ) -> Result<Calculated, CalculateError> {
-    let options = Options::default();
+    // The clock and the seed reach the engine as the options of the build and of the run, as the
+    // `--now` and `--seed` of `sheetc` do: the step's own, else the ones given to the book.
+    let mut options = Options::default().with_book(source);
+    options.config.now = calculation.now.or(options.config.now);
+    options.config.seed = calculation.seed.or(options.config.seed);
     // Inputs, ranges or an answer are the embedded mode (the workbook is its own template, inputs
     // and outputs declared or deduced); with none of them the workbook is calculated as it is.
     let embedded =
@@ -92,6 +96,9 @@ pub(crate) fn calculate(
             answer: None,
         });
     }
+    // The workbook is its own template here (the embedded mode). A range outside the outputs it
+    // declares is an error (`OutsideOutputs`): it is not an answer of `calculate`, it is read from the
+    // workbook that is written, with `query`.
     let overrides = options.overrides();
     let failed = |e: sheetrs_answer::Error| CalculateError::Failed(e.to_string());
     let mut workbook = Vec::new();
@@ -122,9 +129,15 @@ pub(crate) fn calculate(
 }
 
 /// Every formula of the workbook calculated again, as it is: the bytes of the workbook with fresh
-/// cached results, in its own format. The error is why that cannot be done.
-pub(crate) fn recalculate(source: &Book) -> Result<Vec<u8>, String> {
-    calculate(source, &Calculation::default())
+/// cached results, in its own format, with the clock and the seed `volatile` fixes. The error is why
+/// that cannot be done.
+pub(crate) fn recalculate(source: &Book, volatile: Volatile) -> Result<Vec<u8>, String> {
+    let calculation = Calculation {
+        now: volatile.now,
+        seed: volatile.seed,
+        ..Calculation::default()
+    };
+    calculate(source, &calculation)
         .map(|calculated| calculated.workbook)
         .map_err(|error| error.to_string())
 }

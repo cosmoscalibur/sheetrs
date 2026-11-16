@@ -259,7 +259,10 @@ fn what_the_settings_declare_narrows_the_json_the_inputs_and_what_the_workbook_w
         "{}",
     );
     assert_eq!(code, 1);
-    assert!(err.contains("not inside the outputs"), "{err}");
+    assert!(
+        err.contains("outside the outputs this program declares"),
+        "{err}"
+    );
 }
 
 #[test]

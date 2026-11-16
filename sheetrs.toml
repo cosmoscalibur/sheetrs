@@ -16,6 +16,12 @@ disabled_rules = []
 # `LC_CTYPE`, then `LANG`; `en-US` when it has none), as in LibreOffice, for an XLSX and an ODS. The `--locale` flag wins over this key.
 # locale = "es-CO"
 
+# Clock and seed of the recalculation of `sheetrs edit` (the lint rules do not use them): the serial number
+# that NOW() and TODAY() give, and the seed of RAND(). Not set by default: the clock decides. The `--now`
+# and `--seed` flags win over these keys.
+# now = 45366.75
+# seed = 42
+
 # Global parameter defaults.
 # Parameters marked (per sheet) can be overridden in a [sheets."<name>"] table.
 

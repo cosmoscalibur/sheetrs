@@ -2249,6 +2249,7 @@ dependencies = [
  "serde_json",
  "sheetrs-engine",
  "sheetrs-io",
+ "sheetrs-query",
  "thiserror",
 ]
 

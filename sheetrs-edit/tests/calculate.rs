@@ -162,6 +162,7 @@ fn the_inputs_are_written_and_the_formulas_calculated() {
             ranges: None,
             major: MajorDimension::default(),
             answer: false,
+            ..Calculation::default()
         });
         editor.write(&out).unwrap();
         // T!C1 is SUM(A1).
@@ -183,6 +184,7 @@ fn a_workbook_the_engine_cannot_calculate_is_written_marked_and_the_run_warns() 
                 ranges: None,
                 major: MajorDimension::default(),
                 answer: false,
+                ..Calculation::default()
             });
         let report = editor.write(&out).unwrap();
         assert!(
@@ -212,6 +214,7 @@ fn a_calculation_as_the_only_step_that_cannot_run_still_marks_the_workbook() {
             ranges: None,
             major: MajorDimension::default(),
             answer: false,
+            ..Calculation::default()
         });
         let report = editor.write(&out).unwrap();
         assert_eq!(report.diagnostics.len(), 1, "{extension}");
@@ -303,6 +306,7 @@ fn without_the_outputs_kept_the_report_holds_none() {
         ranges: None,
         major: MajorDimension::default(),
         answer: false,
+        ..Calculation::default()
     });
     let report = editor.write_to(std::io::sink()).unwrap();
     assert!(report.value_ranges.is_none());
@@ -322,6 +326,7 @@ fn explain_says_the_calculation_and_what_happens_if_it_cannot_run() {
             ranges: None,
             major: MajorDimension::default(),
             answer: false,
+            ..Calculation::default()
         });
     let text = editor.explain();
     assert!(
@@ -349,6 +354,7 @@ fn a_conversion_converts_the_calculated_results_in_memory_too() {
                 ranges: None,
                 major: MajorDimension::default(),
                 answer: false,
+                ..Calculation::default()
             })
             .formula_to_value(["F".parse().unwrap()]);
         let mut bytes = Vec::new();
@@ -380,6 +386,7 @@ fn a_calculation_on_a_workbook_that_comes_marked_leaves_it_unmarked() {
             ranges: None,
             major: MajorDimension::default(),
             answer: false,
+            ..Calculation::default()
         });
         second.write(&out).unwrap();
         assert!(!marked(&out), "{extension}");

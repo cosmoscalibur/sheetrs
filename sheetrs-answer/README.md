@@ -27,7 +27,11 @@ println!("{} cells written", written.cells);
 - `fill_template` writes a file, `fill_template_to` any `io::Write` (the bytes of a workbook, for
   a host with no file system), and the `_with_answer` forms also give the JSON answer of the
   program to the same request, from the same calculation.
-- It depends on `sheetrs-engine` and `sheetrs-io` only. `sheetc` (`calculate -o OUT`,
+- In the embedded mode a range of the request that lies outside the outputs of the program is read,
+  in memory and with no recalculation, from the workbook just written, with `sheetrs-query` (the
+  answer keeps the order of the request); a compiled program that writes no workbook refuses it
+  (`sheetrs_engine::Error::OutsideOutputs`). The table is in the README of `sheetrs-compiler`.
+- It depends on `sheetrs-engine`, `sheetrs-io` and `sheetrs-query` only. `sheetc` (`calculate -o OUT`,
   `--embed-template`), the editor (`BookEdit::calculate`, the recalculation before a conversion of
   formulas to values) and the WebAssembly base module that writes workbooks
   (`sheetrs-rt-wasm`, feature `template`) are its callers.

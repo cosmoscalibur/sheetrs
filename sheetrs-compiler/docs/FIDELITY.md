@@ -10,7 +10,7 @@ another is not a mode but what the file carries and how its functions are named:
 | The file's **format** | How it is read: the settings the document stores (iteration, search criteria, case sensitivity, null date, the syntax `INDIRECT` reads), the syntax of defined names, the reading of a bare `#REF!`. |
 | The function's **namespace** | Which function a name is, where the same text names two (`CEILING`, `FLOOR`, …): `core` (the OpenDocument standard, no prefix), `microsoft`, `libreoffice`, `openoffice`, `legacy`; see *Document state and namespace*. |
 | The build configuration (`[locale]`, `--locale`) | Application-wide regional settings (separators, date order, month and day names, boolean names, currency). Fixed at build time. |
-| The run | Only the clock (`NOW()`) and the random seed. |
+| The run | Only the clock (`NOW()`) and the random seed. `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of SheetRS with no LibreOffice counterpart: distinct seeds give distinct streams and no LibreOffice result matches them. |
 
 The tables below say where that behavior differs from Excel's. The Excel column is Excel's
 **documented** behavior, not an Excel run: no Excel is available here, which makes it the
@@ -161,7 +161,7 @@ matching and case-insensitive comparisons, and so does the engine.
 | ---------- | ---- |
 | The document | Date system, iteration, search settings (ODS), two-digit-year window. The command line cannot override them. |
 | The build configuration (`[locale]`, `--locale`) | Application-wide regional settings that Excel and LibreOffice let the user change outside any document: separators, date order of text dates, month/day names, boolean names, currency, two-digit-year window. Fixed at build time. |
-| The run | Only the clock (`NOW()`) and the random seed. |
+| The run | Only the clock (`NOW()`) and the random seed. `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of SheetRS with no LibreOffice counterpart: distinct seeds give distinct streams and no LibreOffice result matches them. |
 | Nobody (informational) | The document's language (`fo:language`/`fo:country` of the default cell style). |
 
 The language is not an input to evaluation, and the locale of a calculation is the one of the

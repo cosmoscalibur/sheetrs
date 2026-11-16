@@ -203,7 +203,7 @@ second step, which finds its results stale and calculates them again. There is n
 
 Operations on different sheets do not depend on each other, because a reference moves only with the
 rows and columns of the sheet it names. That holds because references across sheets are not
-supported (below). `--dry-run` prints the passes. `--locale TAG` (and `--config FILE`, whose `locale` in `[global]` is its default; `sheetrs.toml` of the current directory when there is one) is the locale of the calculation that an edit leaves to do (`TEXT`, the conversion of a number to text): by default the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none), for an XLSX and an ODS alike. The typed replacement of `--replace` still reads its text in `en-US` (issue #84).
+supported (below). `--dry-run` prints the passes. `--locale TAG` (and `--config FILE`, whose `locale`, `now` and `seed` in `[global]` are the defaults of `--locale`, `--now` and `--seed`; `sheetrs.toml` of the current directory when there is one) is the locale of the calculation that an edit leaves to do (`TEXT`, the conversion of a number to text): by default the one of the system (`LC_ALL`, `LC_CTYPE` or `LANG`; `en-US` when there is none), for an XLSX and an ODS alike. The typed replacement of `--replace` still reads its text in `en-US` (issue #84). `--now SERIAL` and `--seed N` fix `NOW()`/`TODAY()` and `RAND()` in that calculation (the `now` and `seed` of `sheetc`, and of a `calculate` step of the library; their defaults are the `now` and `seed` of `[global]` in the configuration file); without any the engine reads the clock, as a spreadsheet does.
 
 **As a library** (`sheetrs_edit::BookEdit`, a trait for `sheetrs_io::Book`), the changes are collected
 in the `Book` (`Book::from_file(..)?`, `Book::from_bytes(..)?`; its operations are `book.operations()`)
@@ -250,7 +250,7 @@ result and has nothing to calculate. The mark cannot be asked for or avoided, in
 [`docs/performance.md`](../docs/performance.md#sheetrs-edit). `--dry-run` says the passes and the calculation that ends them.
 
 **`calculate` is an operation, and `sheetrs edit` has no flag for it.** In the library,
-`BookEdit::calculate(Calculation { inputs, ranges, major, answer })` writes the inputs and calculates every
+`BookEdit::calculate(Calculation { inputs, ranges, major, answer, now, seed })` writes the inputs and calculates every
 formula of the workbook as it is, before the conversions and the deletions (*Data ▸ Calculate* in
 LibreOffice). The engine is the one of `sheetrs-compiler` (the semantics of LibreOffice), which this
 crate depends on: nothing is handed in, and the same one recalculates the results that a conversion of
@@ -266,11 +266,33 @@ formulas to values reads after a change that leaves them stale.
   program that opens the file later. The command line writes it to the standard error (see
   *Diagnostics* in `sheetrs-protocol`).
 - **The value ranges** (`ranges`: ranges, in the cells of the workbook as it is; the workbook's own outputs
-  when omitted) are kept in the `Report` when the `Calculation` asks for the `answer`: `Report::value_ranges` is
+  when omitted; see *Which ranges* below) are kept in the `Report` when the `Calculation` asks for the `answer`: `Report::value_ranges` is
   the answer of the protocol (`sheetrs_protocol::ValueRanges`, `{"valueRanges": [...]}`) and `Report::write_json(out)` writes it as JSON, the way `write` writes
   the workbook; to read them without writing the workbook anywhere, `write_to(std::io::sink())`. With
   the answer asked for, a workbook the engine cannot calculate is an error (`Error::Calculation`),
   since there is no answer to give; `write_json` of a report that kept none is `Error::NoCalculation`.
+
+**The clock and the seed.** `Calculation::now` (the serial number of `NOW()`, from which `TODAY()` follows) and
+`Calculation::seed` (`RAND()`) are the `now` and `seed` of `sheetc`, and reach the engine as the options of the
+build and of the run it already has; `None` is the system clock. They are the clock of the whole plan, not only
+of the step: the recalculation that the planner adds after what leaves results stale (a deletion, a
+replacement) takes the `now` and `seed` of the last `calculate` step that sets them, so a plan that fixes the
+clock gives the same workbook whichever pass calculates. Where a plan has no `calculate` step the recalculation
+takes the ones given to the book (`Book::with_volatile`, `sheetrs_io::Volatile`; `sheetrs edit --now --seed`
+set it, with `now` and `seed` of `[global]` in `sheetrs.toml` as their defaults), and a step's own value wins
+over the book's. The book's `now` and `seed` also reach the engine in `sheetrs_compiler::memory`
+(`Options::with_book`), where the options of a call win over them.
+
+**Which ranges.** `calculate` is the embedded mode of the engine (the workbook is its own template: inputs,
+`ranges` or the `answer` need no compiled program). With no output declared (a settings sheet named `settings`
+with `output` rows; the library takes no `settings_file`) the outputs are the formula cells, and with some
+declared they are those; `ranges` is a selection among them when it lies inside, and a range **outside** them is
+not refused as it is in a compiled program (`sheetc calculate` without `-o`, which lists the declared outputs in its
+error): it is read, in memory and with no recalculation, from the workbook just written, with the machinery of
+`query` (`sheetrs_answer` does it for every path that writes a workbook). A constant has the value it holds, the
+`inputs` are in it, and a formula the outputs left out has the result the template stored (declare it as an output to
+have it calculated); the answer keeps the order of the request. A text that is no range or name of the workbook is an
+error (`Error::Calculation`). Details and the table of the cases: [`sheetrs-compiler`](../sheetrs-compiler/README.md#which-ranges-can-be-asked-for).
 
 `sheetrs edit` has no `--calculate` flag: calculating is a step the planner inserts where a conversion needs fresh results (`BookEdit::calculate` is the explicit step in the library). To calculate a file with inputs and ranges, `sheetc calculate -i FILE -o OUT` (with `--request` to give them).
 

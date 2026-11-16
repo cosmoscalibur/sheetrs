@@ -54,7 +54,8 @@ Dependencies point inward: adapters → tool libraries → `sheetrs-io` / `sheet
   engine (the executable is larger by what the engine is: the sizes are in `docs/performance.md`).
 - `sheetrs-compiler` and `sheetrs-edit` both depend on `sheetrs-answer`, the code that runs a
   program over a workbook and writes the answer into it (`fill_template*`); it depends on the
-  engine and on the writers of `sheetrs-io`, and on nothing of the compiler or the editor.
+  engine, on the writers of `sheetrs-io` and on `sheetrs-query` (a range of the request that lies outside
+  the outputs is read from the workbook just written), and on nothing of the compiler or the editor.
 
 The writers are a **feature** of the kernel, `sheetrs-io/write`, off by default: the tools that only
 read (`sheetrs lint`, `sheetrs stats`, `sheetrs query`, the compiler without its loader) do not compile them.
@@ -73,6 +74,7 @@ graph TD
     linter[sheetrs-linter] --> io
     stats[sheetrs-stats] --> io
     answer[sheetrs-answer] --> engine
+    answer --> query
     answer -->|write| io
     compiler[sheetrs-compiler] --> engine
     compiler --> answer

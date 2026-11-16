@@ -224,16 +224,14 @@ fn serve_mode_answers_line_by_line() {
     assert!((b / a - 2.0).abs() < 1e-9);
 }
 
-/// The locale is fixed when the program is built, with or without `--no-fold`.
+/// The locale is fixed when the program is built.
 #[test]
 fn locale_flag_is_refused_at_run_time() {
     let dir = tempfile::tempdir().unwrap();
-    for extra in [&[][..], &["--no-fold"][..]] {
-        let fixed = build_loan("loan.xlsx", dir.path(), extra);
-        let (code, _, err) = run(&fixed, &["--locale", "es"], "{}");
-        assert_eq!(code, 2, "{err}");
-        assert!(err.contains("fixed when the program is built"), "{err}");
-    }
+    let fixed = build_loan("loan.xlsx", dir.path(), &[]);
+    let (code, _, err) = run(&fixed, &["--locale", "es"], "{}");
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("fixed when the program is built"), "{err}");
 }
 
 /// The date system, the iteration and the search settings belong to the document: there is no flag for
@@ -389,7 +387,11 @@ fn outputs_are_declared_or_the_formula_cells() {
     assert_eq!(values(&ask(&exe, "Loan!B4").1)[0]["range"], "Loan!B4");
     let (code, _, err) = ask(&exe, "Loan!B5");
     assert_eq!(code, 1);
-    assert!(err.contains("not inside the outputs"), "{err}");
+    assert!(
+        err.contains("`Loan!B5` is outside the outputs this program declares")
+            && err.contains("payment (Loan!B4)"),
+        "{err}"
+    );
 
     // No outputs declared: the formula cells are the outputs (as the rectangles that hold them, not
     // the constants), so the default answer is one entry per rectangle, and ranges inside them are

@@ -319,10 +319,23 @@ reads ranges the way the batch read of a spreadsheet API does (`ranges`,
   starting the process for each request. A bad request gets
   `{"error_message": "..."}` and the loop goes on; blank lines are skipped.
 
-What may be asked is decided when the program is built, by what is declared: `ranges` may name an
-output, a defined name that lies inside the outputs, or a range inside them. Without `ranges` the
-answer is the outputs as value ranges (the declared ones, or the formula cells as rectangles). A range outside the
-outputs is an error saying so.
+### Which ranges can be asked for
+
+What may be asked is decided when the program is built, by what is declared. Without `ranges` the
+answer is the outputs as value ranges (the declared ones, or the formula cells as rectangles). With
+`ranges`, whether a workbook is written decides what a range outside the outputs does:
+
+| Declared outputs (settings sheet or `settings_file`) | `ranges` outside them | Where |
+| --- | --- | --- |
+| yes, **compiled program** (JSON answer: `sheetc calculate` without `-o`, an executable run without `--output`, `BookCompile::calculate` with `Mode::Values`, a WebAssembly module from `compile`) | **an error** that lists the declared outputs (`sheetrs_engine::Error::OutsideOutputs`, `declared: Some(["payment (Loan!B4)", ...])`): `ranges` is a selection among the declared outputs (an output's name, a defined name that lies inside them, or a range inside one) | the program has pruned the workbook to what the outputs read, and writes no workbook to read the rest from |
+| yes, **a workbook is written** (the workbook is its own template: `sheetc calculate -o OUT --json`, `--in-place --json`, an embedded executable or module with `--output OUT --json`, `BookCompile::calculate` with `Mode::Embedded`, and the `calculate` of `sheetrs edit`, Python and WebAssembly, which are all this) | **read from the workbook just written**, in memory, with the machinery of `query` and no recalculation: a constant has the value it holds, the input given is in it, and a formula the outputs did not include has the result the template stored (declare it as an output to have it calculated). The answer keeps the order of the request and an outside range is named as it was asked | the workbook is there to read. A text that is no range or name of the workbook is still an error |
+| no | the outputs are the formula cells (as the rectangles that hold them): in the compiled program `ranges` must lie inside them and a constant is an error (with no declared outputs there is no list to give); where a workbook is written the rest is read as above | |
+
+The read is made by `sheetrs_answer` (`fill_template_to_with_answer` and `fill_template_with_answer`, which
+every path above calls), so it needs no compiler: the WebAssembly base module that writes workbooks
+(`sheetrs-rt-template.wasm`) answers a range outside the declared outputs the same way. The same read is available
+to any caller on any workbook held in memory: `BookQuery::range` on a `Book::from_bytes` (Rust), `Book(bytes).range`
+(Python) and `new Book(bytes).range` (WebAssembly).
 
 ### Logs
 
@@ -354,7 +367,6 @@ where it is started). Unknown keys are errors.
 ```toml
 settings = "settings"   # --settings
 # settings_file = "model.json"   # --settings-file: the same declarations as JSON
-fold     = true         # --no-fold
 strict   = true         # --strict / --no-strict: refuse (or only warn about) macros
 now      = 45292.5      # --now SERIAL: fix NOW()/TODAY() (default: the clock, at each run)
 seed     = 42           # --seed N: fix RAND (default: seeded from the clock)
@@ -406,6 +418,22 @@ The `[locale]` keys are the application-wide regional settings that Excel and
 LibreOffice let a user change outside any document (separators, two-digit-year
 window, list and currency conventions). Other application-wide settings can be
 added to the file as they are verified; per-document ones stay the document's.
+
+**The clock and the seed** (`now`, `seed`) are an input of every tool that builds or calculates, and each
+accepts them with the same names and the same order, from the one that wins: the flag or option of the
+call, the clock and seed of the workbook (`Book::with_volatile`, `Book(..., now=, seed=)`,
+`new Book(bytes, locale, {now, seed})`), the configuration file and the system clock (the seed is taken
+from it). `RAND` of LibreOffice cannot be seeded, so `seed` is an extension of SheetRS: distinct seeds give
+distinct streams, and there is no LibreOffice result to match.
+
+| Tool | Flags | Configuration file |
+|---|---|---|
+| `sheetc build`, `sheetc calculate`, `sheetc verify` | `--now SERIAL`, `--seed N` | `now`, `seed` of `sheetc.toml` |
+| `sheetc evaluate` | `--now SERIAL`, `--seed N` | none (it has no workbook) |
+| an executable of `sheetc build` (and `--embed-template`), `sheetrs-rt` | `--now SERIAL`, `--seed N` at run time, over the ones the build fixed | the build's |
+| `sheetc inspect` | none: it calculates nothing | `now`, `seed` are read and unused |
+| `sheetrs edit` | `--now SERIAL`, `--seed N` | `now`, `seed` in `[global]` of `sheetrs.toml` (`--config`) |
+| `sheetrs lint`, `query`, `stats` | none: they read what the file caches and calculate nothing | none |
 
 ## Function support
 

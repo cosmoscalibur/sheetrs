@@ -83,7 +83,9 @@ pub struct Spec {
     pub rand_seed: Option<u64>,
     /// What `INFO` and `CELL("filename")` say; the file name is the workbook's unless given.
     pub host: sheetrs_engine::options::Host,
-    /// Evaluate input-independent cells at build time.
+    /// Evaluate input-independent cells at build time (default true). A Rust-library option for
+    /// tests and low-level use (comparing a folded and an unfolded program): `sheetc`, `sheetc.toml`
+    /// and the bindings always fold.
     pub fold: bool,
     /// What the program is for. A recalculated workbook (`Recalculate`) has every formula for an
     /// output and any constant for an input, whatever `inputs` and `outputs` say. An embedded one
