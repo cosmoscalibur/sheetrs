@@ -37,6 +37,7 @@ pub fn load(source: &Book) -> Result<Model> {
     // The file's format decides how it is read (settings the document carries, names,
     // reference syntax); what computes it is LibreOffice's behavior.
     let mut m = assemble(wb, ods, sink.cells);
+    m.array_members = sink.array_members;
     m.from_xlsx = !ods;
     m.file_name = source
         .path()
@@ -81,11 +82,17 @@ fn sha256_of(source: &Book) -> Result<String> {
 #[derive(Default)]
 struct ModelSink {
     cells: CellStore,
+    array_members: std::collections::HashMap<CellRef, (u32, u32)>,
 }
 
 impl sheetrs_io::reader::CellSink for ModelSink {
     fn hint(&mut self, sheet: u16, cells: usize) {
         self.cells.reserve(sheet, cells);
+    }
+
+    fn array_member(&mut self, sheet: u16, at: (u32, u32), offset: (u32, u32)) {
+        self.array_members
+            .insert(CellRef::new(sheet, at.0, at.1), offset);
     }
 
     fn cell(&mut self, sheet: u16, at: (u32, u32), cell: sheetrs_io::reader::Cell) {
