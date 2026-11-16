@@ -347,7 +347,7 @@ the project's fidelity (see [approved differences](../docs/approved-differences.
 what `--calculate-all` gives is the choice of the caller who wants every formula to hold what the engine gives (the issue that
 asked for the cache, [#126](https://github.com/cosmoscalibur/sheetrs/issues/126), shows cells where Excel and the engine
 differ, and a `TEXT` calculated with another locale than the one the workbook was written with). What the cache costs and
-saves is in [`docs/performance.md`](../docs/performance.md): the engine, the writing of the
+saves is in [`docs/performance.md`](../docs/performance.md#the-cache-and-calculate-all): the engine, the writing of the
 results and the memory of the calculation shrink with what is not reached; the reading of the workbook and the passes of the plan do not.
 
 **`calculate` is an operation, and `sheetrs edit` has no flag for it.** In the library,

@@ -8,7 +8,8 @@ the table of its flow here, and `sheetrs-linter/docs/PROFILING.md` when it targe
 - [Method](#method)
 - [Fixtures](#fixtures)
 - [Results](#results): [lint](#sheetrs-lint), [stats](#sheetrs-stats), [query](#sheetrs-query),
-  [edit](#sheetrs-edit), [calculate and the compiler](#sheetc-calculate-and-sheetc-build),
+  [edit](#sheetrs-edit), [the cache and calculate_all](#the-cache-and-calculate_all),
+  [calculate and the compiler](#sheetc-calculate-and-sheetc-build),
   [Python](#python), [WebAssembly](#webassembly), [sizes](#sizes)
 - [Against LibreOffice](#against-libreoffice)
 - [Known limits](#known-limits)
@@ -37,7 +38,7 @@ To measure again:
 ```bash
 cargo build --profile dist -p sheetrs-cli -p sheetrs-compiler
 python3 scripts/bench.py fixtures DIR                  # about 4 minutes; needs `xlsxwriter`, `openpyxl` and LibreOffice
-python3 scripts/bench.py run DIR                       # every group; or `run DIR lint,edit` for some
+python3 scripts/bench.py run DIR                       # every group; or `run DIR lint,edit` for some (`cache`: `edit` by default against `--calculate-all`; `modes`: `sheetc build` in its three modes)
 python3 scripts/bench.py run DIR python --python VENV/bin/python   # a venv with `maturin develop --profile dist`
 scripts/package-wasm.sh && scripts/build-wasm-rt.sh && python3 scripts/bench.py run DIR wasm
 ```
@@ -109,46 +110,189 @@ its content part to know where the sheets are.
 
 ### `sheetrs edit`
 
-A plan that deletes rows, columns, sheets or names (or replaces text) ends with the engine calculating every
-formula again; the workbook is marked to be recalculated only if the engine cannot (see the README of
-`sheetrs-edit`). A conversion alone streams and calculates nothing, unless the workbook says its results are
-stale. `formulas.xlsx` stores `0` as every cached result and says so (`fullCalcOnLoad`); in `formulas.ods` the
-results are stored. The table is the minimum and the maximum of 3 runs (`scripts/bench.py run DIR edit`); a row
-that deletes calculates the 2.4 M formulas.
+The calculation mode decides what the engine does in a plan that leaves results stale (rows, columns, sheets or names
+deleted, text replaced) or that converts formulas to values (see the README of `sheetrs-edit`, *The cache is the default*).
+By default, as `LibreOffice` does when it opens a file and when a cell changes, the engine calculates the formulas the plan
+reaches and what depends on them and every other formula keeps the result the file caches; with `--calculate-all`
+(`calculateAll()` of `LibreOffice`) it calculates every formula, and the workbook is marked to be recalculated only if the
+engine cannot (see the README of `sheetrs-edit`). The next two sections measure both on the referent size of every table
+here, **300 000 rows** of `Calc` (`scripts/bench.py fixtures DIR`, `--rows 300000`: 2.4 M formulas, 3.6 M cells), in the
+same build and the same session, minimum and maximum of 3 runs; the second one is the cache against `--calculate-all` for the
+plans that leave results stale.
+
+`formulas.xlsx` stores `0` as every cached result and says so (`fullCalcOnLoad`): a run on it has no results to keep and
+calculates as `--calculate-all` does, so the workbooks of the comparisons are `formulas_cached.xlsx` (the same workbook
+with the results LibreOffice computed) and `formulas.ods` (which stores them).
+
+The table below was measured before the calculation modes, when every plan ended with the engine calculating every formula:
+it is the `--calculate-all` scenario of today (`scripts/bench.py run DIR edit`; a row that deletes calculates the 2.4 M
+formulas). The default is in the sections that follow.
 
 | Scenario (flags) | `formulas.xlsx` | `formulas.ods` |
 |---|---|---|
 | `--delete-sheets Lookup` | 20.58-21.22 s, 1799 MB | 33.35-35.20 s, 1882 MB |
 | `--delete-names base_rate` | 17.05-18.40 s, 1580 MB | 29.02-29.79 s, 1586 MB |
-| `--formula-to-value Calc` | 23.02-25.04 s, 1592 MB | 6.09-6.20 s, 17 MB |
-| `--formula-to-value Calc!B:D Calc!1:1000` | 23.13-23.53 s, 1582-1593 MB | 6.55-6.91 s, 17 MB |
-| delete sheet and name, convert `Calc` (one command) | 25.46-25.66 s, 1583-1592 MB | 12.42-12.78 s, 299 MB |
+| `--formula-to-value Calc` | 15.81-16.53 s, 1566 MB | 22.93-23.62 s, 1600 MB |
+| `--formula-to-value Calc!B:D Calc!1:1000` | 10.91-11.94 s, 1049 MB | 18.17-18.67 s, 1059 MB |
+| delete sheet and name, convert `Calc` (one command) | 17.80-18.71 s, 1566 MB | 30.70-31.29 s, 1600-1608 MB |
 | `--delete-rows Data!10:20` | 24.76-25.45 s, 1600 MB | 36.95-37.48 s, 1604 MB |
-| `--delete-rows Data!10:20 --formula-to-value Calc` | 26.76-27.22 s, 1583 MB | 16.17-16.87 s, 299 MB |
-| `--delete-rows Calc!3:10 --formula-to-value Summary` | 43.43-43.89 s, 1658-1660 MB | 38.05-39.77 s, 1603-1604 MB |
+| `--delete-rows Data!10:20 --formula-to-value Calc` | 19.11-19.94 s, 1562 MB | 33.01-33.83 s, 1600-1608 MB |
+| `--delete-rows Calc!3:10 --formula-to-value Summary` | 31.47-32.57 s, 1639 MB | 45.21-45.95 s, 1645 MB |
 | `--delete-columns Data!B:D` | 22.17-23.10 s, 2152 MB | 30.83-31.75 s, 2166-2167 MB |
 | rows and columns together | 23.07-24.03 s, 2152 MB | 31.50-32.34 s, 2167 MB |
 | sheet, name, rows and columns (one command) | 23.10-23.86 s, 2150 MB | 31.86-33.28 s, 2164-2165 MB |
 
-A conversion of an ODS streams (17 to 299 MB); what needs the engine holds the formulas of the workbook in memory,
-about 1.6-2.2 GB for 2.4 M formulas. The ODS rows that delete cost about 10 s more than the XLSX ones because
-the ODS is read and compiled (6-9 s of reading) and the output of the deleting pass is read again by the engine.
-`--delete-columns` on an ODS took 136-160 s before the empty run that closes each row was kept up to the last
-column ([#107](https://github.com/cosmoscalibur/sheetrs/issues/107)): a reader that finds that run short of the
-edge takes it for formatted cells. LibreOffice was not run on this input, so there is no contrast for these
-rows; the contrast of the edit flows is in [Against LibreOffice](#against-libreoffice).
+**A conversion of formulas to values has two scenarios**, both measured here (`scripts/bench.py run DIR edit --workbooks
+formulas_cached.xlsx,formulas.ods --scenarios ...`). By default it converts the results the file caches for the formulas the
+plan does not reach and what the engine calculates for the ones it reaches (a deletion or a replacement pushed with it): where
+nothing is reached nothing is calculated, and an XLSX or an ODS that caches its results is streamed (the short path). With
+`--calculate-all` the engine reads and compiles the workbook and calculates what it converts (the long path, the one that
+does not depend on what the file caches).
 
-The plan did decide which formulas a deletion leaves stale, and calculated only those, while it existed (see the
-history of #102). Measured on this workbook (one run per cell, ODS / XLSX with real cached results) it cost 15-16 s
-(ODS) and 7-8 s (XLSX) for the reading and compiling it needs, and spared the engine nothing where most formulas read
-what changes (`--delete-columns`: 49.4 s with it, 30.2 s without; `--delete-sheets`: 49.0 and 32.3 s), while it won
-where nothing was stale (`--delete-columns Data!E:G`: 25.9 s with it, 34.7 s without; XLSX 16.7 and 27.7 s). Since the
-result a file cached is not a goal (`docs/approved-differences.md`), it was removed.
+| Scenario (flags) | Default (the cache) | `--calculate-all` |
+|---|---|---|
+| XLSX `formulas_cached.xlsx`, `--formula-to-value Calc` | 5.86-5.95 s, 18 MB | 18.86-19.32 s, 1590 MB |
+| XLSX `formulas_cached.xlsx`, `--formula-to-value Calc!B:D Calc!1:1000` | 5.59-5.70 s, 18 MB | 14.45-14.79 s, 1171 MB |
+| XLSX `formulas_cached.xlsx`, delete sheet and name, convert `Calc` | 8.89-8.97 s, 230 MB | 22.16-22.41 s, 1590 MB |
+| XLSX `formulas_cached.xlsx`, `--delete-rows Data!10:20 --formula-to-value Calc` | 10.64-10.86 s, 265 MB | 23.75-24.57 s, 1572-1579 MB |
+| ODS `formulas.ods`, `--formula-to-value Calc` | 24.4 s (single run) | 23.4 s (single run) |
+| ODS `formulas.ods`, `--formula-to-value Calc!B:D Calc!1:1000` | 26.2 s (single run) | 24.3 s (single run) |
+| ODS `formulas.ods`, delete sheet and name, convert `Calc` | 33.5 s (single run) | 31.3 s (single run) |
+| ODS `formulas.ods`, `--delete-rows Data!10:20 --formula-to-value Calc` | 38.0 s (single run) | 35.1 s (single run) |
+
+The default is 2.2-3.2 times faster (XLSX) and 2.4-4.3 times (ODS) than `--calculate-all` and holds 18-266 MB where it holds
+1.0-1.6 GB. The price is what the file caches (the program that wrote it may not have calculated it), which is what
+`LibreOffice` converts too. An ODS has no short path: `LibreOffice` calculates on load the formulas that cache a plain number in a cell with no format, which is every formula of `formulas.ods`, so the plan
+starts with that calculation (see *The startup of an ODS* below) and the ODS rows of this table are single runs of the build of the startup, default and `--calculate-all` alike. What needs the engine holds the formulas of the workbook in memory, about 1.6-2.2 GB for
+2.4 M formulas (a conversion of columns and rows only the cone of the cells it names: 1.05 GB for `Calc!B:D Calc!1:1000`). The ODS
+rows that delete cost about 10 s more than the XLSX ones because the ODS is read and compiled (6-9 s of reading) and the output of the
+deleting pass is read again by the engine. `--delete-columns` on an ODS took 136-160 s before the empty run that closes each row was
+kept up to the last column ([#107](https://github.com/cosmoscalibur/sheetrs/issues/107)): a reader that finds that run short of the
+edge takes it for formatted cells. LibreOffice was not run on this input, so there is no contrast for these rows; the contrast of the
+edit flows is in [Against LibreOffice](#against-libreoffice).
+
+### The cache and `calculate_all`
+
+The default of `sheetrs edit` (see the README of `sheetrs-edit`) calculates only the formulas the plan reaches (what `LibreOffice` recalculates
+after the same edit, *What a deletion reaches* in `sheetrs-compiler/docs/FIDELITY.md`) and the ones that depend on them; every other formula is a
+constant that holds the result the file caches. It is measured against `--calculate-all` on the workbooks that cache true results, with
+`scripts/bench.py run DIR cache` (300 000 rows, 2.4 M formulas, `dist` build, min-max of 3 runs, the same build and session as the artifact above; the XLSX rows were measured with 3 runs, and the figures of this round that
+are a single run say so: only significant differences are meaningful). Each row is a plan whose recalculation has the share of the 2.4 M formulas that
+the last column says.
+
+| Workbook and scenario | Default (the cache) | `--calculate-all` | Formulas calculated (cone) |
+|---|---|---|---|
+| XLSX `--delete-names base_rate` (nothing reads it) | 7.06-7.39 s, 1235 MB | 18.59-18.99 s, 1603 MB | 0 |
+| XLSX `--delete-rows Data!299990:299995` | 21.02-21.53 s, 1256 MB | 26.71-28.36 s, 1606-1607 MB | 59 |
+| XLSX `--delete-rows Data!10:20` (the running total reads on) | 22.32-23.12 s, 1275-1276 MB | 27.71-28.78 s, 1622 MB | 300 074 (12.5 %) |
+| XLSX `--delete-sheets Lookup` (a sheet goes: `LibreOffice` calculates every formula) | 23.69-25.50 s, 1800 MB | 23.77-24.24 s, 1800 MB | all |
+| XLSX `--delete-columns Data!B:D` (every formula reads them) | 25.20-25.37 s, 2150 MB | 23.62-24.27 s, 2152 MB | 37.5 % that read the columns and what depends on them |
+| ODS `--delete-names base_rate` | 26.8 s (single run) | 25.5 s (single run) | all (every formula is a root of the startup) |
+| ODS `--delete-rows Data!299990:299995` | 35.28-36.12 s, 1586 MB (earlier build) | not measured | all |
+| ODS `--delete-rows Data!10:20` | 34.0 s (single run) | 32.3 s (single run) | all |
+| ODS `--delete-sheets Lookup` | 27.7 s (single run) | 28.1 s (single run) | all |
+| ODS `--delete-columns Data!B:D` | 28.2 s (single run) | 28.0 s (single run) | all |
+
+**The startup of an ODS (single runs, `formulas.ods`, `dist` build, one session).** `LibreOffice` calculates on load every ODS formula that caches a number, a currency or a date in a cell
+with no number format (and a cached error, an array formula, a result with no type: `sheetrs-compiler/docs/FIDELITY.md`, *What LibreOffice calculates when it opens a file*), and
+`formulas.ods` (which `LibreOffice` wrote) has all 2.4 M formulas as roots. `sheetrs edit` on an ODS therefore starts with that calculation, in the mode of the run (the roots by default, every
+formula with `--calculate-all`), as the first pass that runs the engine. Where the earlier default spent its time, phases of `--formula-to-value Calc`, one run each (timers around each step, `SHEETC_TRACE` for the compiler):
+
+| Phase | Default before (scans, two passes) | Default now (startup) |
+|---|---|---|
+| Plan: scan of the bytes for formulas with no result | 1.2 s | none |
+| Plan: scan of the cells for what `LibreOffice` calculates on load (stops at the first one: the first formula is at byte 210 MB of 711 MB, after the `Data` sheet of constants, so it reads 29 % of `content.xml`) | 8.5 s | none |
+| Pass 1: read and compile, calculate every root, write every result | 23.8 s | 25.2 s (read, compile, calculate, write and convert, one pass) |
+| Pass 2: read the file again and convert the cached values | 6.2 s | none |
+| Total | 41.0 s | 25.2 s |
+
+The scans existed because the planner had to decide, before it ran, whether the plan needs the engine and whether a conversion needs the calculation first; the reader already tells the sink, cell by cell, which
+formulas the load calculates (`CellSink::recalculated_on_load`), and the compile that has to read the workbook anyway uses that: the decision is folded into the one read. The second pass was not needed by the conversion:
+LibreOffice's conversion writes the value the cell holds and forces no calculation (`probe_convert.py`: the cached `140`, `from-excel` and `99` of an XLSX stay, an ODS shows what it calculated on load), so the engine
+that calculates the roots writes them, and the cells the conversion names that it did not calculate are converted with the result the file caches, in the same pass. Before this change (`sheetrs edit` ran every ODS
+as `--calculate-all`, the build of the commit before) and now, same session, `formulas.ods`:
+
+| Scenario | Before (every ODS as `--calculate-all`) | Now (default) | Now (`--calculate-all`) |
+|---|---|---|---|
+| `--formula-to-value Calc` | 24.8 s | 24.4 s | 23.4 s |
+| `--formula-to-value Calc!B:D Calc!1:1000` | 19.1 s | 26.2 s | 24.3 s |
+| delete sheet and name, convert `Calc` | 31.4 s | 33.5 s | 31.3 s |
+| `--delete-rows Data!10:20 --formula-to-value Calc` | 36.7 s | 38.0 s | 35.1 s |
+| `--delete-names base_rate` | 25.8 s | 26.8 s | 25.5 s |
+| `--delete-rows Data!10:20` | 32.7 s | 34.0 s | 32.3 s |
+| `--delete-sheets Lookup` | 27.5 s | 27.7 s | 28.1 s |
+| `--delete-columns Data!B:D` | 26.4 s | 28.2 s | 28.0 s |
+| `--hide-columns Data!B` (nothing stale) | 3.2 s | 27.6 s | 26.3 s |
+
+Nothing is slower than the earlier default (41.0 s for the first row). Against the build that ran every ODS as `--calculate-all` the deletions and conversions cost 0-4 % more (noise of the session is of that order), the conversion of
+`Calc!B:D Calc!1:1000` 37 % more (it no longer prunes the workbook to the cells it names: the startup writes every result, 52 MB against 33 MB), and an edit that leaves nothing stale pays the startup, 27.6 s where the file was
+written as it is in 3.2 s: that is the price of the results `LibreOffice` shows when it opens the file. The memory was not measured again. An XLSX is not affected by the startup: `formulas_cached.xlsx` `--formula-to-value Calc` and
+`--hide-columns Data!B` keep the figures above (not run again: the XLSX path did not change).
+
+**The names of an ODS (+3 s of a deletion of rows or columns).** The rule that a name is reached by a deletion needs the names as they were before the pass, and an ODS gave them by reading all its
+cells. They are now read from the skeleton of `content.xml` (the tables and the blocks of names, searched in the inflated bytes: no XML event for a cell). Measured with the binaries of the commit before and
+after, three runs each, `formulas.ods`: `--delete-rows Data!10:20` 49.17-50.47 s before, 47.18-47.91 s after; `--delete-columns Data!B:D` 44.66-45.91 s before, 42.12-42.22 s after; rows and columns together
+46.36-46.93 s before, 41.92-43.54 s after (5-10 %, 2-5 s: the first bounded step, kept; the inflate of the part and the reading of the rest of the file are what is left). These absolute figures are
+of that session, when every plan also looked in the file for what is calculated on load; the rows of the table above are of the final build.
+
+What the cache saves is the calculation and the writing of the results of the formulas that are not reached, and the memory
+the program holds for them: 18-22 % of the time and 22-23 % of the peak where a share of the formulas is reached (12.5 % or less),
+about 2.8 times the time where none is (the engine is not asked and no result is written). What it does not save is what the plan costs whatever the
+engine does: the pass that deletes (7-8 s on this workbook) and, in the recalculation, reading the workbook, parsing its 2.4 M
+formulas and building their graph (about 7 s); the second takes the same time with a cone of 59 formulas as with the whole workbook.
+Two costs of this round, measured against the binaries of the previous commit in the same session: the rows that delete rows or columns of an
+ODS cost about 3 s more (28.8-30.4 s before, 32.2-33.8 s now: the rule that a name is reached when a deletion moves its target needs the names
+as they were before the pass, and an ODS has to be read to give them; an XLSX keeps them in a small part, and its rows did not change:
+23.2-24.4 s before, 22.0-24.2 s now), and `--delete-names` reads no name at all (13.6-13.9 s before, 13.0-13.8 s now; a first version of the rule read
+them and cost 16.9-17.3 s). The walk that finds the cone is made however many formulas are stale: the shortcut that calculated everything where more
+than a quarter were stale or had no result is gone, because it wrote the engine's result where `LibreOffice` keeps the one the file caches
+(`--delete-columns Data!B:D`, where it applied, is 26.1-27.6 s against 24.5-25.5 s before).
+
+The cost of finding the cone is the walk over the formulas: for a workbook of this size 0.6-1.3 s (the dependencies of
+the 2.4 M formulas and the reverse of the graph, which the compiler builds again for what it calculates). It is made however many formulas
+are stale: if the cone turns out to be the whole workbook the loss is that walk (1-1.3 s on this workbook, 4-5 %), and what is gained is that the
+formulas that nothing reaches keep the result the file caches, as in `LibreOffice`.
+
+**No scan for a qualified `#REF!`.** The compiler reads `Data!#REF!` as the plain error, so no pass inflates or rewrites a sheet for it (an earlier version scanned the sheets of an XLSX for the mark `!#REF!` to write it bare: +0.25 s, 3.6 %, on `--delete-names base_rate` of `formulas_cached.xlsx`, and +0.66 s, 9 %, on `--hide-rows`; it was not kept).
 
 ### `sheetc calculate` and `sheetc build`
 
-`sheetc calculate -i formulas.xlsx`: every formula calculated again, the workbook written (`-o OUT`) 10.39-10.82 s,
-1598 MB; one declared output as JSON (`--range Summary!A1`) 10.52-10.54 s, 1598 MB. Those two figures predate the changes below; `-o OUT` measured again after the model went by value into `compile` (see below): 8.3-8.9 s, 1152 MB (1309 MB before it, same session), the workbook byte-identical.
+`sheetc calculate` has the calculation mode of the run (see the README of `sheetrs-compiler`, *The calculation mode*): by default what the
+inputs it is given reach is calculated and the rest of the workbook is the result it caches, and `--calculate-all` calculates the whole
+workbook. A calculation is built and run in one go, so the cells that can change are the inputs the request gives, not every input the
+workbook declares (a build is run later with any of them and keeps the cone of all). The workbook written is the answer, so it carries what was
+calculated and, for the rest, what the template caches; a formula nothing reached is not written again. On `formulas_cached.xlsx` (2.4 M formulas;
+the workbook declares the input `rate` and its outputs; `scripts/bench.py run DIR calculate`, 300 000 rows, min-max of 3 runs, the same build
+(`dist`) and session):
+
+| Flow | Default (the cache) | `--calculate-all` |
+|---|---|---|
+| `sheetc calculate -i formulas_cached.xlsx -o OUT` (the workbook written, nothing given) | 5.88-6.36 s, 1226 MB | 22.71-24.23 s, 1519-1520 MB |
+| `sheetc calculate -i formulas_cached.xlsx --range Summary!A1` (JSON) | 5.80-5.92 s, 1226 MB | 12.74-12.94 s, 1479-1489 MB |
+| `sheetc calculate -i formulas_cached.xlsx --request '{"inputs": {"rate": 0.07}}' -o OUT` (the input given: its cone, 1.5 M formulas, is calculated and written) | 19.03-19.38 s, 1229 MB | 26.95-31.35 s, 1571-1598 MB |
+
+**Why the workbook as the answer cost 80 % more, and what fixed it.** Before this round the same command took 15.80-15.93 s by default
+(`--range` as JSON: 8.17-8.38 s; `--calculate-all -o`: 23.50-23.94 s; the same session and build profile, measured with the binaries of the
+previous commit): the build kept in the program the cone of every input the workbook **declares** (`rate`: 1.5 M of the 2.4 M formulas) because a
+program is run later with any of them, although the request gave none, and the answer, being the whole workbook, then calculated and wrote
+those 1.5 M results (rewriting the sheet that holds them, 288 MB of XML). The calculation knows what it is given: its roots are the inputs of the
+request (`Spec::given_inputs`) and the cells with no result or that nothing can vouch for; with none given nothing is reached and the workbook is
+the template as it is (the output equals the input, sheet by sheet), which is what the default of `LibreOffice` shows. The cost that is left,
+5.8-6.4 s, is reading the workbook, parsing its 2.4 M formulas and building the graph, as the JSON answer has. With the input given the cone is
+calculated and written, as before the change: 19.5-21.2 s with the previous commit, 19.1-20.0 s now. A request read from the standard input
+(`--request -`) or from a file is not known when the program is built, so the cone of every declared input is built then.
+`formulas.xlsx`, the other workbook of the benchmark, stores `0` as every cached result and says so with `fullCalcOnLoad`: a run on it,
+`sheetc calculate` included, has no result to keep and is whole, as `--calculate-all` is; the comparisons use `formulas_cached.xlsx`.
+
+**The artifact** (`scripts/bench.py run DIR modes`, 3 runs of the build and of each run, the session of the final numbers of this round). A program built by default
+carries the cached result of the formulas it keeps: 113.73 MB (as many with `--calculate-all`), against 95.13 MB when it is built with
+`--force-calculate-all` (16 % lighter; it calculates all of them in every run). The build takes 9.11-9.48 s by default, 16.79-17.68 s with `--calculate-all` and
+9.34-9.66 s with `--force-calculate-all`. A run of the executable takes about 2.1-2.5 s in every combination
+(the input changed or nothing given, default or `--calculate-all`, built with or without force: 495-542 MB),
+because what it costs is reading the 90-108 MB program and starting the engine, not calculating what it kept: on this workbook
+the cache of the run saves nothing measurable (the formulas are cheap and the engine calculates the cone as fast as it clones the
+cached results), and it pays only in the build and in `calculate`, which skip the calculation of what no input reaches. A
+program built by default and one built with `--calculate-all` give the same answers (the same md5 in every run above).
 
 `sheetc build` and the executable it writes, one run per row group (`sheetrs-compiler/scripts/measure_perf.py`; the
 stages come from `SHEETC_TRACE`; median of 3):
@@ -261,7 +405,7 @@ the contrast script in the same rounds as LibreOffice's.
 |---|---|---|
 | Load, calculate every formula, write the workbook | `sheetc calculate -o`: 10.8-11.1 s, 1598 MB | load, `calculateAll()`, store: 37.5-38.0 s, 2193 MB |
 | Delete rows `Calc!3:10`, calculate, write | `sheetrs edit --delete-rows`: 23.3 s, 1646 MB *; Python `Book.delete_rows(...).save(out)`: 24.83-25.46 s (the process 26.87-27.56 s), 1655 MB | load, `Rows.removeByIndex`, `calculateAll()`, store: 47.7-48.9 s, 3286-3288 MB |
-| The same plus formulas to values of `Summary` | `sheetrs edit --delete-rows … --formula-to-value Summary`: 41.0 s, 1890 MB * | the same steps with `.uno:ConvertFormulaToValue`: 47.7-49.5 s, 3293-3295 MB |
+| The same plus formulas to values of `Summary` | `sheetrs edit --delete-rows … --formula-to-value Summary`: 41.0 s, 1890 MB * (31.5-32.6 s, 1639 MB with the conversion that calculates what it converts, `scripts/bench.py`) | the same steps with `.uno:ConvertFormulaToValue`: 47.7-49.5 s, 3293-3295 MB |
 | Read the whole workbook (XLSX) | `sheetrs stats`: 1.73-1.77 s, 14 MB; Python `Book(path)`: 1.97-2.05 s, 17 MB | load: 10.2-10.6 s, 1348-1350 MB |
 | Find a text in every sheet (XLSX; 14 930 cells in both) | `sheetrs query --find K00`: 2.32-2.38 s, 17-18 MB; Python `find`: 2.34-2.39 s after the open, 24 MB | load and `findAll`: 11.8-12.6 s, 1348-1349 MB (the search alone 2.0-2.1 s) |
 | Read the whole workbook (ODS) | `sheetrs stats`: 2.90-2.95 s, 14 MB | load: 28.3-29.2 s, 1187 MB |
@@ -333,11 +477,10 @@ a running total.
 
 Measured at this state; none is being worked on here.
 
-- **Every deletion, replacement or name removal calculates the whole workbook.** The engine calculates every formula
-  again (`--delete-names base_rate` takes 17-18 s of an XLSX and 29-30 s of an ODS here, as much as the recalculation,
-  although no formula reads the name).
-  Operations that could be applied in a batch before one recalculation are not yet
-  ([#102](https://github.com/cosmoscalibur/sheetrs/issues/102)).
+- **A deletion, replacement or name removal always pays for reading and compiling the workbook** when the plan leaves a
+  formula to calculate, and `--calculate-all` calculates the whole workbook (`--delete-names base_rate` takes 20 s of an XLSX
+  and 27 s of an ODS with it, 7 and 13 s by default, although no formula reads the name). Operations that could be applied in a
+  batch before one recalculation are not yet ([#102](https://github.com/cosmoscalibur/sheetrs/issues/102)).
 - **Memory of the editor with the engine**: 1.6-2.2 GB for 2.4 M formulas, against 19 MB of an editor that only
   streams (the conversions of an ODS). Intermediate parts of a plan of several passes are stored uncompressed
   ([#86](https://github.com/cosmoscalibur/sheetrs/issues/86)).

@@ -18,7 +18,15 @@
 sheetrs-compiler`). Every command runs RUNS times; the table gives the minimum and the maximum of the wall
 time and of the peak resident memory (`ru_maxrss` of the child: no `/usr/bin/time` is needed). Groups:
 
-  lint stats query edit calculate   `sheetrs lint|stats|query|edit` and `sheetc calculate` on formulas.xlsx / .ods
+  lint stats query edit calculate   `sheetrs lint|stats|query|edit` and `sheetc calculate` on formulas.xlsx / .ods; `edit` also
+                                    measures each conversion with `--calculate-all` (`NAME-calculate-all`: the engine calculates
+                                    what it converts; the default converts the cached results where nothing is reached), best on
+                                    `--workbooks formulas.xlsx,formulas_cached.xlsx,formulas.ods`
+  cache                             `sheetrs edit` (the default: the cache) against `--calculate-all`, on formulas_cached.xlsx /
+                                    formulas.ods
+  modes                             `sheetc build` with the default, with `--calculate-all` and with `--force-calculate-all`: the size
+                                    of the artifact and the time of a run with the cache and with `--calculate-all`, on
+                                    formulas_cached.xlsx
   compiler                          `sheetc build` and the executable it writes, by stage (measure_perf.py)
   wasm                              the WebAssembly package (needs scripts/package-wasm.sh and scripts/build-wasm-rt.sh): time and
                                     peak memory of one call per tool, sizes, and
@@ -163,14 +171,25 @@ EDIT_SCENARIOS = [
     ("delete-rows-convert", ["--delete-rows", "Data!10:20", "--formula-to-value", "Calc"]),
     ("delete-rows-convert-summary", ["--delete-rows", "Calc!3:10", "--formula-to-value", "Summary"]),
     ("delete-columns", ["--delete-columns", "Data!B:D"]),
+    # What a run that changes nothing a formula reads costs: the plan only scans the file for what `LibreOffice` calculates on load.
+    ("hide-columns", ["--hide-columns", "Data!B"]),
+    ("hide-rows", ["--hide-rows", "Data!10:20"]),
     ("delete-rows-columns", ["--delete-rows", "Data!10:20", "--delete-columns", "Data!B:D"]),
     ("structure-plan", ["--delete-sheets", "Lookup", "--delete-names", "base_rate", "--delete-rows", "Data!10:20",
                         "--delete-columns", "Data!B:D"]),
 ]
 
 
+# The conversions in their two scenarios: by default the results the file caches are converted for the formulas the plan
+# does not reach (the short path: nothing is calculated, an ODS is streamed), and `--calculate-all`, where the engine
+# calculates what it converts. Measured in the same run; the XLSX that caches its results is `formulas_cached.xlsx`
+# (`formulas.xlsx` caches 0 and says it is stale, so the default calculates there too).
+CONVERSIONS = ["formula-to-value-sheet", "formula-to-value-columns-rows", "delete-rows-convert", "plan"]
+EDIT_SCENARIOS += [(f"{name}-calculate-all", [*dict(EDIT_SCENARIOS)[name], "--calculate-all"]) for name in CONVERSIONS]
+
+
 def group_edit(a):
-    table("`sheetrs edit` (a deletion ends with the engine calculating every formula)", "Workbook and scenario")
+    table("`sheetrs edit` (by default a deletion ends with the engine calculating what it reaches; `NAME-calculate-all` calculates every formula)", "Workbook and scenario")
     wanted = set(a.scenarios.split(",")) if a.scenarios else None
     with tempfile.TemporaryDirectory() as work:
         for f in a.workbooks.split(","):
@@ -184,15 +203,65 @@ def group_edit(a):
                 row(f"{f} {name}", rs, f"`{' '.join(args)}`")
 
 
+CACHE_SCENARIOS = [
+    ("delete-names (nothing reads it)", ["--delete-names", "base_rate"]),
+    ("delete-rows at the end of `Data`", ["--delete-rows", "Data!299990:299995"]),
+    ("delete-rows `Data!10:20` (a running total reads on)", ["--delete-rows", "Data!10:20"]),
+    ("delete-sheets `Lookup` (5 of the 8 columns read it)", ["--delete-sheets", "Lookup"]),
+    ("delete-columns `Data!B:D` (every formula reads them)", ["--delete-columns", "Data!B:D"]),
+]
+
+
+def group_cache(a):
+    """The default (the cache) against `--calculate-all`, on the workbooks that cache true results (`formulas.xlsx` is marked stale)."""
+    table("`sheetrs edit` by default (the cache) against `--calculate-all`", "Workbook, scenario and option")
+    with tempfile.TemporaryDirectory() as work:
+        for f in ("formulas_cached.xlsx", "formulas.ods"):
+            ext = f.rsplit(".", 1)[1]
+            out = os.path.join(work, f"out.{ext}")
+            for label, args in CACHE_SCENARIOS:
+                for flag in ([], ["--calculate-all"]):
+                    rs = measure([a.sheetrs, "edit", "-i", os.path.join(a.dir, f), *args, *flag, "-o", out], a.runs,
+                                 before=lambda: os.path.exists(out) and os.remove(out))
+                    row(f"{f} {label} {'`--calculate-all`' if flag else 'default (cache)'}", rs, f"`{' '.join(args + flag)}`")
+
+
 def group_calculate(a):
     table("`sheetc calculate`", "Flow")
-    f = os.path.join(a.dir, "formulas.xlsx")
+    f = os.path.join(a.dir, "formulas_cached.xlsx")
     with tempfile.TemporaryDirectory() as work:
         out = os.path.join(work, "out.xlsx")
-        rs = measure([a.sheetc, "calculate", "-i", f, "-o", out], a.runs, before=lambda: os.path.exists(out) and os.remove(out))
-        row("every formula calculated, workbook written (`-o OUT`)", rs)
-    rs = measure([a.sheetc, "calculate", "-i", f, "--range", "Summary!A1"], a.runs)
-    row("one declared output as JSON (`--range Summary!A1`)", rs, rs[0]["md5"])
+        for flag in ([], ["--calculate-all"]):
+            label = "`--calculate-all`" if flag else "default (cache)"
+            rs = measure([a.sheetc, "calculate", "-i", f, *flag, "-o", out], a.runs,
+                         before=lambda: os.path.exists(out) and os.remove(out))
+            row(f"formulas_cached.xlsx {label}: workbook written (`-o OUT`)", rs)
+            rs = measure([a.sheetc, "calculate", "-i", f, *flag, "--range", "Summary!A1"], a.runs)
+            row(f"formulas_cached.xlsx {label}: one declared output as JSON (`--range Summary!A1`)", rs, rs[0]["md5"])
+            # The input the workbook declares (`rate`) is given: what it reaches is calculated and written.
+            request = '{"inputs": {"rate": 0.07}}'
+            rs = measure([a.sheetc, "calculate", "-i", f, *flag, "--request", request, "-o", out], a.runs,
+                         before=lambda: os.path.exists(out) and os.remove(out))
+            row(f"formulas_cached.xlsx {label}: workbook written with the input given (`--request '{request}' -o OUT`)", rs)
+
+
+def group_modes(a):
+    """`sheetc build` in its three modes: the artifact (size) and a run with the cache and with `--calculate-all`."""
+    table("`sheetc build`: the default, `--calculate-all` and `--force-calculate-all`", "Flow")
+    f = os.path.join(a.dir, "formulas_cached.xlsx")
+    with tempfile.TemporaryDirectory() as work:
+        for n, (label, flags) in enumerate((("default (cache)", []), ("`--calculate-all`", ["--calculate-all"]),
+                                            ("`--force-calculate-all`", ["--force-calculate-all"]))):
+            exe = os.path.join(work, f"model{n}")
+            # The workbook declares its input (`rate`, `Data!I1`) and its outputs in its `settings` sheet.
+            rs = measure([a.sheetc, "build", "-i", f, *flags, "-o", exe], a.runs)
+            row(f"build {label}", rs, f"{os.path.getsize(exe) / 1e6:.2f} MB artifact")
+            for run_flag in ([], ["--calculate-all"]):
+                suffix = " with `--calculate-all`" if run_flag else ""
+                rs = measure([exe, "--request", '{"inputs": {"rate": 0.07}}', *run_flag], a.runs)
+                row(f"run of the {label} artifact{suffix} (the input changed)", rs, rs[0]["md5"])
+                rs = measure([exe, *run_flag], a.runs)
+                row(f"run of the {label} artifact{suffix} (nothing given)", rs, rs[0]["md5"])
 
 
 def group_compiler(a):
@@ -354,7 +423,7 @@ def group_model(a):
 
 
 GROUPS = {"lint": group_lint, "stats": group_stats, "query": group_query, "edit": group_edit, "calculate": group_calculate,
-          "compiler": group_compiler, "wasm": group_wasm, "model": group_model, "python": group_python, "libreoffice": group_libreoffice}
+          "cache": group_cache, "modes": group_modes, "compiler": group_compiler, "wasm": group_wasm, "model": group_model, "python": group_python, "libreoffice": group_libreoffice}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
