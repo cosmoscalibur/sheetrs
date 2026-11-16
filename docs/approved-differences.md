@@ -20,3 +20,12 @@ decision, never a documented feature.
 | A replacement by a regular expression that skipped an empty match before a character outside the Basic Multilingual Plane and can then match half of it (`^|.` on a cell with an emoji): LibreOffice writes a text with a lone surrogate (not valid in UTF-16 text as a character, and not representable in UTF-8 or in XML; it brought a LibreOffice server down in the probe); SheetRS goes on after the whole character | `sheetrs-edit/README.md` | The result of LibreOffice is not a valid text: a Rust `String` and the XML of both formats cannot hold it |
 
 Adding a line requires the maintainer's approval, in the pull request or the issue it came from.
+
+## Proposed, not approved
+
+These differences from LibreOffice exist in the code and wait for the maintainer's decision; nothing
+here is approved until it moves to the table above.
+
+| Difference | Where | Why it is proposed |
+| ---------- | ----- | ------------------ |
+| `de-DE`: the keywords of a format code are read in English (`dd.mm.yyyy`, `[Red]`, `[$-409]dddd d`), where a German LibreOffice reads `TT.MM.JJJJ` and `[ROT]` and keeps `d`, `y`, `[Red]` as text or an error (`dd.mm.yyyy` is `dd.03.yyyy`, a code with `[Red]` is `Err:502`). 19 rows of `semantics_de-DE.*` | `sheetrs-compiler/docs/FIDELITY.md` (Locale support), `sheetrs-compiler/tests/semantics/oracle.rs` (`GERMAN_FORMAT_CODES`) | Needs the table of keywords of each locale (`FormatElementsKeywords`), which the engine does not have; the separators, names and dates of `de-DE` match |

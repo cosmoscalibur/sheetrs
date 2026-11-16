@@ -37,6 +37,12 @@ pub enum Error {
     /// is raised when the workbook is read, before any date is numbered from the wrong one.
     #[error(transparent)]
     UnsupportedDateSystem(#[from] sheetrs_formula::UnsupportedDateSystem),
+    /// A text that is not a locale tag (see [`LocaleTag`](crate::locale::LocaleTag)).
+    #[error("`{0}` is not a locale tag (like `en`, `es-CO`)")]
+    InvalidLocale(String),
+    /// A configuration file that cannot be read as the one of the suite.
+    #[error("invalid configuration: {0}")]
+    Config(String),
     /// Another error, with what was being done when it happened.
     #[error("{message}: {source}")]
     Context {

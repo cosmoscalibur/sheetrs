@@ -182,6 +182,15 @@ impl LinterConfig {
                 }
             }
         }
+        if let Some(value) = self.global.params.get(Self::LOCALE_KEY)
+            && value
+                .as_str()
+                .is_none_or(|tag| tag.parse::<sheetrs_io::locale::LocaleTag>().is_err())
+        {
+            return Err(Error::Locale {
+                value: value.to_string(),
+            });
+        }
         for key in Self::FEATURE_KEYS {
             let Some(value) = self.global.params.get(*key) else {
                 continue;
@@ -210,6 +219,10 @@ impl LinterConfig {
         }
         Ok(())
     }
+
+    /// The key of the locale of the workbook (read by `sheetrs query` and `sheetrs edit`; the rules do
+    /// not use it).
+    const LOCALE_KEY: &'static str = "locale";
 
     /// Compatibility features a rule may honour, by name (`enable_features`).
     pub const FEATURES: &'static [&'static str] = &["LONGTEXT"];
@@ -458,6 +471,16 @@ mod tests {
             LinterConfig::from_toml("[global]\nenable_features = [\"NOPE\"]\n"),
             Err(Error::UnknownFeature { .. })
         ));
+        for bad in ["locale = 3", "locale = \"es CO\"", "locale = \"\""] {
+            assert!(
+                matches!(
+                    LinterConfig::from_toml(&format!("[global]\n{bad}\n")),
+                    Err(Error::Locale { .. })
+                ),
+                "{bad}"
+            );
+        }
+        assert!(LinterConfig::from_toml("[global]\nlocale = \"es-CO\"\n").is_ok());
         assert!(matches!(
             LinterConfig::from_toml("global = 3"),
             Err(Error::Syntax(_))

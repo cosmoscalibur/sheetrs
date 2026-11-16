@@ -1,0 +1,6 @@
+# The base configuration of the tests: the locale of the system is a default of the library
+# (`sheetrs_io::locale`, read when a workbook is calculated or shown, as LibreOffice does), so the tests
+# run with an explicit en-US whatever the machine has. A test of another locale gives it to the `Book`
+# or to the command, or sets the variables in a child process.
+[env]
+LC_ALL = { value = "en_US.UTF-8", force = true }

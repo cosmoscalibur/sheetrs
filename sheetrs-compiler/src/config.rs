@@ -10,7 +10,7 @@
 //! strict = true           # refuse workbooks with macros (false: warn)
 //!
 //! [locale]                # the user's regional settings, fixed at build time
-//! tag = "es-CO"
+//! tag = "es-CO"           # default: the locale of the workbook (see `locale::resolve`)
 //! decimal = ","
 //! group = "."
 //! date_order = "dmy"
@@ -200,7 +200,7 @@ impl Config {
             ..Spec::default()
         };
         let loc = self.locale.clone().unwrap_or_default();
-        let (l, notes) = locale::from_tag(loc.tag.as_deref().unwrap_or("en"), &loc)?;
+        let (l, notes) = locale::resolve(&loc, &model.settings)?;
         spec.locale = Some(l);
         spec.notes = notes;
         if model.macros {

@@ -955,11 +955,9 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
     }
     drop(csr);
 
-    // Precedence: explicit option > what the document states > default.
-    // The locale is the user's regional setting, which a file does not carry
-    // (LibreOffice evaluates a document whose language says `es-ES` with the
-    // system locale), so it comes from the caller and defaults to `en`. The
-    // document's language is informational.
+    // The locale is resolved by `locale::resolve` (the configuration, the workbook, the default of
+    // its format) into `spec.locale`; a spec that is not built from a configuration has `en`. The
+    // language of the document is told when the locale of the run is another one.
     let mut locale = spec.locale.clone().unwrap_or_default();
     if let Some(lang) = &model.settings.locale
         && !lang
@@ -967,7 +965,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             .starts_with(locale.tag.split('-').next().unwrap_or("en"))
     {
         diags.push(format!(
-            "the document language is {lang}; text and number conversions follow the locale {} (build configuration)",
+            "the document language is {lang}; text and number conversions follow the locale {}",
             locale.tag
         ));
     }

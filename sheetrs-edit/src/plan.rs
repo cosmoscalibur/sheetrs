@@ -398,7 +398,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                 None
             } else {
                 recalculate_pass(
-                    &Book::from_file(&current)?,
+                    &Book::from_file(&current)?.with_locale_of(book),
                     last,
                     &first_conversion(operations),
                     engine,
@@ -407,8 +407,12 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
                 .with_context(said)?
             }),
             [Operation::Calculate(calculation)] => Some(
-                calculate_pass(calculation, &Book::from_file(&current)?, &mut report)
-                    .with_context(said)?,
+                calculate_pass(
+                    calculation,
+                    &Book::from_file(&current)?.with_locale_of(book),
+                    &mut report,
+                )
+                .with_context(said)?,
             ),
             _ => None,
         };
@@ -428,7 +432,7 @@ pub(crate) fn execute(book: &Book, output: impl AsRef<Path>, engine: &Engine) ->
         }
         let mut mods = modifications_for(
             pass,
-            &Book::from_file(&current)?,
+            &Book::from_file(&current)?.with_locale_of(book),
             last && failed,
             &mut report,
         )
@@ -466,6 +470,7 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
     let format = book.format();
     let mut current = if let Some(path) = book.path() {
         Book::from_bytes(std::fs::read(path).context("Cannot read the workbook to edit")?)?
+            .with_locale_of(book)
     } else {
         let mut copy = book.clone();
         copy.clear_operations();
@@ -517,14 +522,14 @@ pub(crate) fn execute_in_memory(book: &Book, engine: &Engine) -> Result<(Vec<u8>
                     continue;
                 }
             }
-            current = Book::from_bytes(result.clone())?;
+            current = Book::from_bytes(result.clone())?.with_locale_of(book);
             continue;
         }
         let mods =
             modifications_for(pass, &current, last && failed, &mut report).with_context(said)?;
         result = writer::modify_workbook_bytes(format, &data, &mods).with_context(said)?;
         if !last {
-            current = Book::from_bytes(result.clone())?;
+            current = Book::from_bytes(result.clone())?.with_locale_of(book);
         }
     }
     Ok((result, report))

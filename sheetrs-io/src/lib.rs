@@ -13,6 +13,7 @@
 mod book;
 mod entry_format;
 mod error;
+pub mod locale;
 pub mod reader;
 #[cfg(feature = "write")]
 pub mod write;
