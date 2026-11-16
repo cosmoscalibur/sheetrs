@@ -257,13 +257,29 @@ pub(crate) enum Mode {
 
 fn round_fn(e: &mut Engine, a: &[Value], mode: Mode) -> Res<Value> {
     let x = e.num(&a[0])?;
-    let d = super::opt_num(e, a, 1, 0.0)?;
-    num(round_dec(x, d.trunc() as i32, mode))
+    // As LibreOffice calculates them (see `round_calc`); `round_dec`, the rounding on the 15 digits of the
+    // value, is what the formats use.
+    let digits = if a.len() > 1 {
+        Some(super::opt_num(e, a, 1, 0.0)?)
+    } else {
+        None
+    };
+    num(super::round_calc::round_calc(x, digits, mode))
 }
 
 /// Round at `digits` decimal places the way spreadsheets do: on the 15
 /// significant decimal digits of the value, so `ROUND(1.005, 2)` is 1.01.
+///
+/// Integer arithmetic gives the answer (`round_exact`) unless the value is out of its range, and then
+/// the text definition ([`round_dec_text`]) does; both give the same bits.
 pub(crate) fn round_dec(x: f64, digits: i32, mode: Mode) -> f64 {
+    super::round_exact::round_exact(x, digits, mode)
+        .unwrap_or_else(|| round_dec_text(x, digits, mode))
+}
+
+/// The definition of [`round_dec`]: the value written with 15 significant digits, rounded as text and
+/// parsed back. It is the reference of the tests of `round_exact` and the answer where that one declines.
+pub(crate) fn round_dec_text(x: f64, digits: i32, mode: Mode) -> f64 {
     if x == 0.0 || !x.is_finite() {
         return x;
     }

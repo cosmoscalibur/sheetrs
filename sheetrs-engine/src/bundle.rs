@@ -461,6 +461,7 @@ mod tests {
     /// retyped changes the bytes.
     fn sample() -> Program {
         Program {
+            layout: crate::engine::Layout::default(),
             sheets: vec!["S".into()],
             options: EngineOptions::default(),
             cells: vec![],

@@ -36,6 +36,8 @@ mod pricing;
 mod propagating_error_table;
 mod regex_fn;
 mod regression;
+mod round_calc;
+mod round_exact;
 mod securities;
 mod special;
 mod stat_dist;
