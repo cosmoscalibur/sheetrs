@@ -1222,28 +1222,41 @@ fn transform_sheet<R: BufRead, W: Write>(
                         }
                         let (cell, events) = cached_cell(&start, &body, result)?;
                         write_value_cell(&mut writer, &cell, &events)?;
-                    } else {
-                        // A copy of a shared group that reads outside the sheet gets a formula of its own.
-                        let own = match (&formula, formula.as_ref().and_then(|f| f.shared_index)) {
-                            (Some(f), Some(si)) if f.is_shared() && f.text.is_empty() => masters
-                                .get(&si)
-                                .filter(|m| m.leaves && !m.converted)
-                                .map(|m| leaving_copy_text(m, row, col, sheet))
-                                .transpose()?
-                                .flatten(),
-                            _ => None,
-                        };
-                        match own {
-                            Some(text) => {
-                                write_cached_cell(
-                                    &mut writer,
-                                    &start,
-                                    &with_formula(&body, &text),
-                                    result,
-                                )?;
-                            }
-                            None => write_cached_cell(&mut writer, &start, &body, result)?,
+                    } else if let Some(formula) = &formula {
+                        // The formula stays and the plan applies to it as to any other (its references
+                        // move with the deleted rows and columns, a shared group is kept or expanded,
+                        // an array is moved), with the result it is given: it is the result of the
+                        // formula where it now is, so the text is not the one that result was
+                        // calculated from, but the one the workbook has after the plan.
+                        let shared_index = formula.shared_index.filter(|_| formula.is_shared());
+                        if let Some(si) = shared_index
+                            && !formula.text.is_empty()
+                        {
+                            masters.insert(si, SharedMaster::new(formula, row, col, false, sheet));
                         }
+                        let (out, _) = match structure {
+                            Some(s) => rewritten_formula(s, formula, row, col, &masters)?,
+                            None => (FormulaOut::Keep, false),
+                        };
+                        let out = shared_group_formula(
+                            out,
+                            shared_index,
+                            formula,
+                            (row, col),
+                            sheet,
+                            &masters,
+                        )?;
+                        match out {
+                            FormulaOut::Keep => {
+                                write_cached_cell(&mut writer, &start, &body, result)?;
+                            }
+                            out => {
+                                let (cell, events) = cached_cell(&start, &body, result)?;
+                                write_formula_cell(&mut writer, cell, &events, &out, false)?;
+                            }
+                        }
+                    } else {
+                        write_cached_cell(&mut writer, &start, &body, result)?;
                     }
                     continue;
                 }
@@ -1284,21 +1297,14 @@ fn transform_sheet<R: BufRead, W: Write>(
                     None => (FormulaOut::Keep, false),
                 };
                 // A cell of a group whose first cell became a value needs a formula of its own.
-                let out = match (out, shared_index) {
-                    (FormulaOut::Keep, Some(si)) if formula.text.is_empty() => {
-                        match masters.get(&si) {
-                            Some(m) if m.converted => {
-                                FormulaOut::Plain(shared_text(m, row, col, sheet)?)
-                            }
-                            // The copy reads outside the sheet: its own formula, with the bare `#REF!`
-                            // `LibreOffice` saves, which it reads back as an unknown name.
-                            Some(m) if m.leaves => leaving_copy_text(m, row, col, sheet)?
-                                .map_or(FormulaOut::Keep, FormulaOut::Plain),
-                            _ => FormulaOut::Keep,
-                        }
-                    }
-                    (out, _) => out,
-                };
+                let out = shared_group_formula(
+                    out,
+                    shared_index,
+                    &formula,
+                    (row, col),
+                    sheet,
+                    &masters,
+                )?;
                 let start = relocated_cell(&e, at, changed)?;
                 match out {
                     FormulaOut::Keep => write_element(&mut writer, start, Some(&body))?,
@@ -1399,35 +1405,27 @@ fn leaving_copy_text(
     ))
 }
 
-/// The events of a cell with its `<f>` replaced by one that holds `text`.
-fn with_formula(body: &[Event], text: &str) -> Vec<Event<'static>> {
-    let mut out: Vec<Event<'static>> = Vec::with_capacity(body.len() + 2);
-    let mut skipping_text = false;
-    for event in body {
-        match event {
-            Event::Empty(e) if e.name().as_ref() == "f" => {
-                out.push(Event::Start(BytesStart::new("f")));
-                out.push(Event::Text(
-                    quick_xml::events::BytesText::new(text).into_owned(),
-                ));
-                out.push(Event::End(quick_xml::events::BytesEnd::new("f")));
-            }
-            Event::Start(e) if e.name().as_ref() == "f" => {
-                out.push(Event::Start(BytesStart::new("f")));
-                out.push(Event::Text(
-                    quick_xml::events::BytesText::new(text).into_owned(),
-                ));
-                skipping_text = true;
-            }
-            Event::End(e) if e.name().as_ref() == "f" => {
-                skipping_text = false;
-                out.push(Event::End(e.clone().into_owned()));
-            }
-            _ if skipping_text => {}
-            other => out.push(other.clone().into_owned()),
-        }
+/// What a cell of a shared group writes: a cell that kept its formula (`out` is `Keep`) and has no text of its own reads
+/// it from the first cell of the group, so when that one became a value or reads outside the sheet it needs a formula of its own.
+fn shared_group_formula(
+    out: FormulaOut,
+    shared_index: Option<u32>,
+    formula: &CellFormula,
+    (row, col): (u32, u32),
+    sheet: &str,
+    masters: &HashMap<u32, SharedMaster>,
+) -> Result<FormulaOut> {
+    match (out, shared_index) {
+        (FormulaOut::Keep, Some(si)) if formula.text.is_empty() => match masters.get(&si) {
+            Some(m) if m.converted => Ok(FormulaOut::Plain(shared_text(m, row, col, sheet)?)),
+            // The copy reads outside the sheet: its own formula, with the bare `#REF!`
+            // `LibreOffice` saves, which it reads back as an unknown name.
+            Some(m) if m.leaves => Ok(leaving_copy_text(m, row, col, sheet)?
+                .map_or(FormulaOut::Keep, FormulaOut::Plain)),
+            _ => Ok(FormulaOut::Keep),
+        },
+        (out, _) => Ok(out),
     }
-    out
 }
 
 /// The text of the formula of the cell `(row, col)` of the shared group of `master`.

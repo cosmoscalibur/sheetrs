@@ -19,6 +19,9 @@ pub enum Cell {
     /// The formula in Excel's notation and in the one of an ODS (the text after `of:=`), and the
     /// number it caches.
     Formula(&'static str, &'static str, f64),
+    /// What the XLSX holds inside the `<c>` element (a shared or array formula) and the element of
+    /// the ODS.
+    Raw(&'static str, &'static str),
 }
 
 /// A sheet: its name, its cells (`"B2"` and what it holds) and the rows it hides (1-based).
@@ -168,6 +171,7 @@ fn write_xlsx(path: &Path, sheets: &[Sheet], names: &[(&str, &str)]) {
                         Cell::Formula(text, _, cached) => {
                             format!(r#"<c r="{a1}"><f>{}</f><v>{cached}</v></c>"#, escaped(text))
                         }
+                        Cell::Raw(xlsx, _) => format!(r#"<c r="{a1}">{xlsx}</c>"#),
                     }
                 })
                 .collect();
@@ -229,6 +233,7 @@ fn write_ods(path: &Path, sheets: &[Sheet], names: &[(&str, &str)]) {
                         r#"<table:table-cell office:value-type="string"><text:p>{}</text:p></table:table-cell>"#,
                         escaped(t)
                     ),
+                    Some(Cell::Raw(_, ods)) => (*ods).to_string(),
                     Some(Cell::Formula(_, text, cached)) => format!(
                         r#"<table:table-cell table:formula="of:={}" office:value-type="float" office:value="{cached}"><text:p>{cached}</text:p></table:table-cell>"#,
                         escaped(text)
