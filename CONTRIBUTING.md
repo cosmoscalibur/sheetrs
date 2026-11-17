@@ -212,6 +212,9 @@ Before each release, fragments are merged into the `[Unreleased]` section of
 
 ## Releases
 
+The version and the changelog are prepared in a PR to `develop`; when it is merged, a PR from `develop` to
+`main` releases it, and `main` is merged back into `develop` (see *Branches*).
+
 What CI does and what stays manual:
 
 | Step | Who | How |
@@ -227,8 +230,17 @@ macOS and Windows artifacts are out of scope for now: [#99](https://github.com/c
 
 ## Pull Request Process
 
-1. Fork the repository and create a feature branch.
+1. Fork the repository and create a feature branch from `develop`.
 2. Make your changes following the coding patterns.
 3. Ensure all tests pass, and that what changed was checked against LibreOffice on both formats.
 4. Add a changelog fragment.
-5. Submit a PR using the PR template.
+5. Submit a PR **to `develop`** using the PR template.
+
+### Branches
+
+- `develop` receives every PR (changes, and the release preparation: version and changelog).
+- `main` receives only `develop`, through a release PR; nothing is merged into `main` directly, and the
+  workspace version reaching `main` is what creates the release tag (see *Releases*).
+- `develop` and `main` are kept aligned: the release PR is merged with a merge commit, and right after it
+  `main` is merged back into `develop` (or `develop` is fast-forwarded to `main`) before any other PR is
+  merged into `develop`. Between releases `develop` is ahead of `main`, never behind it.
