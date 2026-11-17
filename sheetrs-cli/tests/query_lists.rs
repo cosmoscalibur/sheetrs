@@ -41,3 +41,26 @@ fn the_defined_names_are_listed_with_what_they_refer_to() {
         assert_eq!(names.as_object().unwrap().len(), 4, "{file}");
     }
 }
+
+/// An empty search matches nothing, as in `LibreOffice` (`findAll` reports no cell), in every mode.
+#[test]
+fn the_empty_search_finds_no_cell_in_every_mode() {
+    for file in ["book.xlsx", "book.ods"] {
+        for flags in [
+            &[][..],
+            &["--regex"],
+            &["--wildcards"],
+            &["--entire-cells", "--match-case"],
+            &["--regex", "--entire-cells"],
+        ] {
+            let mut args = vec!["query", "--workbook", "--find", ""];
+            args.extend_from_slice(flags);
+            let found = json(&sheetrs(&args, file));
+            assert_eq!(
+                found,
+                serde_json::json!({ "cells": [] }),
+                "{file} {flags:?}"
+            );
+        }
+    }
+}

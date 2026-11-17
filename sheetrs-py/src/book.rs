@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 use serde_json::{Map, Value};
 use sheetrs_compiler::memory::{self, BookCompile, Options};
-use sheetrs_edit::{ColumnRange, RowRange, ValueScope};
+use sheetrs_edit::{ColumnRange, RowRange, ValueScope, VisibilityChange};
 use sheetrs_io::Book;
 use sheetrs_protocol::{Find, MajorDimension, Property, Replace, Scope, SearchIn};
 use sheetrs_query::{BookQuery, FindOptions, Major, RangeOptions};
@@ -282,6 +282,54 @@ impl PyBook {
         slf
     }
 
+    fn rows_visibility<'py>(
+        slf: PyRefMut<'py, Self>,
+        rows: &Bound<'_, PyAny>,
+        visible: bool,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        let changes: Vec<VisibilityChange> = parse_all::<RowRange>(rows, "`rows`")?
+            .into_iter()
+            .map(|range| VisibilityChange::Rows { range, visible })
+            .collect();
+        Ok(Self::push_unless_empty(
+            slf,
+            changes.is_empty(),
+            Step::SetVisibility(changes),
+        ))
+    }
+
+    fn columns_visibility<'py>(
+        slf: PyRefMut<'py, Self>,
+        columns: &Bound<'_, PyAny>,
+        visible: bool,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        let changes: Vec<VisibilityChange> = parse_all::<ColumnRange>(columns, "`columns`")?
+            .into_iter()
+            .map(|range| VisibilityChange::Columns { range, visible })
+            .collect();
+        Ok(Self::push_unless_empty(
+            slf,
+            changes.is_empty(),
+            Step::SetVisibility(changes),
+        ))
+    }
+
+    fn sheets_visibility<'py>(
+        slf: PyRefMut<'py, Self>,
+        names: &Bound<'_, PyAny>,
+        visible: bool,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        let changes: Vec<VisibilityChange> = texts(names, "`names`")?
+            .into_iter()
+            .map(|name| VisibilityChange::Sheet { name, visible })
+            .collect();
+        Ok(Self::push_unless_empty(
+            slf,
+            changes.is_empty(),
+            Step::SetVisibility(changes),
+        ))
+    }
+
     /// A call with no target does nothing: it adds no operation (so it costs no pass).
     fn push_unless_empty(slf: PyRefMut<'_, Self>, empty: bool, step: Step) -> PyRefMut<'_, Self> {
         if empty { slf } else { Self::push(slf, step) }
@@ -299,17 +347,56 @@ impl PyBook {
     /// modified except by `save()` without a destination, which also rewrites a stream the `Book` was
     /// made from.
     ///
-    /// Raises `FileNotFoundError` for a path that is not a file and `FormatError` for a workbook
-    /// that is not an XLSX, XLSM or ODS one.
+    /// `locale` is the locale of the workbook (a tag such as `"es-CO"`): the regional settings that give
+    /// a text to a number (`TEXT`, the conversion of a number to text, `display`) and read a number from
+    /// a text, in `calculate`, in the recalculation that follows an edit and in the queries. Without
+    /// it the workbook, an XLSX or an ODS, has the locale of the system (`LC_ALL`, `LC_CTYPE` or
+    /// `LANG`, read when it is needed; `en-US` when there is none). The `locale` of a single
+    /// call (`evaluate`) wins over it.
+    ///
+    /// `now` (the serial number that `NOW()` and `TODAY()` give) and `seed` (the seed of `RAND()` and
+    /// its relatives, a non-negative integer) fix the volatile functions in every calculation of the
+    /// workbook: `calculate`, the recalculation that follows an edit and `inspect`; they are the
+    /// `--now` and `--seed` of `sheetc`. Without them the engine reads the clock. The `now` and
+    /// `seed` of a single call (`calculate(now=, seed=)`) win over them. Distinct seeds give distinct
+    /// streams; `RAND` of `LibreOffice` cannot be seeded, so `seed` is an extension of `SheetRS`.
+    ///
+    /// Raises `FileNotFoundError` for a path that is not a file, `FormatError` for a workbook
+    /// that is not an XLSX, XLSM or ODS one and `ValueError` for a `locale` that is not a locale tag.
+    ///
     #[new]
-    fn new(source: &Bound<'_, PyAny>) -> PyResult<Self> {
+    #[pyo3(signature = (source, *, locale=None, now=None, seed=None))]
+    fn new(
+        source: &Bound<'_, PyAny>,
+        locale: Option<&str>,
+        now: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let locale = locale
+            .map(|tag| {
+                tag.parse::<sheetrs_io::locale::LocaleTag>()
+                    .map_err(|error| PyValueError::new_err(error.to_string()))
+            })
+            .transpose()?;
+        let with_locale = |book: Book| {
+            let book = book.with_volatile(sheetrs_io::Volatile { now, seed });
+            match &locale {
+                Some(tag) => book.with_locale(tag.clone()),
+                None => book,
+            }
+        };
         let mut book = if let Ok(bytes) = source.cast::<PyBytes>() {
-            Self::from_source(Book::from_bytes(bytes.as_bytes().to_vec()).map_err(format_error)?)
+            Self::from_source(with_locale(
+                Book::from_bytes(bytes.as_bytes().to_vec()).map_err(format_error)?,
+            ))
         } else if let Ok(bytes) = source.cast::<PyByteArray>() {
-            Self::from_source(Book::from_bytes(bytes.to_vec()).map_err(format_error)?)
+            Self::from_source(with_locale(
+                Book::from_bytes(bytes.to_vec()).map_err(format_error)?,
+            ))
         } else if source.hasattr("read")? {
             let data = read_stream(source)?;
-            let mut book = Self::from_source(Book::from_bytes(data).map_err(format_error)?);
+            let mut book =
+                Self::from_source(with_locale(Book::from_bytes(data).map_err(format_error)?));
             book.stream = Some(source.clone().unbind());
             book
         } else {
@@ -325,10 +412,31 @@ impl PyBook {
                 sheetrs_io::Error::Open { .. } => to_py_err(error),
                 other => format_error(other),
             })?;
-            Self::from_source(opened)
+            Self::from_source(with_locale(opened))
         };
         book.report = None;
         Ok(book)
+    }
+
+    /// The locale given to the workbook (`Book(..., locale=...)`), normalized as `"es-CO"`; `None` when
+    /// it was not given one and has the one of its format.
+    #[getter]
+    fn locale(&self) -> Option<String> {
+        self.source.locale().map(ToString::to_string)
+    }
+
+    /// The serial number of `NOW()` and `TODAY()` given to the workbook (`Book(..., now=...)`); `None`
+    /// when it was not given one and the engine reads the clock.
+    #[getter]
+    fn now(&self) -> Option<f64> {
+        self.source.volatile().now
+    }
+
+    /// The seed of `RAND()` given to the workbook (`Book(..., seed=...)`); `None` when it was not
+    /// given one and the engine seeds from the clock.
+    #[getter]
+    fn seed(&self) -> Option<u64> {
+        self.source.volatile().seed
     }
 
     /// `"xlsx"`, `"xlsm"` or `"ods"`.
@@ -386,8 +494,10 @@ impl PyBook {
     }
 
     /// Replace the formulas of the scopes by the values they have (*Data ▸ Calculate ▸ Formula to
-    /// Value*). A scope is `"Sheet"`, `"Sheet!B:D"` (columns) or `"Sheet!3:10"` (rows); one or an
-    /// iterable of them.
+    /// Value*): by default the results the file caches for the formulas the edit does not reach and what the
+    /// engine calculates for the ones it reaches (with `calculate_all=True` on the terminal the engine
+    /// calculates what the scopes name first). A scope is `"Sheet"`, `"Sheet!B:D"` (columns)
+    /// or `"Sheet!3:10"` (rows); one or an iterable of them.
     fn formula_to_value<'py>(
         slf: PyRefMut<'py, Self>,
         scopes: &Bound<'_, PyAny>,
@@ -426,6 +536,56 @@ impl PyBook {
             columns.is_empty(),
             Step::DeleteColumns(columns),
         ))
+    }
+
+    /// Hide rows (`"Sheet!3:10"`, or `"Sheet!3"`): *Format ▸ Rows ▸ Hide*. They stay in the file.
+    /// One or an iterable of them, in the rows of the workbook as it is.
+    fn hide_rows<'py>(
+        slf: PyRefMut<'py, Self>,
+        rows: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::rows_visibility(slf, rows, false)
+    }
+
+    /// Show rows, whatever hid them (by hand or by a filter): *Format ▸ Rows ▸ Show*.
+    fn show_rows<'py>(
+        slf: PyRefMut<'py, Self>,
+        rows: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::rows_visibility(slf, rows, true)
+    }
+
+    /// Hide columns (`"Sheet!B:D"`, or `"Sheet!B"`): *Format ▸ Columns ▸ Hide*.
+    fn hide_columns<'py>(
+        slf: PyRefMut<'py, Self>,
+        columns: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::columns_visibility(slf, columns, false)
+    }
+
+    /// Show columns: *Format ▸ Columns ▸ Show*.
+    fn show_columns<'py>(
+        slf: PyRefMut<'py, Self>,
+        columns: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::columns_visibility(slf, columns, true)
+    }
+
+    /// Hide sheets by name (*Sheet ▸ Hide Sheet*): one name or an iterable of them. One sheet must
+    /// stay visible.
+    fn hide_sheets<'py>(
+        slf: PyRefMut<'py, Self>,
+        names: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::sheets_visibility(slf, names, false)
+    }
+
+    /// Show sheets by name (*Sheet ▸ Show Sheet*).
+    fn show_sheets<'py>(
+        slf: PyRefMut<'py, Self>,
+        names: &Bound<'_, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        Self::sheets_visibility(slf, names, true)
     }
 
     /// Find `text` and replace it with `replacement`, as Find & Replace of `LibreOffice` does (it
@@ -495,21 +655,39 @@ impl PyBook {
     ///
     /// `ranges` (a range, or a list of them: `["Summary!B2:B5"]`) are the ranges whose values
     /// `value_ranges()` gives and `save(json=...)` writes; without them, the outputs the workbook declares
-    /// or, with none declared, its formula cells. `major` is `"rows"` (the default) or `"columns"`:
-    /// how each range is listed, as the `majorDimension` of the request.
+    /// or, with none declared, its formula cells. A range outside the declared outputs is read,
+    /// in memory and with no recalculation, from the workbook just written (the workbook is its own
+    /// template here). `major` is `"rows"` (the default) or `"columns"`: how each
+    /// range is listed, as the `majorDimension` of the request.
     ///
-    /// Where the engine cannot calculate the workbook (a function it does not have, a reference it
-    /// does not read) `save` still writes it, marked to be recalculated when it is opened, and issues
+    /// `now` (the serial number that `NOW()` and `TODAY()` give) and `seed` (the seed of `RAND()`)
+    /// fix the volatile functions, as `--now` and `--seed` of `sheetc` do; without them the engine
+    /// reads the clock. They also fix the recalculation that the same `save` runs after an edit that
+    /// leaves results stale.
+    ///
+    /// A workbook with macros is refused by the build, in any run that builds (`Error` naming secure mode,
+    /// unless the terminal is given `secure_mode=True`).
+    ///
+    /// A cell that depends on another workbook, a macro (in secure mode) or a function the engine does not implement
+    /// keeps the result the file caches, as `LibreOffice` shows it until something dirties the cell, and
+    /// the report says so with a warning (`EXTERNAL_FROM_CACHE`, `MACRO_FROM_CACHE`,
+    /// `EXTENSION_FROM_CACHE`); one the run calculates and that only `LibreOffice` can give a result for
+    /// (a function the engine lacks) raises `Error` with a message that names the cause.
+    ///
+    /// Where the engine cannot calculate the workbook for another reason (a reference it does not read)
+    /// `save` still writes it, marked to be recalculated when it is opened, and issues
     /// a `RecalculationWarning`: the recalculation that is needed will be done by the spreadsheet
     /// program that opens the file later. With `to_dict()` or `save(json=...)` there is no answer to
     /// give, and it is an error.
-    #[pyo3(signature = (inputs=None, ranges=None, *, major="rows"))]
+    #[pyo3(signature = (inputs=None, ranges=None, *, major="rows", now=None, seed=None))]
     fn calculate<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
         inputs: Option<&Bound<'py, PyDict>>,
         ranges: Option<&Bound<'py, PyAny>>,
         major: &str,
+        now: Option<f64>,
+        seed: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let inputs: Map<String, Value> = match inputs {
             Some(dict) => dict
@@ -532,6 +710,8 @@ impl PyBook {
             inputs,
             ranges,
             major,
+            now,
+            seed,
         });
         Ok(slf.into_pyobject(py)?.into_any())
     }
@@ -542,8 +722,14 @@ impl PyBook {
     /// It is a terminal like `save`: it runs the operations (the workbook goes through memory and is
     /// written nowhere), so it is allowed with operations pending. Raises `Error` when there is no
     /// `calculate` step, and `UnavailableFunctionError` when the engine cannot calculate the
-    /// workbook.
-    fn value_ranges(&self, py: Python<'_>) -> PyResult<PyValueRanges> {
+    /// workbook. `calculate_all` and `secure_mode` are the ones of `save`.
+    #[pyo3(signature = (*, calculate_all=false, secure_mode=false))]
+    fn value_ranges(
+        &self,
+        py: Python<'_>,
+        calculate_all: bool,
+        secure_mode: bool,
+    ) -> PyResult<PyValueRanges> {
         if !plan::has_calculate(&self.steps) {
             return Err(raise(
                 "Error",
@@ -551,7 +737,11 @@ impl PyBook {
                  call calculate() first",
             ));
         }
-        let source = self.source.clone();
+        let source = self
+            .source
+            .clone()
+            .with_calculate_all(calculate_all)
+            .with_secure_mode(secure_mode);
         let steps = self.steps.clone();
         let done = py
             .detach(|| plan::run(&source, &steps, &Target::Nowhere, true))
@@ -568,8 +758,12 @@ impl PyBook {
     /// What `save` will do: the passes over the file that run the operations, one operation per
     /// line, and the calculations in their place. The operations are not run in the order they were
     /// given: each is written against the workbook as it is, and the planner orders them.
-    fn explain(&self) -> String {
-        plan::explain(&self.source, &self.steps)
+    #[pyo3(signature = (*, calculate_all=false))]
+    fn explain(&self, calculate_all: bool) -> String {
+        plan::explain(
+            &self.source.clone().with_calculate_all(calculate_all),
+            &self.steps,
+        )
     }
 
     /// The cut: run the operations and write the workbook.
@@ -589,14 +783,23 @@ impl PyBook {
     /// the operations leave stale is calculated again by the engine, so it is written with fresh
     /// results; where the engine cannot, it is written marked so that the application that opens it
     /// recalculates every formula, and a `RecalculationWarning` says so (also logged by `sheetrs`).
+    /// By default (what `LibreOffice` does) only the formulas the operations reach, and the ones that depend on
+    /// them, are calculated: every other formula keeps the result the file caches. With
+    /// `calculate_all=True` every formula is calculated (`calculateAll()`). What the engine cannot calculate and
+    /// the run has to (a call to a macro, to an add-in or to a function of `LibreOffice` it lacks, such as
+    /// `WEBSERVICE`) raises `Error` naming the cause by default, and a workbook with macros raises `Error` naming secure mode;
+    /// with `secure_mode=True` the workbook is opened and the call is an error cell,
+    /// what reads it is calculated from it, and the report holds a warning (`UNSUPPORTED_AS_ERROR`).
     /// Raises `OSError` for a file that cannot be read or written and `sheetrs.Error` when the
     /// workbook cannot be edited (including when there are no operations).
-    #[pyo3(signature = (dest=None, *, json=None))]
+    #[pyo3(signature = (dest=None, *, json=None, calculate_all=false, secure_mode=false))]
     fn save<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
         dest: Option<&Bound<'py, PyAny>>,
         json: Option<&Bound<'py, PyAny>>,
+        calculate_all: bool,
+        secure_mode: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         if json.is_some() && !plan::has_calculate(&slf.steps) {
             return Err(raise(
@@ -605,7 +808,11 @@ impl PyBook {
                  call calculate() first",
             ));
         }
-        let source = slf.source.clone();
+        let source = slf
+            .source
+            .clone()
+            .with_calculate_all(calculate_all)
+            .with_secure_mode(secure_mode);
         let steps = slf.steps.clone();
         let stream_dest = match dest {
             Some(dest) if is_stream(dest)? => Some(dest.clone()),
@@ -656,13 +863,21 @@ impl PyBook {
                 .bytes
                 .ok_or_else(|| raise("Error", "the workbook was not written"))?;
             write_to_target(py, stream, &bytes)?;
-            let mut saved = Self::from_source(Book::from_bytes(bytes).map_err(to_py_err)?);
+            let mut saved = Self::from_source(
+                Book::from_bytes(bytes)
+                    .map_err(to_py_err)?
+                    .with_locale_of(&source)
+                    .with_volatile_of(&source),
+            );
             saved.stream = Some(stream.clone().unbind());
             saved.report = Some(report);
             Bound::new(py, saved)?.into_any()
         } else if let Some(path) = path_dest {
-            let source = Book::from_file(path).map_err(to_py_err)?;
-            let mut saved = Self::from_source(source);
+            let saved_source = Book::from_file(path)
+                .map_err(to_py_err)?
+                .with_locale_of(&source)
+                .with_volatile_of(&source);
+            let mut saved = Self::from_source(saved_source);
             saved.report = Some(report);
             Bound::new(py, saved)?.into_any()
         } else {
@@ -671,7 +886,10 @@ impl PyBook {
                     .bytes
                     .ok_or_else(|| raise("Error", "the workbook was not written"))?;
                 rewrite_stream(py, stream, &bytes)?;
-                slf.source = Book::from_bytes(bytes).map_err(to_py_err)?;
+                slf.source = Book::from_bytes(bytes)
+                    .map_err(to_py_err)?
+                    .with_locale_of(&source)
+                    .with_volatile_of(&source);
             }
             slf.steps.clear();
             slf.report = Some(report);
@@ -693,12 +911,20 @@ impl PyBook {
     /// made from).
     ///
     /// Raises `OSError` for a file that cannot be read when there are no operations, and
-    /// `sheetrs.Error` when the workbook cannot be read or edited to run them.
+    /// `sheetrs.Error` when the workbook cannot be read or edited to run them. `calculate_all` and `secure_mode`
+    /// are the ones of `save`.
+    #[pyo3(signature = (*, calculate_all=false, secure_mode=false))]
     fn to_bytes<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
+        calculate_all: bool,
+        secure_mode: bool,
     ) -> PyResult<Bound<'py, PyBytes>> {
-        let source = slf.source.clone();
+        let source = slf
+            .source
+            .clone()
+            .with_calculate_all(calculate_all)
+            .with_secure_mode(secure_mode);
         if slf.steps.is_empty() {
             let bytes = py
                 .detach(|| match (source.path(), source.bytes()) {
@@ -958,10 +1184,19 @@ fn find_of(
 }
 
 /// The value of one formula, with the regional settings of `locale` (a BCP-47 tag, `"en"` by
-/// default).
-pub(crate) fn evaluate(py: Python<'_>, formula: &str, locale: Option<&str>) -> PyResult<Py<PyAny>> {
+/// default), and `now` and `seed` for the volatile functions.
+pub(crate) fn evaluate(
+    py: Python<'_>,
+    formula: &str,
+    locale: Option<&str>,
+    now: Option<f64>,
+    seed: Option<u64>,
+) -> PyResult<Py<PyAny>> {
+    let mut options = Options::default();
+    options.config.now = now;
+    options.config.seed = seed;
     let value = py
-        .detach(|| memory::evaluate(formula, locale, &Options::default()))
+        .detach(|| memory::evaluate(formula, locale, &options))
         .map_err(to_py_err)?;
     json_to_py(py, &value)
 }

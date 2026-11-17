@@ -2,6 +2,7 @@
 
 use sheetrs_edit::{BookEdit, Error};
 use sheetrs_io::Book;
+use sheetrs_protocol::{Find, Replace};
 use std::path::{Path, PathBuf};
 
 fn book(extension: &str) -> PathBuf {
@@ -62,7 +63,9 @@ fn a_book_edits_bytes_as_it_edits_a_file() {
 
 #[test]
 fn explain_says_what_write_will_do_without_touching_a_file() {
-    let source = Book::from_file(book("xlsx")).unwrap();
+    let source = Book::from_file(book("xlsx"))
+        .unwrap()
+        .with_calculate_all(true);
     let mut editor = source.clone();
     editor
         .delete_rows(["T!2".parse().unwrap()])
@@ -81,6 +84,56 @@ fn explain_says_what_write_will_do_without_touching_a_file() {
         text.ends_with("mark it to be recalculated when opened\n"),
         "{text}"
     );
+    // With `calculate_all` the conversion is of what the engine calculates; by default an XLSX whose results are right converts the
+    // results the file caches, with no engine (an ODS always has the engine: see `calculation_mode.rs`).
+    assert!(
+        text.contains("calculated by the engine in the pass that writes them"),
+        "{text}"
+    );
+    let mut cached = source.with_calculate_all(false);
+    cached.formula_to_value(["F".parse().unwrap()]);
+    assert!(
+        !cached
+            .explain()
+            .contains("calculated by the engine in the pass that writes them")
+    );
+}
+
+/// The order of the plan, as the explanation of the default mode says it (the explanation is the contract of what `write` will do).
+#[test]
+fn the_default_plan_is_replace_convert_and_delete_then_recalculate() {
+    for extension in ["xlsx", "ods"] {
+        let mut editor = Book::from_file(book(extension)).unwrap();
+        editor
+            .delete_rows(["T!2".parse().unwrap()])
+            .formula_to_value(["F".parse().unwrap()])
+            .replace(
+                ["U".into()],
+                [Replace {
+                    find: Find::literal("9"),
+                    with: "8".into(),
+                }],
+            );
+        let text = editor.explain();
+        assert!(
+            text.contains("pass 1 of 3:") && text.contains("pass 3 of 3:"),
+            "{extension}: {text}"
+        );
+        let replace = text.find("replace").unwrap();
+        let convert = text.find("formula to value").unwrap();
+        let delete = text.find("delete rows").unwrap();
+        let recalculate = text.find("recalculate every formula").unwrap();
+        assert!(
+            replace < convert && convert < delete && delete < recalculate,
+            "{extension}: {text}"
+        );
+        // The conversion and the deletion share the pass; the recalculation is said once.
+        assert!(
+            text.contains("formula to value in F\n  delete rows T!2:2"),
+            "{extension}: {text}"
+        );
+        assert_eq!(text.matches("recalculate every formula").count(), 1);
+    }
 }
 
 #[test]

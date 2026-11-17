@@ -1,4 +1,4 @@
-//! `FOURIER`, with the transforms of `LibreOffice` (`sc/source/core/tool/interpr3.cxx`): the
+//! `FOURIER`, with the transforms of `LibreOffice`: the
 //! radix-2 transform for lengths that are a power of 2, Bluestein's for the other lengths and a
 //! packed transform for real input of even length, each with the twiddle factors it computes, so
 //! that the digits are `LibreOffice`'s. The results are checked against the oracle

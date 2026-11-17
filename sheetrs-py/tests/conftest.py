@@ -16,6 +16,16 @@ STRUCTURE = ROOT / "sheetrs-edit/tests/assets/structure"
 IO_ASSETS = ROOT / "sheetrs-io/tests/assets"
 
 
+@pytest.fixture(autouse=True)
+def explicit_english(monkeypatch):
+    """The base configuration of the tests: the locale of the system is the default of a `Book`, so the
+    tests run with an explicit en-US whatever the machine has. A test of another locale gives it to the
+    `Book` or sets the variables in a child process."""
+    monkeypatch.delenv("LC_CTYPE", raising=False)
+    monkeypatch.delenv("LANG", raising=False)
+    monkeypatch.setenv("LC_ALL", "en_US.UTF-8")
+
+
 @pytest.fixture(params=["xlsx", "ods"])
 def structure(request, tmp_path):
     """A copy of the structure workbook (so that a test can save over it), in each format."""
@@ -30,11 +40,11 @@ def lint_book(request):
     return request.param
 
 
-def io_asset(name):
+def _io_asset(name):
     return IO_ASSETS / name
 
 
-def make_xlsx(path, sheets, names=None):
+def _make_xlsx(path, sheets, names=None):
     """Writes a workbook. `sheets` is `{name: {"A1": value}}`, where a value is a number, a `str`
     (text), a `bool`, a `("=formula", cached)` pair or `("#N/A",)` for an error."""
     path = Path(path)

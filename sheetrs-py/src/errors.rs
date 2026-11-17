@@ -55,7 +55,7 @@ fn is_unsupported_date_system(message: &str) -> bool {
 /// Whether a message of the compiler says that the workbook calls functions of `LibreOffice` that the
 /// engine does not implement.
 fn is_unavailable_function(message: &str) -> bool {
-    message.contains("that this engine does not implement")
+    message.contains("function that the engine does not implement")
 }
 
 pub(crate) fn invalid_range(message: impl Into<String>) -> PyErr {

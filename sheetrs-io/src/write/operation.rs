@@ -1,7 +1,7 @@
 //! The operations a workbook is asked to undergo, as data: what a [`Book`](crate::Book) holds
 //! while they are pending and what the planner of `sheetrs-edit` turns into passes of the writer.
 
-use super::{CellWrites, ColumnRange, RowRange, ValueScope};
+use super::{CellWrites, ColumnRange, RowRange, ValueScope, VisibilityChange};
 use serde_json::{Map, Value as Json};
 use sheetrs_protocol::{MajorDimension, Replace, Scope};
 use std::fmt;
@@ -29,6 +29,12 @@ pub struct Calculation {
     pub major: MajorDimension,
     /// Whether the answer (the value ranges) is wanted besides the workbook.
     pub answer: bool,
+    /// The serial number that `NOW()` and `TODAY()` give in this calculation (the `now` of `sheetc`);
+    /// `None` is the clock. It also fixes the recalculation that the same plan runs after this step.
+    pub now: Option<f64>,
+    /// The seed of `RAND()` and its relatives in this calculation (the `seed` of `sheetc`); `None` is
+    /// seeded from the clock. It also fixes the recalculation that the same plan runs after this step.
+    pub seed: Option<u64>,
 }
 
 /// One operation on a workbook, on the workbook as the operations before it leave it. The
@@ -50,6 +56,10 @@ pub enum Operation {
     /// content of the cells, so it is a pass of its own: what it decides is decided against the
     /// workbook as the operations before it leave it.
     Replace(ReplaceSpec),
+    /// Hide or show rows, columns and sheets, in the coordinates of the workbook as it is. The
+    /// changes keep the order they were pushed in (a later one wins over an earlier one) and are
+    /// applied before any deletion.
+    SetVisibility(Vec<VisibilityChange>),
     /// Write values into cells, decided by the caller (see [`CellWrites`]).
     WriteCells(CellWrites),
     /// Calculate every formula again. The plan puts it where a conversion would read results that
@@ -76,6 +86,7 @@ impl fmt::Display for Operation {
             Self::FormulaToValue(scopes) => {
                 write!(f, "formula to value in {}", list(scopes))
             }
+            Self::SetVisibility(changes) => write!(f, "{}", list(changes)),
             Self::DeleteRows(rows) => write!(f, "delete rows {}", list(rows)),
             Self::DeleteColumns(columns) => write!(f, "delete columns {}", list(columns)),
             Self::Recalculate => f.write_str("recalculate every formula (the results are stale)"),
@@ -139,6 +150,7 @@ impl Operation {
             Self::FormulaToValue(items) => items.is_empty(),
             Self::DeleteRows(items) => items.is_empty(),
             Self::DeleteColumns(items) => items.is_empty(),
+            Self::SetVisibility(items) => items.is_empty(),
             Self::Replace(_) | Self::Recalculate | Self::Calculate(_) => false,
             Self::WriteCells(writes) => writes.is_empty(),
         }

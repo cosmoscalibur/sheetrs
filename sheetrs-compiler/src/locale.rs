@@ -9,6 +9,7 @@
 //! separator changes every number read from text.
 
 use crate::error::{Error, Result};
+use crate::model::ModelSettings;
 use serde::Deserialize;
 use sheetrs_engine::options::{DateOrder, Locale};
 
@@ -94,6 +95,45 @@ fn reference(order: DateOrder) -> Option<&'static str> {
         DateOrder::Dmy => Some("es-ES"),
         DateOrder::Ymd => None,
     }
+}
+
+/// The locale of a run: the first of these that is set (the locale is a property of the workbook, see
+/// `sheetrs_io::locale`):
+///
+/// 1. the tag of the configuration (`over.tag`: a flag, a `[locale]` table, the `locale` option of a
+///    call), then the locale given to the workbook (`Book::with_locale`): what was asked for, so a tag
+///    the table does not have is an error;
+/// 2. the locale of the system, for an XLSX and an ODS alike, as `LibreOffice` takes it (the language an
+///    ODS stores in its default cell style does not change what `LibreOffice` calculates). A system
+///    locale the table does not have is not an error, as it is not one for `LibreOffice`, which uses
+///    `en-US` then: the list that comes back says so;
+/// 3. `en-US`.
+///
+/// The overrides of `over` apply to whichever tag is chosen. The second element lists what was
+/// inherited from the language of a region the table does not have, and the defaults that were skipped.
+///
+/// # Errors
+///
+/// When the tag asked for is not a locale tag or not in the table, or an override is not valid.
+pub fn resolve(over: &LocaleOverride, settings: &ModelSettings) -> Result<(Locale, Vec<String>)> {
+    if let Some(tag) = over.tag.as_deref().or(settings.book_locale.as_deref()) {
+        return from_tag(tag, over);
+    }
+    let mut skipped = Vec::new();
+    if let Some(tag) = &settings.system_locale {
+        match from_tag(tag, over) {
+            Ok((locale, mut notes)) => {
+                skipped.append(&mut notes);
+                return Ok((locale, skipped));
+            }
+            Err(error) => skipped.push(format!(
+                "the system locale is {tag}, which the table of locales does not have ({error}); en-US is used"
+            )),
+        }
+    }
+    let (locale, mut notes) = from_tag("en", over)?;
+    skipped.append(&mut notes);
+    Ok((locale, skipped))
 }
 
 /// Resolve `tag` and the overrides into a locale. The second element lists what
@@ -264,9 +304,65 @@ mod tests {
         assert_eq!(l.date_order, DateOrder::Dmy);
         assert_eq!(l.date_patterns, ["D/M", "D-M", "D/M/Y"]);
         // Only the locales checked against LibreOffice are in the table: the other ones are stated.
-        for tag in ["de-DE", "fr-FR", "ja-JP", "es-AR", "en-AU"] {
+        for tag in ["fr-FR", "ja-JP", "es-AR", "en-AU", "de-AT"] {
             assert!(get(tag).is_err(), "{tag}");
         }
+        let l = get("de").unwrap();
+        assert_eq!((l.decimal, l.group, l.tag.as_str()), (',', '.', "de"));
+        assert_eq!(l.true_text, "WAHR");
+    }
+
+    fn settings(book: Option<&str>, system: Option<&str>) -> ModelSettings {
+        let tag = |t: Option<&str>| t.map(String::from);
+        ModelSettings {
+            book_locale: tag(book),
+            system_locale: tag(system),
+            ..ModelSettings::default()
+        }
+    }
+
+    fn resolved(over: Option<&str>, s: &ModelSettings) -> Result<(String, Vec<String>), String> {
+        let over = LocaleOverride {
+            tag: over.map(String::from),
+            ..LocaleOverride::default()
+        };
+        resolve(&over, s)
+            .map(|(l, notes)| (l.tag, notes))
+            .map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn the_locale_of_a_run_is_the_first_that_is_set() {
+        let all = settings(Some("de-DE"), Some("es-ES"));
+        // The configuration, then the workbook, then the system, then en-US.
+        assert_eq!(resolved(Some("en-GB"), &all).unwrap().0, "en-GB");
+        assert_eq!(resolved(None, &all).unwrap().0, "de-DE");
+        assert_eq!(
+            resolved(None, &settings(None, Some("es-ES"))).unwrap().0,
+            "es-ES"
+        );
+        assert_eq!(resolved(None, &settings(None, None)).unwrap().0, "en");
+        // What an ODS says in its default cell style is not a locale of the run.
+        let mut stated = settings(None, None);
+        stated.locale = Some("es-CO".into());
+        assert_eq!(resolved(None, &stated).unwrap().0, "en");
+    }
+
+    #[test]
+    fn what_was_asked_for_must_be_a_locale_of_the_table_and_the_system_need_not() {
+        let e = resolved(Some("fr-FR"), &settings(None, None)).unwrap_err();
+        assert!(e.contains("fr-FR"), "{e}");
+        let e = resolved(None, &settings(Some("fr-FR"), Some("es-CO"))).unwrap_err();
+        assert!(e.contains("fr-FR"), "{e}");
+        // A system locale the table lacks is `en-US`, as for `LibreOffice`, and the run says so.
+        let (tag, notes) = resolved(None, &settings(None, Some("fr-FR"))).unwrap();
+        assert_eq!(tag, "en");
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("system locale") && n.contains("fr-FR")),
+            "{notes:?}"
+        );
     }
 
     #[test]

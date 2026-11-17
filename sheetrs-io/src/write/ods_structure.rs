@@ -12,7 +12,7 @@ use super::xlsx_structure::{SheetExtents, SheetStructure};
 use quick_xml::events::{BytesStart, Event};
 use sheetrs_formula::addr::{col_index, col_name, needs_quotes};
 use sheetrs_formula::ast::{CellAddr, ColAddr, Expr, RefArea, Reference, RowAddr};
-use sheetrs_formula::edit::apply;
+use sheetrs_formula::edit::{Rewritten, apply};
 
 /// A reference as an ODS formula writes it, inside `[` `]`.
 struct OdsRef {
@@ -266,14 +266,14 @@ fn adjusted_tracked(
 /// The text of the ODS formula (or expression) `text` once the plan is applied, `None` when it
 /// does not change. References in brackets are adjusted; one that goes is `[#REF!]`.
 pub(super) fn rewrite_expression(s: &SheetStructure, text: &str) -> Result<Option<String>> {
-    Ok(rewrite_expression_tracked(s, text)?.map(|(text, _)| text))
+    Ok(rewrite_expression_tracked(s, text)?.map(|r| r.text))
 }
 
 /// As [`rewrite_expression`], and whether the plan only moved what the expression reads.
 pub(super) fn rewrite_expression_tracked(
     s: &SheetStructure,
     text: &str,
-) -> Result<Option<(String, bool)>> {
+) -> Result<Option<Rewritten>> {
     let mut only_moved = true;
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
@@ -324,7 +324,10 @@ pub(super) fn rewrite_expression_tracked(
         }
     }
     out.push_str(&text[copied..]);
-    Ok(changed.then_some((out, only_moved)))
+    Ok(changed.then_some(Rewritten {
+        text: out,
+        only_moved,
+    }))
 }
 
 /// The formula of a `table:formula` attribute (`of:=…`) once the plan is applied, and whether the
@@ -332,7 +335,7 @@ pub(super) fn rewrite_expression_tracked(
 pub(super) fn rewrite_cell_formula_tracked(
     s: &SheetStructure,
     formula: &str,
-) -> Result<Option<(String, bool)>> {
+) -> Result<Option<Rewritten>> {
     if !s.changes_layout() && !s.plan.may_reach_edited_sheet(formula) {
         return Ok(None);
     }
@@ -341,7 +344,10 @@ pub(super) fn rewrite_cell_formula_tracked(
             "the formula '{formula}' is not in the OpenFormula syntax (of:=)"
         )));
     };
-    Ok(rewrite_expression_tracked(s, body)?.map(|(new, moved)| (format!("of:={new}"), moved)))
+    Ok(rewrite_expression_tracked(s, body)?.map(|r| Rewritten {
+        text: format!("of:={}", r.text),
+        ..r
+    }))
 }
 
 /// The ranges of a list separated by spaces; a space inside a quoted sheet name is not one.

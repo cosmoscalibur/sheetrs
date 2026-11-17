@@ -19,7 +19,7 @@ pub enum Where {
 #[derive(clap::Args)]
 #[allow(clippy::struct_excessive_bools)] // the flags of a command line
 #[command(
-    about = "Edit a workbook: delete sheets, names, rows and columns, turn formulas into values, find and replace"
+    about = "Edit a workbook: delete or hide sheets, rows and columns, delete names, turn formulas into values, find and replace"
 )]
 pub struct Args {
     /// The Excel/ODS workbook to edit
@@ -53,12 +53,38 @@ pub struct Args {
     #[arg(long, num_args = 1.., value_name = "COLUMNS")]
     pub delete_columns: Vec<ColumnRange>,
 
+    /// Hide rows (`Sheet!3:10`), keeping them in the file. In the rows of the input file, before any
+    /// deletion
+    #[arg(long, num_args = 1.., value_name = "ROWS")]
+    pub hide_rows: Vec<RowRange>,
+
+    /// Show rows, whatever hid them (by hand or by a filter). Applied after `--hide-rows`
+    #[arg(long, num_args = 1.., value_name = "ROWS")]
+    pub show_rows: Vec<RowRange>,
+
+    /// Hide columns (`Sheet!B:D`)
+    #[arg(long, num_args = 1.., value_name = "COLUMNS")]
+    pub hide_columns: Vec<ColumnRange>,
+
+    /// Show columns. Applied after `--hide-columns`
+    #[arg(long, num_args = 1.., value_name = "COLUMNS")]
+    pub show_columns: Vec<ColumnRange>,
+
+    /// Hide these sheets (one must stay visible)
+    #[arg(long, num_args = 1.., value_name = "SHEET")]
+    pub hide_sheets: Vec<String>,
+
+    /// Show these sheets. Applied after `--hide-sheets`
+    #[arg(long, num_args = 1.., value_name = "SHEET")]
+    pub show_sheets: Vec<String>,
+
     /// Find and replace text in the cells, as `LibreOffice`'s Find & Replace does (needs `--with`).
     /// The text of a number is the one of its input line (`1234.5`, `25.6%`, `03/15/2024`); the
     /// replacement is entered as if it were typed (`12` makes a number, `=1+1` a formula, nothing an
     /// empty cell). Repeat it for a sweep: `--replace A --with B --replace C --with D` pairs each
     /// `--replace` with the `--with` in the same position, and every pair is an operation, in
-    /// order, that sees what the previous one left; the options below apply to all of them
+    /// order, that sees what the previous one left; the options below apply to all of them. An empty
+    /// text matches nothing: no cell is replaced
     #[arg(long, value_name = "TEXT", requires = "with")]
     pub replace: Vec<String>,
 
@@ -72,7 +98,7 @@ pub struct Args {
     )]
     pub with: Vec<String>,
 
-    /// `--replace` is a regular expression (the subset of ICU that is reproduced)
+    /// `--replace` is a regular expression (ICU, the subset that is reproduced; `^` and `$` anchor the text of the cell, and the pattern may match the empty text: that match is replaced only at the end of the text)
     #[arg(long, requires = "replace", conflicts_with = "wildcards")]
     pub regex: bool,
 
@@ -106,6 +132,45 @@ pub struct Args {
     #[arg(long, value_name = "SCOPE", requires = "replace")]
     pub scope: Vec<String>,
 
+    /// Locale of the recalculation that an edit leaves to do (`TEXT`, the conversion of a number to
+    /// text): a tag such as `es-CO`. Default: the `locale` of `--config`, else the one of the system
+    /// (`LC_ALL`, `LC_CTYPE`, then `LANG`; `en-US` when it has none), for an XLSX and an ODS alike
+    #[arg(long, value_name = "TAG")]
+    pub locale: Option<String>,
+
+    /// Serial number that `NOW()` and `TODAY()` give in the recalculation that an edit leaves to do
+    /// (the `now` of `sheetc` and of a `calculate` step); default: the `now` of `--config`, else the
+    /// system clock
+    #[arg(long, value_name = "SERIAL")]
+    pub now: Option<f64>,
+
+    /// Seed of `RAND()` and its relatives in that recalculation (the `seed` of `sheetc` and of a
+    /// `calculate` step); default: the `seed` of `--config`, else seeded from the clock
+    #[arg(long, value_name = "N")]
+    pub seed: Option<u64>,
+
+    /// Configuration file (TOML) whose `locale`, `now` and `seed` in `[global]` are the defaults of
+    /// `--locale`, `--now` and `--seed` (default: `sheetrs.toml` in the current directory, when there is
+    /// one)
+    #[arg(short = 'c', long, value_name = "FILE")]
+    pub config: Option<PathBuf>,
+
+    /// Calculate every formula again (`calculateAll()` of `LibreOffice`) instead of what `LibreOffice` does
+    /// by default: the recalculation that an edit leaves to do calculates only the formulas the edit
+    /// reaches and the ones that depend on them, and every other formula keeps, as it is, the value the
+    /// application that wrote the file cached. A workbook that reads cells at run time (`INDIRECT`,
+    /// `OFFSET`) or that the file says is stale is calculated whole either way
+    #[arg(long)]
+    pub calculate_all: bool,
+
+    /// Open a workbook with macros, and go on when a calculation meets what the engine cannot calculate and
+    /// has to (a call to a macro, to an add-in or to a function of `LibreOffice` it lacks, such as
+    /// `WEBSERVICE`): the call is an error cell, what reads it is calculated from it, and the report holds a
+    /// warning. By default a run that builds refuses a workbook with macros and stops at the others with an
+    /// error that names the cause
+    #[arg(long)]
+    pub secure_mode: bool,
+
     /// Output file (required unless `--in-place`)
     #[arg(short, long, conflicts_with = "in_place")]
     pub output: Option<PathBuf>,
@@ -133,6 +198,12 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
         || !cli.formula_to_value.is_empty()
         || !cli.delete_rows.is_empty()
         || !cli.delete_columns.is_empty()
+        || !cli.hide_rows.is_empty()
+        || !cli.show_rows.is_empty()
+        || !cli.hide_columns.is_empty()
+        || !cli.show_columns.is_empty()
+        || !cli.hide_sheets.is_empty()
+        || !cli.show_sheets.is_empty()
         || !cli.replace.is_empty();
 
     if !has_ops {
@@ -159,7 +230,21 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
 
     // The flags of a command are all written against the input file, in no order: the planner
     // decides what runs first (see `sheetrs_edit::BookEdit`), as it does for every other caller.
-    let mut book = Book::from_file(&cli.file)?;
+    let mut book = Book::from_file(&cli.file)?
+        .with_calculate_all(cli.calculate_all)
+        .with_secure_mode(cli.secure_mode);
+    if let Some(tag) =
+        sheetrs_io::locale::for_command(cli.locale.as_deref(), cli.config.as_deref())?
+    {
+        book = book.with_locale(tag);
+    }
+    book = book.with_volatile(
+        sheetrs_io::Volatile {
+            now: cli.now,
+            seed: cli.seed,
+        }
+        .or(sheetrs_io::Volatile::configured(cli.config.as_deref())?),
+    );
     if !cli.replace.is_empty() {
         let mode = if cli.regex {
             Mode::Regex
@@ -193,7 +278,13 @@ pub fn run(cli: Args, logger: &Logger) -> Result<ExitCode> {
                 }),
         );
     }
-    book.formula_to_value(cli.formula_to_value)
+    book.hide_rows(cli.hide_rows)
+        .show_rows(cli.show_rows)
+        .hide_columns(cli.hide_columns)
+        .show_columns(cli.show_columns)
+        .hide_sheets(cli.hide_sheets)
+        .show_sheets(cli.show_sheets)
+        .formula_to_value(cli.formula_to_value)
         .delete_rows(cli.delete_rows)
         .delete_columns(cli.delete_columns)
         .delete_names(cli.delete_names)

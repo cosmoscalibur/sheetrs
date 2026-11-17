@@ -6,11 +6,19 @@ results the deletions before it left (a formula over a row that went reads one r
 what the editor reproduces by calculating the results again with the engine before it converts
 (`sheetrs-edit/tests/recalculation.rs`).
 
+The reference is the workbook SAVED AND OPENED AGAIN (project rule, `CONTRIBUTING.md`): the memory of LibreOffice
+right after an edit is not stable (a reference that went counts as `#REF!` there and as an error value or an
+unknown name after saving and loading). Each operation therefore leaves a saved file that is loaded again, and the
+next operation (a conversion converts what the formulas show) works on that document; the file of the last one is
+what is kept.
+
     scripts/libreoffice-server.sh        # port 2002
     /opt/libreoffice26.8/program/python sheetrs-edit/scripts/gen_recalculation_fixtures.py [NAME ...]
 """
 import os
+import shutil
 import sys
+import tempfile
 import time
 
 import uno
@@ -102,6 +110,17 @@ DISPATCH = {
 }
 
 
+def reread(doc, ext):
+    """The document saved and loaded again: what a user sees when someone else opens the file."""
+    folder = tempfile.mkdtemp()
+    tmp = os.path.join(folder, "step." + ext)
+    doc.storeToURL("file://" + tmp, pv(FilterName=FILTERS[ext]))
+    doc.close(True)
+    again = desktop.loadComponentFromURL("file://" + tmp, "_blank", 0, pv(Hidden=True))
+    shutil.rmtree(folder, ignore_errors=True)  # the loaded document does not need the file any more
+    return again
+
+
 def main(only):
     for name, operations in SEQUENCES.items():
         if only and name not in only:
@@ -111,6 +130,7 @@ def main(only):
                 "file://%s/book.%s" % (OUT, ext), "_blank", 0, pv(Hidden=True))
             for operation in operations:
                 DISPATCH[operation[0]](doc, *operation[1:])
+                doc = reread(doc, ext)
             path = "%s/expected_%s.%s" % (OUT, name, ext)
             doc.storeToURL("file://" + path, pv(FilterName=filter_name))
             fixture_determinism.normalize(path)

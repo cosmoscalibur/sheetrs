@@ -46,9 +46,13 @@ fn results_and_constants_are_written_and_the_formulas_stay() {
             .result("F", 3, 0, CachedResult::Error("#DIV/0!".into()));
         let mut editor = Book::from_file(template(extension)).unwrap();
         editor.write_cells(writes);
-        assert!(
-            !editor.explain().contains("recalculate"),
-            "{extension}: the results written are taken as current"
+        // The results written are taken as current: nothing is calculated for them. An ODS starts with what `LibreOffice` calculates when it
+        // opens it, a pass of its own here, before the write.
+        let explained = editor.explain();
+        assert_eq!(
+            explained.contains("recalculate"),
+            extension == "ods",
+            "{extension}: {explained}"
         );
         let report = editor.write(&out).unwrap();
         assert_eq!(report.written, 5, "{extension}");

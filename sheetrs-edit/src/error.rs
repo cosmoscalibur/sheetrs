@@ -19,6 +19,14 @@ pub enum Error {
     /// The formulas could not be calculated again.
     #[error("the formulas could not be calculated again, which '{operation}' needs: {reason}")]
     Recalculation { operation: String, reason: String },
+    /// The workbook depends on something the engine cannot calculate (a macro, an extension) in a cell the run
+    /// calculates, and only `LibreOffice` can give its result: `reason` names the cause.
+    #[error("'{operation}' needs the formulas calculated, and the workbook cannot be: {reason}")]
+    Unsupported { operation: String, reason: String },
+    /// The workbook carries macros and secure mode is off: the build refuses it, as it does in every layer (the
+    /// macros are never run, so what depends on them would differ from `LibreOffice`). `reason` names secure mode.
+    #[error("'{operation}' needs the formulas calculated, and the workbook was refused: {reason}")]
+    Refused { operation: String, reason: String },
     /// A `calculate` step that could not be run, when its value ranges were asked for (so that the mark
     /// to recalculate when the workbook is opened cannot stand for them), or that was asked for
     /// something that is not valid.

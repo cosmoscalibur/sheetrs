@@ -4,10 +4,10 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-/// A workbook with a reference to another one: the engine cannot calculate it, so deleting rows from
-/// it leaves it marked to be recalculated, and the run says so.
+/// A workbook with a formula the engine cannot calculate (a `TEXT` code of another language): deleting rows
+/// from it leaves it marked to be recalculated, and the run says so.
 fn external() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../sheetrs-edit/tests/assets/book/book.xlsx")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../sheetrs-edit/tests/assets/cached/limit.xlsx")
 }
 
 fn delete_rows(extra: &[&str]) -> Output {

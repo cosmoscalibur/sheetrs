@@ -1,6 +1,7 @@
 //! After a deletion the engine calculates every formula again, so what a cell holds is what its formula
-//! gives now (`#REF!` for a deleted reference, the new sum of a range that shrank), whatever the
-//! workbook cached. The workbooks are made here, with the results they cache, and what is asserted is
+//! gives now when the workbook is saved and opened again, the reference of the project (`CONTRIBUTING.md`): the error
+//! a deleted reference leaves is the error value `#REF!` in an ODS and the unknown name `#NAME?` in an XLSX
+//! (the bare `#REF!` of its file), the new sum of a range that shrank, whatever the workbook cached. The workbooks are made here, with the results they cache, and what is asserted is
 //! the value each cell has in the output.
 
 use sheetrs_edit::BookEdit;
@@ -168,11 +169,15 @@ fn number(path: &Path, sheet: &str, row: u32) -> f64 {
     }
 }
 
+/// The error a deleted reference gives when the file is opened again: `#REF!` in an ODS (`[#REF!]`), `#NAME?` in an XLSX
+/// (the bare `#REF!` is an unknown name for `LibreOffice`, also in the files it saves itself).
 fn is_ref_error(path: &Path, sheet: &str, row: u32) -> bool {
-    matches!(
-        value(path, sheet, row),
-        CellValue::Error(sheetrs_io::reader::ExcelError::Ref)
-    )
+    let expected = if path.extension().is_some_and(|e| e == "xlsx") {
+        sheetrs_io::reader::ExcelError::Name
+    } else {
+        sheetrs_io::reader::ExcelError::Ref
+    };
+    matches!(value(path, sheet, row), CellValue::Error(e) if e == expected)
 }
 
 /// Data in `D`, and `F` with formulas that read it: one that reads a cell, one that reads that
@@ -235,7 +240,7 @@ fn converting_every_formula_and_deleting_rows_keeps_the_values_the_workbook_had(
 }
 
 #[test]
-fn a_formula_that_reads_a_deleted_cell_is_given_the_reference_error() {
+fn a_formula_that_reads_a_deleted_cell_gives_the_error_of_the_reopened_file() {
     for extension in EXTENSIONS {
         let dir = tempfile::tempdir().unwrap();
         let input = workbook(dir.path(), extension, &reading_a_cell(extension));
@@ -268,7 +273,7 @@ fn reading_a_range(e: &str) -> Vec<(&'static str, Vec<Cell>)> {
 }
 
 #[test]
-fn a_range_that_shrinks_and_a_formula_that_traps_the_error_give_the_new_results() {
+fn a_shrunk_range_gives_its_new_result_and_iferror_traps_a_lost_reference() {
     for extension in EXTENSIONS {
         let dir = tempfile::tempdir().unwrap();
         let input = workbook(dir.path(), extension, &reading_a_range(extension));
@@ -277,8 +282,9 @@ fn a_range_that_shrinks_and_a_formula_that_traps_the_error_give_the_new_results(
         book.delete_rows(["D!2".parse().unwrap()]);
         book.write(&output).unwrap();
         assert!(is_ref_error(&output, "F", 0), "{extension}");
-        // The range is now the cells 10 and 30, and the formula that traps the error gives 0: the
-        // error is not what its value is.
+        // The range is now the cells 10 and 30. `IFERROR` traps the reference to deleted cells: in the file
+        // `LibreOffice` saves and opens again it is an error value, and `IFERROR(Data!A3,7)` is 7 (the oracle of
+        // `write_to_libreoffice.rs`, `refs`; its memory answers `#REF!`, which is not the reference).
         assert!((number(&output, "F", 1) - 40.0).abs() < 1e-9, "{extension}");
         assert!((number(&output, "F", 2) - 0.0).abs() < 1e-9, "{extension}");
     }

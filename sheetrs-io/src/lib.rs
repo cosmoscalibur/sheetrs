@@ -13,11 +13,13 @@
 mod book;
 mod entry_format;
 mod error;
+pub mod locale;
 pub mod reader;
 #[cfg(feature = "write")]
 pub mod write;
+pub mod xml;
 
-pub use book::Book;
+pub use book::{Book, RowState, Volatile};
 pub use entry_format::EntryFormat;
 pub use error::{Error, Result};
 pub use sheetrs_formula::{DateSystem, UnsupportedDateSystem};

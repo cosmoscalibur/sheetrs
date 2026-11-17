@@ -89,8 +89,7 @@ fn one_cell_ranges(formula: &str) -> String {
         .into_owned()
 }
 
-/// Every cell with its formula (a reference that went reads `T!#REF!` in an XLSX and `#REF!` in an
-/// ODS: both are `#REF!`) and its value.
+/// Every cell with its formula (a reference that went reads `#REF!` in both formats) and its value.
 fn cells(path: &Path) -> Cells {
     let mut cells = BTreeMap::new();
     for sheet in &Book::from_file(path).unwrap().workbook().unwrap().sheets {
@@ -98,9 +97,11 @@ fn cells(path: &Path) -> Cells {
             cells.insert(
                 (sheet.name.clone(), at.0, at.1),
                 (
+                    // The file that `LibreOffice` saves after it opened the bare `#REF!` of an XLSX again holds
+                    // the unknown name it read, `#ref!`: the same error in another case.
                     cell.formula
                         .as_deref()
-                        .map(|f| one_cell_ranges(&f.replace("T!#REF!", "#REF!"))),
+                        .map(|f| one_cell_ranges(&f.replace("#ref!", "#REF!"))),
                     cell.value.clone(),
                 ),
             );
@@ -235,15 +236,15 @@ fn a_conversion_on_a_workbook_saved_stale_calculates_it_first() {
     }
 }
 
-/// A workbook the engine cannot calculate (here, an external reference) cannot have its stale
+/// A workbook the engine cannot calculate (here, a `TEXT` code of a language it has no names for) cannot have its stale
 /// results calculated again: the conversion says so and writes nothing, instead of the stale values.
 #[test]
 fn a_workbook_that_cannot_be_calculated_is_not_converted_with_stale_values() {
     for extension in EXTENSIONS {
         let source = Book::from_file(
             Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/assets/book")
-                .join(format!("book.{extension}")),
+                .join("tests/assets/cached")
+                .join(format!("limit.{extension}")),
         )
         .unwrap();
         let dir = tempfile::tempdir().unwrap();

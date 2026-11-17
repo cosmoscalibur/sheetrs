@@ -224,16 +224,14 @@ fn serve_mode_answers_line_by_line() {
     assert!((b / a - 2.0).abs() < 1e-9);
 }
 
-/// The locale is fixed when the program is built, with or without `--no-fold`.
+/// The locale is fixed when the program is built.
 #[test]
 fn locale_flag_is_refused_at_run_time() {
     let dir = tempfile::tempdir().unwrap();
-    for extra in [&[][..], &["--no-fold"][..]] {
-        let fixed = build_loan("loan.xlsx", dir.path(), extra);
-        let (code, _, err) = run(&fixed, &["--locale", "es"], "{}");
-        assert_eq!(code, 2, "{err}");
-        assert!(err.contains("fixed when the program is built"), "{err}");
-    }
+    let fixed = build_loan("loan.xlsx", dir.path(), &[]);
+    let (code, _, err) = run(&fixed, &["--locale", "es"], "{}");
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("fixed when the program is built"), "{err}");
 }
 
 /// The date system, the iteration and the search settings belong to the document: there is no flag for
@@ -389,7 +387,11 @@ fn outputs_are_declared_or_the_formula_cells() {
     assert_eq!(values(&ask(&exe, "Loan!B4").1)[0]["range"], "Loan!B4");
     let (code, _, err) = ask(&exe, "Loan!B5");
     assert_eq!(code, 1);
-    assert!(err.contains("not inside the outputs"), "{err}");
+    assert!(
+        err.contains("`Loan!B5` is outside the outputs this program declares")
+            && err.contains("payment (Loan!B4)"),
+        "{err}"
+    );
 
     // No outputs declared: the formula cells are the outputs (as the rectangles that hold them, not
     // the constants), so the default answer is one entry per rectangle, and ranges inside them are
@@ -559,7 +561,7 @@ fn missing_settings_sheet_is_refused() {
 }
 
 #[test]
-fn workbooks_with_macros_need_no_strict() {
+fn workbooks_with_macros_need_secure_mode() {
     let dir = tempfile::tempdir().unwrap();
     let book = asset("loan_macro.xlsx");
     let out = dir.path().join("m");
@@ -584,23 +586,54 @@ fn workbooks_with_macros_need_no_strict() {
     let (code, _, err) = go(&[]);
     assert_eq!(code, 1);
     assert!(
-        err.contains("contains macros") && err.contains("--no-strict"),
+        err.contains("contains macros") && err.contains("--secure-mode"),
         "{err}"
     );
-    let (code, _, err) = go(&["--no-strict"]);
+    let (code, _, err) = go(&["--secure-mode"]);
     assert_eq!(code, 0, "{err}");
     assert!(
         err.contains("warning: the workbook contains macros"),
         "{err}"
     );
     check_loan(&out);
-    // `--strict` undoes a configuration that turned it off.
+    // The key of the configuration file is the same option.
     let cfg = dir.path().join("c.toml");
-    std::fs::write(&cfg, "strict = false\n").unwrap();
+    std::fs::write(&cfg, "secure_mode = true\n").unwrap();
     let (code, _, _) = go(&["--config", cfg.to_str().unwrap()]);
     assert_eq!(code, 0);
-    let (code, _, _) = go(&["--config", cfg.to_str().unwrap(), "--strict"]);
-    assert_eq!(code, 1);
+}
+
+/// In secure mode `sheetc calculate` goes on with a macro: its cell is `Err:531`, the rest of the workbook is
+/// calculated, and the warning is on the standard error. The workbooks are those of `sheetrs-edit` (`Calc!A1` calls `MYFUNC`).
+#[test]
+fn secure_mode_calculates_the_rest_of_a_workbook_that_calls_a_macro() {
+    for extension in ["xlsx", "ods"] {
+        let book = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../sheetrs-edit/tests/assets/from_cache")
+            .join(format!("macro.{extension}"));
+        let book = book.to_str().unwrap();
+        let (code, _, err) = run(
+            Path::new(SHEETC),
+            &["calculate", "-i", book, "--calculate-all"],
+            "",
+        );
+        assert_eq!(code, 1, "{extension}");
+        assert!(err.contains("--secure-mode"), "{extension}: {err}");
+        let (code, out, err) = run(
+            Path::new(SHEETC),
+            &["calculate", "-i", book, "--calculate-all", "--secure-mode"],
+            "",
+        );
+        assert_eq!(code, 0, "{extension}: {err}");
+        assert!(
+            err.contains("secure mode makes the call an error (Err:531)"),
+            "{extension}: {err}"
+        );
+        let answer: Json = serde_json::from_str(&out).unwrap();
+        let cells = &answer["valueRanges"][0]["values"][0];
+        assert_eq!(cells[0]["code"], "Err:531", "{extension}: A1");
+        assert_eq!(cells[2], 10, "{extension}: C1 is calculated");
+    }
 }
 
 #[test]

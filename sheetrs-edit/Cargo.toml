@@ -18,16 +18,16 @@ path = "src/lib.rs"
 
 [features]
 # The `sheetrs edit` subcommand (clap arguments and `run`), for the `sheetrs` executable.
-cli = ["dep:clap", "dep:anyhow"]
+cli = ["dep:clap", "dep:anyhow", "sheetrs-io/config"]
 
 [dependencies]
-sheetrs-io = { path = "../sheetrs-io", version = "0.4.1", features = ["write"] }
-sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.1" }
-sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.1" }
-sheetrs-query = { path = "../sheetrs-query", version = "0.4.1" }
-sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.1" }
-sheetrs-compiler = { path = "../sheetrs-compiler", version = "0.4.1" }
-sheetrs-answer = { path = "../sheetrs-answer", version = "0.4.1" }
+sheetrs-io = { path = "../sheetrs-io", version = "0.4.2", features = ["write"] }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.2" }
+sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.2" }
+sheetrs-query = { path = "../sheetrs-query", version = "0.4.2" }
+sheetrs-engine = { path = "../sheetrs-engine", version = "0.4.2" }
+sheetrs-compiler = { path = "../sheetrs-compiler", version = "0.4.2" }
+sheetrs-answer = { path = "../sheetrs-answer", version = "0.4.2" }
 serde_json.workspace = true
 clap = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }

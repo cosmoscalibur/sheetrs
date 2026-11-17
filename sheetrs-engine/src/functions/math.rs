@@ -3,7 +3,7 @@
 use super::{Reg, VAR, num, opt_num};
 use crate::engine::{Engine, Res};
 use crate::ir::Ns;
-use crate::value::{ErrorKind, Value};
+use crate::value::{Array, ErrorKind, Value};
 
 pub(super) fn register(r: &mut Reg) {
     r.eager("SUM", 0, VAR, |e, a| num(e.numbers(a)?.iter().sum()));
@@ -141,11 +141,38 @@ pub(super) fn register(r: &mut Reg) {
     r.eager("RANDBETWEEN.NV", 2, 2, randbetween);
     r.eager("SUMPRODUCT", 1, VAR, sumproduct).array_args();
     // Wrapper the frontends put around array (CSE) formulas.
-    // A reference it returns is the array of its cells: a cell of the formula
-    // shows the element at its position (the first, for a one-cell formula).
-    r.eager("_ARRAY", 1, 1, |e, a| match &a[0] {
-        Value::Ref(r) if !r.is_single() => Ok(Value::Array(e.array_of(a[0].clone()))),
-        v => Ok(v.clone()),
+    // A reference it returns is the array of its cells. The top-left cell of the formula shows the
+    // first element (the one cell of a formula of one cell included); each other cell of the block
+    // is given how far it sits from that one (`rows`, `columns`) and shows the element at its
+    // position, as `LibreOffice` does with the result of a matrix formula: a result of one row or
+    // of one column is repeated over the block, a value that is no array fills every cell, and a
+    // position past the result is `#N/A`.
+    r.eager("_ARRAY", 1, 3, |e, a| {
+        let whole = match &a[0] {
+            Value::Ref(r) if !r.is_single() => Value::Array(e.array_of(a[0].clone())),
+            v => v.clone(),
+        };
+        let (Some(Value::Number(rows)), Some(Value::Number(cols))) = (a.get(1), a.get(2)) else {
+            return Ok(whole);
+        };
+        let Value::Array(m) = whole else {
+            return Ok(whole);
+        };
+        let total = m.rows + m.ghost.as_ref().map_or(0, |g| g.rows);
+        let at = |offset: f64, size: u32| match size {
+            1 => Some(0),
+            _ => Some(offset as u32).filter(|&i| i < size),
+        };
+        let element = match (at(*rows, total), at(*cols, m.cols)) {
+            (Some(row), Some(col)) => m.logical(row, col).clone(),
+            _ => Value::Error(ErrorKind::Na),
+        };
+        // The element keeps what the cell shows of how the array was made.
+        let mut one = Array::new(1, 1, vec![element]);
+        one.logical = m.logical;
+        one.jump = m.jump;
+        one.jump_false = m.jump_false;
+        Ok(Value::Array(std::sync::Arc::new(one)))
     })
     .array_args();
 }
@@ -230,13 +257,29 @@ pub(crate) enum Mode {
 
 fn round_fn(e: &mut Engine, a: &[Value], mode: Mode) -> Res<Value> {
     let x = e.num(&a[0])?;
-    let d = super::opt_num(e, a, 1, 0.0)?;
-    num(round_dec(x, d.trunc() as i32, mode))
+    // As LibreOffice calculates them (see `round_calc`); `round_dec`, the rounding on the 15 digits of the
+    // value, is what the formats use.
+    let digits = if a.len() > 1 {
+        Some(super::opt_num(e, a, 1, 0.0)?)
+    } else {
+        None
+    };
+    num(super::round_calc::round_calc(x, digits, mode))
 }
 
 /// Round at `digits` decimal places the way spreadsheets do: on the 15
 /// significant decimal digits of the value, so `ROUND(1.005, 2)` is 1.01.
+///
+/// Integer arithmetic gives the answer (`round_exact`) unless the value is out of its range, and then
+/// the text definition ([`round_dec_text`]) does; both give the same bits.
 pub(crate) fn round_dec(x: f64, digits: i32, mode: Mode) -> f64 {
+    super::round_exact::round_exact(x, digits, mode)
+        .unwrap_or_else(|| round_dec_text(x, digits, mode))
+}
+
+/// The definition of [`round_dec`]: the value written with 15 significant digits, rounded as text and
+/// parsed back. It is the reference of the tests of `round_exact` and the answer where that one declines.
+pub(crate) fn round_dec_text(x: f64, digits: i32, mode: Mode) -> f64 {
     if x == 0.0 || !x.is_finite() {
         return x;
     }

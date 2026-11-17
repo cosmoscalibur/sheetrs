@@ -224,7 +224,7 @@ fn a_scope_that_names_a_missing_sheet_and_a_pattern_that_is_not_reproduced_are_e
             [Replace {
                 find: Find {
                     mode: Mode::Regex,
-                    ..Find::literal("^a")
+                    ..Find::literal("\\bfoo")
                 },
                 with: "b".into(),
             }],
@@ -268,7 +268,11 @@ fn a_replacement_reads_the_workbook_as_it_is_whatever_order_the_deletions_were_p
             let plan = editor.explain();
             // The replacement is the first pass, against the workbook as it is; the deletions are
             // one pass after it, in the rows of the workbook.
-            assert_eq!(plan.matches("pass ").count() / 2, 1, "{extension}: {plan}");
+            assert_eq!(
+                plan.lines().filter(|l| l.starts_with("pass 1 of")).count(),
+                1,
+                "{extension}: {plan}"
+            );
             assert!(
                 plan.find("replace \"1\"").unwrap() < plan.find("delete rows").unwrap(),
                 "{plan}"
@@ -326,6 +330,7 @@ fn a_formula_with_an_external_reference_is_replaced_and_keeps_the_reference() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/assets/book")
             .join(format!("book.{extension}"));
+        // The reference is to a workbook the engine does not open: the cell keeps the result it cached.
         let source = Book::from_file(&path).unwrap();
         let find = |text: &str, with: &str| {
             let find = Find {

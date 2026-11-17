@@ -60,6 +60,10 @@ pub struct Overrides {
     pub now: Option<f64>,
     pub rand_seed: Option<u64>,
     pub host: crate::options::Host,
+    /// Ignore the results the program caches for its formulas and calculate all of them (the
+    /// `calculateAll()` of `LibreOffice`). By default a formula whose precedents did not change keeps
+    /// its cached result (see [`Program::cache`](crate::ir::Program)).
+    pub calculate_all: bool,
 }
 
 pub use sheetrs_protocol::{MajorDimension, ValueRange, ValueRanges};
@@ -302,6 +306,9 @@ impl Program {
                 engine.set_input(at, v);
             }
         }
+        if !o.calculate_all {
+            engine.take_cached();
+        }
         engine.calculate();
         Ok(engine)
     }
@@ -373,9 +380,44 @@ impl Program {
                 rect: Some(rect),
             })
         } else {
-            fail(format!(
-                "`{text}` cannot be read: it is not inside the outputs of this program (see --meta)"
-            ))
+            Err(Error::OutsideOutputs {
+                range: text.to_string(),
+                declared: self.outputs_declared().then(|| {
+                    self.outputs
+                        .iter()
+                        .map(|b| {
+                            let range = crate::addr::qualified(&self.sheets, &b.rect);
+                            if b.name == range {
+                                range
+                            } else {
+                                format!("{} ({range})", b.name)
+                            }
+                        })
+                        .collect()
+                }),
+            })
+        }
+    }
+
+    /// Whether the outputs of the program were declared (a settings sheet or file) and not deduced
+    /// as the formula cells of the workbook.
+    #[must_use]
+    pub fn outputs_declared(&self) -> bool {
+        self.build.options.outputs == "declared"
+    }
+
+    /// Whether `text` (a range, or a name of an output or of the workbook) can be answered by this
+    /// program: it lies inside its outputs. `false` is a valid range that the program cannot read
+    /// (see [`Error::OutsideOutputs`]); a text that is no range or name is an error.
+    ///
+    /// # Errors
+    ///
+    /// When `text` is not a range or a name of the workbook.
+    pub fn reads(&self, base: Option<&dyn ConstSource>, text: &str) -> Result<bool> {
+        match self.resolve(base, text) {
+            Ok(_) => Ok(true),
+            Err(Error::OutsideOutputs { .. }) => Ok(false),
+            Err(other) => Err(other),
         }
     }
 

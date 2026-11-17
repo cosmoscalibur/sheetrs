@@ -56,11 +56,45 @@ Two requirements, and a rule about how to test them:
   behavior is documented. A difference nobody approved is a bug, even if it is convenient, hard to
   fix or unlikely to matter; one that cannot be fixed yet is reported to the maintainer for a
   decision, not shipped as if it were settled.
-- **The cache is not a fidelity criterion.** What a file caches in a formula cell is not a behavior to
-  preserve; it is recorded, with its reason, in [docs/approved-differences.md](docs/approved-differences.md).
+- **The reference is the workbook saved and opened again.** What LibreOffice holds in memory right after
+  an edit (through its API or its screen) is not the reference: the same workbook, saved and opened by
+  someone else, shows other values (a reference that went is `#REF!` in memory and `COUNT` of it is `#REF!`;
+  opened again it is 0), so the memory is not reproducible and its behavior is a defect of LibreOffice, not
+  something to copy. The expected result of an operation (a write, a replacement, a deletion of rows,
+  columns, sheets or names, hiding or showing, a conversion of formulas to values, a calculation) is
+  what a user sees when the workbook it leaves is **saved and opened again** in LibreOffice (`storeToURL`,
+  then load, then read the values with the default load), in both formats. A hard recalculation of that file
+  (`calculateAll`) is a cross-check; where it differs from the default load the default load is the
+  expected result, and the case is reported. An oracle script that edits through UNO therefore saves,
+  loads again and reads there; the values read from the document in memory are, at most, recorded as
+  informational evidence, labeled so, and no test compares with them.
+- **The calculation mode is LibreOffice's.** By default a run keeps the results a file caches for the formulas
+  nothing reaches and calculates what an edit or an input reaches (what `LibreOffice` does when it opens a file and when a
+  cell changes); `calculate_all` emulates its `calculateAll()` (every formula is calculated). The result a file caches is
+  therefore not a goal of SheetRS but a behavior to emulate, in both modes, and where the default shows other values than
+  `LibreOffice` after the same edit (`reread_default` of the oracle) the case is recorded in
+  [docs/approved-differences.md](docs/approved-differences.md) as proposed, not approved.
+- **A difference with LibreOffice is adjusted, not asked about** (a human developer and an agent alike).
+  When SheetRS and LibreOffice differ and nothing prevents it, the difference is fixed in the same work. What
+  prevents it is a technical impediment, a significant increase of complexity, or a regression or a
+  degradation that has to be validated. Only then is a decision requested, and the request carries the
+  justification for keeping the difference (permanent, or temporary, as when it is resolved in another pull
+  request), says what is being asked, and says what the developer resolves without asking. With none of those
+  reasons the developer resolves it.
+- **The source code of LibreOffice is not read.** It is forbidden to a human developer and to an agent, in any
+  version and in any form (its repository, a mirror, an excerpt, a tool that attaches it). The behavior is
+  learned by running LibreOffice and from its own results, by a **clean room**: the behavior is observed with
+  probes and oracles (`sheetrs-io/tests/assets/oracle/make_oracle.py` and the scripts of the fixtures) and written
+  down as a specification of inputs and results, with no code and no internal name; the implementation is written
+  from that specification and from the observations, never from the code; and every behavior is pinned by an
+  oracle of results that LibreOffice itself gave. A developer who has seen the code of a function does not
+  implement it. If a behavior cannot be derived from observations, it is reported to the maintainer as a pending
+  decision, with what was tried: reading the code is not the way out.
 - **How it is tested.** A file is tested against what LibreOffice reports for that file: the
   fixtures are made by LibreOffice and `sheetrs-io/tests/assets/oracle/make_oracle.py` records what it
-  says of each cell (see `sheetrs-query/tests/libreoffice_oracle.rs`). A capability is tested on both
+  says of each cell (see `sheetrs-query/tests/libreoffice_oracle.rs`); the effect of an edit is tested against
+  the file LibreOffice saves after making the same edit and what it shows when it opens it again
+  (`sheetrs-edit/tests/assets/write_to/make_oracle.py`, see the rule above). A capability is tested on both
   formats, each with its own expectation.
 
 Test assets and their description: [Test Assets](tests/README.md).
@@ -90,7 +124,15 @@ turns every regeneration into a diff of binary files that changed no cell.
 - Create both positive (expected behavior) and negative (error handling, edge
   cases) test cases.
 - **Name** a test for the behavior it checks, in a few words (`locale_flag_is_refused_at_run_time`), not
-  for how the code reaches it.
+  for how the code reaches it. The name says **what the test proves, by itself**: it does not start with
+  `test` (the module or the `tests/` directory already says it is a test), it has no comparative filler
+  (`too`, `also`: say the behavior, not that it resembles another test) and it is not a long sentence that
+  walks through the setup: short, concrete, stating the behavior (`a_bad_locale_tag_is_a_value_error`,
+  `unreached_formulas_keep_their_result`). The same rule in Python: pytest collects `[a-z]*` functions in
+  `sheetrs-py/tests` (`python_functions` in `pyproject.toml`), so a helper, a class or a constant starts
+  with an underscore or a capital and is never collected. The Python tests prove the interface contract
+  only (wiring, defaults, the mapping of errors and warnings); what the engine, the planner or the readers
+  do is tested in Rust.
 - **Test behavior, not design.** A test fails when what a user or a caller observes changes (a result, an
   error, an output). It does not pin that something does not exist or how it is built; a decision of
   design is recorded in the docs.
@@ -170,6 +212,9 @@ Before each release, fragments are merged into the `[Unreleased]` section of
 
 ## Releases
 
+The version and the changelog are prepared in a PR to `develop`; when it is merged, a PR from `develop` to
+`main` releases it, and `main` is merged back into `develop` (see *Branches*).
+
 What CI does and what stays manual:
 
 | Step | Who | How |
@@ -185,8 +230,17 @@ macOS and Windows artifacts are out of scope for now: [#99](https://github.com/c
 
 ## Pull Request Process
 
-1. Fork the repository and create a feature branch.
+1. Fork the repository and create a feature branch from `develop`.
 2. Make your changes following the coding patterns.
 3. Ensure all tests pass, and that what changed was checked against LibreOffice on both formats.
 4. Add a changelog fragment.
-5. Submit a PR using the PR template.
+5. Submit a PR **to `develop`** using the PR template.
+
+### Branches
+
+- `develop` receives every PR (changes, and the release preparation: version and changelog).
+- `main` receives only `develop`, through a release PR; nothing is merged into `main` directly, and the
+  workspace version reaching `main` is what creates the release tag (see *Releases*).
+- `develop` and `main` are kept aligned: the release PR is merged with a merge commit, and right after it
+  `main` is merged back into `develop` (or `develop` is fast-forwarded to `main`) before any other PR is
+  merged into `develop`. Between releases `develop` is ahead of `main`, never behind it.

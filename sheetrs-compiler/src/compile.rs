@@ -17,13 +17,14 @@ use crate::formula::{self, ParseCtx};
 use crate::graph::{self, Csr};
 use crate::model::{Model, ModelCell};
 use sheetrs_engine::addr::{self, CellRef, Rect};
+use sheetrs_engine::calculate::Overrides;
 use sheetrs_engine::engine::{ConstSource, Engine};
 use sheetrs_engine::fastmap::{FastMap, FastSet};
 use sheetrs_engine::ir::{
     Binding, BuildInfo, BuildOptions, CellDef, CellKind, Expr, Meta, Mode, Program, Queryable,
 };
 use sheetrs_engine::options::{DateSystem, EngineOptions, Iteration, Locale, Search};
-use sheetrs_engine::value::Value;
+use sheetrs_engine::value::{ErrorKind, Value};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 
@@ -64,6 +65,7 @@ impl BindingSpec {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)] // the independent options of a build, each with its own meaning
 pub struct Spec {
     /// Declared inputs. Empty: no input is declared, and they are deduced (the constants the
     /// outputs start from, once the workbook is pruned to what the outputs read).
@@ -83,7 +85,9 @@ pub struct Spec {
     pub rand_seed: Option<u64>,
     /// What `INFO` and `CELL("filename")` say; the file name is the workbook's unless given.
     pub host: sheetrs_engine::options::Host,
-    /// Evaluate input-independent cells at build time.
+    /// Evaluate input-independent cells at build time (default true). A Rust-library option for
+    /// tests and low-level use (comparing a folded and an unfolded program): `sheetc`, `sheetc.toml`
+    /// and the bindings always fold.
     pub fold: bool,
     /// What the program is for. A recalculated workbook (`Recalculate`) has every formula for an
     /// output and any constant for an input, whatever `inputs` and `outputs` say. An embedded one
@@ -100,6 +104,258 @@ pub struct Spec {
     pub notes: Vec<String>,
     /// Compatibility features (`enable_features`); every one is off unless enabled.
     pub features: Features,
+    /// What the passes before a recalculation changed (see [`Cache`]): the formulas those changes
+    /// reach, and the ones that depend on them, are calculated, and every other formula keeps the result
+    /// the workbook caches. Only `Mode::Recalculate` reads it; the default is nothing changed.
+    pub cache: Cache,
+    /// Emulates `calculateAll()` of `LibreOffice`: the whole workbook is calculated first, the constants
+    /// the build folds are the results of that calculation and those results are what the program
+    /// stores as cache. Off by default: the values the workbook stores are the folded constants and the
+    /// cache of the formulas the build keeps (the load of `LibreOffice`, which does not calculate what a
+    /// file already has a result for). In `Mode::Recalculate` it ignores [`cache`](Self::cache) and
+    /// calculates every formula.
+    pub calculate_all: bool,
+    /// Build only: the program stores no cached result for the formulas it keeps, so that it calculates
+    /// all of them in every run (a lighter program). Without it a run calculates only what the inputs it
+    /// is given change.
+    pub force_calculate_all: bool,
+    /// Secure mode: what the engine cannot calculate does not stop the build. A workbook with macros is opened (off, it is
+    /// refused by [`compile`] with [`Error::Macros`], whatever the tool) and a call to a macro, or to a function of
+    /// `LibreOffice` that the engine lacks, that a run would have to calculate is an error value ([`unsupported_error`]) and
+    /// the report says so (see [`FromCacheNote::error`]). Off by default: the build stops and names the cause.
+    pub secure_mode: bool,
+    /// Only these cells are asked for: the outputs of the program are the formulas inside them (the
+    /// program is pruned to what they read, and only they are written), where none is given the outputs
+    /// are every formula. See [`Only`].
+    pub only: Vec<Only>,
+    /// A calculation whose answer is the workbook (`sheetc calculate` sets it, and only it: a build, embedded or not, keeps its
+    /// own rules, whatever calls it): besides the outputs it declares (the names a request may use, and what an answer lists
+    /// by default), every formula the calculation reaches is calculated and written, whether a declared output holds it or not,
+    /// and the formulas it does not reach stay as the template caches them (the rules of the cache: what the inputs given and the
+    /// formulas with no result or that are volatile reach, and what depends on them).
+    pub whole_workbook: bool,
+    /// The inputs a calculation was given, as the request names them (a declared name, a range or a defined name): they are
+    /// the only cells that can differ from what the workbook holds, so they are the ones whose cone is calculated; the rest of
+    /// the declared inputs keep their value and what reads only them keeps its result. `None` for a build, whose program is run
+    /// later with any of the declared inputs.
+    pub given_inputs: Option<Vec<String>>,
+}
+
+/// The cells of a sheet that a calculation is asked for: the whole sheet, some columns of it or some rows
+/// (0-based, inclusive), as the conversion of formulas to values names them. A sheet that the workbook
+/// has not is no cell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Only {
+    pub sheet: String,
+    pub rows: Option<(u32, u32)>,
+    pub columns: Option<(u32, u32)>,
+}
+
+/// What a workbook can depend on that the engine cannot calculate: the three kinds the build tells apart (see
+/// [`FromCacheNote`]). `LibreOffice` keeps the result the file caches for a cell that depends on them until
+/// something dirties the cell, and the build does the same (`sheetrs-compiler/docs/FIDELITY.md`, *What depends
+/// on what the engine cannot calculate*).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Unsupported {
+    /// A reference to another workbook (`[1]Sheet1!A1`, or a defined name that holds one): the result the file
+    /// caches is the stored value of the link, which `LibreOffice` shows without updating it.
+    External,
+    /// A function that a macro of the workbook may define (a name no spreadsheet program has, in a workbook
+    /// that carries macros): the macros are never run.
+    Macro,
+    /// A function the engine has no implementation of: an add-in or extension (`_xll.NAME`, an add-in
+    /// service) or a function of `LibreOffice` that it lacks.
+    Extension,
+}
+
+impl Unsupported {
+    /// The name of the kind: `external`, `macro` or `extension`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::External => "external",
+            Self::Macro => "macro",
+            Self::Extension => "extension",
+        }
+    }
+}
+
+/// What a build left as the file caches it for a kind of [`Unsupported`]: `cells` formulas (and what
+/// depends on them is calculated from those values), the first at `first` (`Sheet1!A1`), and what they
+/// depend on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FromCacheNote {
+    /// What the formulas depend on.
+    pub kind: Unsupported,
+    pub cells: usize,
+    pub first: String,
+    /// The references or the functions, without repeats, as the formulas write them (at most five).
+    pub what: Vec<String>,
+    /// Set in secure mode for the cells that the run calculates: not the result the file caches but an error (what
+    /// the call gives, as `Err:540` or `#N/A`; the errors that were given, without repeats). `None`: the cells
+    /// keep what the file caches.
+    pub error: Option<String>,
+}
+
+/// The error a call that only `LibreOffice` can answer is in secure mode, from what `LibreOffice` shows for it
+/// (OBSERVED in 26.8, `FIDELITY.md`, *What depends on what the engine cannot calculate*): a macro is `#MACRO?`
+/// (`Err:531`), `WEBSERVICE` is `Err:540` (offline) and `DDE` is `#N/A`. `FILTERXML` and the rest of its functions
+/// that the engine lacks give a value, not an error, that only `LibreOffice` can calculate: none is observable as an
+/// error, so the call is the generic error of the engine (`#NOT_IMPLEMENTED!`).
+#[must_use]
+pub fn unsupported_error(kind: Unsupported, name: &str) -> ErrorKind {
+    match (kind, name) {
+        (Unsupported::Macro, _) => ErrorKind::Libre(531),
+        (_, "WEBSERVICE") => ErrorKind::Libre(540),
+        (_, "DDE") => ErrorKind::Na,
+        _ => ErrorKind::Unsupported,
+    }
+}
+
+/// Why a workbook with macros is not built with secure mode off (the same text in every layer: it names the option of each).
+pub const MACROS_REFUSED: &str = "the workbook contains macros, which are never run, so what depends on them would differ from LibreOffice, which runs them; \
+turn secure mode on to open it anyway (`--secure-mode` or `secure_mode = true` of sheetc and sheetrs edit, `Book::with_secure_mode(true)` in Rust, \
+`secure_mode=True` in Python, `secureMode` in WebAssembly): the cells that call a function a macro may define are error cells (`Err:531`), \
+the run warns, and the rest of the workbook is calculated";
+
+/// What a recalculation that uses the results a workbook caches is told, besides the workbook: the
+/// changes the passes before it made that its formulas cannot show. Only the formulas those changes
+/// reach, and the ones that depend on them, are calculated; every other formula is a constant that
+/// holds the result the workbook caches, and keeps it.
+///
+/// Which formulas a change reaches is what `LibreOffice` recalculates when it makes the same change and the
+/// file is saved and opened again (`sheetrs-edit/tests/assets/write_to`, the fixture `dirty`):
+///
+/// * a deletion of rows or columns reaches a formula that reads a deleted cell or a range that shrank (the
+///   writer leaves such a formula with no result), the whole columns of a sheet that lost rows and the whole rows of
+///   one that lost columns, `ROW` and `COLUMN` (of the formula's own cell or of a reference that moved), and the
+///   formulas that read through a name whose target moved or shrank ([`names_reached`]); a formula that only reads
+///   cells that moved keeps its result;
+/// * a deletion of a sheet reaches every formula, and a deletion of a name every formula that reads through a name;
+/// * a formula that was already stale (an error `#REF!` the file holds, a result of the file that is not the
+///   formula's) keeps its result unless one of the above reaches it.
+///
+/// A formula with no cached result, a volatile one, and one that reads the cells of a change are calculated,
+/// and so is everything that depends on them. A workbook that reads cells at run time (`INDIRECT`, `OFFSET`)
+/// can read any of them: it is calculated whole. However many formulas are stale, the others keep their result
+/// (the walk that finds them costs 1-1.3 s on 2.4 M formulas, `docs/performance.md`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Cache {
+    /// Cells whose content changed, as `(sheet, first row, first column, last row, last column)`
+    /// (0-based, inclusive): the formulas that read them are stale.
+    pub changed: Vec<(String, u32, u32, u32, u32)>,
+    /// The rows whose visibility changed, as `(sheet, first, last)` (0-based, inclusive, in the rows of the workbook before the
+    /// deletions, as `rows_deleted`: the compiler moves them with the deletions). `LibreOffice` calculates a `SUBTOTAL`
+    /// that reads a range with one of them, and a formula that reads such a range and sits in a group of formulas (adjacent
+    /// cells of a column with the same formula, as relative references).
+    pub rows_hidden: Vec<(String, u32, u32)>,
+    /// The bands of rows that were deleted, as `(sheet, first, last)` (0-based, inclusive, in the rows of the
+    /// workbook before the deletion): a formula that reads whole columns of the sheet (a range to the last
+    /// row, which keeps its text when rows go) is stale, and `ROW` and `COLUMN` of what moved.
+    pub rows_deleted: Vec<(String, u32, u32)>,
+    /// The bands of columns that were deleted (as `rows_deleted`): a formula that reads whole rows of the
+    /// sheet is stale.
+    pub columns_deleted: Vec<(String, u32, u32)>,
+    /// A sheet was deleted: `LibreOffice` calculates every formula of the workbook again.
+    pub sheets_deleted: bool,
+    /// The defined names (in any case) that a formula reads through to be stale: those whose target the deletion moved or
+    /// shrank ([`names_reached`]).
+    pub stale_names: Vec<String>,
+    /// A name was deleted: every formula that reads through a name is stale (the names are those of the workbook), and in
+    /// an XLSX, `LibreOffice` also calculates again the formulas that hold a bare error `#REF!` (it reads it as a name it
+    /// cannot resolve).
+    pub names_deleted: bool,
+}
+
+/// One reference of the definition of a name: the sheet it names (`None`: it names none), and its rectangle
+/// (0-based, inclusive; the whole columns and rows reach the last row and column).
+type NameRef = (Option<String>, u32, u32, u32, u32);
+
+/// What the definition of a name reads: its own references and the names it uses.
+fn name_reads(definition: &str) -> (Vec<NameRef>, Vec<String>) {
+    use sheetrs_formula::ast::RefArea;
+    let Ok(ast) = sheetrs_formula::parse(definition.trim_start_matches('=')) else {
+        return (Vec::new(), Vec::new());
+    };
+    let (mut refs, mut names) = (Vec::new(), Vec::new());
+    ast.walk(&mut |x| match x {
+        sheetrs_formula::Expr::Ref(r) => {
+            let (r0, c0, r1, c1) = match r.area {
+                RefArea::Cell(a) => (a.row, a.col, a.row, a.col),
+                RefArea::Range(a, b) => (
+                    a.row.min(b.row),
+                    a.col.min(b.col),
+                    a.row.max(b.row),
+                    a.col.max(b.col),
+                ),
+                RefArea::Cols(a, b) => (0, a.col.min(b.col), addr::MAX_ROWS - 1, a.col.max(b.col)),
+                RefArea::Rows(a, b) => (a.row.min(b.row), 0, a.row.max(b.row), addr::MAX_COLS - 1),
+            };
+            refs.push((r.sheet.clone(), r0, c0, r1, c1));
+        }
+        sheetrs_formula::Expr::Name(n) => names.push(n.to_lowercase()),
+        _ => {}
+    });
+    (refs, names)
+}
+
+/// The defined names that `LibreOffice` recalculates the formulas of after the deletion of the bands of rows
+/// (`rows`) and of columns (`columns`), as `(sheet, first, last)` in the coordinates before the deletion.
+/// `names` are the definitions before it (name to formula text). Returned in lower case.
+///
+/// Observed (the file saved and opened again, `sheetrs-edit/tests/assets/write_to`, the fixture `dirty`, both
+/// formats): a formula that reads through a name is recalculated when a reference in the definition of the name
+/// moved (a band begins at or before its last row, or its last column), shrank or went; a name that is defined by other names is
+/// recalculated when one of those lost cells (a band meets its target), but not when it only moved.
+#[must_use]
+pub fn names_reached<S: std::hash::BuildHasher>(
+    names: &std::collections::HashMap<String, String, S>,
+    rows: &[(String, u32, u32)],
+    columns: &[(String, u32, u32)],
+) -> Vec<String> {
+    let same = |a: &Option<String>, b: &str| a.as_deref().is_some_and(|a| addr::same_name(a, b));
+    // `all`: a band that begins at or before the reference moves it; otherwise only one that meets it counts.
+    let reached = |(sheet, r0, c0, r1, c1): &NameRef, all: bool| {
+        rows.iter().any(|(s, first, last)| {
+            same(sheet, s)
+                && if all {
+                    first <= r1
+                } else {
+                    first <= r1 && last >= r0
+                }
+        }) || columns.iter().any(|(s, first, last)| {
+            same(sheet, s)
+                && if all {
+                    first <= c1
+                } else {
+                    first <= c1 && last >= c0
+                }
+        })
+    };
+    let reads: std::collections::HashMap<String, (Vec<NameRef>, Vec<String>)> = names
+        .iter()
+        .map(|(name, definition)| (name.to_lowercase(), name_reads(definition)))
+        .collect();
+    let mut out: Vec<String> = Vec::new();
+    for (name, (refs, inner)) in &reads {
+        let mut hit = refs.iter().any(|r| reached(r, true));
+        // The names it uses, and theirs, in turn.
+        let (mut seen, mut stack) = (HashSet::from([name.clone()]), inner.clone());
+        while let Some(next) = stack.pop() {
+            if !seen.insert(next.clone()) {
+                continue;
+            }
+            if let Some((refs, inner)) = reads.get(&next) {
+                hit |= refs.iter().any(|r| reached(r, false));
+                stack.extend(inner.iter().cloned());
+            }
+        }
+        if hit {
+            out.push(name.clone());
+        }
+    }
+    out.sort();
+    out
 }
 
 /// Optional compatibility behaviours, resolved while the program is built. All are off by default:
@@ -157,6 +413,13 @@ impl Default for Spec {
             inspect: false,
             notes: Vec::new(),
             features: Features::default(),
+            cache: Cache::default(),
+            calculate_all: false,
+            force_calculate_all: false,
+            secure_mode: false,
+            only: Vec::new(),
+            whole_workbook: false,
+            given_inputs: None,
         }
     }
 }
@@ -171,11 +434,16 @@ pub struct Report {
     pub formulas_folded: usize,
     /// Formulas that remain in the program.
     pub formulas_kept: usize,
+    /// Formulas that keep the result the workbook caches, because nothing reaches them (see
+    /// [`Cache`]).
+    pub formulas_cached: usize,
     pub cells_kept: usize,
     pub cycles: usize,
     /// A reference computed at run time forced the whole workbook to be kept.
     pub dynamic_refs: bool,
     pub unsupported: BTreeSet<String>,
+    /// What the build took from the cache of the file, by kind (see [`FromCacheNote`]).
+    pub from_cache: Vec<FromCacheNote>,
     /// Warnings of the build (text outside the scripts the collation orders as `LibreOffice` does…).
     pub warnings: Vec<String>,
     /// Every function called in the workbook's formulas and how many times
@@ -303,6 +571,9 @@ fn check_bindings(model: &Model, spec: &Spec) -> Result<()> {
 struct Flags {
     dynamic: bool,
     volatile: bool,
+    /// `LibreOffice` calculates the formula when it opens any file (see [`dependencies_into`]), which it does not for what a build
+    /// folds: only the recalculation that keeps the cache looks at it.
+    on_load: bool,
 }
 
 /// The peak resident memory of the process so far, in MB, where `/proc` reports it.
@@ -337,6 +608,11 @@ fn trace(t0: Option<&std::time::Instant>, label: &str) {
     }
 }
 
+/// A formula that depends on what the engine cannot calculate: the cell, the kind, what it is (the reference, the
+/// function) and whether the engine answers it as `LibreOffice` does when the cell is calculated (an add-in that is
+/// not installed is `#NAME?`).
+type Found = (CellRef, Unsupported, String, bool);
+
 /// What lowering a share of the formulas found.
 #[derive(Default)]
 struct Lowered {
@@ -345,8 +621,9 @@ struct Lowered {
     cached: FastMap<CellRef, Value>,
     diags: Vec<String>,
     unsupported: BTreeSet<String>,
-    /// Functions of `LibreOffice` the engine lacks, with the first cell that calls each.
-    missing: std::collections::BTreeMap<String, CellRef>,
+    /// The formulas that depend on what the engine cannot calculate: the cell, the kind and what it is
+    /// (the reference, the function).
+    found: Vec<Found>,
     /// Formulas whose syntax the parser does not read: the cell, the formula and why.
     syntax: Vec<(CellRef, String, String)>,
     /// Options of a function the engine does not support: the cell and what.
@@ -359,10 +636,17 @@ fn lower_chunk(
     part: &[(CellRef, &ModelCell)],
     calc: sheetrs_formula::calc_print::CalcSyntax,
     features: Features,
+    detect: &Detect,
 ) -> Lowered {
     let mut out = Lowered::default();
     for &(at, c) in part {
         let Some(f) = &c.formula else { continue };
+        // A reference to another workbook is not read by the parser: what the formula depends on is told
+        // before it is lowered.
+        if let Some(what) = detect.external(f) {
+            out.found.push((at, Unsupported::External, what, false));
+            continue;
+        }
         let ctx = ParseCtx {
             sheets: &model.sheets,
             current_sheet: at.sheet,
@@ -386,15 +670,22 @@ fn lower_chunk(
                     && let Some(id) =
                         sheetrs_engine::functions::lookup(sheetrs_engine::ir::Ns::Core, "_ARRAY")
                 {
-                    e = Expr::Call(id, vec![e]);
+                    // A member of the block shows its own element of the result: the call is told
+                    // how far it sits from the top-left cell.
+                    let mut args = vec![e];
+                    if let Some(&(rows, cols)) = model.array_members.get(&at) {
+                        args.push(Expr::Const(Value::Number(f64::from(rows))));
+                        args.push(Expr::Const(Value::Number(f64::from(cols))));
+                    }
+                    e = Expr::Call(id, args);
                 }
                 let mut holds_subtotal = false;
                 e.walk(&mut |x| match x {
                     Expr::Unknown(call) => {
                         let name = &call.0;
                         out.unsupported.insert(name.to_string());
-                        if sheetrs_engine::functions::in_catalogue(name) {
-                            out.missing.entry(name.to_string()).or_insert(at);
+                        if let Some((kind, answers)) = detect.function(name) {
+                            out.found.push((at, kind, name.to_string(), answers));
                         }
                         *out.function_uses.entry(name.to_string()).or_default() += 1;
                     }
@@ -439,6 +730,147 @@ fn lower_chunk(
     out
 }
 
+/// What tells that a formula depends on what the engine cannot calculate (see [`Unsupported`]).
+struct Detect {
+    /// The workbook carries macros: a function no spreadsheet program has may be one of them.
+    macros: bool,
+    /// The defined names (uppercase) that hold a reference to another workbook.
+    external_names: Vec<String>,
+}
+
+impl Detect {
+    fn new(model: &Model) -> Self {
+        let mut external_names: Vec<String> = model
+            .names
+            .iter()
+            .filter(|(_, text)| external_reference(text).is_some())
+            .map(|(name, _)| name.to_ascii_uppercase())
+            .collect();
+        external_names.sort();
+        Self {
+            macros: model.macros,
+            external_names,
+        }
+    }
+
+    /// The external reference (or the defined name that holds one) the formula text depends on.
+    fn external(&self, formula: &str) -> Option<String> {
+        if let Some(reference) = external_reference(formula) {
+            return Some(reference);
+        }
+        if self.external_names.is_empty() {
+            return None;
+        }
+        let up = formula.to_ascii_uppercase();
+        self.external_names
+            .iter()
+            .find(|name| contains_word(&up, name))
+            .cloned()
+    }
+
+    /// The kind of what a call to the function `name` (uppercase, prefixes taken off) depends on, when the
+    /// engine does not have it, and whether the engine answers the call as `LibreOffice` does when the cell is
+    /// calculated: an add-in that is not installed (`_xll.NAME`, `COM.SUN.STAR.SHEET.ADDIN.*`) is `#NAME?`
+    /// (OBSERVED, both formats), and the engine gives that for a name it does not know. A function of
+    /// `LibreOffice` that the engine lacks (`WEBSERVICE`, `FILTERXML`, `DDE`...) and one that a macro of the
+    /// workbook may define have results that only `LibreOffice` can give. `None`: `LibreOffice` does not know the
+    /// name either (`#NAME?`).
+    fn function(&self, name: &str) -> Option<(Unsupported, bool)> {
+        if name.starts_with("_XLL.") || name.starts_with("COM.SUN.STAR.SHEET.ADDIN.") {
+            Some((Unsupported::Extension, true))
+        } else if sheetrs_engine::functions::in_catalogue(name) {
+            Some((Unsupported::Extension, false))
+        } else if self.macros {
+            Some((Unsupported::Macro, false))
+        } else {
+            None
+        }
+    }
+}
+
+/// The reference to another workbook in the text of a formula (`[1]Sheet1!A1` of an XLSX, which an ODS
+/// is read as too), outside text between quotes: the sheet it names, with the index of the workbook
+/// (`[1]Sheet1`). `[1]` before a sheet name and `!` is what an external workbook looks like; a structured
+/// reference (`Table1[[#This Row],[1]]`) is not followed by `!`.
+fn external_reference(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == b'"' {
+                        if bytes.get(i + 1) == Some(&b'"') {
+                            i += 2;
+                            continue;
+                        }
+                        break;
+                    }
+                    i += 1;
+                }
+                i += 1;
+            }
+            b'[' => {
+                let digits = bytes[i + 1..]
+                    .iter()
+                    .take_while(|b| b.is_ascii_digit())
+                    .count();
+                let close = i + 1 + digits;
+                if digits > 0 && bytes.get(close) == Some(&b']') {
+                    // The sheet name: up to the `!`, with no operator or space unless it is quoted.
+                    let mut j = close + 1;
+                    let mut quoted = false;
+                    while j < bytes.len() {
+                        match bytes[j] {
+                            b'\'' => quoted = !quoted,
+                            b'!' if !quoted => {
+                                // With the cell or range it reads (`$A$1:B2`).
+                                let tail = bytes[j + 1..]
+                                    .iter()
+                                    .take_while(|b| {
+                                        b.is_ascii_alphanumeric() || matches!(b, b'$' | b':')
+                                    })
+                                    .count();
+                                return Some(text[i..j + 1 + tail].to_string());
+                            }
+                            b'(' | b')' | b',' | b';' | b'+' | b'-' | b'*' | b'/' | b'^' | b'&'
+                            | b'=' | b'<' | b'>' | b' ' | b'"' | b'[' | b']'
+                                if !quoted =>
+                            {
+                                break;
+                            }
+                            _ => {}
+                        }
+                        j += 1;
+                    }
+                }
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Whether `word` is in `text` as a whole name (not inside another one).
+fn contains_word(text: &str, word: &str) -> bool {
+    let is_name = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'.';
+    let bytes = text.as_bytes();
+    let mut from = 0;
+    while let Some(at) = text[from..].find(word) {
+        let start = from + at;
+        let end = start + word.len();
+        let before = start.checked_sub(1).map(|k| bytes[k]);
+        let after = bytes.get(end).copied();
+        if !before.is_some_and(is_name) && !after.is_some_and(is_name) {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
+}
+
 /// What [`compile`] takes as the model: `&Model` (the caller keeps it, unchanged) or a `Model` (the
 /// compiler owns it and frees what it no longer needs).
 pub trait ModelArg<'m> {
@@ -469,6 +901,29 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
     // formulas is freed (nothing after reads it), which lowers the peak of the rest of the build.
     // A model passed by reference is the caller's and stays as it is.
     let mut owned: Cow<'m, Model> = model.into_cow();
+    // The refusal is the build's own, so that every tool that builds (`sheetc`, `sheetrs edit`, the libraries, Python and
+    // WebAssembly) inherits it with no policy of its own. `inspect` and `verify` only read (they compile with `inspect`).
+    if owned.macros && !spec.secure_mode && !spec.inspect {
+        return Err(Error::Macros(MACROS_REFUSED.into()));
+    }
+    // A workbook that carries the mark to calculate every formula when it is opened is a run with `calculate_all`:
+    // what it caches is not current. One place decides it, for every path that builds or calculates.
+    let marked;
+    let spec = if owned.recalculate_on_load && !spec.calculate_all && !spec.inspect {
+        marked = Spec {
+            calculate_all: true,
+            ..spec.clone()
+        };
+        &marked
+    } else {
+        spec
+    };
+    // `calculateAll()`: the whole workbook is calculated first and its results are the values the
+    // workbook stores from here on (the folded constants and the cache of what is kept).
+    if spec.calculate_all && spec.mode != Mode::Recalculate && !spec.inspect {
+        let calculated = calculated_model(&owned, spec)?;
+        owned = Cow::Owned(calculated);
+    }
     let model: &Model = &owned;
     // The editor's recalculation (`Mode::Recalculate`, built by no command) has no declarations: every
     // formula is an output and any constant an input. An embedded program takes them as any program
@@ -558,10 +1013,12 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
     report.formulas_total += formula_cells.len();
     // Where the formulas are, whatever becomes of each below (lowered, folded, or kept as the value
     // the file cached): the outputs nothing declares are the cells that are calculated.
-    let formula_positions: Vec<CellRef> = formula_cells.iter().map(|(at, _)| *at).collect();
+    let mut formula_positions: Vec<CellRef> = formula_cells.iter().map(|(at, _)| *at).collect();
     // Lowering a formula reads only the model: the cells go to as many threads as
     // the machine has, and what each one found is merged afterwards (the result is
     // sorted below, so the order they finish in does not matter).
+    let detect = Detect::new(model);
+    let detect = &detect;
     let workers = std::thread::available_parallelism()
         .map_or(1, usize::from)
         .min(8);
@@ -573,13 +1030,15 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             &formula_cells,
             calc_syntax,
             spec.features,
+            detect,
         )]
     } else {
         std::thread::scope(|scope| {
             let handles: Vec<_> = formula_cells
                 .chunks(chunk)
                 .map(|part| {
-                    scope.spawn(move || lower_chunk(model, part, calc_syntax, spec.features))
+                    scope
+                        .spawn(move || lower_chunk(model, part, calc_syntax, spec.features, detect))
                 })
                 .collect();
             handles
@@ -588,8 +1047,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
                 .collect()
         })
     };
-    let mut missing: std::collections::BTreeMap<String, CellRef> =
-        std::collections::BTreeMap::default();
+    let mut found: Vec<Found> = Vec::new();
     let mut syntax: Vec<(CellRef, String, String)> = Vec::new();
     let mut options: Vec<(CellRef, String)> = Vec::new();
     for part in lowered {
@@ -600,16 +1058,97 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         report.unsupported.extend(part.unsupported);
         syntax.extend(part.syntax);
         options.extend(part.options);
-        for (name, at) in part.missing {
-            let first = missing.entry(name).or_insert(at);
-            *first = (*first).min(at);
-        }
+        found.extend(part.found);
         for (name, n) in part.function_uses {
             *report.function_uses.entry(name).or_default() += n;
         }
     }
     formulas.sort_unstable_by_key(|(at, _)| *at);
     subtotal_cells.sort_unstable();
+    // A formula that reads another workbook is not in the program (the parser does not read it): it keeps the
+    // result the file caches, which is the stored value of the link that `LibreOffice` shows.
+    if !found.is_empty() && !spec.inspect {
+        leave_external(
+            model,
+            &found,
+            &mut subtotal_cells,
+            &mut formula_positions,
+            &mut cached,
+        );
+    }
+    // The calls the engine cannot answer, in the cells that stay in the program: `keep_cached` takes out of it those
+    // nothing reaches, which keep the result the file caches, and the rest is for [`settle_found`].
+    let exempt: FastSet<CellRef> = found
+        .iter()
+        .filter(|f| f.1 != Unsupported::External && !f.3)
+        .map(|f| f.0)
+        .collect();
+    // The default of every run is the load of `LibreOffice`: a formula that has a result and that
+    // nothing reaches keeps it. A recalculation is told what changed ([`Cache`]); any other mode treats the
+    // declared inputs as the cells that may change. With the inputs to be deduced every formula that
+    // reads a constant is on a path from one, so there is nothing to cut.
+    let analyse = !(spec.inspect || spec.mode == Mode::Recalculate && spec.calculate_all);
+    // A recalculation cuts what nothing reaches; another mode cuts what no declared input reaches, and
+    // with the inputs to be deduced every formula that reads a constant is on a path from one, so
+    // nothing is cut (only the stale formulas are found, to keep no result for them).
+    let cut = analyse
+        && (spec.mode == Mode::Recalculate || !spec.inputs.is_empty() || spec.inputs_declared);
+    let mut stale_formulas: Option<FastSet<CellRef>> = None;
+    if analyse {
+        let inputs: Vec<Rect> = if spec.mode == Mode::Recalculate {
+            Vec::new()
+        } else {
+            let declared = |b: &BindingSpec| resolve_target(model, &b.target).ok();
+            match &spec.given_inputs {
+                // A calculation: the cells it was given are the only ones that may change.
+                Some(given) => {
+                    let rects: Option<Vec<Rect>> = given
+                        .iter()
+                        .map(|key| {
+                            match spec.inputs.iter().find(|b| {
+                                b.name
+                                    .as_deref()
+                                    .is_some_and(|n| n.eq_ignore_ascii_case(key))
+                            }) {
+                                Some(b) => declared(b),
+                                None => resolve_target(model, key).ok(),
+                            }
+                        })
+                        .collect();
+                    // A key that is no cell the model has: any declared input may be what it means.
+                    rects.unwrap_or_else(|| spec.inputs.iter().filter_map(declared).collect())
+                }
+                None => spec.inputs.iter().filter_map(declared).collect(),
+            }
+        };
+        // With every formula calculated first, the workbook that is written has the results of all of
+        // them: no formula keeps what the template stored.
+        let keep_positions = !spec.calculate_all;
+        let kept = keep_cached(
+            model,
+            &spec.cache,
+            &inputs,
+            cut,
+            keep_positions,
+            &formula_cells,
+            &exempt,
+            &mut formulas,
+            &mut cached,
+            &mut formula_positions,
+        );
+        report.formulas_cached = kept.count;
+        stale_formulas = kept.stale;
+    }
+    if !found.is_empty() && !spec.inspect {
+        settle_found(
+            model,
+            &found,
+            detect,
+            spec.secure_mode,
+            &mut formulas,
+            &mut report,
+        )?;
+    }
     drop(formula_cells);
     if let Cow::Owned(own) = &mut owned {
         own.cells.release_formulas();
@@ -665,27 +1204,6 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             "{} formula(s) use an option this engine does not support, so it cannot replace LibreOffice for the workbook; first: {}",
             options.len(),
             list.join("; ")
-        )));
-    }
-    if !missing.is_empty() && !spec.inspect {
-        let list: Vec<String> = missing
-            .iter()
-            .map(|(name, at)| {
-                let sheet = model
-                    .sheets
-                    .get(at.sheet as usize)
-                    .map_or("?", String::as_str);
-                format!(
-                    "{name} ({}x, first at {sheet}!{})",
-                    report.function_uses.get(name).copied().unwrap_or(0),
-                    sheetrs_engine::addr::a1(at.row, at.col)
-                )
-            })
-            .collect();
-        return Err(Error::Compile(format!(
-            "the workbook calls {} function(s) of LibreOffice that this engine does not implement, so it cannot replace LibreOffice for it: {}",
-            missing.len(),
-            list.join(", ")
         )));
     }
     check_bindings(model, spec)?;
@@ -750,6 +1268,20 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         merged.extend(rest);
         formulas = merged;
     }
+    // The cells a calculation is asked for, when it is (`Spec::only`).
+    let asked_areas: Vec<Rect> = spec
+        .only
+        .iter()
+        .filter_map(|o| only_area(model, o))
+        .collect();
+    let asked = |at: &CellRef| {
+        spec.only.is_empty()
+            || asked_areas.iter().any(|r| {
+                r.sheet == at.sheet
+                    && (r.r0..=r.r1).contains(&at.row)
+                    && (r.c0..=r.c1).contains(&at.col)
+            })
+    };
     let mut outputs = Vec::new();
     for b in &spec.outputs {
         let rect = resolve_target(model, &b.target)?;
@@ -770,7 +1302,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         let positions: Vec<CellRef> = formula_positions
             .iter()
             .copied()
-            .filter(|at| Some(at.sheet) != spec.skip_sheet)
+            .filter(|at| Some(at.sheet) != spec.skip_sheet && asked(at))
             .collect();
         let rects = formula_rects(&positions);
         if rects.len() > MAX_FORMULA_OUTPUTS {
@@ -879,8 +1411,25 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         flags: vec![Flags::default(); n],
         deps: Vec::new(),
     };
+    let in_outputs = |at: &CellRef| {
+        outputs.iter().any(|b| {
+            let r = &b.rect;
+            r.sheet == at.sheet
+                && (r.r0..=r.r1).contains(&at.row)
+                && (r.c0..=r.c1).contains(&at.col)
+        })
+    };
     // What the program has to compute: the outputs.
-    let wanted: Vec<Rect> = outputs.iter().map(|b| b.rect).collect();
+    let mut wanted: Vec<Rect> = outputs.iter().map(|b| b.rect).collect();
+    if spec.whole_workbook && !spec.outputs.is_empty() {
+        // The formulas the declared outputs do not hold are calculated too.
+        let outside: Vec<CellRef> = formula_positions
+            .iter()
+            .copied()
+            .filter(|at| Some(at.sheet) != spec.skip_sheet && asked(at) && !in_outputs(at))
+            .collect();
+        wanted.extend(formula_rects(&outside));
+    }
     let mut roots: Vec<u32> = Vec::new();
     for r in &wanted {
         g.members(r, &mut roots);
@@ -947,12 +1496,17 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         comp_cyclic.push(graph::is_cycle(&csr, comp));
     }
     drop(csr);
+    // The formulas whose result is never kept: the ones that give another result each time they are
+    // calculated, and the ones that read cells the graph does not show.
+    let no_cache: FastSet<CellRef> = cone
+        .iter()
+        .filter(|&&v| (v as usize) < n && (flags[v as usize].volatile || flags[v as usize].dynamic))
+        .map(|&v| ats[v as usize])
+        .collect();
 
-    // Precedence: explicit option > what the document states > default.
-    // The locale is the user's regional setting, which a file does not carry
-    // (LibreOffice evaluates a document whose language says `es-ES` with the
-    // system locale), so it comes from the caller and defaults to `en`. The
-    // document's language is informational.
+    // The locale is resolved by `locale::resolve` (the configuration, the workbook, the default of
+    // its format) into `spec.locale`; a spec that is not built from a configuration has `en`. The
+    // language of the document is told when the locale of the run is another one.
     let mut locale = spec.locale.clone().unwrap_or_default();
     if let Some(lang) = &model.settings.locale
         && !lang
@@ -960,7 +1514,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             .starts_with(locale.tag.split('-').next().unwrap_or("en"))
     {
         diags.push(format!(
-            "the document language is {lang}; text and number conversions follow the locale {} (build configuration)",
+            "the document language is {lang}; text and number conversions follow the locale {}",
             locale.tag
         ));
     }
@@ -1023,6 +1577,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             hidden_rows: model.hidden_rows.clone(),
             subtotal_cells: subtotal_cells.clone(),
             cycles,
+            cache: Vec::new(),
             inputs: Vec::new(),
             outputs: Vec::new(),
             queryable: Queryable::default(),
@@ -1031,6 +1586,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             meta: Vec::new(),
             diagnostics: Vec::new(),
             build: BuildInfo::default(),
+            layout: sheetrs_engine::engine::Layout::default(),
         };
         let mut eng = Engine::with_base(&tmp, opts.clone(), &view);
         eng.calculate();
@@ -1502,6 +2058,32 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
         ));
     }
 
+    // The result the workbook caches for each formula the program keeps: a run that leaves a formula and
+    // what it reads as they were takes it (`Engine::take_cached`). A formula that reads cells it cannot
+    // name (`INDIRECT`, `OFFSET`) is calculated in every run (it is volatile for `LibreOffice` too, `no_cache`) and so is what
+    // depends on it (`stale`), and what it reads holds the result the workbook caches; a program built with
+    // `force_calculate_all` has none, nor has the program of an inspection.
+    let cache: Vec<(u32, Value)> = match &stale_formulas {
+        Some(stale)
+            if !(spec.force_calculate_all || spec.inspect || spec.mode == Mode::Recalculate) =>
+        {
+            cells
+                .iter()
+                .enumerate()
+                .filter(|(_, d)| {
+                    matches!(d.kind, CellKind::Formula(_))
+                        && !no_cache.contains(&d.at)
+                        && !stale.contains(&d.at)
+                })
+                .filter_map(|(slot, d)| {
+                    let cell = model.cells.get(&d.at)?;
+                    (cell.formula.is_some() && cell.value != Value::Empty)
+                        .then(|| (slot as u32, cell.value.clone()))
+                })
+                .collect()
+        }
+        _ => Vec::new(),
+    };
     let meta = program_meta(model, spec, &queryable, &inputs, &outputs);
     let formula_cells = if spec.mode.is_workbook() {
         // The formulas the workbook answer writes: the ones inside the outputs (all of
@@ -1511,13 +2093,8 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             .into_iter()
             .filter(|at| {
                 Some(at.sheet) != spec.skip_sheet
-                    && (!declared
-                        || outputs.iter().any(|b| {
-                            let r = &b.rect;
-                            r.sheet == at.sheet
-                                && (r.r0..=r.r1).contains(&at.row)
-                                && (r.c0..=r.c1).contains(&at.col)
-                        }))
+                    && asked(at)
+                    && (!declared || spec.whole_workbook || in_outputs(at))
             })
             .collect();
         sheetrs_engine::ir::CellRun::runs(written)
@@ -1532,6 +2109,7 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             hidden_rows: model.hidden_rows.clone(),
             subtotal_cells,
             cycles,
+            cache,
             inputs,
             outputs,
             mode: spec.mode,
@@ -1540,9 +2118,238 @@ pub fn compile<'m>(model: impl ModelArg<'m>, spec: &Spec) -> Result<(Program, Re
             queryable,
             diagnostics: diags,
             build: build_info(model, spec),
+            layout: sheetrs_engine::engine::Layout::default(),
         },
         report,
     ))
+}
+
+/// The workbook with the result of every formula calculated again, as `calculateAll()` of `LibreOffice` leaves
+/// it: the values a build then folds and stores as cache. The program of this calculation is the
+/// recalculation of the editor (every formula an output and any constant an input, nothing folded); the
+/// formulas that depend on what the engine cannot calculate keep the result the workbook caches (see
+/// [`settle_found`]) as in any build.
+fn calculated_model(model: &Model, spec: &Spec) -> Result<Model> {
+    let all = Spec {
+        mode: Mode::Recalculate,
+        calculate_all: true,
+        force_calculate_all: true,
+        cache: Cache::default(),
+        inputs: Vec::new(),
+        inputs_declared: false,
+        outputs: Vec::new(),
+        only: Vec::new(),
+        ..spec.clone()
+    };
+    let (program, _) = compile(model, &all)?;
+    let mut engine = Engine::new(&program, program.effective_options(&Overrides::default()));
+    engine.calculate();
+    let mut calculated = model.clone();
+    for run in &program.formula_cells {
+        for at in run.cells() {
+            if let Some(cell) = model.cells.get(&at) {
+                let mut cell = cell.clone();
+                cell.value = engine.get(at);
+                calculated.cells.insert(at, cell);
+            }
+        }
+    }
+    Ok(calculated)
+}
+
+/// The formulas that read another workbook are not in the program (the parser does not read the reference): they keep the
+/// result the file caches, as `LibreOffice` shows the stored value of the link (OBSERVED, both formats; the cell is not
+/// updated unless the link is). What reads them is calculated from it.
+fn leave_external(
+    model: &Model,
+    found: &[Found],
+    subtotal_cells: &mut Vec<CellRef>,
+    positions: &mut Vec<CellRef>,
+    cached: &mut FastMap<CellRef, Value>,
+) {
+    let gone: FastSet<CellRef> = found
+        .iter()
+        .filter(|f| f.1 == Unsupported::External)
+        .map(|f| f.0)
+        .collect();
+    if gone.is_empty() {
+        return;
+    }
+    subtotal_cells.retain(|at| !gone.contains(at));
+    positions.retain(|at| !gone.contains(at));
+    for at in gone {
+        let value = model.cells.get(&at).map(|c| c.value.clone());
+        cached.insert(at, value.unwrap_or_default());
+    }
+}
+
+/// What the build does with the formulas that depend on what the engine cannot calculate (`found`, see
+/// [`Unsupported`]) once the analysis of what the run reaches has taken out of the program the ones that nothing reaches
+/// (`formulas` is what stays to be calculated):
+///
+/// * a formula that is not in the program any more keeps the result the file caches, as `LibreOffice` does until something
+///   dirties the cell; the report says so (a note per kind, and a warning), and what reads it is calculated from it;
+/// * a formula that stays and that the engine answers as `LibreOffice` does (an add-in that is not installed: `#NAME?`) is
+///   calculated;
+/// * a formula that stays and that only `LibreOffice` can calculate (a function the engine lacks, one a macro may define) is an
+///   error that names the cause: the result is not one the engine can give, and the cache is not the result of a cell that the
+///   run calculates. In secure mode it is not an error of the build: the call is the error value of [`unsupported_error`], what
+///   reads it is calculated from it, and the report says so (a note with [`FromCacheNote::error`], and a warning).
+///
+/// # Errors
+///
+/// When a formula that only `LibreOffice` can calculate is calculated by the run, and the mode is not secure.
+fn settle_found(
+    model: &Model,
+    found: &[Found],
+    detect: &Detect,
+    secure: bool,
+    formulas: &mut [(CellRef, CellKind)],
+    report: &mut Report,
+) -> Result<()> {
+    let name_of = |at: &CellRef| {
+        let sheet = model
+            .sheets
+            .get(at.sheet as usize)
+            .map_or("?", String::as_str);
+        format!("{sheet}!{}", addr::a1(at.row, at.col))
+    };
+    let stays = |formulas: &[(CellRef, CellKind)], at: &CellRef| {
+        formulas.binary_search_by_key(at, |(cell, _)| *cell).is_ok()
+    };
+    let mut found: Vec<&Found> = found.iter().collect();
+    found.sort_by_key(|f| (f.1, f.0));
+    for kind in [
+        Unsupported::External,
+        Unsupported::Macro,
+        Unsupported::Extension,
+    ] {
+        let of_kind: Vec<&&Found> = found.iter().filter(|f| f.1 == kind).collect();
+        let reached: Vec<&&&Found> = of_kind
+            .iter()
+            .filter(|f| !f.3 && f.1 != Unsupported::External && stays(formulas, &f.0))
+            .collect();
+        if let Some(first) = reached.first() {
+            let mut what: Vec<String> = Vec::new();
+            for f in &reached {
+                if !what.contains(&f.2) {
+                    what.push(f.2.clone());
+                }
+            }
+            what.truncate(5);
+            if secure {
+                let mut cells: Vec<CellRef> = reached.iter().map(|f| f.0).collect();
+                cells.sort_unstable();
+                cells.dedup();
+                let mut errors: Vec<String> = Vec::new();
+                let mut replaced: BTreeSet<String> = BTreeSet::new();
+                for at in &cells {
+                    let Ok(i) = formulas.binary_search_by_key(at, |(cell, _)| *cell) else {
+                        continue;
+                    };
+                    if let CellKind::Formula(expr) = &mut formulas[i].1 {
+                        expr.walk_mut(&mut |x| {
+                            let Expr::Unknown(call) = x else { return };
+                            let name = call.0.to_ascii_uppercase();
+                            if let Some((found_kind, false)) = detect.function(&name)
+                                && found_kind == kind
+                            {
+                                let error = unsupported_error(found_kind, &name);
+                                let shown = error
+                                    .libre_code()
+                                    .unwrap_or_else(|| error.as_str().to_string());
+                                if !errors.contains(&shown) {
+                                    errors.push(shown);
+                                }
+                                replaced.insert(call.0.to_string());
+                                *x = Expr::Const(Value::Error(error));
+                            }
+                        });
+                    }
+                }
+                // They are not names `LibreOffice` ignores (`#NAME?`): the call is the error that was given.
+                for name in &replaced {
+                    report.unsupported.remove(name);
+                }
+                let shown = errors.join(", ");
+                report.warnings.push(format!(
+                    "{} formula(s) call {} that the engine cannot calculate and the run calculates them: secure mode makes the call an error ({shown}), and what reads it is calculated from it; first {} ({})",
+                    cells.len(),
+                    kind.as_str(),
+                    name_of(&first.0),
+                    what.join(", ")
+                ));
+                report.from_cache.push(FromCacheNote {
+                    kind,
+                    cells: cells.len(),
+                    first: name_of(&first.0),
+                    what,
+                    error: Some(shown),
+                });
+            } else {
+                // Only an extension reaches here: a workbook with macros is refused before, unless secure mode is on.
+                let (cause, why) = (
+                    "call a function that the engine does not implement (an add-in or extension of LibreOffice, or one of its functions that the engine lacks)",
+                    "its result is the one only LibreOffice gives",
+                );
+                return Err(Error::Unsupported {
+                    kind,
+                    message: format!(
+                        "{} formula(s) {cause} and the run calculates them (an edit reaches them, or every formula is calculated), so it cannot replace LibreOffice for the workbook: {why}; first: {} ({}); build with secure mode to make the call an error cell and a warning instead",
+                        reached.len(),
+                        name_of(&first.0),
+                        what.join(", ")
+                    ),
+                });
+            }
+        }
+        // The ones that keep what the file caches: the cells that are not in the program.
+        let kept: Vec<&&Found> = of_kind
+            .iter()
+            .filter(|f| f.1 == Unsupported::External || !stays(formulas, &f.0))
+            .copied()
+            .collect();
+        let Some(first) = kept.first() else {
+            continue;
+        };
+        let mut what: Vec<String> = Vec::new();
+        for f in &kept {
+            if !what.contains(&f.2) {
+                what.push(f.2.clone());
+            }
+        }
+        what.truncate(5);
+        let mut cells: Vec<CellRef> = kept.iter().map(|f| f.0).collect();
+        cells.dedup();
+        report.from_cache.push(FromCacheNote {
+            kind,
+            cells: cells.len(),
+            first: name_of(&first.0),
+            what,
+            error: None,
+        });
+        report.warnings.push(format!(
+            "{} formula(s) that depend on {} keep the result the file caches (the engine cannot calculate them; LibreOffice keeps it until something dirties the cell): first {}",
+            cells.len(),
+            kind.as_str(),
+            name_of(&first.0)
+        ));
+    }
+    report.formulas_cached += report
+        .from_cache
+        .iter()
+        .filter(|n| n.error.is_none())
+        .map(|n| n.cells)
+        .sum::<usize>();
+    Ok(())
+}
+
+/// The area of the cells of `only`, `None` when the sheet is not in the workbook.
+fn only_area(model: &Model, only: &Only) -> Option<Rect> {
+    let sheet = model.sheet_id(&only.sheet)?;
+    let (r0, r1) = only.rows.unwrap_or((0, addr::MAX_ROWS - 1));
+    let (c0, c1) = only.columns.unwrap_or((0, addr::MAX_COLS - 1));
+    Some(Rect::new(sheet, r0, c0, r1, c1))
 }
 
 /// The moment of a build in UTC (`2026-10-30T12:00:00Z`): `SOURCE_DATE_EPOCH` (seconds since 1970)
@@ -1657,6 +2464,8 @@ fn build_info(model: &Model, spec: &Spec) -> BuildInfo {
                 .as_ref()
                 .map_or_else(String::new, |l| l.tag.clone()),
             fold: spec.fold,
+            calculate_all: spec.calculate_all,
+            force_calculate_all: spec.force_calculate_all,
             features: if spec.features.longtext {
                 vec!["LONGTEXT".to_string()]
             } else {
@@ -2138,6 +2947,574 @@ impl Lazy<'_> {
     }
 }
 
+/// The functions whose result depends on where a cell is, not on what it holds, and that `LibreOffice` calculates
+/// again when the cell moves (it keeps the result of `ROWS`, `COLUMNS`, `AREAS`, `SHEET`, which ask about the size
+/// of a range or the sheet).
+const POSITIONAL: [&str; 2] = ["ROW", "COLUMN"];
+
+/// What a formula asks of another cell that is answered while it is lowered (`FORMULA`, `ISFORMULA`,
+/// `FORMULATEXT` of a literal reference): the formula keeps no reference to the cell, so the text says it.
+const ABOUT_FORMULAS: [&str; 3] = ["formula", "isformula", "formulatext"];
+
+fn overlaps(a: &Rect, b: &Rect) -> bool {
+    a.sheet == b.sheet && a.r0 <= b.r1 && b.r0 <= a.r1 && a.c0 <= b.c1 && b.c0 <= a.c1
+}
+
+/// A formula as its cell reads it: the references that are not absolute as the distance to the cell, so that two cells of a column
+/// whose formulas read the same cells relative to themselves have the same text (`SUM(A1:A3)` in `D4` and `SUM(A2:A4)` in `D5`).
+fn same_shape(text: &str, at: CellRef) -> Option<String> {
+    use sheetrs_formula::ast::RefArea;
+    let mut ast = sheetrs_formula::parse(text.trim_start_matches('=')).ok()?;
+    let (row, col) = (at.row, at.col);
+    ast.walk_mut(&mut |x| {
+        if let sheetrs_formula::Expr::Ref(r) = x {
+            let cell = |a: &mut sheetrs_formula::ast::CellAddr| {
+                if !a.row_abs {
+                    a.row = a.row.wrapping_sub(row);
+                }
+                if !a.col_abs {
+                    a.col = a.col.wrapping_sub(col);
+                }
+            };
+            match &mut r.area {
+                RefArea::Cell(a) => cell(a),
+                RefArea::Range(a, b) => {
+                    cell(a);
+                    cell(b);
+                }
+                RefArea::Cols(a, b) => {
+                    for c in [a, b] {
+                        if !c.abs {
+                            c.col = c.col.wrapping_sub(col);
+                        }
+                    }
+                }
+                RefArea::Rows(a, b) => {
+                    for c in [a, b] {
+                        if !c.abs {
+                            c.row = c.row.wrapping_sub(row);
+                        }
+                    }
+                }
+            }
+        }
+    });
+    Some(format!("{ast:?}"))
+}
+
+/// Whether the formula of `at` has, in the cell above or below it, a formula of the same shape (`LibreOffice` makes a group of
+/// the adjacent formulas of a column that read the same relative cells, and a group listens to the area it reads as one).
+fn in_a_group(model: &Model, at: CellRef) -> bool {
+    let text = |at: CellRef| {
+        model
+            .cells
+            .get(&at)
+            .and_then(|c| c.formula.as_deref())
+            .filter(|f| !f.is_empty())
+            .and_then(|f| same_shape(f, at))
+    };
+    let Some(mine) = text(at) else {
+        return false;
+    };
+    let neighbor = |row: Option<u32>| {
+        row.is_some_and(|row| text(CellRef::new(at.sheet, row, at.col)).as_ref() == Some(&mine))
+    };
+    neighbor(at.row.checked_sub(1)) || neighbor(at.row.checked_add(1))
+}
+
+/// Whether a formula that asks what a cell holds (`ISFORMULA`, `FORMULA`, `FORMULATEXT`) asks about a cell of `changed`: the
+/// references it is given overlap one, or it is given something that is not a reference (any cell may be the one).
+fn asks_about_a_changed_cell(text: &str, sheet: u16, model: &Model, changed: &[Rect]) -> bool {
+    use sheetrs_formula::ast::RefArea;
+    let Ok(ast) = sheetrs_formula::parse(text.trim_start_matches('=')) else {
+        return true;
+    };
+    let mut stale = false;
+    ast.walk(&mut |x| {
+        let sheetrs_formula::Expr::Call(call) = x else {
+            return;
+        };
+        let name = call.name.to_lowercase();
+        if !ABOUT_FORMULAS.contains(&name.trim_start_matches("_xlfn.")) {
+            return;
+        }
+        for arg in &call.args {
+            match arg {
+                Some(sheetrs_formula::Expr::Ref(r)) => {
+                    let sheet = match &r.sheet {
+                        Some(name) => model.sheet_id(name),
+                        None => Some(sheet),
+                    };
+                    let Some(sheet) = sheet else {
+                        stale = true;
+                        continue;
+                    };
+                    let (r0, c0, r1, c1) = match r.area {
+                        RefArea::Cell(a) => (a.row, a.col, a.row, a.col),
+                        RefArea::Range(a, b) => (
+                            a.row.min(b.row),
+                            a.col.min(b.col),
+                            a.row.max(b.row),
+                            a.col.max(b.col),
+                        ),
+                        RefArea::Cols(a, b) => {
+                            (0, a.col.min(b.col), addr::MAX_ROWS - 1, a.col.max(b.col))
+                        }
+                        RefArea::Rows(a, b) => {
+                            (a.row.min(b.row), 0, a.row.max(b.row), addr::MAX_COLS - 1)
+                        }
+                    };
+                    let asked = Rect::new(sheet, r0, c0, r1, c1);
+                    stale |= changed.iter().any(|c| overlaps(c, &asked));
+                }
+                _ => stale = true,
+            }
+        }
+    });
+    stale
+}
+
+/// The band `rows` (0-based, inclusive, rows of the input) as the bands of the rows that remain, numbered as they are once
+/// the `deleted` bands (rows of the input, in any order, possibly overlapping) are gone: a deleted row leaves no band, and
+/// the rows after it move up.
+fn rows_after_deletions(deleted: &[(u32, u32)], rows: (u32, u32)) -> Vec<(u32, u32)> {
+    let mut gone: Vec<(u32, u32)> = deleted.to_vec();
+    gone.sort_unstable();
+    let mut merged: Vec<(u32, u32)> = Vec::with_capacity(gone.len());
+    for (first, last) in gone {
+        match merged.last_mut() {
+            Some(prev) if first <= prev.1.saturating_add(1) => prev.1 = prev.1.max(last),
+            _ => merged.push((first, last)),
+        }
+    }
+    // Where a surviving row of the input is after the deletions.
+    let moved = |row: u32| -> u32 {
+        row - merged
+            .iter()
+            .take_while(|(first, _)| *first < row)
+            .map(|&(first, last)| last.min(row - 1) - first + 1)
+            .sum::<u32>()
+    };
+    let (mut from, last) = rows;
+    let mut out = Vec::new();
+    for &(first, end) in &merged {
+        if end < from {
+            continue;
+        }
+        if first > last {
+            break;
+        }
+        if first > from {
+            out.push((moved(from), moved(first - 1)));
+        }
+        from = end.saturating_add(1);
+        if from > last {
+            return out;
+        }
+    }
+    out.push((moved(from), moved(last)));
+    out
+}
+
+/// Whether `text` names one of `names` (in lower case), however it is written.
+fn mentions(text: &str, names: &HashSet<String>, buffer: &mut String) -> bool {
+    text.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
+        .filter(|word| !word.is_empty())
+        .any(|word| {
+            buffer.clear();
+            buffer.extend(word.chars().flat_map(char::to_lowercase));
+            names.contains(buffer.as_str())
+                || buffer
+                    .strip_prefix("_xlfn.")
+                    .is_some_and(|word| names.contains(word))
+        })
+}
+
+/// What [`keep_cached`] found.
+struct Kept {
+    /// How many formulas keep their result, none when the whole workbook is calculated.
+    count: usize,
+    /// The formulas whose cached result is stale (the ones a change reaches, and what depends on them), which
+    /// a program must not keep as a result. `None` when the analysis did not run (the workbook is
+    /// calculated whole, or reads cells it cannot name): the program keeps no result at all.
+    stale: Option<FastSet<CellRef>>,
+}
+
+/// Cuts the formulas to those a recalculation has to calculate (see [`Cache`]): the others become
+/// constants that hold the result the workbook caches (`cached`) and are no longer outputs
+/// (`positions`), when `cut`; without it nothing is cut and only the stale formulas are found.
+///
+/// The ones to calculate are the stale ones and the formulas that depend on them, directly or
+/// through a range, found on the graph of the formulas. A change to a cell that is no formula
+/// reaches the formulas that read it, and those are where the walk starts. The declared `inputs` are
+/// cells that may change when the program runs: the formulas that read them are kept (they have a
+/// result to keep, and a run that leaves the inputs as they are takes it), but their results are not
+/// stale.
+#[allow(clippy::too_many_arguments)] // the state of the build, which the pieces of it share
+fn keep_cached(
+    model: &Model,
+    cache: &Cache,
+    inputs: &[Rect],
+    cut: bool,
+    keep_positions: bool,
+    texts: &[(CellRef, &ModelCell)],
+    exempt: &FastSet<CellRef>,
+    formulas: &mut Vec<(CellRef, CellKind)>,
+    cached: &mut FastMap<CellRef, Value>,
+    positions: &mut Vec<CellRef>,
+) -> Kept {
+    let n = formulas.len();
+    let nothing = Kept {
+        count: 0,
+        stale: None,
+    };
+    let changed: Vec<Rect> = cache
+        .changed
+        .iter()
+        .filter_map(|(sheet, r0, c0, r1, c1)| {
+            Some(Rect::new(model.sheet_id(sheet)?, *r0, *c0, *r1, *c1))
+        })
+        .collect();
+    // Where rows or columns went: the sheets that lost some (the whole columns or rows of one are stale), and
+    // the first row or column that went in each (what is at or after it moved: `ROW` and `COLUMN` of it).
+    let mut rows_deleted: Vec<u16> = Vec::new();
+    let mut columns_deleted: Vec<u16> = Vec::new();
+    let mut first_row: FastMap<u16, u32> = FastMap::default();
+    let mut first_column: FastMap<u16, u32> = FastMap::default();
+    for (bands, sheets, first) in [
+        (&cache.rows_deleted, &mut rows_deleted, &mut first_row),
+        (
+            &cache.columns_deleted,
+            &mut columns_deleted,
+            &mut first_column,
+        ),
+    ] {
+        for (sheet, at, _) in bands {
+            if let Some(id) = model.sheet_id(sheet) {
+                sheets.push(id);
+                let slot = first.entry(id).or_insert(*at);
+                *slot = (*slot).min(*at);
+            }
+        }
+    }
+    // A deleted sheet: `LibreOffice` calculates every formula again.
+    if cache.sheets_deleted {
+        return nothing;
+    }
+    // The words that make a formula stale by its text: the names it reads through that the deletions reached,
+    // and, whenever a cell changed, the functions that ask what a cell holds.
+    let mut names: HashSet<String> = cache
+        .stale_names
+        .iter()
+        .map(|name| name.to_lowercase())
+        .collect();
+    // A deleted name recompiles every formula that reads through a name.
+    if cache.names_deleted {
+        names.extend(model.names.keys().map(|name| name.to_lowercase()));
+    }
+    // The cells that changed, and the ones a calculation is given: what `ISFORMULA`, `FORMULA` and `FORMULATEXT` ask about (they are
+    // answered while the formula is lowered, so they keep no reference to the cell).
+    let changed_or_given: Vec<Rect> = changed.iter().chain(inputs).copied().collect();
+    let about: HashSet<String> = if changed_or_given.is_empty() {
+        HashSet::new()
+    } else {
+        ABOUT_FORMULAS.map(String::from).into_iter().collect()
+    };
+    // `FORMULATEXT` (`FORMULA` of an ODS) is calculated by `LibreOffice` when it opens any file (OBSERVED, both formats; `ISFORMULA` is not).
+    // It is answered while the formula is lowered, so the call is not seen: the text says it.
+    let on_load_words: HashSet<String> = ["formula", "formulatext"]
+        .map(String::from)
+        .into_iter()
+        .collect();
+    // What the deletions moved: the cell or range (of the workbook after them) is at or after the first row or
+    // column that went in its sheet.
+    let moved = |r: &Rect| {
+        first_row.get(&r.sheet).is_some_and(|first| r.r1 >= *first)
+            || first_column
+                .get(&r.sheet)
+                .is_some_and(|first| r.c1 >= *first)
+    };
+    // The cell of the model that holds each formula. Both lists are in the order of the cells; `formulas` lacks the
+    // ones that were taken from the cache or kept as the value of the file, so the positions are matched, not the indexes.
+    let mut cell_of: Vec<Option<&ModelCell>> = Vec::with_capacity(n);
+    let mut next = 0;
+    for (at, _) in formulas.iter() {
+        while texts.get(next).is_some_and(|(text_at, _)| text_at < at) {
+            next += 1;
+        }
+        cell_of.push(
+            texts
+                .get(next)
+                .filter(|(text_at, _)| text_at == at)
+                .map(|(_, c)| *c),
+        );
+    }
+    // The rows of `rows_hidden` are rows of the input, like the ones deleted: the formulas are those of the workbook
+    // after the deletions, so the rows move with them (a row that went no longer reads as hidden).
+    let hidden: Vec<Rect> = cache
+        .rows_hidden
+        .iter()
+        .flat_map(|(sheet, first, last)| {
+            let deleted = cache
+                .rows_deleted
+                .iter()
+                .filter(|(name, _, _)| name == sheet)
+                .map(|&(_, first, last)| (first, last))
+                .collect::<Vec<_>>();
+            let id = model.sheet_id(sheet);
+            rows_after_deletions(&deleted, (*first, *last))
+                .into_iter()
+                .filter_map(move |(first, last)| {
+                    Some(Rect::new(id?, first, 0, last, addr::MAX_COLS - 1))
+                })
+        })
+        .collect();
+    let no_result = |i: usize| cell_of[i].is_none_or(|cell| cell.value == Value::Empty);
+    let (mut deps, mut buffer) = (Vec::new(), String::new());
+    // `hard`: the result is stale. `soft`: the formula reads an input, whose value may change.
+    let mut hard = vec![false; n];
+    let mut soft = vec![false; n];
+    // The formulas `LibreOffice` calculates when it loads the file (an ODS: see `ModelCell::recalculated_on_load`): they are
+    // calculated, and what reads them is not (OBSERVED: a formula that caches a result of a type it keeps shows it, whatever
+    // the cell it reads gives), so they are no start of the walk.
+    // The calls the engine cannot answer (`exempt`) are not: their result is what `LibreOffice` calculates with what only it
+    // has (a macro, a function the engine lacks), which the file caches.
+    let on_load: Vec<bool> = cell_of
+        .iter()
+        .zip(formulas.iter())
+        .map(|(cell, (at, _))| {
+            cell.is_some_and(|cell| cell.recalculated_on_load) && !exempt.contains(at)
+        })
+        .collect();
+    for (i, (at, kind)) in formulas.iter().enumerate() {
+        let CellKind::Formula(e) = kind else {
+            continue;
+        };
+        deps.clear();
+        let flags = dependencies_into(e, &mut deps);
+        // `INDIRECT` and `OFFSET` that read a cell the compiler cannot name are volatile for `LibreOffice` too: it calculates them
+        // when it opens the file and what reads them with them, and what they read keeps the result the file caches (the cells the
+        // cut leaves hold it, and a dynamic read of one finds it).
+        let mut stale = flags.volatile
+            || flags.on_load
+            || flags.dynamic
+            || no_result(i)
+            || changed
+                .iter()
+                .any(|r| r.contains(*at) || deps.iter().any(|d| overlaps(d, r)))
+            || deps.iter().any(|d| {
+                d.r1 == addr::MAX_ROWS - 1 && rows_deleted.contains(&d.sheet)
+                    || d.c1 == addr::MAX_COLS - 1 && columns_deleted.contains(&d.sheet)
+            });
+        // Hidden or shown rows (OBSERVED, `write_to/probe_hide_groups.py`, both formats): `LibreOffice` calculates a `SUBTOTAL` that
+        // reads a range with one of them, and a formula that reads such a range (not a single cell) when it is in a group of
+        // adjacent formulas of one shape; any other formula keeps its result.
+        // In an ODS (not in an XLSX, OBSERVED, `visibility.{xlsx,ods}`: the same formulas give another table) a `SUBTOTAL` that reads a
+        // single cell of a row that flipped is calculated too.
+        if !(stale || hidden.is_empty()) {
+            let (mut reads, mut subtotal, mut reads_a_cell) = (false, false, false);
+            e.walk(&mut |x| match x {
+                Expr::Range(r) => reads |= hidden.iter().any(|h| overlaps(r, h)),
+                Expr::Cell(c) => reads_a_cell |= hidden.iter().any(|h| h.contains(*c)),
+                Expr::Call(id, _) => subtotal |= id.def().name == "SUBTOTAL",
+                _ => {}
+            });
+            stale = reads && (subtotal || in_a_group(model, *at))
+                || !model.from_xlsx && subtotal && reads_a_cell;
+        }
+        // `ROW` and `COLUMN` give where a cell is: they are calculated again when the formula's own cell moved
+        // or the cell or range they are given did (`LibreOffice` keeps the result of `ROWS`, `COLUMNS`,
+        // `ISFORMULA` and the rest of what asks about cells when they only move).
+        if !(stale || first_row.is_empty() && first_column.is_empty()) {
+            e.walk(&mut |x| {
+                if let Expr::Call(id, args) = x
+                    && POSITIONAL.contains(&id.def().name)
+                {
+                    stale |= moved(&Rect::single(*at));
+                    for arg in args {
+                        arg.walk(&mut |y| match y {
+                            Expr::Cell(c) => stale |= moved(&Rect::single(*c)),
+                            Expr::Range(r) => stale |= moved(r),
+                            _ => {}
+                        });
+                    }
+                }
+            });
+        }
+        // A formula of an XLSX that holds a name LibreOffice cannot resolve (a bare `#REF!` that a deletion or a shifted
+        // shared formula left, an undefined name) and caches an error is calculated when the file is opened: it shows
+        // that error of the name (`oracle`, `shared_beyond`). One that caches a number keeps it.
+        if !stale
+            && model.from_xlsx
+            && let Some(cell) = cell_of[i]
+            && matches!(cell.value, Value::Error(_))
+        {
+            e.walk(&mut |x| {
+                stale |= matches!(x, Expr::Const(Value::Error(ErrorKind::Name)));
+            });
+        }
+        if !stale
+            && cache.names_deleted
+            && model.from_xlsx
+            && let Some(cell) = cell_of[i]
+            && let Some(text) = &cell.formula
+        {
+            // A bare one: `Data!#REF!` (a qualified error, as Excel writes it) is not read as a name.
+            let bytes = text.as_bytes();
+            stale = bytes.windows(5).enumerate().any(|(at, w)| {
+                w.eq_ignore_ascii_case(b"#REF!") && (at == 0 || bytes[at - 1] != b'!')
+            });
+        }
+        if !stale
+            && !names.is_empty()
+            && let Some(cell) = cell_of[i]
+            && let Some(text) = &cell.formula
+        {
+            stale = mentions(text, &names, &mut buffer);
+        }
+        // A formula that asks what a cell holds is stale when that cell is one that changed (the formula keeps no
+        // reference to it: the text says which).
+        if !stale
+            && let Some(cell) = cell_of[i]
+            && let Some(text) = &cell.formula
+            && mentions(text, &on_load_words, &mut buffer)
+        {
+            stale = true;
+        }
+        if !stale
+            && !about.is_empty()
+            && let Some(cell) = cell_of[i]
+            && let Some(text) = &cell.formula
+            && mentions(text, &about, &mut buffer)
+        {
+            stale = asks_about_a_changed_cell(text, at.sheet, model, &changed_or_given);
+        }
+        hard[i] = stale;
+        soft[i] = !stale
+            && inputs
+                .iter()
+                .any(|r| r.contains(*at) || deps.iter().any(|d| overlaps(d, r)));
+    }
+    let all = std::mem::take(formulas);
+    let (ats, kinds): (Vec<CellRef>, Vec<CellKind>) = all.into_iter().unzip();
+    let index = NodeIndex::new(&ats, model.sheets.len());
+    // The cells of an array formula are calculated together: the writer drops the result of the
+    // first one only, and what is stale for one is for all.
+    let group = |at: &CellRef, offset: &(u32, u32)| -> Option<(usize, usize)> {
+        let master = CellRef::new(
+            at.sheet,
+            at.row.checked_sub(offset.0)?,
+            at.col.checked_sub(offset.1)?,
+        );
+        Some((index.get(at)? as usize, index.get(&master)? as usize))
+    };
+    for roots in [&mut hard, &mut soft] {
+        for (at, offset) in &model.array_members {
+            if let Some((member, master)) = group(at, offset) {
+                roots[master] |= roots[member];
+            }
+        }
+        for (at, offset) in &model.array_members {
+            if let Some((member, master)) = group(at, offset) {
+                roots[member] = roots[master];
+            }
+        }
+    }
+    let wanted = (hard.iter().any(|&r| r), soft.iter().any(|&r| r) && cut);
+    let reach = |reached: &mut Vec<bool>, readers: &[u32], start: &[u32], roots: &[bool]| {
+        let mut stack: Vec<u32> = (0..n as u32).filter(|&v| roots[v as usize]).collect();
+        while let Some(v) = stack.pop() {
+            if !std::mem::replace(&mut reached[v as usize], true) {
+                let (from, to) = (start[v as usize] as usize, start[v as usize + 1] as usize);
+                stack.extend_from_slice(&readers[from..to]);
+            }
+        }
+    };
+    let (stale_reached, reached);
+    if wanted == (false, false) {
+        // Nothing reaches anything: no graph to build.
+        stale_reached = vec![false; n];
+        reached = vec![false; n];
+    } else {
+        let mut graph = Lazy {
+            index: &index,
+            kinds: &kinds,
+            adj: vec![None; n],
+            rect_ids: FastMap::default(),
+            rect_members: Vec::new(),
+            flags: vec![Flags::default(); n],
+            deps: Vec::new(),
+        };
+        for v in 0..n as u32 {
+            graph.adj_of(v);
+        }
+        // Who reads each node (the formulas, and the rectangles that stand for ranges), as a CSR: the
+        // walk goes from a stale node to what depends on it.
+        let total = n + graph.rect_members.len();
+        let mut start = vec![0u32; total + 2];
+        for v in 0..total as u32 {
+            for &w in graph.adj_known(v) {
+                start[w as usize + 2] += 1;
+            }
+        }
+        for i in 2..start.len() {
+            start[i] += start[i - 1];
+        }
+        let mut readers = vec![0u32; start[total + 1] as usize];
+        for v in 0..total as u32 {
+            for &w in graph.adj_known(v) {
+                let slot = &mut start[w as usize + 1];
+                readers[*slot as usize] = v;
+                *slot += 1;
+            }
+        }
+        drop(graph);
+        let mut hard_reached = vec![false; total];
+        reach(&mut hard_reached, &readers, &start, &hard);
+        let mut all_reached = hard_reached.clone();
+        let both: Vec<bool> = hard.iter().zip(&soft).map(|(&h, &s)| h || s).collect();
+        reach(&mut all_reached, &readers, &start, &both);
+        stale_reached = hard_reached;
+        reached = all_reached;
+    }
+    let (mut stale_reached, mut reached) = (stale_reached, reached);
+    for (i, &load) in on_load.iter().enumerate() {
+        stale_reached[i] |= load;
+        reached[i] |= load;
+    }
+    let stale: FastSet<CellRef> = ats
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| stale_reached[*i])
+        .map(|(_, at)| *at)
+        .collect();
+    if !cut {
+        // Nothing is cut: the formulas go back as they came.
+        formulas.extend(ats.into_iter().zip(kinds));
+        return Kept {
+            count: 0,
+            stale: Some(stale),
+        };
+    }
+    if keep_positions {
+        positions.retain(|at| index.get(at).is_some_and(|id| reached[id as usize]));
+    }
+    let mut kept = 0;
+    for (i, (at, kind)) in ats.iter().zip(kinds).enumerate() {
+        if reached[i] {
+            formulas.push((*at, kind));
+        } else {
+            let value = model.cells.get(at).map(|c| c.value.clone());
+            cached.insert(*at, value.unwrap_or_default());
+            kept += 1;
+        }
+    }
+    Kept {
+        count: kept,
+        stale: Some(stale),
+    }
+}
+
 /// Appends the references of `e` to `deps` and returns the flags of the functions it calls.
 fn dependencies_into(e: &Expr, deps: &mut Vec<Rect>) -> Flags {
     let mut flags = Flags::default();
@@ -2153,6 +3530,11 @@ fn dependencies_into(e: &Expr, deps: &mut Vec<Rect>) -> Flags {
                 flags.volatile |= !matches!(args.first(),
                     Some(Expr::Const(sheetrs_engine::value::Value::Text(t))) if !t.eq_ignore_ascii_case("FILENAME"));
             }
+            // `LibreOffice` calculates these when it opens any file, and what reads them with them (OBSERVED, the default load
+            // of both formats, `sheetrs-edit/tests/assets/write_to/probe_dirty.py classes`): `HYPERLINK`, every type of `CELL`
+            // (`"filename"` too), `INFO` and `FORMULATEXT`, besides the volatile functions and `INDIRECT` and `OFFSET`.
+            // The whole-column reads, `ROW`, `COLUMN`, `ISFORMULA` and `SHEET` keep what the file caches.
+            flags.on_load |= matches!(d.name, "HYPERLINK" | "CELL" | "INFO" | "FORMULATEXT" | "FORMULA");
         }
         _ => {}
     });
@@ -2296,6 +3678,30 @@ mod build_time_tests {
             cells.iter().map(|c| (c.sheet, c.row, c.col)).collect();
         wanted.sort_unstable();
         assert_eq!(held, wanted, "no constant, no formula left out");
+    }
+}
+
+#[cfg(test)]
+mod rows_after_deletions_tests {
+    use super::rows_after_deletions;
+
+    #[test]
+    fn a_band_moves_up_by_the_rows_deleted_before_it() {
+        assert_eq!(rows_after_deletions(&[(0, 0)], (4, 4)), [(3, 3)]);
+        assert_eq!(rows_after_deletions(&[(0, 1), (2, 2)], (4, 6)), [(1, 3)]);
+        assert_eq!(rows_after_deletions(&[(9, 9)], (4, 6)), [(4, 6)]);
+        assert_eq!(rows_after_deletions(&[], (4, 6)), [(4, 6)]);
+    }
+
+    #[test]
+    fn the_rows_that_went_leave_no_band() {
+        assert!(rows_after_deletions(&[(4, 4)], (4, 4)).is_empty());
+        assert!(rows_after_deletions(&[(3, 7)], (4, 6)).is_empty());
+        // Deleted rows in the middle split the band; the order of the deletions does not matter.
+        assert_eq!(
+            rows_after_deletions(&[(6, 6), (0, 0), (4, 4)], (3, 8)),
+            [(2, 2), (3, 3), (4, 5)]
+        );
     }
 }
 

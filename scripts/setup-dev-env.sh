@@ -2,6 +2,7 @@
 # Prepares a Debian/Ubuntu machine (root) to develop and test SheetRS:
 #   - Rust: the channel of rust-toolchain.toml (1.99), with clippy, rustfmt and the wasm32 target,
 #     made the default toolchain so that it is used from the first command, in any folder;
+#   - cargo-edit (`cargo set-version`, used to bump the version of a release);
 #   - LibreOffice 26.8 (the reference of the project), from the packages of The Document Foundation,
 #     with the checksum verified, and `soffice` on the PATH. A LibreOffice of another version from the
 #     system packages is removed (`--replace-system`);
@@ -39,6 +40,7 @@ CHANNEL="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$ROOT/rust-toolchain.toml")"
 (cd "$ROOT" && rustup toolchain install)           # channel, components and targets of the file
 rustup default "$CHANNEL"
 echo "rust: $(rustc --version)"
+command -v cargo-set-version >/dev/null || cargo install cargo-edit --locked   # `cargo set-version`, for the releases
 
 # ---- Profiling tools ---------------------------------------------------------------------------
 if ! command -v perf >/dev/null || ! command -v valgrind >/dev/null; then

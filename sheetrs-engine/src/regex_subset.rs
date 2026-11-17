@@ -9,8 +9,20 @@
 //!
 //! The subset: literals and escaped punctuation, `.`, `\d \D \w \W \s \S`, sets (`[a-c]`, `[^x]`,
 //! with ranges and `\d \w \s` inside), groups `( )` and `(?: )`, alternation, and the quantifiers
-//! `* + ? {n} {n,} {n,m}` with their lazy forms. The pattern must not match the empty text, and
-//! nothing that repeats may match it.
+//! `* + ? {n} {n,} {n,m}` with their lazy forms. Nothing that repeats may match the empty text.
+//!
+//! The anchors `^` and `$` are read by the searches of the Find & Replace of `LibreOffice`
+//! ([`translate_find`]) and refused by the functions ([`translate`],
+//! [`translate_capturing`]: `REGEX`, `COUNTIF`...), whose semantics are another matter. They mean
+//! what `LibreOffice` gives them in a cell: the start of the text, and its end or the place before
+//! a line terminator that ends it; never the start or end of a line.
+//!
+//! A pattern that can match the empty text (`^`, `$`, `x*`, `a*$`) is refused by the functions and
+//! read by [`translate_find`]: what a search or a replacement does with an empty match is the loop of
+//! `LibreOffice` (an empty match is not a hit, except one at the very end of the text, and no search
+//! starts at the end), which the caller of that translation runs (`sheetrs_query::Matcher`). The
+//! empty pattern itself matches nothing in `LibreOffice` and never reaches a translation: the search
+//! and the replacement that carry it are answered before (nothing found, nothing replaced).
 
 use std::fmt::Write as _;
 
@@ -27,6 +39,10 @@ enum Node {
     Concat(Vec<Node>),
     Alt(Vec<Node>),
     Repeat(Box<Node>, u32, Option<u32>, bool),
+    /// `^`: the start of the text.
+    Start,
+    /// `$`: the end of the text, or the place before the line terminator that ends it.
+    End,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +57,8 @@ enum SetItem {
 struct Parser {
     chars: Vec<char>,
     at: usize,
+    /// Whether `^` and `$` are read (Find & Replace) or refused (a function).
+    anchors: bool,
 }
 
 /// A construct of a pattern that is outside the subset, described as the text says it.
@@ -201,7 +219,9 @@ impl Parser {
                 p if p.is_ascii_punctuation() => Node::Lit(p),
                 other => return Err(format!("the escape `\\{other}`").into()),
             },
-            '^' | '$' => return Err("an anchor (`^`, `$`)".into()),
+            '^' | '$' if !self.anchors => return Err("an anchor (`^`, `$`)".into()),
+            '^' => Node::Start,
+            '$' => Node::End,
             '*' | '+' | '?' | '{' => return Err("a repetition with nothing to repeat".into()),
             ']' | '}' => return Err(format!("a lone `{c}`").into()),
             c => Node::Lit(c),
@@ -273,7 +293,7 @@ impl Parser {
 
 fn min_len(n: &Node) -> u32 {
     match n {
-        Node::Empty => 0,
+        Node::Empty | Node::Start | Node::End => 0,
         Node::Lit(_)
         | Node::Dot
         | Node::Digit(_)
@@ -289,6 +309,11 @@ fn min_len(n: &Node) -> u32 {
 
 /// What ICU's `.` leaves out: its line terminators.
 const LINE_ENDS: &str = "\\n\\x0B\\x0C\\r\\x{85}\\x{2028}\\x{2029}";
+
+/// ICU's `$` without the multi-line flag: the end of the text, or the place before the one line
+/// terminator that ends it (`\r\n` counts as one, so the place between the two is not it).
+const END: &str =
+    "(?:\\z|(?=\\r\\n\\z)|(?<!\\r)(?=\\n\\z)|(?=[\\x0B\\x0C\\r\\x{85}\\x{2028}\\x{2029}]\\z))";
 
 fn lit(c: char, out: &mut String) {
     let mut b = [0u8; 4];
@@ -312,6 +337,8 @@ fn set_char(c: char, out: &mut String) {
 fn write(n: &Node, out: &mut String, captures: bool) {
     match n {
         Node::Empty => {}
+        Node::Start => out.push_str("\\A"),
+        Node::End => out.push_str(END),
         Node::Lit(c) => lit(*c, out),
         Node::Dot => {
             out.push_str("[^");
@@ -386,7 +413,7 @@ fn write(n: &Node, out: &mut String, captures: bool) {
 ///
 /// When `pattern` uses a construct outside the subset.
 pub fn translate(pattern: &str) -> R<String> {
-    translate_with(pattern, false)
+    translate_with(pattern, false, false, false)
 }
 
 /// Like [`translate`], keeping the groups that capture (for the replacements of `REGEX`).
@@ -395,19 +422,36 @@ pub fn translate(pattern: &str) -> R<String> {
 ///
 /// When `pattern` uses a construct outside the subset.
 pub fn translate_capturing(pattern: &str) -> R<String> {
-    translate_with(pattern, true)
+    translate_with(pattern, true, false, false)
 }
 
-fn translate_with(pattern: &str, captures: bool) -> R<String> {
+/// Like [`translate_capturing`], and reading the anchors `^` and `$`, for the searches of Find &
+/// Replace (`find` and `replace`). The pattern may match the empty text (`x*`, `^`, `$`, `a*$`),
+/// which the caller handles as `LibreOffice` does (an empty match is a hit only at the end of the
+/// text, and a search never starts there). The result needs an engine with look-around
+/// (`fancy_regex`) when it has a `$`. The empty pattern is refused: the caller answers it before.
+///
+/// # Errors
+///
+/// When `pattern` uses a construct outside the subset.
+pub fn translate_find(pattern: &str) -> R<String> {
+    if pattern.is_empty() {
+        return Err("an empty pattern".into());
+    }
+    translate_with(pattern, true, true, true)
+}
+
+fn translate_with(pattern: &str, captures: bool, anchors: bool, empty: bool) -> R<String> {
     let mut p = Parser {
         chars: pattern.chars().collect(),
         at: 0,
+        anchors,
     };
     let node = p.alt()?;
     if p.at < p.chars.len() {
         return Err("a `)` that closes nothing".into());
     }
-    if min_len(&node) == 0 {
+    if !empty && min_len(&node) == 0 {
         return Err("a pattern that can match the empty text".into());
     }
     let mut out = String::new();
@@ -464,6 +508,34 @@ mod tests {
             "[\\d-x]",
         ] {
             assert!(translate(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn reads_the_anchors_of_a_search_only() {
+        for ok in ["^a", "a$", "^(a|b)$", "(^a|b$)", "a^b", "(^|x)a", "^a.$"] {
+            assert!(translate_find(ok).is_ok(), "{ok}");
+            assert!(translate(ok).is_err(), "{ok}");
+            assert!(translate_capturing(ok).is_err(), "{ok}");
+        }
+    }
+
+    #[test]
+    fn a_search_reads_the_anchors_and_the_patterns_that_match_the_empty_text() {
+        for ok in [
+            "^a", "a$", "^", "$", "^$", "a*$", "^a*", "x*", "(^|x)a", "(a|)", "a|", "(|a)$", "a?",
+            "(^|$)",
+        ] {
+            assert!(translate_find(ok).is_ok(), "{ok}");
+        }
+    }
+
+    #[test]
+    fn a_search_still_refuses_what_is_not_reproduced() {
+        for bad in [
+            "", "^*", "(^)+a", "^+", "(a*)*", "(^|$)*", "\\b", "(?=a)", "a**",
+        ] {
+            assert!(translate_find(bad).is_err(), "{bad}");
         }
     }
 }

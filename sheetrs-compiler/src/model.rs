@@ -17,6 +17,10 @@ pub struct ModelCell {
     pub formula: Option<String>,
     /// Array (Ctrl+Shift+Enter) formula: its operators work element-wise.
     pub array: bool,
+    /// `LibreOffice` calculates the formula when it opens the file, whatever result the file caches (an ODS cell whose
+    /// cached result is of a type and format it recalculates, see `sheetrs_io::reader::CellSink::recalculated_on_load`):
+    /// the default mode calculates it too.
+    pub recalculated_on_load: bool,
 }
 
 impl ModelCell {
@@ -42,14 +46,25 @@ pub struct ModelSettings {
     pub string_ref_excel: Option<bool>,
     /// The document is in manual calculation mode (it calculates only on request).
     pub manual_calc: bool,
-    /// Document language tag (`es-CO`).
+    /// Document language tag (`es-CO`): an ODS says it, an XLSX does not. Informational: `LibreOffice` does not calculate with it.
     pub locale: Option<String>,
+    /// The locale given to the workbook (`Book::with_locale`): it is the locale of the run unless the
+    /// configuration states another.
+    pub book_locale: Option<String>,
+    /// The locale of the system the program runs on, which an XLSX (that declares none) takes.
+    pub system_locale: Option<String>,
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)] // independent facts of the file (where it comes from, what it carries), not states of one machine
 pub struct Model {
     pub sheets: Vec<String>,
     pub cells: CellStore,
+    /// The cells of an array formula that are not its top-left one: how far below and to the right
+    /// of that cell each one sits (`(rows, columns)`), for it to show its own element of the
+    /// result. A model that is not read from a file holds none, and every cell of an array formula
+    /// then shows the first element.
+    pub array_members: HashMap<CellRef, (u32, u32)>,
     /// Defined names: name → formula text (usually a reference).
     pub names: HashMap<String, String>,
     pub date_system: DateSystem,
@@ -60,6 +75,9 @@ pub struct Model {
     /// The formulas come from an XLSX (`LibreOffice` reads a bare `#REF!` in one as an
     /// unknown name).
     pub from_xlsx: bool,
+    /// The workbook carries the mark to calculate every formula when it is opened (`fullCalcOnLoad` of an XLSX): a
+    /// build or a calculation takes it as a run with `calculate_all`.
+    pub recalculate_on_load: bool,
     /// The file name of the workbook, with its extension (`CELL("filename")`).
     pub file_name: Option<String>,
     /// The file contains macros (VBA, Basic, scripts). They are never run.
@@ -87,12 +105,14 @@ impl Model {
         Self {
             sheets: Vec::new(),
             cells: CellStore::default(),
+            array_members: HashMap::new(),
             names: HashMap::new(),
             // LibreOffice numbers dates from 1899-12-30 on the real calendar.
             date_system: DateSystem::Null1899,
             settings: ModelSettings::default(),
             from_file: false,
             from_xlsx: false,
+            recalculate_on_load: false,
             file_name: None,
             macros: false,
             properties: Vec::new(),
@@ -122,6 +142,7 @@ impl Model {
                 value,
                 formula: None,
                 array: false,
+                recalculated_on_load: false,
             },
         );
         self
@@ -136,6 +157,7 @@ impl Model {
                 value: Value::Empty,
                 formula: Some(formula),
                 array: false,
+                recalculated_on_load: false,
             },
         );
         self

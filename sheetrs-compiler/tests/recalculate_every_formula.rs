@@ -125,7 +125,13 @@ fn every_formula_cell_stays_a_formula_with_a_fresh_result_in_each_format() {
         // The plain, the shared, the constant and the array cells (anchor and interior).
         assert!(before.len() >= 7, "{ext}: {before:?}");
         let run = Command::new(SHEETC)
-            .args(["calculate", "-i", book.to_str().unwrap(), "--output"])
+            .args([
+                "calculate",
+                "-i",
+                book.to_str().unwrap(),
+                "--calculate-all",
+                "--output",
+            ])
             .arg(&out)
             .output()
             .unwrap();
@@ -176,6 +182,7 @@ fn the_program_knows_every_formula_of_its_workbook() {
         for mode in [Mode::Recalculate, Mode::Embedded] {
             let spec = sheetrs_compiler::Spec {
                 mode,
+                calculate_all: true,
                 ..sheetrs_compiler::Spec::default()
             };
             let (program, _) = sheetrs_compiler::compile(&model, &spec).unwrap();
@@ -216,6 +223,7 @@ fn without_declarations_the_outputs_are_the_formula_cells_in_every_mode() {
         let cells_of = |mode: Mode| -> BTreeSet<(u32, u32)> {
             let spec = sheetrs_compiler::Spec {
                 mode,
+                calculate_all: true,
                 ..sheetrs_compiler::Spec::default()
             };
             let (program, _) = sheetrs_compiler::compile(&model, &spec).unwrap();

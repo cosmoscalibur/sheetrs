@@ -41,3 +41,7 @@ features = ["extension-module"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The name of a test says what it proves and does not start with `test` (as in the Rust tests), so every public
+# function of a test module is collected: the helpers start with an underscore, and classes and constants
+# start with a capital.
+python_functions = ["[a-z]*"]

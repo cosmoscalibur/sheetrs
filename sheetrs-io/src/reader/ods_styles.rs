@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 /// What the tree of a data style says, as the sections of one format code.
 #[derive(Default)]
+#[allow(clippy::struct_excessive_bools)] // independent facts the reader notes of the style as it goes by
 struct DataStyle {
     /// The code of this section, without colour.
     body: String,
@@ -32,6 +33,22 @@ struct DataStyle {
     /// The style follows the language (`number:format-source="language"`): a day or a month that
     /// does not say how long it is takes two digits, as `LibreOffice` writes the XLSX of it.
     from_language: bool,
+    /// The style is a `number:number-style`.
+    is_number: bool,
+    /// How many elements the style has inside.
+    children: usize,
+    /// Its `number:number` element gives no `number:decimal-places` and does give `number:min-integer-digits`.
+    general_digits: bool,
+}
+
+impl DataStyle {
+    /// The format `LibreOffice` takes for General when it reads the style: a number style that holds one `number:number`
+    /// with no decimals and a minimum of integer digits (`number:min-integer-digits="1"`, `"3"`, with or without
+    /// `number:grouping`); one with decimals, with text around the number, or with a bare `<number:number/>`
+    /// is another format (probed with the cached results of formulas of an ODS, `docs/approved-differences.md`).
+    fn is_general(&self) -> bool {
+        self.is_number && self.children == 1 && self.general_digits
+    }
 }
 
 /// The text of a `number:text` or `number:currency-symbol` being read.
@@ -191,6 +208,7 @@ impl NumberStyles {
                 let style = DataStyle {
                     open_ended: attr(e, "number:truncate-on-overflow")?.as_deref() == Some("false"),
                     from_language: attr(e, "number:format-source")?.as_deref() == Some("language"),
+                    is_number: name == "number:number-style",
                     ..DataStyle::default()
                 };
                 if let Some(style_name) = attr(e, "style:name")? {
@@ -214,6 +232,9 @@ impl NumberStyles {
                 }
             }
             "number:text" | "number:currency-symbol" if self.open.is_some() && !empty => {
+                if let Some((_, style)) = self.open.as_mut() {
+                    style.children += 1;
+                }
                 self.literal = Some(Literal {
                     text: String::new(),
                     symbol: name == "number:currency-symbol",
@@ -234,8 +255,13 @@ impl NumberStyles {
             Some(how) => how == "long",
             None => style.from_language && matches!(name, "number:day" | "number:month"),
         };
+        style.children += 1;
         match name {
-            "number:number" => style.body.push_str(&mantissa(e)?),
+            "number:number" => {
+                style.general_digits = attr(e, "number:decimal-places")?.is_none()
+                    && attr(e, "number:min-integer-digits")?.is_some();
+                style.body.push_str(&mantissa(e)?);
+            }
             "number:scientific-number" => style.body.push_str(&scientific(e)?),
             "number:fraction" => style.body.push_str(&fraction(e)?),
             "number:text-content" => style.body.push('@'),
@@ -387,6 +413,32 @@ impl NumberStyles {
             }
         }
         resolved
+    }
+}
+
+impl NumberStyles {
+    /// The cell styles that carry a number format `LibreOffice` does not take for General, itself or through its parents.
+    pub(super) fn formatted(&self) -> std::collections::HashSet<String> {
+        let mut out = std::collections::HashSet::new();
+        for name in self.cells.keys() {
+            let mut at = name.as_str();
+            for _ in 0..16 {
+                let Some((data_style, parent)) = self.cells.get(at) else {
+                    break;
+                };
+                if let Some(data) = data_style {
+                    if self.styles.get(data).is_some_and(|d| !d.is_general()) {
+                        out.insert(name.clone());
+                    }
+                    break;
+                }
+                match parent {
+                    Some(parent) => at = parent,
+                    None => break,
+                }
+            }
+        }
+        out
     }
 }
 

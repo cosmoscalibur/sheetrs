@@ -1,8 +1,8 @@
 //! Approximate lookups over an array that is not a range (an inline array or a computed one).
 //!
 //! `LibreOffice` searches those with code of their own, not the sorted-column search of a range, and
-//! the positions it gives differ when the data are not sorted. These follow `ScMatch`,
-//! `ScLookup` and `CalculateLookup` of `sc/source/core/tool/interpr1.cxx`.
+//! the positions it gives differ when the data are not sorted. These give the positions that
+//! `LibreOffice` gives, checked against the oracle.
 
 use crate::value::{Array, Coll, ErrorKind, Value};
 use std::cmp::Ordering;
@@ -33,7 +33,7 @@ fn string_of(v: &Value) -> &str {
 }
 
 /// `-1`, `0` or `1` when the matrix value is smaller than, equal to or larger than the searched
-/// one (`lcl_CompareMatrix2Query`). Numbers sort before text, errors after both; an empty value is
+/// one. Numbers sort before text, errors after both; an empty value is
 /// the smallest, or the largest when `empty_is_less` is off.
 fn cmp_query(v: &Value, needle: &Value, coll: &Coll, empty_is_less: bool) -> i32 {
     if matches!(v, Value::Empty) {
@@ -67,7 +67,7 @@ fn cmp_query(v: &Value, needle: &Value, coll: &Coll, empty_is_less: bool) -> i32
     }
 }
 
-/// The last of the equal values that follow `i` (`lcl_GetLastMatch`).
+/// The last of the equal values that follow `i`.
 fn last_match(lane: &[Value], mut i: usize) -> usize {
     let n = lane.len();
     match &lane[i] {
@@ -318,7 +318,7 @@ pub(super) enum Op {
     GreaterEq,
 }
 
-/// `lcl_Compare2MatrixCells`: two matrix values against each other.
+/// Two matrix values against each other.
 fn cmp_cells(a: &Value, b: &Value, coll: &Coll) -> i32 {
     if matches!(a, Value::Empty) {
         return if matches!(b, Value::Empty) { 0 } else { -1 };

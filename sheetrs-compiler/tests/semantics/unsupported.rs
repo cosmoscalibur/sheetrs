@@ -37,18 +37,134 @@ fn a_function_of_libreoffice_the_engine_lacks_stops_the_build() {
     assert!(r.unsupported.contains("WEBSERVICE"));
 }
 
+/// A workbook with a call of each function of `LibreOffice` that the engine lacks, a macro, and cells that read them.
+fn secure_workbook() -> sheetrs_compiler::Model {
+    let mut m = sheetrs_compiler::Model::new();
+    m.macros = true;
+    let s = m.add_sheet("Sheet1");
+    for (at, f) in [
+        ("A1", "WEBSERVICE(\"x\")"),
+        ("A2", "FILTERXML(\"<a/>\",\"//a\")"),
+        ("A3", "DDE(\"s\",\"t\",\"i\")"),
+        ("A4", "MYFUNC(1)"),
+        ("A5", "A4+1"),
+        ("A6", "IFERROR(MYFUNC(1),9)"),
+        ("B1", "2+3"),
+        ("B2", "SUM(B1,10)"),
+    ] {
+        m.set_formula(s, at, f);
+    }
+    m
+}
+
+#[test]
+fn secure_mode_makes_the_calls_the_error_libreoffice_shows_and_calculates_the_rest() {
+    let m = secure_workbook();
+    let outputs = ["A1", "A2", "A3", "A4", "A5", "A6", "B1", "B2"];
+    // By default the build stops: for the macros of the workbook, and for a call that only `LibreOffice` can answer, naming it.
+    let e = compile(&m, &spec(&[], &outputs)).unwrap_err().to_string();
+    assert!(e.contains("macros") && e.contains("secure mode"), "{e}");
+    let mut no_macros = secure_workbook();
+    no_macros.macros = false;
+    let e = compile(&no_macros, &spec(&[], &outputs))
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("WEBSERVICE") && e.contains("secure mode"), "{e}");
+    let secure = Spec {
+        secure_mode: true,
+        ..spec(&[], &outputs)
+    };
+    let (p, report) = compile(&m, &secure).unwrap();
+    let got = p
+        .calculate(
+            &serde_json::Value::Null,
+            &sheetrs_engine::Overrides::default(),
+        )
+        .unwrap();
+    assert_eq!(got["Sheet1!A1"], libre("Err:540"), "WEBSERVICE offline");
+    assert_eq!(
+        got["Sheet1!A2"],
+        err("#NOT_IMPLEMENTED!"),
+        "FILTERXML: a value, no error observable"
+    );
+    assert_eq!(got["Sheet1!A3"], err("#N/A"), "DDE");
+    assert_eq!(got["Sheet1!A4"], libre("Err:531"), "a macro is #MACRO?");
+    assert_eq!(got["Sheet1!A5"], libre("Err:531"), "what reads it");
+    assert_eq!(
+        got["Sheet1!A6"],
+        json!(9),
+        "the call is an error that IFERROR catches"
+    );
+    assert_eq!(
+        got["Sheet1!B1"],
+        json!(5),
+        "the rest of the workbook is calculated"
+    );
+    assert_eq!(got["Sheet1!B2"], json!(15));
+    let kinds: Vec<_> = report
+        .from_cache
+        .iter()
+        .map(|n| (n.kind, n.cells))
+        .collect();
+    assert!(
+        kinds.contains(&(sheetrs_compiler::Unsupported::Macro, 2))
+            && kinds.contains(&(sheetrs_compiler::Unsupported::Extension, 3)),
+        "{kinds:?}"
+    );
+    assert!(report.from_cache.iter().all(|n| n.error.is_some()));
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("secure mode") && w.contains("MYFUNC")),
+        "{:?}",
+        report.warnings
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("secure mode") && w.contains("Err:540")),
+        "{:?}",
+        report.warnings
+    );
+    assert_eq!(
+        report.formulas_cached, 0,
+        "an error cell is not a kept result"
+    );
+}
+
 #[test]
 fn syntax_the_parser_does_not_read_stops_the_build() {
-    for f in ["[1]Sheet1!B3", "Table1[Col]", "A1:A5#", "A1 B1"] {
+    for f in ["Table1[Col]", "A1:A5#", "A1 B1"] {
         let e = build_with(f).unwrap_err();
         assert!(e.contains("syntax") && e.contains(f), "{f}: {e}");
     }
 }
 
 #[test]
+fn an_external_reference_keeps_the_stored_value_and_the_build_says_so() {
+    // `LibreOffice` shows the stored value of the link: the cell is not in the program, and the report names it.
+    let r = build_with("[1]Sheet1!B3").unwrap();
+    assert_eq!(r.from_cache.len(), 1, "{:?}", r.from_cache);
+    let note = &r.from_cache[0];
+    assert_eq!(note.kind, sheetrs_compiler::Unsupported::External);
+    assert_eq!((note.cells, note.first.as_str()), (1, "Sheet1!A1"));
+    assert_eq!(note.what, ["[1]Sheet1!B3"]);
+    assert!(
+        r.warnings.iter().any(|w| w.contains("external")),
+        "{:?}",
+        r.warnings
+    );
+    // A structured reference is not one: it has no `!` after the index.
+    let e = build_with("Table1[[#This Row],[1]]").unwrap_err();
+    assert!(!e.contains("another workbook"), "{e}");
+}
+
+#[test]
 fn a_text_code_with_a_language_the_engine_has_no_names_for_stops_the_build() {
-    let e = build_with("TEXT(45367,\"[$-407]dddd\")").unwrap_err();
-    assert!(e.contains("[$-407]dddd"), "{e}");
+    let e = build_with("TEXT(45367,\"[$-40C]dddd\")").unwrap_err();
+    assert!(e.contains("[$-40C]dddd"), "{e}");
     for ok in [
         "TEXT(45367,\"[$-409]dddd\")",
         "TEXT(45367,\"[$-40A]dddd\")",
@@ -241,7 +357,7 @@ fn a_text_code_that_is_not_known_at_build_time_stops_the_build() {
     let mut m = sheetrs_compiler::Model::new();
     let s = m.add_sheet("Sheet1");
     m.set(s, "B1", Value::text("dd/mm/yyyy"));
-    m.set(s, "B2", Value::text("[$-407]dddd"));
+    m.set(s, "B2", Value::text("[$-40C]dddd"));
     m.set_formula(s, "A1", "TEXT(45367,B1)");
     // The code is a constant: it is checked.
     assert!(compile(&m, &spec(&[], &["A1"])).is_ok());
@@ -268,7 +384,7 @@ fn a_text_code_that_is_not_known_at_build_time_stops_the_build() {
             .clone()
     };
     assert_eq!(run("yyyy"), json!("2024"));
-    assert_eq!(run("[$-407]dddd"), err("#NOT_IMPLEMENTED!"));
+    assert_eq!(run("[$-40C]dddd"), err("#NOT_IMPLEMENTED!"));
 }
 
 #[test]

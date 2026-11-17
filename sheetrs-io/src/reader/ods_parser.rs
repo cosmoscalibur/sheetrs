@@ -6,14 +6,15 @@ use super::workbook::{
     Cell, CellValue, DocumentSettings, ExternalWorkbook, IterationSettings, Sheet,
 };
 use super::{
-    CellSink, NameConflict, NameScope, NumFmt, Properties, Selection, SheetInfo, SheetState,
-    WorkbookReader,
+    AreaSink, CellSink, NameConflict, NameScope, NumFmt, Properties, Selection, SheetInfo,
+    SheetState, WorkbookReader, used_area,
 };
 use crate::error::{Error, Result};
 use crate::reader::ExcelError;
 use crate::reader::selection::SheetSelection;
+use crate::xml::{self, Lexer, Token};
 use quick_xml::Reader;
-use quick_xml::events::Event;
+use quick_xml::events::{BytesEnd, BytesRef, BytesText, Event};
 use regex::Regex;
 use sheetrs_formula::DateSystem;
 use sheetrs_formula::addr::needs_quotes;
@@ -424,47 +425,102 @@ fn bare_sheet_qualifiers_as_name_errors(native: &str) -> Option<String> {
 /// The text of the note whose `office:annotation` element has just been opened: its paragraphs joined by
 /// `\n` (an empty paragraph is an empty line), the runs of spaces, tabs and line breaks as the text
 /// they stand for. The creator and the date are not text.
-fn read_annotation_text<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {
+fn read_annotation_text<R: std::io::Read>(lexer: &mut Lexer<R>) -> Result<String> {
     let mut text = String::new();
-    let (mut buf, mut paragraphs, mut in_paragraph) = (Vec::new(), 0usize, false);
+    let (mut paragraphs, mut in_paragraph) = (0usize, false);
     loop {
-        match reader.read_event_into(&mut buf)? {
-            Event::Start(e) if e.name().as_ref() == "text:p" => {
+        match lexer.token()? {
+            Token::Start(e) if e.name() == b"text:p" => {
                 if paragraphs > 0 {
                     text.push('\n');
                 }
                 paragraphs += 1;
                 in_paragraph = true;
             }
-            Event::Empty(e) if e.name().as_ref() == "text:p" => {
+            Token::Empty(e) if e.name() == b"text:p" => {
                 if paragraphs > 0 {
                     text.push('\n');
                 }
                 paragraphs += 1;
             }
-            Event::End(e) if e.name().as_ref() == "text:p" => in_paragraph = false,
-            Event::Text(t) if in_paragraph => text.push_str(&t),
-            Event::GeneralRef(r) if in_paragraph => push_general_ref(&mut text, &r)?,
-            Event::Start(e) | Event::Empty(e) if in_paragraph => match e.name().as_ref() {
-                "text:s" => {
+            Token::End(name) if name == b"text:p" => in_paragraph = false,
+            Token::Text(raw) if in_paragraph => {
+                xml::unescape_into(raw, &mut text, push_general_ref)?;
+            }
+            Token::Start(e) | Token::Empty(e) if in_paragraph => match e.name() {
+                b"text:s" => {
                     let count = e
                         .attributes()
-                        .flatten()
-                        .find(|a| a.key.as_ref() == "text:c")
-                        .and_then(|a| attr_value(&a).ok()?.parse::<usize>().ok())
+                        .find(|(key, _)| *key == b"text:c")
+                        .and_then(|(_, raw)| xml::attr_value(raw).ok()?.parse::<usize>().ok())
                         .unwrap_or(1);
                     text.extend(std::iter::repeat_n(' ', count));
                 }
-                "text:tab" => text.push('\t'),
-                "text:line-break" => text.push('\n'),
+                b"text:tab" => text.push('\t'),
+                b"text:line-break" => text.push('\n'),
                 _ => {}
             },
-            Event::End(e) if e.name().as_ref() == "office:annotation" => return Ok(text),
-            Event::Eof => return Ok(text),
+            Token::End(name) if name == b"office:annotation" => return Ok(text),
+            Token::Eof => return Ok(text),
             _ => {}
         }
-        buf.clear();
     }
+}
+
+/// Reads the text of the paragraph the lexer is in, up to its end tag, into `text`: the runs of
+/// spaces, tabs and line breaks are elements that stand for the text they hold.
+fn read_paragraph<R: std::io::Read>(lexer: &mut Lexer<R>, text: &mut String) -> Result<()> {
+    loop {
+        match lexer.token()? {
+            Token::Text(raw) => {
+                xml::unescape_into(raw, text, push_general_ref)?;
+            }
+            Token::Empty(se) | Token::Start(se)
+                if matches!(se.name(), b"text:s" | b"text:tab" | b"text:line-break") =>
+            {
+                match se.name() {
+                    b"text:tab" => text.push('\t'),
+                    b"text:line-break" => text.push('\n'),
+                    _ => {
+                        let mut n = 1usize;
+                        for (key, raw) in se.attributes() {
+                            if key == b"text:c"
+                                && let Ok(v) = xml::attr_value(raw)
+                            {
+                                n = v.parse().unwrap_or(1);
+                            }
+                        }
+                        text.extend(std::iter::repeat_n(' ', n));
+                    }
+                }
+            }
+            Token::End(name) if name == b"text:p" => return Ok(()),
+            Token::Eof => return Ok(()),
+            _ => {}
+        }
+    }
+}
+
+/// Feeds the text between the tags of the head of the document to the number formats, with its
+/// references told apart as the events of quick-xml tell them.
+fn feed_text(styles: &mut NumberStyles, raw: &[u8]) -> Result<()> {
+    let text = std::str::from_utf8(raw).map_err(quick_xml::Error::from)?;
+    let mut rest = text;
+    while let Some(amp) = rest.find('&') {
+        if amp > 0 {
+            styles.feed(&Event::Text(BytesText::from_escaped(&rest[..amp])))?;
+        }
+        let after = &rest[amp + 1..];
+        let end = after.find(';').ok_or(quick_xml::Error::IllFormed(
+            quick_xml::errors::IllFormedError::UnclosedReference,
+        ))?;
+        styles.feed(&Event::GeneralRef(BytesRef::new(&after[..end])))?;
+        rest = &after[end + 1..];
+    }
+    if !rest.is_empty() {
+        styles.feed(&Event::Text(BytesText::from_escaped(rest)))?;
+    }
+    Ok(())
 }
 
 /// Extract formulas from an ODS worksheet
@@ -564,22 +620,20 @@ pub fn normalize_ods_reference(
 /// Reads on to the end of the table the reader is in, without building anything: the tables of a
 /// sheet nobody asked for, and the rest of the one whose last wanted row went by. Tables nest only
 /// as database ranges do not, so the depth is what makes the end of this one the right one.
-fn skip_table<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<()> {
+fn skip_table<R: std::io::Read>(lexer: &mut Lexer<R>) -> Result<()> {
     let mut depth = 0u32;
-    let mut skip_buf = Vec::new();
     loop {
-        match reader.read_event_into(&mut skip_buf)? {
-            Event::Start(e) if e.name().as_ref() == "table:table" => depth += 1,
-            Event::End(e) if e.name().as_ref() == "table:table" => {
+        match lexer.token()? {
+            Token::Start(e) if e.name() == b"table:table" => depth += 1,
+            Token::End(name) if name == b"table:table" => {
                 if depth == 0 {
                     return Ok(());
                 }
                 depth -= 1;
             }
-            Event::Eof => return Ok(()),
+            Token::Eof => return Ok(()),
             _ => {}
         }
-        skip_buf.clear();
     }
 }
 
@@ -670,6 +724,42 @@ fn parse_bracket_ref(
     if bracket_content.trim_start_matches('$').starts_with("#REF!") {
         // What LibreOffice writes for a reference that is gone: `[#REF!]`, `[$#REF!.A1]`.
         result.push_str("#REF!");
+    } else if bracket_content.contains(":#REF!")
+        || bracket_content.contains(".#REF!")
+        || bracket_content.contains("#REF!:")
+    {
+        // A range with an end that went (`[$Data.A1:.#REF!]`, `[.A1:.#REF!]`, `[#REF!:.B2]`): the `#` is the one
+        // of the error and not the mark of an external workbook. Each end is read as it is written, and an end
+        // that went is `#REF!`.
+        let mut ends = Vec::new();
+        let mut rest = bracket_content.as_str();
+        loop {
+            let (end, more) = match find_outside_quotes(rest, ':') {
+                Some(colon) => (&rest[..colon], Some(&rest[colon + 1..])),
+                None => (rest, None),
+            };
+            let mut one = String::new();
+            let bare = end.trim_start_matches('$');
+            if bare == "#REF!" || bare == ".#REF!" {
+                one.push_str("#REF!");
+            } else if let Some(sheet) = end.strip_suffix(".#REF!") {
+                // `$Data.#REF!`: the sheet is there and the cell is not.
+                push_sheet_name(&mut one, &sheet_name_of(sheet));
+                one.push_str("!#REF!");
+            } else if let Some(stripped) = end.strip_prefix('$') {
+                parse_sheet_qualified_ref(stripped, &mut one, current_sheet_name);
+            } else if let Some(stripped) = end.strip_prefix('.') {
+                parse_local_ref(stripped, &mut one);
+            } else {
+                one.push_str(end);
+            }
+            ends.push(one);
+            match more {
+                Some(more) => rest = more,
+                None => break,
+            }
+        }
+        result.push_str(&ends.join(":"));
     } else if let Some(hash_pos) = bracket_content.find('#') {
         // External reference: ['file:///path'#Sheet.A1]
         let raw_uri = &bracket_content[..hash_pos];
@@ -956,8 +1046,9 @@ fn parse_dollar_sheet_ref(
 static SHEET_RANGE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"([A-Za-z0-9_]+)\.([A-Z$0-9]+):([A-Za-z0-9_]+)\.([A-Z$0-9]+)").unwrap()
 });
+// The cell part is an address (`A1`, `$B$2`): a formula that is one decimal number (`1.5`) is not `Sheet1.A1`.
 static SHEET_SINGLE_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+)\.([A-Z$0-9]+)$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+)\.(\$?[A-Z]+\$?[0-9]+)$").unwrap());
 
 /// Strip local sheet references from formula (Sheet1.A1 → A1, Sheet1.A1:Sheet1.B2 → A1:B2)
 /// Also converts Sheet.Cell to Sheet!Cell format for multi-sheet ranges
@@ -1039,6 +1130,8 @@ struct OdsData {
 pub struct OdsReader<'a, R: std::io::Read + std::io::Seek> {
     archive: &'a mut ZipArchive<R>,
     data: Option<OdsData>,
+    /// A `content.xml` to read instead of the one of the archive (see [`names_skeleton`]).
+    content_override: Option<Vec<u8>>,
 }
 
 const MAX_COLUMNS: u32 = 16384;
@@ -1051,13 +1144,17 @@ impl<'a, R: std::io::Read + std::io::Seek> OdsReader<'a, R> {
         Ok(Self {
             archive,
             data: None,
+            content_override: None,
         })
     }
 }
 
 impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
     fn read_sheets_into(&mut self, sink: &mut dyn CellSink) -> Result<Vec<Sheet>> {
-        self.read_sheets_inner(sink, None)
+        let mut sink = AreaSink::new(sink);
+        let mut sheets = self.read_sheets_inner(&mut sink, None)?;
+        used_area::assign(&mut sheets, &sink.into_areas());
+        Ok(sheets)
     }
 
     fn read_selection_into(
@@ -1086,6 +1183,19 @@ impl<R: std::io::Read + std::io::Seek> WorkbookReader for OdsReader<'_, R> {
     fn read_defined_names(&mut self) -> Result<HashMap<String, String>> {
         // The names were read with the cells.
         if self.data.is_none() {
+            // Asked alone, the names are read from the skeleton of the document (its tables and the blocks of names), not from
+            // every cell: the document is not parsed, only searched.
+            if let Some(skeleton) = names_skeleton(self.archive)? {
+                self.content_override = Some(skeleton);
+                let mut sink = super::GridSink::default();
+                let read = self.read_sheets_inner(&mut sink, None);
+                self.content_override = None;
+                let names = self.data.take().map(|data| data.defined_names);
+                read?;
+                if let Some(names) = names {
+                    return Ok(names);
+                }
+            }
             self.read_sheets()?;
         }
         Ok(self.data.as_ref().unwrap().defined_names.clone())
@@ -1204,6 +1314,12 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
         // (`table:default-cell-style-name`). The columns of the table being read, as ranges.
         let mut column_styles: Vec<(u32, u32, String)> = Vec::new();
         let mut row_style = String::new();
+        // How many columns the table being read declares (`table:table-column`, repeated ones counted): a cell past them
+        // is calculated on load whatever it caches (see [`recalculated_on_load`]).
+        let mut declared_columns = 0u32;
+        // The cell styles whose number format is not General (see [`recalculated_on_load`]).
+        let mut formatted_styles: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         // The ranges of the array formulas of the table being read, with their formula.
         type ArrayRange = ((u32, u32, u32, u32), String);
         let mut array_ranges: Vec<ArrayRange> = Vec::new();
@@ -1226,11 +1342,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
         let mut in_table = false;
         // Whether an event macro went by in `content.xml`.
         let macro_mark = std::rc::Rc::new(std::cell::Cell::new(false));
-        // Events inside a cell, kept between cells.
-        let mut text_buf: Vec<u8> = Vec::new();
         let mut object_hrefs: Vec<(String, String)> = Vec::new();
-        // Largest row and column (0-based) of the cells of the current sheet.
-        let mut cells_max: Option<(u32, u32)> = None;
 
         // ============================================================
         // PARSE styles.xml FIRST to populate date_styles
@@ -1263,17 +1375,15 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
         // PARSE content.xml in a scope to drop reader before has_macros
         // ============================================================
         {
-            let Ok(content_xml) = self.archive.by_name("content.xml") else {
-                return Ok(sheets);
+            let content_xml: Box<dyn std::io::Read + '_> = match self.content_override.take() {
+                Some(skeleton) => Box::new(std::io::Cursor::new(skeleton)),
+                None => match self.archive.by_name("content.xml") {
+                    Ok(content) => Box::new(content),
+                    Err(_) => return Ok(sheets),
+                },
             };
 
-            let mut reader = Reader::from_reader(BufReader::new(MarkTap::new(
-                content_xml,
-                macro_mark.clone(),
-            )));
-            reader.config_mut().trim_text(false);
-
-            let mut buf = Vec::new();
+            let mut lexer = Lexer::new(MarkTap::new(content_xml, macro_mark.clone()));
             // Byte offset in content.xml where the current <table:table> starts
             let mut table_start = 0u64;
 
@@ -1282,9 +1392,26 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
             // ============================================================
 
             loop {
-                let event_start = reader.buffer_position();
-                let event = reader.read_event_into(&mut buf)?;
-                let empty_tag = matches!(event, Event::Empty(_));
+                let event_start = lexer.position();
+                let token = lexer.token()?;
+                let empty_tag = matches!(token, Token::Empty(_));
+                // The arms read the tags with the events of quick-xml; the text between tags
+                // matters only to the formats of the head of the document.
+                let event = match token {
+                    Token::Start(tag) => Event::Start(tag.to_start()?),
+                    Token::Empty(tag) => Event::Empty(tag.to_start()?),
+                    Token::End(name) => Event::End(BytesEnd::new(
+                        std::str::from_utf8(name).map_err(quick_xml::Error::from)?,
+                    )),
+                    Token::Eof => Event::Eof,
+                    Token::Text(raw) => {
+                        if !tables_started {
+                            feed_text(&mut number_styles, raw)?;
+                        }
+                        continue;
+                    }
+                    Token::CData(_) | Token::Other => continue,
+                };
                 if !tables_started {
                     number_styles.feed(&event)?;
                 }
@@ -1305,27 +1432,23 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             }
                         }
                         if is_table_style && !empty_tag && !style_name.is_empty() {
-                            let mut inner_buf = Vec::new();
                             loop {
-                                match reader.read_event_into(&mut inner_buf)? {
-                                    Event::Start(ee) | Event::Empty(ee)
-                                        if ee.name().as_ref() == "style:table-properties" =>
+                                match lexer.token()? {
+                                    Token::Start(ee) | Token::Empty(ee)
+                                        if ee.name() == b"style:table-properties" =>
                                     {
-                                        for attr in ee.attributes().flatten() {
-                                            if attr.key.as_ref() == "table:display"
-                                                && attr.value == "false"
-                                            {
+                                        for (key, raw) in ee.attributes() {
+                                            if key == b"table:display" && raw == b"false" {
                                                 hidden_styles.insert(style_name.clone());
                                             }
                                         }
                                     }
-                                    Event::End(ee) if ee.name().as_ref() == "style:style" => {
+                                    Token::End(ee) if ee == b"style:style" => {
                                         break;
                                     }
-                                    Event::Eof => break,
+                                    Token::Eof => break,
                                     _ => {}
                                 }
-                                inner_buf.clear();
                             }
                         }
                     }
@@ -1336,8 +1459,10 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         if !tables_started {
                             tables_started = true;
                             date_styles = number_styles.resolve();
+                            formatted_styles = number_styles.formatted();
                         }
                         column_styles.clear();
+                        declared_columns = 0;
                         array_ranges.clear();
                         // Collect sheet style for hidden detection
                         let mut sheet_name = String::new();
@@ -1379,7 +1504,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         let mut new_sheet = Sheet::new(name.clone(), sheet_index);
                         // Covers a self-closing table; the closing tag overwrites it
                         table_start = event_start;
-                        new_sheet.xml_size_bytes = reader.buffer_position() - table_start;
+                        new_sheet.xml_size_bytes = lexer.position() - table_start;
                         // Check if this sheet's style is in hidden_styles
                         let is_hidden =
                             !style_name.is_empty() && hidden_styles.contains(&style_name);
@@ -1394,7 +1519,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         current_row = 0;
                         current_col = 0; // Reset column tracking for new sheet
                         skip_current_sheet = false; // Reset skip flag for new sheet
-                        cells_max = None;
                         in_table = !empty_tag;
                         if let Some(selection) = selection {
                             wanted = current_sheet
@@ -1402,7 +1526,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 .and_then(|sheet| selection.of(&sheet.name));
                             if wanted.is_none() && !empty_tag {
                                 // Not selected: listed, not read.
-                                skip_table(&mut reader)?;
+                                skip_table(&mut lexer)?;
                                 in_table = false;
                             } else if wanted.is_some() && empty_tag {
                                 // A selected table with no rows: nothing to read in it.
@@ -1438,25 +1562,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 skip_current_sheet = true;
                                 // Fast-forward to the end of this table to avoid parsing millions of rows
                                 // CRITICAL: Start depth at 0 since we're already inside table:table element
-                                let mut depth = 0;
-                                let mut skip_buf = Vec::new();
-                                loop {
-                                    match reader.read_event_into(&mut skip_buf)? {
-                                        Event::Start(ee) if ee.name().as_ref() == "table:table" => {
-                                            depth += 1;
-                                        }
-                                        Event::End(ee) if ee.name().as_ref() == "table:table" => {
-                                            if depth == 0 {
-                                                // This is the closing tag of the current external sheet
-                                                break;
-                                            }
-                                            depth -= 1;
-                                        }
-                                        Event::Eof => break,
-                                        _ => {}
-                                    }
-                                    skip_buf.clear();
-                                }
+                                skip_table(&mut lexer)?;
                                 // The table is left: what follows (the names of the document, which
                                 // LibreOffice writes after the last table) is not in it.
                                 in_table = false;
@@ -1500,20 +1606,15 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 .push((current_col, current_col + repeated - 1));
                         }
                         current_col += repeated;
+                        declared_columns = declared_columns.saturating_add(repeated);
 
                         // If it's a start tag, we need to skip to its end tag to avoid nested column issues
-                        let mut col_buf = Vec::new();
                         loop {
-                            match reader.read_event_into(&mut col_buf)? {
-                                Event::End(ref te)
-                                    if te.name().as_ref() == "table:table-column" =>
-                                {
-                                    break;
-                                }
-                                Event::Eof => break,
+                            match lexer.token()? {
+                                Token::End(name) if name == b"table:table-column" => break,
+                                Token::Eof => break,
                                 _ => {}
                             }
-                            col_buf.clear();
                         }
                     }
                     Event::Empty(e)
@@ -1552,30 +1653,31 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 .push((current_col, current_col + repeated - 1));
                         }
                         current_col += repeated;
+                        declared_columns = declared_columns.saturating_add(repeated);
                     }
                     Event::Start(e) if e.name().as_ref() == "table:table-row" => {
                         row_repeated = 1;
                         current_col = 0;
                         row_style.clear();
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == "table:default-cell-style-name" {
-                                row_style = attr_value(&attr)?.into_owned();
+                        for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                            if key == b"table:default-cell-style-name" {
+                                row_style = xml::attr_value(raw)?.into_owned();
                             }
                         }
                         if let Some(ref mut sheet) = current_sheet {
                             let mut hidden = false;
                             let mut filtered = false;
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
-                                    "table:number-rows-repeated" => {
+                            for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                                match key {
+                                    b"table:number-rows-repeated" => {
                                         row_repeated =
-                                            attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                            xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                     }
-                                    "table:visibility"
-                                        if (attr.value == "collapse" || attr.value == "filter") =>
+                                    b"table:visibility"
+                                        if (raw == b"collapse" || raw == b"filter") =>
                                     {
                                         hidden = true;
-                                        filtered = attr.value == "filter";
+                                        filtered = raw == b"filter";
                                     }
                                     _ => {}
                                 }
@@ -1603,12 +1705,12 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 remaining = remaining.saturating_sub(1);
                                 finished = remaining == 0;
                                 if !finished {
-                                    skip_table(&mut reader)?;
+                                    skip_table(&mut lexer)?;
                                     in_table = false;
                                 }
                             } else if current_row.saturating_add(row_repeated) <= rows.first_row {
                                 // Rows before the first one wanted are not read.
-                                reader.read_to_end_into(e.name(), &mut text_buf)?;
+                                lexer.skip_element()?;
                                 current_row += row_repeated;
                                 current_col = 0;
                             }
@@ -1621,17 +1723,17 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         if let Some(ref mut sheet) = current_sheet {
                             let mut hidden = false;
                             let mut filtered = false;
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
-                                    "table:number-rows-repeated" => {
+                            for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                                match key {
+                                    b"table:number-rows-repeated" => {
                                         row_repeated =
-                                            attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                            xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                     }
-                                    "table:visibility"
-                                        if (attr.value == "collapse" || attr.value == "filter") =>
+                                    b"table:visibility"
+                                        if (raw == b"collapse" || raw == b"filter") =>
                                     {
                                         hidden = true;
-                                        filtered = attr.value == "filter";
+                                        filtered = raw == b"filter";
                                     }
                                     _ => {}
                                 }
@@ -1656,7 +1758,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             remaining = remaining.saturating_sub(1);
                             finished = remaining == 0;
                             if !finished {
-                                skip_table(&mut reader)?;
+                                skip_table(&mut lexer)?;
                                 in_table = false;
                             }
                         }
@@ -1677,6 +1779,8 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         // The cell is a text one (`office:value-type="string"`) and has a paragraph,
                         // even an empty one: an empty text, not a blank cell (`LibreOffice`).
                         let mut is_string_type = false;
+                        let mut result_kind = CachedKind::Untyped;
+                        let mut reads_external = false;
                         let mut saw_paragraph = false;
                         // The formula holds a bare `#ref!`: `LibreOffice` calculates such a cell when it opens the file.
                         let mut bare_ref = false;
@@ -1684,58 +1788,74 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         let mut is_matrix_array = false;
                         let (mut matrix_cols, mut matrix_rows) = (1u32, 1u32);
 
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                "table:number-columns-repeated" => {
-                                    col_repeated = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                        for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                            match key {
+                                b"table:number-columns-repeated" => {
+                                    col_repeated =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:number-columns-spanned" => {
-                                    cols_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                b"table:number-columns-spanned" => {
+                                    cols_spanned =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:number-rows-spanned" => {
-                                    rows_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                b"table:number-rows-spanned" => {
+                                    rows_spanned =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:formula" => {
+                                b"table:formula" => {
                                     bare_ref = has_bare_ref_error(
-                                        &attr_value(&attr)?,
+                                        &xml::attr_value(raw)?,
                                         Notation::OpenFormula,
                                     );
+                                    reads_external = xml::attr_value(raw)?.contains("file:");
                                     // Whether the cell has one is told without converting it
                                     // when the text of the formula is not wanted.
                                     formula = Some(if props.formula {
-                                        native_formula(&attr_value(&attr)?, &mut external_workbooks)
+                                        native_formula(
+                                            &xml::attr_value(raw)?,
+                                            &mut external_workbooks,
+                                        )
                                     } else {
                                         String::new()
                                     });
                                 }
-                                "table:style-name" => {
-                                    style_name = attr_value(&attr)?.into_owned();
+                                b"table:style-name" => {
+                                    style_name = xml::attr_value(raw)?.into_owned();
                                 }
-                                "calcext:value-type" if attr.value == "error" => {
+                                b"calcext:value-type" if raw == b"error" => {
                                     is_error_cell = true;
                                 }
-                                "office:value-type" if attr.value == "string" => {
-                                    is_string_type = true;
+                                b"office:value-type" => {
+                                    is_string_type = raw == b"string";
+                                    result_kind = match raw {
+                                        b"string" => CachedKind::Text,
+                                        b"percentage" => CachedKind::Percentage,
+                                        b"boolean" => CachedKind::Boolean,
+                                        b"time" => CachedKind::Time,
+                                        b"float" | b"currency" | b"date" => CachedKind::Number,
+                                        _ => CachedKind::Untyped,
+                                    };
                                 }
                                 // An empty `office:string-value` is no content: `LibreOffice` reads
                                 // the cell as blank unless a paragraph is there (see `saw_paragraph`).
-                                "office:string-value" if attr.value.is_empty() => {}
-                                "office:value"
-                                | "office:string-value"
-                                | "office:boolean-value"
-                                | "office:time-value"
-                                | "office:date-value" => {
-                                    let val_str = attr_value(&attr)?.into_owned();
+                                // An empty `office:value` is no number, as no `office:value` is.
+                                b"office:string-value" | b"office:value" if raw.is_empty() => {}
+                                b"office:value"
+                                | b"office:string-value"
+                                | b"office:boolean-value"
+                                | b"office:time-value"
+                                | b"office:date-value" => {
+                                    let val_str = xml::attr_value(raw)?.into_owned();
                                     if !has_value {
-                                        value = match attr.key.as_ref() {
-                                            "office:value" => {
+                                        value = match key {
+                                            b"office:value" => {
                                                 if let Ok(n) = val_str.parse::<f64>() {
                                                     CellValue::Number(n)
                                                 } else {
                                                     CellValue::Text(Arc::from(val_str.as_str()))
                                                 }
                                             }
-                                            "office:date-value" => {
+                                            b"office:date-value" => {
                                                 // Convert ISO date to Serial Number
                                                 if let Some(n) =
                                                     parse_ods_date(&val_str, null_shift)
@@ -1745,7 +1865,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                     CellValue::Text(Arc::from(val_str.as_str()))
                                                 }
                                             }
-                                            "office:time-value" => {
+                                            b"office:time-value" => {
                                                 // A time of day is a fraction of a day.
                                                 if let Some(n) = parse_ods_time(&val_str) {
                                                     CellValue::Number(n)
@@ -1753,22 +1873,24 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                     CellValue::Text(Arc::from(val_str.as_str()))
                                                 }
                                             }
-                                            "office:boolean-value" => parse_boolean_value(&val_str),
+                                            b"office:boolean-value" => {
+                                                parse_boolean_value(&val_str)
+                                            }
                                             _ => CellValue::Text(Arc::from(val_str.as_str())),
                                         };
                                         has_value = true;
                                     }
                                 }
-                                "table:number-matrix-columns-spanned" => {
-                                    let v = attr_value(&attr)?.parse::<u32>().unwrap_or(0);
+                                b"table:number-matrix-columns-spanned" => {
+                                    let v = xml::attr_value(raw)?.parse::<u32>().unwrap_or(0);
                                     if v > 0 {
                                         is_matrix_array = true;
                                         matrix_cols = v;
                                     }
                                 }
-                                "table:number-matrix-rows-spanned" => {
+                                b"table:number-matrix-rows-spanned" => {
                                     matrix_rows =
-                                        attr_value(&attr)?.parse::<u32>().unwrap_or(1).max(1);
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1).max(1);
                                 }
                                 _ => {}
                             }
@@ -1784,7 +1906,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             )
                         });
                         if skip_cell {
-                            reader.read_to_end_into(e.name(), &mut text_buf)?;
+                            lexer.skip_element()?;
                         }
 
                         if cols_spanned > 1 || rows_spanned > 1 {
@@ -1799,89 +1921,48 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         // Read text content from <text:p> elements
                         // This handles both error cells and regular text cells
                         let mut text_content = String::new();
+                        let mut paragraphs = 0usize;
                         let mut note: Option<String> = None;
-                        text_buf.clear();
                         loop {
                             if skip_cell {
                                 break;
                             }
-                            match reader.read_event_into(&mut text_buf)? {
+                            match lexer.token()? {
                                 // A comment's paragraphs are not the cell's content.
-                                Event::Start(ref te)
-                                    if te.name().as_ref() == "office:annotation" =>
-                                {
+                                Token::Start(te) if te.name() == b"office:annotation" => {
                                     sheet.comments += 1;
                                     if props.comment {
-                                        note = Some(read_annotation_text(&mut reader)?);
+                                        note = Some(read_annotation_text(&mut lexer)?);
                                     } else {
-                                        let end = te.to_end().into_owned();
-                                        let mut skip = Vec::new();
-                                        reader.read_to_end_into(end.name(), &mut skip)?;
+                                        lexer.skip_element()?;
                                     }
                                 }
-                                Event::Empty(ref te) if te.name().as_ref() == "text:p" => {
+                                // Paragraphs of one cell are separate lines, an empty one too
+                                // (`a` and an empty paragraph are the text `a` and a line break).
+                                Token::Empty(te) if te.name() == b"text:p" => {
                                     saw_paragraph = true;
-                                }
-                                Event::Start(ref te) if te.name().as_ref() == "text:p" => {
-                                    saw_paragraph = true;
-                                    // Paragraphs of one cell are separate lines.
-                                    if !text_content.is_empty() {
+                                    if paragraphs > 0 {
                                         text_content.push('\n');
                                     }
-                                    let mut p_buf = Vec::new();
-                                    loop {
-                                        match reader.read_event_into(&mut p_buf)? {
-                                            Event::Text(ref t) => {
-                                                text_content.push_str(t);
-                                            }
-                                            Event::GeneralRef(ref r) => {
-                                                push_general_ref(&mut text_content, r)?;
-                                            }
-                                            // Runs of spaces, tabs and line breaks are elements.
-                                            Event::Empty(ref se) | Event::Start(ref se)
-                                                if matches!(
-                                                    se.name().as_ref(),
-                                                    "text:s" | "text:tab" | "text:line-break"
-                                                ) =>
-                                            {
-                                                match se.name().as_ref() {
-                                                    "text:tab" => text_content.push('\t'),
-                                                    "text:line-break" => text_content.push('\n'),
-                                                    _ => {
-                                                        let mut n = 1usize;
-                                                        for a in se.attributes().flatten() {
-                                                            if a.key.as_ref() == "text:c"
-                                                                && let Ok(v) = attr_value(&a)
-                                                            {
-                                                                n = v.parse().unwrap_or(1);
-                                                            }
-                                                        }
-                                                        text_content
-                                                            .extend(std::iter::repeat_n(' ', n));
-                                                    }
-                                                }
-                                            }
-                                            Event::End(ref pe)
-                                                if pe.name().as_ref() == "text:p" =>
-                                            {
-                                                break;
-                                            }
-                                            Event::Eof => break,
-                                            _ => {}
-                                        }
-                                        p_buf.clear();
-                                    }
+                                    paragraphs += 1;
                                 }
-                                Event::End(ref te)
-                                    if te.name().as_ref() == "table:table-cell"
-                                        || te.name().as_ref() == "table:covered-table-cell" =>
+                                Token::Start(te) if te.name() == b"text:p" => {
+                                    saw_paragraph = true;
+                                    if paragraphs > 0 {
+                                        text_content.push('\n');
+                                    }
+                                    paragraphs += 1;
+                                    read_paragraph(&mut lexer, &mut text_content)?;
+                                }
+                                Token::End(name)
+                                    if name == b"table:table-cell"
+                                        || name == b"table:covered-table-cell" =>
                                 {
                                     break;
                                 }
-                                Event::Eof => break,
+                                Token::Eof => break,
                                 _ => {}
                             }
-                            text_buf.clear();
                         }
 
                         // A text cell whose paragraph is empty holds an empty text.
@@ -1923,6 +2004,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         // The cells of the range of an array formula show its formula, as
                         // `LibreOffice` shows it: the covered cells hold only their value.
                         let mut in_array = false;
+                        let mut array_offset = None;
                         if props.formula {
                             if let (Some(f), true) = (formula.as_ref(), is_matrix_array) {
                                 array_ranges.push((
@@ -1940,14 +2022,17 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             {
                                 array_ranges
                                     .retain(|((_, _, last_row, _), _)| *last_row >= current_row);
-                                if let Some((_, master)) = array_ranges.iter().find(
-                                    |((first_row, first_col, last_row, last_col), _)| {
+                                if let Some(((first_row, first_col, _, _), master)) = array_ranges
+                                    .iter()
+                                    .find(|((first_row, first_col, last_row, last_col), _)| {
                                         (*first_row..=*last_row).contains(&current_row)
                                             && (*first_col..=*last_col).contains(&current_col)
-                                    },
-                                ) {
+                                    })
+                                {
                                     formula = Some(master.clone());
                                     in_array = true;
+                                    array_offset =
+                                        Some((current_row - first_row, current_col - first_col));
                                 }
                             }
                         }
@@ -2017,24 +2102,32 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                     && (props.formula || selection.is_none())),
                                             num_fmt: num_fmt.clone(),
                                         };
-                                        cells_max =
-                                            Some(cells_max.map_or(at, |(mr, mc)| {
-                                                (mr.max(at.0), mc.max(at.1))
-                                            }));
-                                        if !skip_current_sheet {
-                                            sink.cell(sheets.len() as u16, at, cell);
+                                        // Of a run of repeated cells `LibreOffice` calculates the first one only.
+                                        if !skip_current_sheet
+                                            && c == 0
+                                            && formula_for_cell.is_some()
+                                            && !reads_external
+                                            && recalculated_on_load(&OnLoad {
+                                                kind: result_kind,
+                                                error: is_error_cell,
+                                                array: in_array || is_matrix_array,
+                                                past_columns: current_col >= declared_columns,
+                                                own_style: !style_name.is_empty(),
+                                                formatted: formatted_styles.contains(format_style),
+                                            })
+                                        {
+                                            sink.recalculated_on_load(sheets.len() as u16, at);
+                                            finished |= !sink.wants_more();
                                         }
-
-                                        // Update used_range for any inserted cell (value, formula, or style)
-                                        let row_pos = current_row + r;
-                                        let col_pos = current_col + c;
-                                        if let Some((max_row, max_col)) = sheet.used_range {
-                                            sheet.used_range = Some((
-                                                max_row.max(row_pos + 1),
-                                                max_col.max(col_pos + 1),
-                                            ));
-                                        } else {
-                                            sheet.used_range = Some((row_pos + 1, col_pos + 1));
+                                        if !skip_current_sheet {
+                                            if let Some((dr, dc)) = array_offset {
+                                                sink.array_member(
+                                                    sheets.len() as u16,
+                                                    at,
+                                                    (dr + r, dc + c),
+                                                );
+                                            }
+                                            sink.cell(sheets.len() as u16, at, cell);
                                         }
                                     }
                                 }
@@ -2057,29 +2150,35 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         let mut style_name = String::new();
                         let mut is_matrix_array = false;
 
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                "table:number-columns-repeated" => {
-                                    col_repeated = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                        for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                            match key {
+                                b"table:number-columns-repeated" => {
+                                    col_repeated =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:number-columns-spanned" => {
-                                    cols_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                b"table:number-columns-spanned" => {
+                                    cols_spanned =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:number-rows-spanned" => {
-                                    rows_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                b"table:number-rows-spanned" => {
+                                    rows_spanned =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:formula" => {
+                                b"table:formula" => {
                                     formula = Some(if props.formula {
-                                        native_formula(&attr_value(&attr)?, &mut external_workbooks)
+                                        native_formula(
+                                            &xml::attr_value(raw)?,
+                                            &mut external_workbooks,
+                                        )
                                     } else {
                                         String::new()
                                     });
                                 }
-                                "table:style-name" => {
-                                    style_name = attr_value(&attr)?.into_owned();
+                                b"table:style-name" => {
+                                    style_name = xml::attr_value(raw)?.into_owned();
                                 }
-                                "table:number-matrix-columns-spanned" => {
-                                    let v = attr_value(&attr)?.parse::<u32>().unwrap_or(0);
+                                b"table:number-matrix-columns-spanned" => {
+                                    let v = xml::attr_value(raw)?.parse::<u32>().unwrap_or(0);
                                     if v > 0 {
                                         is_matrix_array = true;
                                     }
@@ -2161,24 +2260,8 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                 && (props.formula || selection.is_none()),
                                             num_fmt: num_fmt.clone(),
                                         };
-                                        cells_max =
-                                            Some(cells_max.map_or(at, |(mr, mc)| {
-                                                (mr.max(at.0), mc.max(at.1))
-                                            }));
                                         if !skip_current_sheet {
                                             sink.cell(sheets.len() as u16, at, cell);
-                                        }
-
-                                        // Update used_range for any inserted cell (formula or style)
-                                        let row_pos = current_row + r;
-                                        let col_pos = current_col + c;
-                                        if let Some((max_row, max_col)) = sheet.used_range {
-                                            sheet.used_range = Some((
-                                                max_row.max(row_pos + 1),
-                                                max_col.max(col_pos + 1),
-                                            ));
-                                        } else {
-                                            sheet.used_range = Some((row_pos + 1, col_pos + 1));
                                         }
                                     }
                                 }
@@ -2265,43 +2348,11 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         if e.name().as_ref() == "table:table"
                             && let Some(sheet) = current_sheet.as_mut() =>
                     {
-                        sheet.xml_size_bytes = reader.buffer_position() - table_start;
+                        sheet.xml_size_bytes = lexer.position() - table_start;
                         in_table = false;
                         if wanted.take().is_some() {
                             remaining = remaining.saturating_sub(1);
                             finished = remaining == 0;
-                        }
-
-                        // Calculate used range for the sheet before finalizing
-                        // This must happen here (not at sheet finalization) because it needs to run
-                        // for ALL sheets, whether they have conditional formatting or not
-                        let cells_range = cells_max;
-
-                        // Merge styled cell tracking with value cells
-                        // Both are already in count format (0-indexed position + 1)
-                        sheet.used_range = match (sheet.used_range, cells_range) {
-                            (Some((s_row, s_col)), Some((c_row, c_col))) => {
-                                Some((s_row.max(c_row), s_col.max(c_col)))
-                            }
-                            (Some(s), None) => Some(s),
-                            (None, Some(c)) => Some(c),
-                            (None, None) => None,
-                        };
-
-                        // Include hidden rows/columns in used_range for format parity
-                        // Both ODS and XLSX should report ALL empty rows/columns (visible or hidden)
-                        if let Some((mut rows, mut cols)) = sheet.used_range {
-                            if let Some(max_hidden_row) =
-                                sheet.hidden_rows.iter().map(|&(_, end)| end).max()
-                            {
-                                rows = rows.max(max_hidden_row + 1);
-                            }
-                            if let Some(max_hidden_col) =
-                                sheet.hidden_columns.iter().map(|&(_, end)| end).max()
-                            {
-                                cols = cols.max(max_hidden_col + 1);
-                            }
-                            sheet.used_range = Some((rows, cols));
                         }
                     }
 
@@ -2435,7 +2486,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                     Event::Eof => break,
                     _ => {}
                 }
-                buf.clear();
                 if finished {
                     break;
                 }
@@ -2498,8 +2548,161 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
     }
 }
 
+/// What of `content.xml` the names need: the start and end tags of each table (a name written in one belongs to its sheet) and the
+/// blocks `table:named-expressions` and `table:database-ranges`, found by searching the bytes of the document as they are inflated,
+/// with no XML event for the cells that make nearly all of it. The document that results is read by the reader of the names as
+/// the real one is. `None` when the archive has no `content.xml`.
+fn names_skeleton(
+    archive: &mut ZipArchive<impl std::io::Read + std::io::Seek>,
+) -> Result<Option<Vec<u8>>> {
+    use std::io::Read as _;
+    const PATTERNS: [&str; 7] = [
+        "<table:table ",
+        "<table:table>",
+        "</table:table>",
+        "<table:named-expressions",
+        "</table:named-expressions>",
+        "<table:database-ranges",
+        "</table:database-ranges>",
+    ];
+    let Ok(mut content) = archive.by_name("content.xml") else {
+        return Ok(None);
+    };
+    let finder = aho_corasick::AhoCorasick::new(PATTERNS).expect("literal patterns");
+    let longest = PATTERNS.iter().map(|p| p.len()).max().unwrap_or(1);
+    let mut out: Vec<u8> = b"<office:document-content><office:body><office:spreadsheet>".to_vec();
+    let mut buffer: Vec<u8> = Vec::new();
+    let mut chunk = vec![0u8; 1 << 20];
+    // Where the search goes on in the buffer, and the start of a block being copied with the pattern that ends it.
+    let mut at = 0usize;
+    let mut block: Option<(usize, usize)> = None;
+    loop {
+        let read = content.read(&mut chunk)?;
+        buffer.extend_from_slice(&chunk[..read]);
+        loop {
+            if let Some((start, end_pattern)) = block {
+                let from = at.max(start);
+                let end = finder
+                    .find(&buffer[from..])
+                    .filter(|m| m.pattern().as_usize() == end_pattern);
+                let Some(found) = end else {
+                    at = buffer.len().saturating_sub(PATTERNS[end_pattern].len());
+                    break;
+                };
+                let to = from + found.end();
+                out.extend_from_slice(&buffer[start..to]);
+                at = to;
+                block = None;
+                continue;
+            }
+            let Some(found) = finder.find(&buffer[at..]) else {
+                at = buffer.len().saturating_sub(longest);
+                break;
+            };
+            let (start, after) = (at + found.start(), at + found.end());
+            let pattern = found.pattern().as_usize();
+            match pattern {
+                2 => {
+                    out.extend_from_slice(b"</table:table>");
+                    at = after;
+                }
+                // A start tag: it ends at the next `>`, and the element ends with it when that comes after a `/`.
+                0 | 1 | 3 | 5 => {
+                    let Some(close) = buffer[after..].iter().position(|&b| b == b'>') else {
+                        at = start;
+                        break;
+                    };
+                    let tag_end = after + close + 1;
+                    let self_closing = buffer[tag_end - 2] == b'/';
+                    if matches!(pattern, 0 | 1) || self_closing {
+                        out.extend_from_slice(&buffer[start..tag_end]);
+                    } else {
+                        block = Some((start, pattern + 1));
+                    }
+                    at = tag_end;
+                }
+                _ => at = after,
+            }
+        }
+        // What is behind the search (and the block being copied) is not needed again.
+        let keep = block.map_or(at, |(start, _)| start).min(at);
+        buffer.drain(..keep);
+        at -= keep;
+        block = block.map(|(start, end)| (start - keep, end));
+        if read == 0 {
+            break;
+        }
+    }
+    out.extend_from_slice(b"</office:spreadsheet></office:body></office:document-content>");
+    Ok(Some(out))
+}
+
 /// The sheet of a cell address such as `$'Q1.2024'.A1:.B3` (a quoted name can hold dots and
 /// doubled quotes), `None` when it names none.
+/// The type of the result an ODS formula caches (`office:value-type`), as far as `LibreOffice` tells them apart when it opens the file.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CachedKind {
+    /// `string`.
+    Text,
+    /// `percentage`.
+    Percentage,
+    /// `boolean`.
+    Boolean,
+    /// `time`.
+    Time,
+    /// `float`, `currency`, `date`.
+    Number,
+    /// No `office:value-type` (or a type that is none of the above).
+    Untyped,
+}
+
+/// What decides whether `LibreOffice` calculates an ODS formula cell when it opens the file.
+#[allow(clippy::struct_excessive_bools)] // independent facts of the cell, read together by one rule
+struct OnLoad {
+    kind: CachedKind,
+    /// The cached result is an error (`calcext:value-type="error"`).
+    error: bool,
+    /// The cell is part of an array formula (`table:number-matrix-columns-spanned`, or a cell it covers).
+    array: bool,
+    /// The cell is in a column the table does not declare (`table:table-column`).
+    past_columns: bool,
+    /// The cell names a style of its own (`table:style-name`), whatever it holds.
+    own_style: bool,
+    /// The default style of its row (else of its column) carries a number format that is not General.
+    formatted: bool,
+}
+
+/// Whether `LibreOffice` 26.8 calculates the formula cell of an ODS when it opens the file, instead of showing the result the
+/// file caches. OBSERVED, by patching stale results into the cells of files of several generators and versions (`write_to/probe_ods_recalculation.py`):
+/// the generator and the version of the document do not matter, the cell does:
+///
+/// * a cached error, a cell of an array formula and one whose result has no type are always calculated;
+/// * a cached text is always kept (whatever the formula gives);
+/// * in a column the table does not declare, every other type is calculated;
+/// * a cell with a style of its own keeps its result, and one that takes the default of its row or column keeps it when that
+///   style has a number format that is not General;
+/// * a formula that reads another workbook is left out: the engine cannot calculate it, so it keeps its result, which is the stored
+///   value of the link that `LibreOffice` shows (`sheetrs-compiler/docs/FIDELITY.md`, *What depends on what the engine cannot calculate*);
+/// * a cell with no format (General): `float`, `currency` and `date` are calculated, `percentage`, `boolean` and `time` are kept.
+fn recalculated_on_load(cell: &OnLoad) -> bool {
+    if cell.error || cell.array || cell.kind == CachedKind::Untyped {
+        return true;
+    }
+    if cell.kind == CachedKind::Text {
+        return false;
+    }
+    if cell.past_columns {
+        return true;
+    }
+    if cell.own_style || cell.formatted {
+        return false;
+    }
+    !matches!(
+        cell.kind,
+        CachedKind::Percentage | CachedKind::Boolean | CachedKind::Time
+    )
+}
+
 fn sheet_of_address(address: &str) -> Option<String> {
     let rest = address.strip_prefix('$').unwrap_or(address);
     if let Some(quoted) = rest.strip_prefix('\'') {
@@ -2883,6 +3086,21 @@ mod tests {
         }
     }
 
+    /// A reference with one end that went is read keeping the end that is there.
+    #[test]
+    fn a_reference_with_an_end_that_went_keeps_the_other_end() {
+        let mut externals = Vec::new();
+        let mut read = |f: &str| normalize_ods_reference(f, false, Some("S"), &mut externals);
+        assert_eq!(read("of:=SUM([$Data.A1:.#REF!])"), "SUM(Data!A1:#REF!)");
+        assert_eq!(read("of:=COUNTA([.A1:.#REF!])"), "COUNTA(A1:#REF!)");
+        // An end that went at the start is the whole reference that went (`[#REF!:.B2]` is `COUNTA` 1 in both).
+        assert_eq!(read("of:=COUNTA([#REF!:.B2])"), "COUNTA(#REF!)");
+        assert_eq!(
+            read("of:=COUNTA([$Data.#REF!:.B2])"),
+            "COUNTA(Data!#REF!:B2)"
+        );
+    }
+
     #[test]
     fn a_reference_that_is_gone_is_a_ref_error_and_not_an_external_workbook() {
         let mut externals = Vec::new();
@@ -3141,6 +3359,21 @@ mod tests {
     }
 
     #[test]
+    fn a_formula_that_is_one_decimal_number_stays_that_number() {
+        for number in ["1.5", "0.25", "12345.678", "1234567.891"] {
+            assert_eq!(
+                normalize_ods_reference(&format!("of:={number}"), false, None, &mut Vec::new()),
+                number
+            );
+        }
+        // A reference to a cell of a sheet is still the cell.
+        assert_eq!(
+            normalize_ods_reference("of:=Sheet1.A1", false, None, &mut Vec::new()),
+            "A1"
+        );
+    }
+
+    #[test]
     fn test_normalize_ods_reference_sheet() {
         assert_eq!(
             normalize_ods_reference("of:=[$Sheet1.A1]*2", false, None, &mut Vec::new()),
@@ -3380,6 +3613,42 @@ mod tests {
         assert_eq!(external_paths("of:=['#Sheet1.A1]"), ["'"]);
     }
 
+    /// The names read from the skeleton of the document (the tables and the blocks of names, searched in the bytes) are the ones the
+    /// full reading finds, whatever the size of the cells between them (the search crosses the pieces the file is inflated in).
+    #[test]
+    fn the_names_read_from_the_skeleton_are_the_names_of_the_full_reading() {
+        use std::io::Write;
+        let cells = "<table:table-row><table:table-cell office:value-type=\"float\" office:value=\"1\"><text:p>1</text:p></table:table-cell></table:table-row>\n";
+        for padding in [0usize, 1, 7, 50_000, 2_500_000] {
+            let filler = cells.repeat(padding / cells.len() + 1);
+            let content = format!(
+                r#"<?xml version="1.0"?><office:document-content xmlns:office="o" xmlns:table="t" xmlns:text="x"><office:body><office:spreadsheet>
+<table:table table:name="A"><table:table-column/>{filler}<table:named-expressions><table:named-expression table:name="L" table:base-cell-address="$A.$A$1" table:expression="of:=1"/></table:named-expressions></table:table>
+<table:table table:name="B"/>
+<table:table table:name="C"><table:table-row><table:table-cell/></table:table-row></table:table>
+<table:named-expressions><table:named-range table:name="Own" table:base-cell-address="$A.$A$1" table:cell-range-address="$A.$A$1:.$A$2"/></table:named-expressions>
+<table:database-ranges><table:database-range table:name="db" table:target-range-address="A.A1:A.B2"/></table:database-ranges>
+</office:spreadsheet></office:body></office:document-content>"#
+            );
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            zip.start_file("content.xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(content.as_bytes()).unwrap();
+            let bytes = zip.finish().unwrap().into_inner();
+            let mut archive = ZipArchive::new(std::io::Cursor::new(bytes.clone())).unwrap();
+            let fast = OdsReader::new(&mut archive)
+                .unwrap()
+                .read_defined_names()
+                .unwrap();
+            let mut archive = ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+            let mut full = OdsReader::new(&mut archive).unwrap();
+            full.read_sheets().unwrap();
+            let full = full.read_defined_names().unwrap();
+            assert_eq!(fast, full, "padding {padding}");
+            assert_eq!(fast.len(), 3, "padding {padding}: {fast:?}");
+        }
+    }
+
     #[test]
     fn a_name_in_two_sheets_or_in_a_sheet_and_the_document_is_a_conflict_in_ods() {
         use std::io::Write;
@@ -3549,7 +3818,8 @@ mod tests {
         let sheet = &sheets[0];
         assert_eq!(sheet.hidden_columns, vec![(0, 2)]);
         assert_eq!(sheet.hidden_rows, vec![(1, 2), (3, 1_048_575)]);
-        assert_eq!(sheet.used_range, Some((1_048_576, 3)));
+        // Hidden rows and columns do not make the used area: only the value at A1 does.
+        assert_eq!(sheet.used_area, Some(crate::reader::UsedArea::at(0, 0)));
     }
 
     #[test]
@@ -3683,6 +3953,42 @@ mod tests {
             sheet.cells.get(&(0, 2)).unwrap().value,
             CellValue::Number(3.0)
         );
+    }
+
+    #[test]
+    fn empty_paragraphs_of_an_ods_cell_are_line_breaks() {
+        use std::io::Cursor;
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            zip.start_file("content.xml", options).unwrap();
+            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+    <office:body><office:spreadsheet>
+        <table:table table:name="Sheet1">
+            <table:table-row>
+                <table:table-cell office:value-type="string"><text:p>a</text:p><text:p/></table:table-cell>
+                <table:table-cell office:value-type="string"><text:p/><text:p>a</text:p></table:table-cell>
+                <table:table-cell office:value-type="string"><text:p>a</text:p><text:p/><text:p/></table:table-cell>
+                <table:table-cell office:value-type="string"><text:p/></table:table-cell>
+            </table:table-row>
+        </table:table>
+    </office:spreadsheet></office:body>
+</office:document-content>"#).unwrap();
+            zip.finish().unwrap();
+        }
+        let mut archive = ZipArchive::new(Cursor::new(buf)).unwrap();
+        let sheets = OdsReader::new(&mut archive).unwrap().read_sheets().unwrap();
+        let text = |col| sheets[0].cells.get(&(0, col)).unwrap().value.clone();
+        assert_eq!(text(0), CellValue::Text(Arc::from("a\n")));
+        assert_eq!(text(1), CellValue::Text(Arc::from("\na")));
+        assert_eq!(text(2), CellValue::Text(Arc::from("a\n\n")));
+        assert_eq!(text(3), CellValue::Text(Arc::from("")));
     }
 }
 
