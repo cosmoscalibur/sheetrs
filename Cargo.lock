@@ -2344,6 +2344,7 @@ dependencies = [
  "aho-corasick",
  "anyhow",
  "chrono",
+ "memchr",
  "quick-xml 0.42.0",
  "regex",
  "serde",

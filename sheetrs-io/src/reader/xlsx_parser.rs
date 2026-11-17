@@ -1,6 +1,7 @@
 //! XML parsing utilities for extracting metadata from XLSX files
 
 use crate::error::{Context, Error, Result};
+use crate::xml::{self, Lexer, Token};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use sheetrs_formula::DateSystem;
@@ -1384,10 +1385,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
         let sheet_xml = self.archive.by_name(path)?;
         // A cell takes at least 16 bytes of XML (`<c r="A1" s="1"/>`): a bound for the sink's hint.
         let max_cells = (sheet_xml.size() / 16) as usize;
-        let mut reader = Reader::from_reader(BufReader::new(sheet_xml));
-        reader.config_mut().trim_text(false);
-
-        let mut buf = Vec::new();
+        let mut lexer = Lexer::new(sheet_xml);
         let mut scratch = CellScratch::default();
         // The ranges of the array formulas met in the sheet, with their formula.
         type ArrayRange = ((u32, u32, u32, u32), String);
@@ -1396,68 +1394,22 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
         let mut current_col = 0u32;
 
         loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(e) => match e.name().as_ref() {
-                    "dimension" => {
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            if attr.key.as_ref() == "ref" {
-                                let ref_str = attr_value(&attr)?;
-                                if let Some((_, _, end_row, end_col)) = parse_cell_range(&ref_str) {
-                                    // defined range is inclusive, so count is index + 1
-                                    dim_range = Some((end_row + 1, end_col + 1));
-                                } else if let Some((end_row, end_col)) = parse_cell_ref(&ref_str) {
-                                    // Single cell ref used as dimension? Rare but possible.
-                                    dim_range = Some((end_row + 1, end_col + 1));
-                                }
-                                if let Some((rows, cols)) = dim_range {
-                                    sink.hint(
-                                        sheet_index,
-                                        (rows as usize)
-                                            .saturating_mul(cols as usize)
-                                            .min(max_cells),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    "col" => {
-                        let mut min = 0u32;
-                        let mut max = 0u32;
-                        let mut hidden = false;
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            match attr.key.as_ref() {
-                                "min" => {
-                                    min = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
-                                }
-                                "max" => {
-                                    max = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
-                                }
-                                "hidden" => {
-                                    hidden = attr.value == "1" || attr.value == "true";
-                                }
-                                _ => {}
-                            }
-                        }
-                        if hidden && min <= max {
-                            hidden_columns.push((min, max));
-                        }
-                    }
-                    "row" => {
+            match lexer.token()? {
+                Token::Start(tag) => match tag.name() {
+                    b"row" => {
                         if dim_range.is_none() && !hinted {
                             // No `<dimension>` (openpyxl omits it): size by the XML, ~32 bytes a cell.
                             hinted = true;
                             sink.hint(sheet_index, max_cells / 2);
                         }
                         let mut hidden = false;
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            match attr.key.as_ref() {
-                                "r" => {
+                        for (key, raw) in tag.attributes() {
+                            match key {
+                                b"r" => {
                                     current_row =
-                                        attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
+                                        xml::attr_value(raw)?.parse::<u32>()?.saturating_sub(1);
                                 }
-                                "hidden" => {
-                                    hidden = attr.value == "1" || attr.value == "true";
-                                }
+                                b"hidden" => hidden = raw == b"1" || raw == b"true",
                                 _ => {}
                             }
                         }
@@ -1473,26 +1425,28 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                             break;
                         }
                     }
-                    "c" => {
-                        let mut r_attr: std::borrow::Cow<str> = std::borrow::Cow::Borrowed("");
+                    b"c" => {
+                        // What the tag says is kept before the cell is read: the tag borrows the lexer.
                         let mut s_attr = None;
-                        let mut t_attr: std::borrow::Cow<str> = std::borrow::Cow::Borrowed("");
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            match attr.key.as_ref() {
-                                "r" => r_attr = attr_value(&attr)?,
-                                "s" => s_attr = Some(attr_value(&attr)?.parse::<usize>()?),
-                                "t" => t_attr = attr_value(&attr)?,
+                        scratch.r.clear();
+                        scratch.t.clear();
+                        for (key, raw) in tag.attributes() {
+                            match key {
+                                b"r" => scratch.r.push_str(&xml::attr_value(raw)?),
+                                b"s" => s_attr = Some(xml::attr_value(raw)?.parse::<usize>()?),
+                                b"t" => scratch.t.push_str(&xml::attr_value(raw)?),
                                 _ => {}
                             }
                         }
+                        let t_attr = std::mem::take(&mut scratch.t);
 
-                        let (row, col) = if r_attr.is_empty() {
+                        let (row, col) = if scratch.r.is_empty() {
                             let c = current_col;
                             current_col += 1;
                             (current_row, c)
                         } else {
                             let (r, c) =
-                                parse_cell_ref(&r_attr).unwrap_or((current_row, current_col));
+                                parse_cell_ref(&scratch.r).unwrap_or((current_row, current_col));
                             current_col = c + 1;
                             (r, c)
                         };
@@ -1502,8 +1456,8 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         // as a shared formula of this one.
                         let in_window = selected.is_none_or(|wanted| wanted.contains(row, col));
                         if !in_window && !props.formula {
-                            reader.read_to_end_into(e.name(), &mut scratch.events)?;
-                            buf.clear();
+                            scratch.t = t_attr;
+                            lexer.skip_element()?;
                             continue;
                         }
 
@@ -1515,7 +1469,7 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
 
                         let (value, mut formula, shared_si, shared_ref, is_array_formula) =
                             parse_cell_contents(
-                                &mut reader,
+                                &mut lexer,
                                 &mut scratch,
                                 props,
                                 &t_attr,
@@ -1598,8 +1552,8 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                             }
                         }
 
+                        scratch.t = t_attr;
                         if !in_window {
-                            buf.clear();
                             continue;
                         }
                         let mut cell = Cell {
@@ -1622,178 +1576,239 @@ impl<R: std::io::Read + std::io::Seek> XlsxReader<'_, R> {
                         }
                         sink.cell(sheet_index, (row, col), cell);
                     }
-                    "autoFilter" => {
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            if attr.key.as_ref() == "ref"
-                                && let Some((first, _, last, _)) =
-                                    parse_cell_range(&attr_value(&attr)?)
-                            {
-                                auto_filter = Some((first, last));
-                            }
-                        }
-                    }
-                    "mergeCell" => {
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            if attr.key.as_ref() == "ref" {
-                                let ref_str = attr_value(&attr)?;
-                                if let Some(range) = parse_cell_range(&ref_str) {
-                                    merged_cells.push(range);
+                    _ => {
+                        let e = tag.to_start()?;
+                        match e.name().as_ref() {
+                            "dimension" => {
+                                for attr in e.attributes().with_checks(false).flatten() {
+                                    if attr.key.as_ref() == "ref" {
+                                        let ref_str = attr_value(&attr)?;
+                                        if let Some((_, _, end_row, end_col)) =
+                                            parse_cell_range(&ref_str)
+                                        {
+                                            // defined range is inclusive, so count is index + 1
+                                            dim_range = Some((end_row + 1, end_col + 1));
+                                        } else if let Some((end_row, end_col)) =
+                                            parse_cell_ref(&ref_str)
+                                        {
+                                            // Single cell ref used as dimension? Rare but possible.
+                                            dim_range = Some((end_row + 1, end_col + 1));
+                                        }
+                                        if let Some((rows, cols)) = dim_range {
+                                            sink.hint(
+                                                sheet_index,
+                                                (rows as usize)
+                                                    .saturating_mul(cols as usize)
+                                                    .min(max_cells),
+                                            );
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
-                    "cfRule" => {
-                        cf_count += 1;
-                    }
-                    "conditionalFormatting" => {
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            if attr.key.as_ref() == "sqref" {
-                                let sqref = attr_value(&attr)?;
-                                cf_ranges.push(sqref.to_string());
+                            "col" => {
+                                let mut min = 0u32;
+                                let mut max = 0u32;
+                                let mut hidden = false;
+                                for attr in e.attributes().with_checks(false).flatten() {
+                                    match attr.key.as_ref() {
+                                        "min" => {
+                                            min = attr_value(&attr)?
+                                                .parse::<u32>()?
+                                                .saturating_sub(1);
+                                        }
+                                        "max" => {
+                                            max = attr_value(&attr)?
+                                                .parse::<u32>()?
+                                                .saturating_sub(1);
+                                        }
+                                        "hidden" => {
+                                            hidden = attr.value == "1" || attr.value == "true";
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                if hidden && min <= max {
+                                    hidden_columns.push((min, max));
+                                }
                             }
-                        }
-                    }
+                            "autoFilter" => {
+                                for attr in e.attributes().with_checks(false).flatten() {
+                                    if attr.key.as_ref() == "ref"
+                                        && let Some((first, _, last, _)) =
+                                            parse_cell_range(&attr_value(&attr)?)
+                                    {
+                                        auto_filter = Some((first, last));
+                                    }
+                                }
+                            }
+                            "mergeCell" => {
+                                for attr in e.attributes().with_checks(false).flatten() {
+                                    if attr.key.as_ref() == "ref" {
+                                        let ref_str = attr_value(&attr)?;
+                                        if let Some(range) = parse_cell_range(&ref_str) {
+                                            merged_cells.push(range);
+                                        }
+                                    }
+                                }
+                            }
+                            "cfRule" => {
+                                cf_count += 1;
+                            }
+                            "conditionalFormatting" => {
+                                for attr in e.attributes().with_checks(false).flatten() {
+                                    if attr.key.as_ref() == "sqref" {
+                                        let sqref = attr_value(&attr)?;
+                                        cf_ranges.push(sqref.to_string());
+                                    }
+                                }
+                            }
 
-                    _ => {}
+                            _ => {}
+                        }
+                    }
                 },
-                Event::Empty(e) => match e.name().as_ref() {
-                    "dimension" => {
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            if attr.key.as_ref() == "ref" {
-                                let ref_str = attr_value(&attr)?;
-                                if let Some((_, _, end_row, end_col)) = parse_cell_range(&ref_str) {
-                                    dim_range = Some((end_row + 1, end_col + 1));
-                                } else if let Some((end_row, end_col)) = parse_cell_ref(&ref_str) {
-                                    dim_range = Some((end_row + 1, end_col + 1));
+                Token::Empty(tag) => {
+                    let e = tag.to_start()?;
+                    match e.name().as_ref() {
+                        "dimension" => {
+                            for attr in e.attributes().with_checks(false).flatten() {
+                                if attr.key.as_ref() == "ref" {
+                                    let ref_str = attr_value(&attr)?;
+                                    if let Some((_, _, end_row, end_col)) =
+                                        parse_cell_range(&ref_str)
+                                    {
+                                        dim_range = Some((end_row + 1, end_col + 1));
+                                    } else if let Some((end_row, end_col)) =
+                                        parse_cell_ref(&ref_str)
+                                    {
+                                        dim_range = Some((end_row + 1, end_col + 1));
+                                    }
                                 }
                             }
                         }
-                    }
-                    "col" => {
-                        let mut min = 0u32;
-                        let mut max = 0u32;
-                        let mut hidden = false;
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            match attr.key.as_ref() {
-                                "min" => {
-                                    min = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
+                        "col" => {
+                            let mut min = 0u32;
+                            let mut max = 0u32;
+                            let mut hidden = false;
+                            for attr in e.attributes().with_checks(false).flatten() {
+                                match attr.key.as_ref() {
+                                    "min" => {
+                                        min = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
+                                    }
+                                    "max" => {
+                                        max = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
+                                    }
+                                    "hidden" => {
+                                        hidden = attr.value == "1" || attr.value == "true";
+                                    }
+                                    _ => {}
                                 }
-                                "max" => {
-                                    max = attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
-                                }
-                                "hidden" => {
-                                    hidden = attr.value == "1" || attr.value == "true";
-                                }
-                                _ => {}
+                            }
+                            if hidden && min <= max {
+                                hidden_columns.push((min, max));
                             }
                         }
-                        if hidden && min <= max {
-                            hidden_columns.push((min, max));
-                        }
-                    }
-                    "c" => {
-                        let mut r_attr = String::new();
-                        let mut s_attr = None;
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            match attr.key.as_ref() {
-                                "r" => r_attr = attr_value(&attr)?.into_owned(),
-                                "s" => s_attr = Some(attr_value(&attr)?.parse::<usize>()?),
-                                _ => {}
-                            }
-                        }
-                        let (row, col) = if r_attr.is_empty() {
-                            let c = current_col;
-                            current_col += 1;
-                            (current_row, c)
-                        } else {
-                            let (r, c) =
-                                parse_cell_ref(&r_attr).unwrap_or((current_row, current_col));
-                            current_col = c + 1;
-                            (r, c)
-                        };
-                        // A cell with nothing but a format holds nothing unless the format is wanted.
-                        if props.number_format
-                            && selected.is_none_or(|wanted| wanted.contains(row, col))
-                        {
-                            let num_fmt = s_attr.and_then(|idx| self.styles.get(idx).cloned());
-                            sink.cell(
-                                sheet_index,
-                                (row, col),
-                                Cell {
-                                    value: CellValue::Empty,
-                                    formula: None,
-                                    is_array: false,
-                                    num_fmt,
-                                },
-                            );
-                        }
-                    }
-                    "row" => {
-                        // Empty row tag
-                        let mut hidden = false;
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            match attr.key.as_ref() {
-                                "r" => {
-                                    current_row =
-                                        attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
+                        "c" => {
+                            let mut r_attr = String::new();
+                            let mut s_attr = None;
+                            for attr in e.attributes().with_checks(false).flatten() {
+                                match attr.key.as_ref() {
+                                    "r" => r_attr = attr_value(&attr)?.into_owned(),
+                                    "s" => s_attr = Some(attr_value(&attr)?.parse::<usize>()?),
+                                    _ => {}
                                 }
-                                "hidden" => {
-                                    hidden = attr.value == "1" || attr.value == "true";
-                                }
-                                _ => {}
                             }
-                        }
-                        if hidden {
-                            hidden_rows.push((current_row, current_row));
-                        }
-                        current_col = 0;
-                        if selected.is_some_and(|wanted| {
-                            current_row > wanted.last_row && !wanted.filtered_rows
-                        }) {
-                            break;
-                        }
-                    }
-                    "autoFilter" => {
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            if attr.key.as_ref() == "ref"
-                                && let Some((first, _, last, _)) =
-                                    parse_cell_range(&attr_value(&attr)?)
+                            let (row, col) = if r_attr.is_empty() {
+                                let c = current_col;
+                                current_col += 1;
+                                (current_row, c)
+                            } else {
+                                let (r, c) =
+                                    parse_cell_ref(&r_attr).unwrap_or((current_row, current_col));
+                                current_col = c + 1;
+                                (r, c)
+                            };
+                            // A cell with nothing but a format holds nothing unless the format is wanted.
+                            if props.number_format
+                                && selected.is_none_or(|wanted| wanted.contains(row, col))
                             {
-                                auto_filter = Some((first, last));
+                                let num_fmt = s_attr.and_then(|idx| self.styles.get(idx).cloned());
+                                sink.cell(
+                                    sheet_index,
+                                    (row, col),
+                                    Cell {
+                                        value: CellValue::Empty,
+                                        formula: None,
+                                        is_array: false,
+                                        num_fmt,
+                                    },
+                                );
                             }
                         }
-                    }
-                    "mergeCell" => {
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            if attr.key.as_ref() == "ref" {
-                                let ref_str = attr_value(&attr)?;
-                                if let Some(range) = parse_cell_range(&ref_str) {
-                                    merged_cells.push(range);
+                        "row" => {
+                            // Empty row tag
+                            let mut hidden = false;
+                            for attr in e.attributes().with_checks(false).flatten() {
+                                match attr.key.as_ref() {
+                                    "r" => {
+                                        current_row =
+                                            attr_value(&attr)?.parse::<u32>()?.saturating_sub(1);
+                                    }
+                                    "hidden" => {
+                                        hidden = attr.value == "1" || attr.value == "true";
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if hidden {
+                                hidden_rows.push((current_row, current_row));
+                            }
+                            current_col = 0;
+                            if selected.is_some_and(|wanted| {
+                                current_row > wanted.last_row && !wanted.filtered_rows
+                            }) {
+                                break;
+                            }
+                        }
+                        "autoFilter" => {
+                            for attr in e.attributes().with_checks(false).flatten() {
+                                if attr.key.as_ref() == "ref"
+                                    && let Some((first, _, last, _)) =
+                                        parse_cell_range(&attr_value(&attr)?)
+                                {
+                                    auto_filter = Some((first, last));
                                 }
                             }
                         }
-                    }
-                    "cfRule" => {
-                        cf_count += 1;
-                    }
-                    "conditionalFormatting" => {
-                        for attr in e.attributes().with_checks(false).flatten() {
-                            if attr.key.as_ref() == "sqref" {
-                                let sqref = attr_value(&attr)?;
-                                // Strict normalization reverted to preserve original format (e.g. A1 instead of A1:A1):
-                                cf_ranges.push(sqref.into_owned());
+                        "mergeCell" => {
+                            for attr in e.attributes().with_checks(false).flatten() {
+                                if attr.key.as_ref() == "ref" {
+                                    let ref_str = attr_value(&attr)?;
+                                    if let Some(range) = parse_cell_range(&ref_str) {
+                                        merged_cells.push(range);
+                                    }
+                                }
                             }
                         }
+                        "cfRule" => {
+                            cf_count += 1;
+                        }
+                        "conditionalFormatting" => {
+                            for attr in e.attributes().with_checks(false).flatten() {
+                                if attr.key.as_ref() == "sqref" {
+                                    let sqref = attr_value(&attr)?;
+                                    // Strict normalization reverted to preserve original format (e.g. A1 instead of A1:A1):
+                                    cf_ranges.push(sqref.into_owned());
+                                }
+                            }
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                },
-                Event::End(e) if e.name().as_ref() == "worksheet" => {
-                    break;
                 }
-                Event::Eof => break,
+                Token::End(name) if name == b"worksheet" => break,
+                Token::Eof => break,
                 _ => {}
             }
-            buf.clear();
         }
 
         // The rows hidden inside the autofilter are the ones it filtered out (`LibreOffice` takes them
@@ -1827,40 +1842,37 @@ type ParsedCellData = (CellValue, Option<String>, Option<u32>, Option<String>, b
 /// buffer made for each one is most of what the reader allocates.
 #[derive(Default)]
 struct CellScratch {
-    /// Events inside a value or formula element.
-    inner: Vec<u8>,
-    /// Events of the cell itself.
-    events: Vec<u8>,
+    /// The reference (`r`) of the cell the lexer is in.
+    r: String,
+    /// Its type (`t`).
+    t: String,
     /// Text of the value (`<v>`).
     value: String,
     /// Text of the formula (`<f>`).
     formula: String,
 }
 
-/// Reads the text of the element the reader is in, up to its end, into `text` (which is cleared
-/// first), the way [`read_text_node`] does but with buffers the caller keeps.
-fn read_text_into<R: std::io::BufRead>(
-    reader: &mut Reader<R>,
-    buf: &mut Vec<u8>,
-    text: &mut String,
-) -> Result<()> {
+/// Reads the text of the element the lexer is in, up to the first end tag, into `text` (which is
+/// cleared first), the way [`read_text_node`] does but with a buffer the caller keeps.
+fn read_text_into<R: std::io::Read>(lexer: &mut Lexer<R>, text: &mut String) -> Result<()> {
     text.clear();
-    buf.clear();
     loop {
-        match reader.read_event_into(buf)? {
-            Event::Text(e) => text.push_str(&e),
-            Event::CData(e) => text.push_str(&e),
-            Event::GeneralRef(e) => push_general_ref(text, &e)?,
-            Event::End(_) | Event::Eof => break,
+        match lexer.token()? {
+            Token::Text(raw) => {
+                xml::unescape_into(raw, text, push_general_ref)?;
+            }
+            Token::CData(raw) => {
+                text.push_str(std::str::from_utf8(raw).map_err(quick_xml::Error::from)?);
+            }
+            Token::End(_) | Token::Eof => break,
             _ => {}
         }
-        buf.clear();
     }
     Ok(())
 }
 
-fn parse_cell_contents<R: std::io::BufRead>(
-    reader: &mut Reader<R>,
+fn parse_cell_contents<R: std::io::Read>(
+    lexer: &mut Lexer<R>,
     scratch: &mut CellScratch,
     props: Properties,
     t_attr: &str,
@@ -1877,125 +1889,121 @@ fn parse_cell_contents<R: std::io::BufRead>(
     let mut bare_ref = false; // The formula holds a bare `#REF!`.
     let mut has_formula = false; // The cell has an `<f>` element, shared or array ones included.
     let CellScratch {
-        inner,
-        events,
         value: value_text,
         formula: formula_text,
+        ..
     } = scratch;
-    events.clear();
 
     loop {
-        let event = reader.read_event_into(events)?;
-        match event {
-            Event::Start(ref e) | Event::Empty(ref e) => match e.name().as_ref() {
-                "v" => {
-                    if let Event::Start(_) = event {
-                        read_text_into(reader, inner, value_text)?;
-                    } else {
-                        value_text.clear();
-                    }
-                    let v_text = value_text.as_str();
-                    // Typed values ignore surrounding whitespace; text keeps it
-                    let v_typed = v_text.trim();
-                    // A value that is not wanted is not built, except an error: whether a cell
-                    // is one decides what a formula leaves.
-                    if props.value || t_attr == "e" {
-                        value = match t_attr {
-                            "s" => {
-                                let idx = v_typed.parse::<usize>().unwrap_or(0);
-                                CellValue::Text(
-                                    shared_strings
-                                        .get(idx)
-                                        .cloned()
-                                        .unwrap_or_else(|| Arc::from("")),
-                                )
-                            }
-                            "b" => CellValue::Boolean(v_typed == "1"),
-                            // The cached string result of a formula: text even when it
-                            // reads as a number (`"007"`, `"1010"`).
-                            "str" => CellValue::Text(Arc::from(v_text)),
-                            "e" => {
-                                // Store the error value but don't create error cell yet
-                                // We need to check if there's a formula first
-                                potential_error = Some(v_typed.to_string());
-                                CellValue::Empty // Temporary, will be set later if needed
-                            }
-                            _ => {
-                                // A number stays a number whatever its format: a cell formatted
-                                // as Text that holds `<v>7490</v>` is numeric in Excel and
-                                // LibreOffice (text is `t="s"`/`t="str"`).
-                                if let Ok(n) = v_typed.parse::<f64>() {
-                                    CellValue::Number(n)
-                                } else if v_typed.is_empty() {
-                                    // `<v></v>` and `<v/>` hold nothing, as no `<v>` does (a text
-                                    // result is `t="str"`).
-                                    CellValue::Empty
-                                } else {
-                                    CellValue::Text(Arc::from(v_text))
-                                }
-                            }
-                        };
-                    }
+        let (tag, empty) = match lexer.token()? {
+            Token::Start(tag) => (tag, false),
+            Token::Empty(tag) => (tag, true),
+            Token::End(name) if name == b"c" => break,
+            Token::Eof => break,
+            _ => continue,
+        };
+        match tag.name() {
+            b"v" => {
+                if empty {
+                    value_text.clear();
+                } else {
+                    read_text_into(lexer, value_text)?;
                 }
-                "f" => {
-                    has_formula = true;
-                    let mut si = None;
-                    let mut is_shared = false;
-                    for attr in e.attributes().with_checks(false).flatten() {
-                        match attr.key.as_ref() {
-                            "si" => {
-                                si = attr_value(&attr)?.parse::<u32>().ok();
+                let v_text = value_text.as_str();
+                // Typed values ignore surrounding whitespace; text keeps it
+                let v_typed = v_text.trim();
+                // A value that is not wanted is not built, except an error: whether a cell
+                // is one decides what a formula leaves.
+                if props.value || t_attr == "e" {
+                    value = match t_attr {
+                        "s" => {
+                            let idx = v_typed.parse::<usize>().unwrap_or(0);
+                            CellValue::Text(
+                                shared_strings
+                                    .get(idx)
+                                    .cloned()
+                                    .unwrap_or_else(|| Arc::from("")),
+                            )
+                        }
+                        "b" => CellValue::Boolean(v_typed == "1"),
+                        // The cached string result of a formula: text even when it
+                        // reads as a number (`"007"`, `"1010"`).
+                        "str" => CellValue::Text(Arc::from(v_text)),
+                        "e" => {
+                            // Store the error value but don't create error cell yet
+                            // We need to check if there's a formula first
+                            potential_error = Some(v_typed.to_string());
+                            CellValue::Empty // Temporary, will be set later if needed
+                        }
+                        _ => {
+                            // A number stays a number whatever its format: a cell formatted
+                            // as Text that holds `<v>7490</v>` is numeric in Excel and
+                            // LibreOffice (text is `t="s"`/`t="str"`).
+                            if let Ok(n) = v_typed.parse::<f64>() {
+                                CellValue::Number(n)
+                            } else if v_typed.is_empty() {
+                                // `<v></v>` and `<v/>` hold nothing, as no `<v>` does (a text
+                                // result is `t="str"`).
+                                CellValue::Empty
+                            } else {
+                                CellValue::Text(Arc::from(v_text))
                             }
-                            "t" => match attr.value.as_ref() {
-                                "shared" => is_shared = true,
-                                "array" => is_array_formula = true,
-                                _ => {}
-                            },
-                            "ref" if props.formula => {
-                                shared_ref = Some(attr_value(&attr)?.into_owned());
-                            }
+                        }
+                    };
+                }
+            }
+            b"f" => {
+                has_formula = true;
+                let mut si = None;
+                let mut is_shared = false;
+                for (key, raw) in tag.attributes() {
+                    match key {
+                        b"si" => {
+                            si = xml::attr_value(raw)?.parse::<u32>().ok();
+                        }
+                        b"t" => match raw {
+                            b"shared" => is_shared = true,
+                            b"array" => is_array_formula = true,
                             _ => {}
+                        },
+                        b"ref" if props.formula => {
+                            shared_ref = Some(xml::attr_value(raw)?.into_owned());
                         }
-                    }
-
-                    if let Event::Start(_) = event {
-                        read_text_into(reader, inner, formula_text)?;
-                        bare_ref = has_bare_ref_error(formula_text, Notation::Excel);
-                        if props.formula && !formula_text.is_empty() {
-                            formula = Some(formula_text.clone());
-                        }
-                    }
-
-                    if is_shared && props.formula {
-                        shared_si = si;
+                        _ => {}
                     }
                 }
-                "is" => {
-                    // Inline string can have multiple <t> tags
-                    if let Event::Start(_) = event {
-                        let mut is_text = String::new();
-                        let mut is_buf = Vec::new();
-                        loop {
-                            match reader.read_event_into(&mut is_buf)? {
-                                Event::Start(ref ee) if ee.name().as_ref() == "t" => {
-                                    is_text.push_str(&read_text_node(reader)?);
-                                }
-                                Event::End(ref ee) if ee.name().as_ref() == "is" => break,
-                                Event::Eof => break,
-                                _ => {}
-                            }
-                            is_buf.clear();
-                        }
-                        value = CellValue::Text(Arc::from(is_text.as_str()));
+
+                if !empty {
+                    read_text_into(lexer, formula_text)?;
+                    bare_ref = has_bare_ref_error(formula_text, Notation::Excel);
+                    if props.formula && !formula_text.is_empty() {
+                        formula = Some(formula_text.clone());
                     }
                 }
-                _ => {}
-            },
-            Event::End(e) if e.name().as_ref() == "c" => break,
-            Event::Eof => break,
+
+                if is_shared && props.formula {
+                    shared_si = si;
+                }
+            }
+            // Inline string can have multiple <t> tags
+            b"is" if !empty => {
+                let mut is_text = String::new();
+                let mut part = String::new();
+                loop {
+                    match lexer.token()? {
+                        Token::Start(t) if t.name() == b"t" => {
+                            read_text_into(lexer, &mut part)?;
+                            is_text.push_str(&part);
+                        }
+                        Token::End(name) if name == b"is" => break,
+                        Token::Eof => break,
+                        _ => {}
+                    }
+                }
+                value = CellValue::Text(Arc::from(is_text.as_str()));
+            }
             _ => {}
         }
-        events.clear();
     }
 
     // t="e" marks error results, error constants and array error placeholders
@@ -3181,10 +3189,11 @@ mod tests {
     }
 
     fn parse_cell_value(cell_xml: &str, t_attr: &str, num_fmt: Option<&str>) -> CellValue {
-        let mut reader = Reader::from_str(cell_xml);
-        reader.read_event().unwrap();
+        let mut lexer = Lexer::new(cell_xml.as_bytes());
+        // The start tag of the cell.
+        lexer.token().unwrap();
         parse_cell_contents(
-            &mut reader,
+            &mut lexer,
             &mut CellScratch::default(),
             Properties::ALL,
             t_attr,

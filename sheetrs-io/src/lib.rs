@@ -17,6 +17,7 @@ pub mod locale;
 pub mod reader;
 #[cfg(feature = "write")]
 pub mod write;
+pub mod xml;
 
 pub use book::{Book, RowState, Volatile};
 pub use entry_format::EntryFormat;
