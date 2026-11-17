@@ -1,18 +1,17 @@
 """Lint, inspect, query, edit and calculate XLSX and ODS spreadsheets.
 
 Python bindings of the SheetRS suite: one object, ``Book``, a workbook (a file, its bytes or a binary
-stream). It reads the workbook once when it is opened, to count what it holds, and keeps only the
-numbers; the queries read what they need.
+stream). Opening reads nothing; the queries read what they need.
 
-* The **properties** say what the opening found out: ``format``, ``sheet_names``, ``sheets[name]``
-  (with ``used_range``, ``state`` and counts), ``defined_names``, ``date_system``, ``has_macros``, the
-  eleven ``total_*`` and ``stats``.
+* The **property** ``format`` is the format of the file. The statistics are a query, ``stats()``: the
+  eleven ``total_*``, ``sheets`` (``names()`` and ``sheets[name]``, with ``used_range``, ``state`` and
+  counts), ``defined_names`` and ``has_macros``.
 * The **operations** (``delete_sheets``, ``delete_names``, ``formula_to_value``, ``delete_rows``,
   ``delete_columns``, ``replace`` and ``calculate``) accumulate on the ``Book`` and return it, so the
   calls chain. Each is written against the workbook as it is: the order they are given in changes
   nothing, and nothing runs until ``save``, the cut, which plans all of them in the fewest passes over
   the file and writes the result.
-* The **queries** (``range``, ``find``, ``lint``, ``inspect``) read what they need. A query on a
+* The **queries** (``stats``, ``range``, ``find``, ``lint``, ``inspect``) read what they need. A query on a
   ``Book`` with operations that nothing has run raises ``PendingOperationsError``.
 * ``save(dest)`` writes a new workbook to a path or a binary stream (``io.BytesIO``); ``save()``
   replaces the original, the file or the stream the ``Book`` was made from; ``json=`` writes the
@@ -29,7 +28,8 @@ numbers; the queries read what they need.
     import sheetrs
 
     book = sheetrs.Book("book.xlsx")
-    book.sheet_names, book.sheets["Data"].used_range, book.total_formulas
+    stats = book.stats()
+    stats.sheets.names(), stats.sheets["Data"].used_range, stats.total_formulas
 
     r = book.range(["Data!A1:C10", "Summary!B2"], properties=("value", "formula"))
     r["Data!A1:C10"].values            # list of rows; an error cell is a sheetrs.CellError

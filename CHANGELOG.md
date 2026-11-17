@@ -111,6 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - The smoke tests of `release.yml` read the sheets of the wheel and of the npm package with `stats()`: they used `Book.sheet_names` and `sheetNames`, which 0.4.1 removed, so the release of 0.4.2 stayed a draft.
+- The docstring of the `sheetrs` Python module describes `Book.stats()` instead of the removed `sheet_names`, `sheets[name]` and `total_formulas`.
+- `CONTRIBUTING.md`: the dry run of `release.yml` is required before a release (its `smoke` job does not run in `ci.yml`), and a tag is created by hand when the fix of a failed release does not touch `Cargo.toml`.
 - A cell that is a member of an array formula (legacy or dynamic) shows its own element of the result after a calculation or an edit, in an XLSX and in an ODS, instead of the top-left value (issue #127): the readers tell the compiler how far each member sits from the top-left cell (`CellSink::array_member`) and the engine's array wrapper gives that element. A result of one row or one column is repeated over the block and a position past the result is `#N/A`, as in LibreOffice.
 - `sheetc calculate` (and the `calculate` of the bindings) with the workbook as the answer no longer calculates and writes the cone of every
   input the workbook declares when the request gives none: the roots of a calculation are the inputs it is given (`Spec::given_inputs`) and the cells
