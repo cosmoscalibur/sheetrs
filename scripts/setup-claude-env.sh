@@ -8,6 +8,7 @@
 #     wasm32 target, as the default toolchain, so that it is the one used in any folder;
 #   - LibreOffice 26.8.2.2 (the reference of the project) from the packages of The Document Foundation,
 #     checksum verified, `soffice` on the PATH, and the LibreOffice of the image removed;
+#   - `cargo-edit` (`cargo set-version`, to bump the version of a release);
 #   - `perf` and `valgrind`, to profile (`scripts/bench.py`, `docs/performance.md`).
 # Idempotent: what is already in place is left alone. The only domain that must be allowed in the network access
 # of the environment besides the package managers is downloadarchive.documentfoundation.org (docs/environment.md).
@@ -29,6 +30,7 @@ fi
 rustup toolchain install "$CHANNEL" --profile minimal -c clippy -c rustfmt -t wasm32-unknown-unknown
 rustup default "$CHANNEL"
 echo "rust: $(rustc --version)"
+command -v cargo-set-version >/dev/null || cargo install cargo-edit --locked   # `cargo set-version`, for the releases
 
 # ---- Profiling tools ---------------------------------------------------------------------------
 if ! command -v perf >/dev/null || ! command -v valgrind >/dev/null; then

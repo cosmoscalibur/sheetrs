@@ -9,7 +9,7 @@ The Claude Code environment of SheetRS needs two things in its settings:
    [`scripts/setup-claude-env.sh`](../scripts/setup-claude-env.sh) into the script box of the
    environment. It is self-contained, takes no parameters and no path. It leaves Rust 1.99 (the
    channel of `rust-toolchain.toml`), LibreOffice 26.8.2.2 (the reference of the project, in
-   `/opt/libreoffice26.8`, `soffice` on the `PATH`), `perf` and `valgrind`.
+   `/opt/libreoffice26.8`, `soffice` on the `PATH`), `cargo-edit` (`cargo set-version`), `perf` and `valgrind`.
 
 No variables or secrets are needed.
 
