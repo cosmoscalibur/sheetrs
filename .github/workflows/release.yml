@@ -233,7 +233,7 @@ jobs:
             uv run --no-project --python "$version" --with "$(ls built/wheel-ubuntu-latest/*.whl)" python -c "
           import sheetrs
           book = sheetrs.Book('sheetrs-compiler/tests/assets/loan.xlsx')
-          assert book.format == 'xlsx' and 'Loan' in book.sheet_names
+          assert book.format == 'xlsx' and 'Loan' in book.stats().sheets.names()
           assert book.range(['Loan!A1:B3'])
           "
           done
@@ -247,7 +247,7 @@ jobs:
           import * as wasm from "sheetrs-wasm";
           wasm.initSync({ module: readFileSync("node_modules/sheetrs-wasm/sheetrs_wasm_bg.wasm") });
           const book = new wasm.Book(new Uint8Array(readFileSync(process.env.BOOK)));
-          if (book.format !== "xlsx" || !book.sheetNames.includes("Loan")) throw new Error("the package does not open the workbook");
+          if (book.format !== "xlsx" || !book.stats().toJSON().sheets.some((sheet) => sheet.name === "Loan")) throw new Error("the package does not open the workbook");
           book.free();
           JS
           BOOK="$GITHUB_WORKSPACE/sheetrs-compiler/tests/assets/loan.xlsx" node check.mjs
