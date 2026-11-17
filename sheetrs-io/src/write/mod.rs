@@ -662,6 +662,7 @@ pub(crate) fn ods_error(code: u16) -> String {
 /// How a part that is rewritten is stored in the new archive: deflate at level 4, which leaves the
 /// XML as small as the default level 6 (the same size to the permille on a 36 MB workbook) and
 /// takes about a third less time to write; level 1 is faster still but makes the file 60% bigger.
+/// Why not level 1 is in `ARCHITECTURE.md`, *Deflate level of the parts they rewrite*.
 /// The parts that are not rewritten are copied as they are, at their own level.
 pub(crate) fn part_options() -> SimpleFileOptions {
     SimpleFileOptions::default().compression_level(Some(4))
