@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `CONTRIBUTING.md` documents the branches: PRs go to `develop`, `main` receives only `develop` through a release PR, and both are kept aligned.
 - `cargo-edit` (`cargo set-version`, the tool of the version step of a release) is installed by `scripts/setup-dev-env.sh` and `scripts/setup-claude-env.sh`.
 - A build, a calculation or an edit of a workbook that states no locale no longer assumes `en`: it takes the one of the system (see above). A workbook calculated with a locale other than `en-US` in the environment of the process gives the text of that locale.
 - `[$-407]` is read (German); the examples of a language the engine has no names for are now `[$-40C]` (French).
