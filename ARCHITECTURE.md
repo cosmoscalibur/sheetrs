@@ -159,7 +159,18 @@ The input of the suite and its shared kernel: the format-agnostic workbook model
   `locale` of a `sheetrs.toml` (`from_config`). What a tag means (separators, names) is the engine's table.
 - **`reader`**: Abstracts over file formats (XLSX, ODS) and holds `Format`; the free functions that read
   from a path or a reader are internal: a `Book` is the way in.
-  - Uses `zip` and matching XML parsers (`quick-xml` or custom) for efficient data reading.
+  - Uses `zip` for the archive and, for the XML, two tools: `xml::Lexer`, a lexer of its own that gives the
+    markup and the text of a part as slices of a window over the source (no event is built, the
+    attributes are parsed only when asked for), which reads the cells of a sheet (`parse_sheet_xml`,
+    `parse_cell_contents`) and of the `content.xml` of an ODS (rows, cells, their paragraphs); and `quick-xml`,
+    whose events remain the vocabulary of everything that is not cells: the properties, styles and names
+    parts, the rare elements of a sheet (a merged range, a column), and the writers. A reader that
+    builds the events of `quick-xml` over a faster tokenizer was measured at the speed of `quick-xml`: what
+    cost was the event (the name checks, the UTF-8 check of each token, the attribute iterator), so a hot
+    reader uses the tokens and a cold one the events. `Lexer::token` checks that the bytes are UTF-8, that
+    the markup is closed and that an end tag closes the element that is open; the tests
+    (`sheetrs-io/tests/xml_lexer.rs`) compare it with `quick-xml` on every XML part of every workbook of the
+    repository, on random markup and on windows of every size.
   - Custom stream-based parsing logic for both formats ensures minimal memory footprint.
   - `WorkbookReader` is the common interface of the formats. Its one required method for cells,
     `read_sheets_into(sink)`, hands each cell to a `CellSink` as it is parsed; every consumer of
@@ -195,6 +206,22 @@ The input of the suite and its shared kernel: the format-agnostic workbook model
   - `SheetState` (`Visible`, `Hidden`, `VeryHidden`) is what a sheet's `state` says; an ODS has the
     first two.
   - `ExcelError` is the error value a cell can hold (`#DIV/0!`, …).
+
+- **`write`** (feature `write`): the writers of XLSX and ODS, used by the editor and by the answer of the compiler.
+  - **Deflate level of the parts they rewrite: 4.** The archive compresses what a writer produces in another thread, so
+    compressing overlaps with rewriting. The alternatives were level 1 and level 6 (the default of the library).
+    - *Level 4 (chosen).* The XML ends as small as at level 6 (the same size to the permille on a 36 MB workbook) and compressing takes a third
+      less time than at level 6. The file that results is the smaller one that is still cheap to write, which also keeps what a later reader
+      inflates and reads from disk to a minimum.
+    - *Level 1.* Compressing is faster by itself, but with the compression in its own thread the run waits for the rewriting, not for the
+      compression, so the run does not end sooner. What is left is a file 40-50 % bigger, more bytes to inflate when the file is read
+      again and, in the ODS, a larger output held in memory while it is written.
+    - *Level 6.* The same size as level 4 for more time.
+    - *Another deflate (`libdeflate`).* It is faster and smaller at the same level, but it is C: it does not build for
+      `wasm32-unknown-unknown`, which the WebAssembly package needs, and it would need a second implementation there.
+
+    The decision is to be reviewed if the compression stops being in its own thread (then the time of level 1 shows in the run) or if a
+    caller needs the fastest write at any size (then the level would be an option of the writers, not a default).
 
 ## 1b. sheetrs-formula
 

@@ -19,8 +19,16 @@ use quick_xml::{Reader, XmlVersion};
 ///
 /// * `Option<(u32, u32)>` - The (row, col) indices if parsing is successful.
 pub fn parse_cell_ref(cell_ref: &str) -> Option<(u32, u32)> {
-    let row_str: String = cell_ref.chars().filter(char::is_ascii_digit).collect();
-    let row = row_str.parse::<u32>().ok()?;
+    // The digits of the reference, wherever they are, are the row: `A1` and `1A` are both row 1.
+    let mut row: Option<u32> = None;
+    for digit in cell_ref.bytes().filter(u8::is_ascii_digit) {
+        row = Some(
+            row.unwrap_or(0)
+                .checked_mul(10)?
+                .checked_add(u32::from(digit - b'0'))?,
+        );
+    }
+    let row = row?;
     let col = column_letters_to_index(cell_ref).unwrap_or(0);
 
     // Convert to 0-based
@@ -173,6 +181,16 @@ mod tests {
         assert_eq!(parse_cell_ref("Z26"), Some((25, 25)));
         assert_eq!(parse_cell_ref("AA1"), Some((0, 26)));
         assert_eq!(parse_cell_ref("AB10"), Some((9, 27)));
+    }
+
+    #[test]
+    fn a_reference_with_no_digits_or_too_many_has_no_row() {
+        assert_eq!(parse_cell_ref("A"), None);
+        assert_eq!(parse_cell_ref(""), None);
+        assert_eq!(parse_cell_ref("A99999999999"), None);
+        assert_eq!(parse_cell_ref("A0"), Some((0, 0)));
+        assert_eq!(parse_cell_ref("$B$007"), Some((6, 1)));
+        assert_eq!(parse_cell_ref("1A"), Some((0, 0)));
     }
 
     #[test]

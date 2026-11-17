@@ -108,7 +108,7 @@ same `replaceAll`, in XLSX and ODS; `tests/assets/replace/make_fixtures.py` make
   `replaceAll` of LibreOffice does: the author stays, an XLSX note is saved as one run (Arial 10) and
   an ODS one as plain paragraphs. Verified against notes LibreOffice made, in both formats
   (`tests/replace.rs`, `tests/notes.rs`).
-- Rewritten parts of the archive are deflated at level 4 (the size of level 6, a third less time).
+- Rewritten parts of the archive are deflated at level 4 (the size of level 6, a third less time); the reason for the level is in `ARCHITECTURE.md`.
 - A search by value reaches formula cells, which become constants, as in LibreOffice.
 - What the replacement leaves stale is calculated again by the engine as the last pass; the output is marked to be recalculated when opened only if the engine cannot calculate the workbook (see *Recalculation* below).
 

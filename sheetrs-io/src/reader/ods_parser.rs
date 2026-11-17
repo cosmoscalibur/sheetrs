@@ -12,8 +12,9 @@ use super::{
 use crate::error::{Error, Result};
 use crate::reader::ExcelError;
 use crate::reader::selection::SheetSelection;
+use crate::xml::{self, Lexer, Token};
 use quick_xml::Reader;
-use quick_xml::events::Event;
+use quick_xml::events::{BytesEnd, BytesRef, BytesText, Event};
 use regex::Regex;
 use sheetrs_formula::DateSystem;
 use sheetrs_formula::addr::needs_quotes;
@@ -424,47 +425,102 @@ fn bare_sheet_qualifiers_as_name_errors(native: &str) -> Option<String> {
 /// The text of the note whose `office:annotation` element has just been opened: its paragraphs joined by
 /// `\n` (an empty paragraph is an empty line), the runs of spaces, tabs and line breaks as the text
 /// they stand for. The creator and the date are not text.
-fn read_annotation_text<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {
+fn read_annotation_text<R: std::io::Read>(lexer: &mut Lexer<R>) -> Result<String> {
     let mut text = String::new();
-    let (mut buf, mut paragraphs, mut in_paragraph) = (Vec::new(), 0usize, false);
+    let (mut paragraphs, mut in_paragraph) = (0usize, false);
     loop {
-        match reader.read_event_into(&mut buf)? {
-            Event::Start(e) if e.name().as_ref() == "text:p" => {
+        match lexer.token()? {
+            Token::Start(e) if e.name() == b"text:p" => {
                 if paragraphs > 0 {
                     text.push('\n');
                 }
                 paragraphs += 1;
                 in_paragraph = true;
             }
-            Event::Empty(e) if e.name().as_ref() == "text:p" => {
+            Token::Empty(e) if e.name() == b"text:p" => {
                 if paragraphs > 0 {
                     text.push('\n');
                 }
                 paragraphs += 1;
             }
-            Event::End(e) if e.name().as_ref() == "text:p" => in_paragraph = false,
-            Event::Text(t) if in_paragraph => text.push_str(&t),
-            Event::GeneralRef(r) if in_paragraph => push_general_ref(&mut text, &r)?,
-            Event::Start(e) | Event::Empty(e) if in_paragraph => match e.name().as_ref() {
-                "text:s" => {
+            Token::End(name) if name == b"text:p" => in_paragraph = false,
+            Token::Text(raw) if in_paragraph => {
+                xml::unescape_into(raw, &mut text, push_general_ref)?;
+            }
+            Token::Start(e) | Token::Empty(e) if in_paragraph => match e.name() {
+                b"text:s" => {
                     let count = e
                         .attributes()
-                        .flatten()
-                        .find(|a| a.key.as_ref() == "text:c")
-                        .and_then(|a| attr_value(&a).ok()?.parse::<usize>().ok())
+                        .find(|(key, _)| *key == b"text:c")
+                        .and_then(|(_, raw)| xml::attr_value(raw).ok()?.parse::<usize>().ok())
                         .unwrap_or(1);
                     text.extend(std::iter::repeat_n(' ', count));
                 }
-                "text:tab" => text.push('\t'),
-                "text:line-break" => text.push('\n'),
+                b"text:tab" => text.push('\t'),
+                b"text:line-break" => text.push('\n'),
                 _ => {}
             },
-            Event::End(e) if e.name().as_ref() == "office:annotation" => return Ok(text),
-            Event::Eof => return Ok(text),
+            Token::End(name) if name == b"office:annotation" => return Ok(text),
+            Token::Eof => return Ok(text),
             _ => {}
         }
-        buf.clear();
     }
+}
+
+/// Reads the text of the paragraph the lexer is in, up to its end tag, into `text`: the runs of
+/// spaces, tabs and line breaks are elements that stand for the text they hold.
+fn read_paragraph<R: std::io::Read>(lexer: &mut Lexer<R>, text: &mut String) -> Result<()> {
+    loop {
+        match lexer.token()? {
+            Token::Text(raw) => {
+                xml::unescape_into(raw, text, push_general_ref)?;
+            }
+            Token::Empty(se) | Token::Start(se)
+                if matches!(se.name(), b"text:s" | b"text:tab" | b"text:line-break") =>
+            {
+                match se.name() {
+                    b"text:tab" => text.push('\t'),
+                    b"text:line-break" => text.push('\n'),
+                    _ => {
+                        let mut n = 1usize;
+                        for (key, raw) in se.attributes() {
+                            if key == b"text:c"
+                                && let Ok(v) = xml::attr_value(raw)
+                            {
+                                n = v.parse().unwrap_or(1);
+                            }
+                        }
+                        text.extend(std::iter::repeat_n(' ', n));
+                    }
+                }
+            }
+            Token::End(name) if name == b"text:p" => return Ok(()),
+            Token::Eof => return Ok(()),
+            _ => {}
+        }
+    }
+}
+
+/// Feeds the text between the tags of the head of the document to the number formats, with its
+/// references told apart as the events of quick-xml tell them.
+fn feed_text(styles: &mut NumberStyles, raw: &[u8]) -> Result<()> {
+    let text = std::str::from_utf8(raw).map_err(quick_xml::Error::from)?;
+    let mut rest = text;
+    while let Some(amp) = rest.find('&') {
+        if amp > 0 {
+            styles.feed(&Event::Text(BytesText::from_escaped(&rest[..amp])))?;
+        }
+        let after = &rest[amp + 1..];
+        let end = after.find(';').ok_or(quick_xml::Error::IllFormed(
+            quick_xml::errors::IllFormedError::UnclosedReference,
+        ))?;
+        styles.feed(&Event::GeneralRef(BytesRef::new(&after[..end])))?;
+        rest = &after[end + 1..];
+    }
+    if !rest.is_empty() {
+        styles.feed(&Event::Text(BytesText::from_escaped(rest)))?;
+    }
+    Ok(())
 }
 
 /// Extract formulas from an ODS worksheet
@@ -564,22 +620,20 @@ pub fn normalize_ods_reference(
 /// Reads on to the end of the table the reader is in, without building anything: the tables of a
 /// sheet nobody asked for, and the rest of the one whose last wanted row went by. Tables nest only
 /// as database ranges do not, so the depth is what makes the end of this one the right one.
-fn skip_table<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<()> {
+fn skip_table<R: std::io::Read>(lexer: &mut Lexer<R>) -> Result<()> {
     let mut depth = 0u32;
-    let mut skip_buf = Vec::new();
     loop {
-        match reader.read_event_into(&mut skip_buf)? {
-            Event::Start(e) if e.name().as_ref() == "table:table" => depth += 1,
-            Event::End(e) if e.name().as_ref() == "table:table" => {
+        match lexer.token()? {
+            Token::Start(e) if e.name() == b"table:table" => depth += 1,
+            Token::End(name) if name == b"table:table" => {
                 if depth == 0 {
                     return Ok(());
                 }
                 depth -= 1;
             }
-            Event::Eof => return Ok(()),
+            Token::Eof => return Ok(()),
             _ => {}
         }
-        skip_buf.clear();
     }
 }
 
@@ -1288,8 +1342,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
         let mut in_table = false;
         // Whether an event macro went by in `content.xml`.
         let macro_mark = std::rc::Rc::new(std::cell::Cell::new(false));
-        // Events inside a cell, kept between cells.
-        let mut text_buf: Vec<u8> = Vec::new();
         let mut object_hrefs: Vec<(String, String)> = Vec::new();
 
         // ============================================================
@@ -1331,13 +1383,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                 },
             };
 
-            let mut reader = Reader::from_reader(BufReader::new(MarkTap::new(
-                content_xml,
-                macro_mark.clone(),
-            )));
-            reader.config_mut().trim_text(false);
-
-            let mut buf = Vec::new();
+            let mut lexer = Lexer::new(MarkTap::new(content_xml, macro_mark.clone()));
             // Byte offset in content.xml where the current <table:table> starts
             let mut table_start = 0u64;
 
@@ -1346,9 +1392,26 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
             // ============================================================
 
             loop {
-                let event_start = reader.buffer_position();
-                let event = reader.read_event_into(&mut buf)?;
-                let empty_tag = matches!(event, Event::Empty(_));
+                let event_start = lexer.position();
+                let token = lexer.token()?;
+                let empty_tag = matches!(token, Token::Empty(_));
+                // The arms read the tags with the events of quick-xml; the text between tags
+                // matters only to the formats of the head of the document.
+                let event = match token {
+                    Token::Start(tag) => Event::Start(tag.to_start()?),
+                    Token::Empty(tag) => Event::Empty(tag.to_start()?),
+                    Token::End(name) => Event::End(BytesEnd::new(
+                        std::str::from_utf8(name).map_err(quick_xml::Error::from)?,
+                    )),
+                    Token::Eof => Event::Eof,
+                    Token::Text(raw) => {
+                        if !tables_started {
+                            feed_text(&mut number_styles, raw)?;
+                        }
+                        continue;
+                    }
+                    Token::CData(_) | Token::Other => continue,
+                };
                 if !tables_started {
                     number_styles.feed(&event)?;
                 }
@@ -1369,27 +1432,23 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             }
                         }
                         if is_table_style && !empty_tag && !style_name.is_empty() {
-                            let mut inner_buf = Vec::new();
                             loop {
-                                match reader.read_event_into(&mut inner_buf)? {
-                                    Event::Start(ee) | Event::Empty(ee)
-                                        if ee.name().as_ref() == "style:table-properties" =>
+                                match lexer.token()? {
+                                    Token::Start(ee) | Token::Empty(ee)
+                                        if ee.name() == b"style:table-properties" =>
                                     {
-                                        for attr in ee.attributes().flatten() {
-                                            if attr.key.as_ref() == "table:display"
-                                                && attr.value == "false"
-                                            {
+                                        for (key, raw) in ee.attributes() {
+                                            if key == b"table:display" && raw == b"false" {
                                                 hidden_styles.insert(style_name.clone());
                                             }
                                         }
                                     }
-                                    Event::End(ee) if ee.name().as_ref() == "style:style" => {
+                                    Token::End(ee) if ee == b"style:style" => {
                                         break;
                                     }
-                                    Event::Eof => break,
+                                    Token::Eof => break,
                                     _ => {}
                                 }
-                                inner_buf.clear();
                             }
                         }
                     }
@@ -1445,7 +1504,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         let mut new_sheet = Sheet::new(name.clone(), sheet_index);
                         // Covers a self-closing table; the closing tag overwrites it
                         table_start = event_start;
-                        new_sheet.xml_size_bytes = reader.buffer_position() - table_start;
+                        new_sheet.xml_size_bytes = lexer.position() - table_start;
                         // Check if this sheet's style is in hidden_styles
                         let is_hidden =
                             !style_name.is_empty() && hidden_styles.contains(&style_name);
@@ -1467,7 +1526,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 .and_then(|sheet| selection.of(&sheet.name));
                             if wanted.is_none() && !empty_tag {
                                 // Not selected: listed, not read.
-                                skip_table(&mut reader)?;
+                                skip_table(&mut lexer)?;
                                 in_table = false;
                             } else if wanted.is_some() && empty_tag {
                                 // A selected table with no rows: nothing to read in it.
@@ -1503,25 +1562,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 skip_current_sheet = true;
                                 // Fast-forward to the end of this table to avoid parsing millions of rows
                                 // CRITICAL: Start depth at 0 since we're already inside table:table element
-                                let mut depth = 0;
-                                let mut skip_buf = Vec::new();
-                                loop {
-                                    match reader.read_event_into(&mut skip_buf)? {
-                                        Event::Start(ee) if ee.name().as_ref() == "table:table" => {
-                                            depth += 1;
-                                        }
-                                        Event::End(ee) if ee.name().as_ref() == "table:table" => {
-                                            if depth == 0 {
-                                                // This is the closing tag of the current external sheet
-                                                break;
-                                            }
-                                            depth -= 1;
-                                        }
-                                        Event::Eof => break,
-                                        _ => {}
-                                    }
-                                    skip_buf.clear();
-                                }
+                                skip_table(&mut lexer)?;
                                 // The table is left: what follows (the names of the document, which
                                 // LibreOffice writes after the last table) is not in it.
                                 in_table = false;
@@ -1568,18 +1609,12 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         declared_columns = declared_columns.saturating_add(repeated);
 
                         // If it's a start tag, we need to skip to its end tag to avoid nested column issues
-                        let mut col_buf = Vec::new();
                         loop {
-                            match reader.read_event_into(&mut col_buf)? {
-                                Event::End(ref te)
-                                    if te.name().as_ref() == "table:table-column" =>
-                                {
-                                    break;
-                                }
-                                Event::Eof => break,
+                            match lexer.token()? {
+                                Token::End(name) if name == b"table:table-column" => break,
+                                Token::Eof => break,
                                 _ => {}
                             }
-                            col_buf.clear();
                         }
                     }
                     Event::Empty(e)
@@ -1624,25 +1659,25 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         row_repeated = 1;
                         current_col = 0;
                         row_style.clear();
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == "table:default-cell-style-name" {
-                                row_style = attr_value(&attr)?.into_owned();
+                        for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                            if key == b"table:default-cell-style-name" {
+                                row_style = xml::attr_value(raw)?.into_owned();
                             }
                         }
                         if let Some(ref mut sheet) = current_sheet {
                             let mut hidden = false;
                             let mut filtered = false;
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
-                                    "table:number-rows-repeated" => {
+                            for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                                match key {
+                                    b"table:number-rows-repeated" => {
                                         row_repeated =
-                                            attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                            xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                     }
-                                    "table:visibility"
-                                        if (attr.value == "collapse" || attr.value == "filter") =>
+                                    b"table:visibility"
+                                        if (raw == b"collapse" || raw == b"filter") =>
                                     {
                                         hidden = true;
-                                        filtered = attr.value == "filter";
+                                        filtered = raw == b"filter";
                                     }
                                     _ => {}
                                 }
@@ -1670,12 +1705,12 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                 remaining = remaining.saturating_sub(1);
                                 finished = remaining == 0;
                                 if !finished {
-                                    skip_table(&mut reader)?;
+                                    skip_table(&mut lexer)?;
                                     in_table = false;
                                 }
                             } else if current_row.saturating_add(row_repeated) <= rows.first_row {
                                 // Rows before the first one wanted are not read.
-                                reader.read_to_end_into(e.name(), &mut text_buf)?;
+                                lexer.skip_element()?;
                                 current_row += row_repeated;
                                 current_col = 0;
                             }
@@ -1688,17 +1723,17 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         if let Some(ref mut sheet) = current_sheet {
                             let mut hidden = false;
                             let mut filtered = false;
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
-                                    "table:number-rows-repeated" => {
+                            for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                                match key {
+                                    b"table:number-rows-repeated" => {
                                         row_repeated =
-                                            attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                            xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                     }
-                                    "table:visibility"
-                                        if (attr.value == "collapse" || attr.value == "filter") =>
+                                    b"table:visibility"
+                                        if (raw == b"collapse" || raw == b"filter") =>
                                     {
                                         hidden = true;
-                                        filtered = attr.value == "filter";
+                                        filtered = raw == b"filter";
                                     }
                                     _ => {}
                                 }
@@ -1723,7 +1758,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             remaining = remaining.saturating_sub(1);
                             finished = remaining == 0;
                             if !finished {
-                                skip_table(&mut reader)?;
+                                skip_table(&mut lexer)?;
                                 in_table = false;
                             }
                         }
@@ -1753,69 +1788,74 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         let mut is_matrix_array = false;
                         let (mut matrix_cols, mut matrix_rows) = (1u32, 1u32);
 
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                "table:number-columns-repeated" => {
-                                    col_repeated = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                        for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                            match key {
+                                b"table:number-columns-repeated" => {
+                                    col_repeated =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:number-columns-spanned" => {
-                                    cols_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                b"table:number-columns-spanned" => {
+                                    cols_spanned =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:number-rows-spanned" => {
-                                    rows_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                b"table:number-rows-spanned" => {
+                                    rows_spanned =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:formula" => {
+                                b"table:formula" => {
                                     bare_ref = has_bare_ref_error(
-                                        &attr_value(&attr)?,
+                                        &xml::attr_value(raw)?,
                                         Notation::OpenFormula,
                                     );
-                                    reads_external = attr_value(&attr)?.contains("file:");
+                                    reads_external = xml::attr_value(raw)?.contains("file:");
                                     // Whether the cell has one is told without converting it
                                     // when the text of the formula is not wanted.
                                     formula = Some(if props.formula {
-                                        native_formula(&attr_value(&attr)?, &mut external_workbooks)
+                                        native_formula(
+                                            &xml::attr_value(raw)?,
+                                            &mut external_workbooks,
+                                        )
                                     } else {
                                         String::new()
                                     });
                                 }
-                                "table:style-name" => {
-                                    style_name = attr_value(&attr)?.into_owned();
+                                b"table:style-name" => {
+                                    style_name = xml::attr_value(raw)?.into_owned();
                                 }
-                                "calcext:value-type" if attr.value == "error" => {
+                                b"calcext:value-type" if raw == b"error" => {
                                     is_error_cell = true;
                                 }
-                                "office:value-type" => {
-                                    is_string_type = attr.value == "string";
-                                    result_kind = match &*attr.value {
-                                        "string" => CachedKind::Text,
-                                        "percentage" => CachedKind::Percentage,
-                                        "boolean" => CachedKind::Boolean,
-                                        "time" => CachedKind::Time,
-                                        "float" | "currency" | "date" => CachedKind::Number,
+                                b"office:value-type" => {
+                                    is_string_type = raw == b"string";
+                                    result_kind = match raw {
+                                        b"string" => CachedKind::Text,
+                                        b"percentage" => CachedKind::Percentage,
+                                        b"boolean" => CachedKind::Boolean,
+                                        b"time" => CachedKind::Time,
+                                        b"float" | b"currency" | b"date" => CachedKind::Number,
                                         _ => CachedKind::Untyped,
                                     };
                                 }
                                 // An empty `office:string-value` is no content: `LibreOffice` reads
                                 // the cell as blank unless a paragraph is there (see `saw_paragraph`).
                                 // An empty `office:value` is no number, as no `office:value` is.
-                                "office:string-value" | "office:value" if attr.value.is_empty() => {
-                                }
-                                "office:value"
-                                | "office:string-value"
-                                | "office:boolean-value"
-                                | "office:time-value"
-                                | "office:date-value" => {
-                                    let val_str = attr_value(&attr)?.into_owned();
+                                b"office:string-value" | b"office:value" if raw.is_empty() => {}
+                                b"office:value"
+                                | b"office:string-value"
+                                | b"office:boolean-value"
+                                | b"office:time-value"
+                                | b"office:date-value" => {
+                                    let val_str = xml::attr_value(raw)?.into_owned();
                                     if !has_value {
-                                        value = match attr.key.as_ref() {
-                                            "office:value" => {
+                                        value = match key {
+                                            b"office:value" => {
                                                 if let Ok(n) = val_str.parse::<f64>() {
                                                     CellValue::Number(n)
                                                 } else {
                                                     CellValue::Text(Arc::from(val_str.as_str()))
                                                 }
                                             }
-                                            "office:date-value" => {
+                                            b"office:date-value" => {
                                                 // Convert ISO date to Serial Number
                                                 if let Some(n) =
                                                     parse_ods_date(&val_str, null_shift)
@@ -1825,7 +1865,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                     CellValue::Text(Arc::from(val_str.as_str()))
                                                 }
                                             }
-                                            "office:time-value" => {
+                                            b"office:time-value" => {
                                                 // A time of day is a fraction of a day.
                                                 if let Some(n) = parse_ods_time(&val_str) {
                                                     CellValue::Number(n)
@@ -1833,22 +1873,24 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                                                     CellValue::Text(Arc::from(val_str.as_str()))
                                                 }
                                             }
-                                            "office:boolean-value" => parse_boolean_value(&val_str),
+                                            b"office:boolean-value" => {
+                                                parse_boolean_value(&val_str)
+                                            }
                                             _ => CellValue::Text(Arc::from(val_str.as_str())),
                                         };
                                         has_value = true;
                                     }
                                 }
-                                "table:number-matrix-columns-spanned" => {
-                                    let v = attr_value(&attr)?.parse::<u32>().unwrap_or(0);
+                                b"table:number-matrix-columns-spanned" => {
+                                    let v = xml::attr_value(raw)?.parse::<u32>().unwrap_or(0);
                                     if v > 0 {
                                         is_matrix_array = true;
                                         matrix_cols = v;
                                     }
                                 }
-                                "table:number-matrix-rows-spanned" => {
+                                b"table:number-matrix-rows-spanned" => {
                                     matrix_rows =
-                                        attr_value(&attr)?.parse::<u32>().unwrap_or(1).max(1);
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1).max(1);
                                 }
                                 _ => {}
                             }
@@ -1864,7 +1906,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                             )
                         });
                         if skip_cell {
-                            reader.read_to_end_into(e.name(), &mut text_buf)?;
+                            lexer.skip_element()?;
                         }
 
                         if cols_spanned > 1 || rows_spanned > 1 {
@@ -1881,94 +1923,46 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         let mut text_content = String::new();
                         let mut paragraphs = 0usize;
                         let mut note: Option<String> = None;
-                        text_buf.clear();
                         loop {
                             if skip_cell {
                                 break;
                             }
-                            match reader.read_event_into(&mut text_buf)? {
+                            match lexer.token()? {
                                 // A comment's paragraphs are not the cell's content.
-                                Event::Start(ref te)
-                                    if te.name().as_ref() == "office:annotation" =>
-                                {
+                                Token::Start(te) if te.name() == b"office:annotation" => {
                                     sheet.comments += 1;
                                     if props.comment {
-                                        note = Some(read_annotation_text(&mut reader)?);
+                                        note = Some(read_annotation_text(&mut lexer)?);
                                     } else {
-                                        let end = te.to_end().into_owned();
-                                        let mut skip = Vec::new();
-                                        reader.read_to_end_into(end.name(), &mut skip)?;
+                                        lexer.skip_element()?;
                                     }
                                 }
                                 // Paragraphs of one cell are separate lines, an empty one too
                                 // (`a` and an empty paragraph are the text `a` and a line break).
-                                Event::Empty(ref te) if te.name().as_ref() == "text:p" => {
+                                Token::Empty(te) if te.name() == b"text:p" => {
                                     saw_paragraph = true;
                                     if paragraphs > 0 {
                                         text_content.push('\n');
                                     }
                                     paragraphs += 1;
                                 }
-                                Event::Start(ref te) if te.name().as_ref() == "text:p" => {
+                                Token::Start(te) if te.name() == b"text:p" => {
                                     saw_paragraph = true;
                                     if paragraphs > 0 {
                                         text_content.push('\n');
                                     }
                                     paragraphs += 1;
-                                    let mut p_buf = Vec::new();
-                                    loop {
-                                        match reader.read_event_into(&mut p_buf)? {
-                                            Event::Text(ref t) => {
-                                                text_content.push_str(t);
-                                            }
-                                            Event::GeneralRef(ref r) => {
-                                                push_general_ref(&mut text_content, r)?;
-                                            }
-                                            // Runs of spaces, tabs and line breaks are elements.
-                                            Event::Empty(ref se) | Event::Start(ref se)
-                                                if matches!(
-                                                    se.name().as_ref(),
-                                                    "text:s" | "text:tab" | "text:line-break"
-                                                ) =>
-                                            {
-                                                match se.name().as_ref() {
-                                                    "text:tab" => text_content.push('\t'),
-                                                    "text:line-break" => text_content.push('\n'),
-                                                    _ => {
-                                                        let mut n = 1usize;
-                                                        for a in se.attributes().flatten() {
-                                                            if a.key.as_ref() == "text:c"
-                                                                && let Ok(v) = attr_value(&a)
-                                                            {
-                                                                n = v.parse().unwrap_or(1);
-                                                            }
-                                                        }
-                                                        text_content
-                                                            .extend(std::iter::repeat_n(' ', n));
-                                                    }
-                                                }
-                                            }
-                                            Event::End(ref pe)
-                                                if pe.name().as_ref() == "text:p" =>
-                                            {
-                                                break;
-                                            }
-                                            Event::Eof => break,
-                                            _ => {}
-                                        }
-                                        p_buf.clear();
-                                    }
+                                    read_paragraph(&mut lexer, &mut text_content)?;
                                 }
-                                Event::End(ref te)
-                                    if te.name().as_ref() == "table:table-cell"
-                                        || te.name().as_ref() == "table:covered-table-cell" =>
+                                Token::End(name)
+                                    if name == b"table:table-cell"
+                                        || name == b"table:covered-table-cell" =>
                                 {
                                     break;
                                 }
-                                Event::Eof => break,
+                                Token::Eof => break,
                                 _ => {}
                             }
-                            text_buf.clear();
                         }
 
                         // A text cell whose paragraph is empty holds an empty text.
@@ -2156,29 +2150,35 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         let mut style_name = String::new();
                         let mut is_matrix_array = false;
 
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                "table:number-columns-repeated" => {
-                                    col_repeated = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                        for (key, raw) in xml::Attrs::new(e.attributes_raw().as_bytes()) {
+                            match key {
+                                b"table:number-columns-repeated" => {
+                                    col_repeated =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:number-columns-spanned" => {
-                                    cols_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                b"table:number-columns-spanned" => {
+                                    cols_spanned =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:number-rows-spanned" => {
-                                    rows_spanned = attr_value(&attr)?.parse::<u32>().unwrap_or(1);
+                                b"table:number-rows-spanned" => {
+                                    rows_spanned =
+                                        xml::attr_value(raw)?.parse::<u32>().unwrap_or(1);
                                 }
-                                "table:formula" => {
+                                b"table:formula" => {
                                     formula = Some(if props.formula {
-                                        native_formula(&attr_value(&attr)?, &mut external_workbooks)
+                                        native_formula(
+                                            &xml::attr_value(raw)?,
+                                            &mut external_workbooks,
+                                        )
                                     } else {
                                         String::new()
                                     });
                                 }
-                                "table:style-name" => {
-                                    style_name = attr_value(&attr)?.into_owned();
+                                b"table:style-name" => {
+                                    style_name = xml::attr_value(raw)?.into_owned();
                                 }
-                                "table:number-matrix-columns-spanned" => {
-                                    let v = attr_value(&attr)?.parse::<u32>().unwrap_or(0);
+                                b"table:number-matrix-columns-spanned" => {
+                                    let v = xml::attr_value(raw)?.parse::<u32>().unwrap_or(0);
                                     if v > 0 {
                                         is_matrix_array = true;
                                     }
@@ -2348,7 +2348,7 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                         if e.name().as_ref() == "table:table"
                             && let Some(sheet) = current_sheet.as_mut() =>
                     {
-                        sheet.xml_size_bytes = reader.buffer_position() - table_start;
+                        sheet.xml_size_bytes = lexer.position() - table_start;
                         in_table = false;
                         if wanted.take().is_some() {
                             remaining = remaining.saturating_sub(1);
@@ -2486,7 +2486,6 @@ impl<R: std::io::Read + std::io::Seek> OdsReader<'_, R> {
                     Event::Eof => break,
                     _ => {}
                 }
-                buf.clear();
                 if finished {
                     break;
                 }

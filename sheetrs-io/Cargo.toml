@@ -27,6 +27,7 @@ quick-xml.workspace = true
 zip.workspace = true
 regex.workspace = true
 aho-corasick.workspace = true
+memchr.workspace = true
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 tempfile = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

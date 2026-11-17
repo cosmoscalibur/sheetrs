@@ -207,6 +207,26 @@ parsers and rules:
   applies to each fragment between references and drops the spaces around
   them.
 
+### Reading XML: the lexer and the events
+
+The XML of a workbook is read with two tools, and the choice is made by how many elements the part has:
+
+- **A part with millions of elements** (the cells of a sheet, the rows and cells of `content.xml`) is read
+  with `sheetrs_io::xml::Lexer`: `lexer.token()` gives a `Token` that borrows the window of the lexer
+  (`Start`/`Empty` with a `Tag`, `End`, `Text`, `CData`), so a reader keeps what it needs of a token before it
+  asks for the next. A `Tag` gives its name as bytes and its attributes as pairs of a name and a raw value
+  (`tag.attributes()`); `xml::attr_value(raw)` is the value as `quick-xml` gives it (references resolved, tabs and
+  line breaks read as spaces) and borrows when the raw value needs nothing of that. Text comes as it is in the
+  document, references included: `xml::unescape_into(raw, out, push_general_ref)` resolves them the way
+  `push_general_ref` does. A rare element in the middle of the hot loop becomes the event of `quick-xml`
+  with `tag.to_start()`, so its arm keeps reading attributes with `BytesStart`.
+- **Any other part** (properties, styles, names, the rewriting of the writers) is read with the events of
+  `quick-xml` and the code that already reads them.
+
+Do not put a lexer under the events of `quick-xml` to make them faster: it was tried (a reader that gave the
+same events, in the same order and with the same errors) and ran at the speed of `quick-xml`, because what
+costs is the event, not the scan. A new hot reader consumes tokens.
+
 ## Tests
 
 - **A test is named for what it proves**, by itself, in a few words, and the name does not start with
