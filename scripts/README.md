@@ -6,7 +6,7 @@ what each script does.
 
 | Script | What it does |
 | ------ | ------------ |
-| `bench.py` | The benchmarks: `fixtures DIR` generates the workbooks (nothing private is needed), `run DIR [groups]` measures `sheetrs lint`, `stats`, `query`, `edit`, `sheetc calculate` and `build`, the Python `Book`, the WebAssembly package and the LibreOffice flows with dist-profile binaries, and prints Markdown tables (wall time and peak memory, min-max of the runs) |
+| `bench.py` | The benchmarks: `fixtures DIR` generates the workbooks (nothing private is needed), `run DIR [groups] [--scenarios rows]` measures (all of it, or the groups and rows a change moves, with `--bin` for another build) `sheetrs lint`, `stats`, `query`, `edit`, `sheetc calculate` and `build` (embedded or not), the Python `Book`, the WebAssembly package and the LibreOffice flows with dist-profile binaries, and prints Markdown tables (wall time and peak memory, min-max of the runs) |
 | `ab_compare.py` | Two or more commands run in alternating rounds, with median, quartiles and peak memory, and with `--check` the proof that their answers are byte-identical: the comparison of a change of the engine (the same program in two executables, one per build) |
 | `measure_libreoffice_flow.py` | The same flows in LibreOffice headless through UNO (times per phase, peak RSS) next to `sheetrs` and `sheetc`; run it with the Python of LibreOffice (`/opt/libreoffice26.8/program/python`) on a workbook of `sheetrs-compiler/scripts/gen_large_fixture.py` |
 | `benchmark.toml` | The lint configuration of the benchmarks: thresholds fixed, so every run does the same rule work |

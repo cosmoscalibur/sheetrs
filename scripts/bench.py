@@ -4,6 +4,9 @@
     scripts/bench.py fixtures DIR [--rows 300000]
     scripts/bench.py run DIR [GROUP[,GROUP]...] [--runs 3] [--bin target/dist] [--python VENV_PYTHON] [--scenarios NAME[,NAME]...]
 
+A change measures only what it moves: `run DIR edit,calculate --scenarios delete-rows,written` runs those rows of those groups, and
+`--bin DIR` takes the binaries of another build, to compare two builds in one session (the document of the results updates row by row).
+
 `fixtures` writes into DIR (outside git; every file can be regenerated):
 
   formulas.xlsx  sheetrs-compiler/scripts/gen_large_fixture.py with ROWS rows of `Calc`: 8 formula columns
@@ -27,6 +30,8 @@ time and of the peak resident memory (`ru_maxrss` of the child: no `/usr/bin/tim
   modes                             `sheetc build` with the default, with `--calculate-all` and with `--force-calculate-all`: the size
                                     of the artifact and the time of a run with the cache and with `--calculate-all`, on
                                     formulas_cached.xlsx
+  embedded                          `sheetc build --embed-template`, and the executable that carries the workbook: its JSON answer and the
+                                    workbook it writes (`-o OUT`)
   compiler                          `sheetc build` and the executable it writes, by stage (measure_perf.py)
   wasm                              the WebAssembly package (needs scripts/package-wasm.sh and scripts/build-wasm-rt.sh): time and
                                     peak memory of one call per tool, sizes, and
@@ -134,9 +139,16 @@ def fixtures(args):
         print(f"{f}\t{os.path.getsize(os.path.join(d, f)) / 1e6:.1f} MB")
 
 
+def wanted(a, name):
+    """Whether the scenario `name` is asked for: all of them without `--scenarios`, so that a change measures only the rows it moves."""
+    return not a.scenarios or name in a.scenarios.split(",")
+
+
 def group_lint(a):
     table("`sheetrs lint` (`scripts/benchmark.toml`)", "Workbook")
     for f in ("formulas.xlsx", "formulas.ods"):
+        if not wanted(a, f.rsplit(".", 1)[1]):
+            continue
         rs = measure([a.sheetrs, "lint", "-c", os.path.join(ROOT, "scripts", "benchmark.toml"), "-i", os.path.join(a.dir, f)],
                      a.runs, ok=(0, 1))
         row(f, rs, rs[0]["md5"])
@@ -145,18 +157,25 @@ def group_lint(a):
 def group_stats(a):
     table("`sheetrs stats`", "Workbook")
     for f in ("formulas.xlsx", "formulas.ods"):
+        if not wanted(a, f.rsplit(".", 1)[1]):
+            continue
         rs = measure([a.sheetrs, "stats", "-i", os.path.join(a.dir, f), "--format", "json"], a.runs)
         row(f, rs, rs[0]["md5"])
 
 
 def group_query(a):
     table("`sheetrs query`", "Workbook and query")
-    cases = [("--list-sheets", ["--list-sheets"]), ("`--range Calc!A1:H1000`", ["--range", "Calc!A1:H1000"]),
-             ("`--sheet Summary`", ["--sheet", "Summary"]),
-             ("`--find K00` (values, every sheet)", ["--find", "K00"]),
-             ("`--find` in formulas (`VLOOKUP`)", ["--find", "VLOOKUP", "--in", "formula"])]
+    cases = [("list-sheets", "--list-sheets", ["--list-sheets"]),
+             ("range", "`--range Calc!A1:H1000`", ["--range", "Calc!A1:H1000"]),
+             ("sheet", "`--sheet Summary`", ["--sheet", "Summary"]),
+             ("find", "`--find K00` (values, every sheet)", ["--find", "K00"]),
+             ("find-formula", "`--find` in formulas (`VLOOKUP`)", ["--find", "VLOOKUP", "--in", "formula"]),
+             ("find-results", "`--find K00 --include-formulas` (values and the results of every formula)",
+              ["--find", "K00", "--include-formulas"])]
     for f in ("formulas.xlsx", "formulas.ods"):
-        for label, args in cases:
+        for scenario, label, args in cases:
+            if not wanted(a, f"{f.rsplit('.', 1)[1]}-{scenario}"):
+                continue
             rs = measure([a.sheetrs, "query", "-i", os.path.join(a.dir, f), *args], a.runs)
             row(f"{f} {label}", rs, rs[0]["md5"])
 
@@ -227,22 +246,46 @@ def group_cache(a):
 
 
 def group_calculate(a):
+    """`sheetc calculate`; scenarios `written`, `json` and `input`, each with the
+    suffix `-calculate-all` for the other mode."""
     table("`sheetc calculate`", "Flow")
     f = os.path.join(a.dir, "formulas_cached.xlsx")
     with tempfile.TemporaryDirectory() as work:
         out = os.path.join(work, "out.xlsx")
         for flag in ([], ["--calculate-all"]):
             label = "`--calculate-all`" if flag else "default (cache)"
-            rs = measure([a.sheetc, "calculate", "-i", f, *flag, "-o", out], a.runs,
+            suffix = "-calculate-all" if flag else ""
+            if wanted(a, "written" + suffix):
+                rs = measure([a.sheetc, "calculate", "-i", f, *flag, "-o", out], a.runs,
+                             before=lambda: os.path.exists(out) and os.remove(out))
+                row(f"formulas_cached.xlsx {label}: workbook written (`-o OUT`)", rs)
+            if wanted(a, "json" + suffix):
+                rs = measure([a.sheetc, "calculate", "-i", f, *flag, "--range", "Summary!A1"], a.runs)
+                row(f"formulas_cached.xlsx {label}: one declared output as JSON (`--range Summary!A1`)", rs, rs[0]["md5"])
+            if wanted(a, "input" + suffix):
+                # The input the workbook declares (`rate`) is given: what it reaches is calculated and written.
+                request = '{"inputs": {"rate": 0.07}}'
+                rs = measure([a.sheetc, "calculate", "-i", f, *flag, "--request", request, "-o", out], a.runs,
+                             before=lambda: os.path.exists(out) and os.remove(out))
+                row(f"formulas_cached.xlsx {label}: workbook written with the input given (`--request '{request}' -o OUT`)", rs)
+
+
+def group_embedded(a):
+    """`sheetc build --embed-template` and the executable that carries the workbook; scenarios `build`, `json` and `workbook`."""
+    table("`sheetc build --embed-template` and its executable", "Flow")
+    f = os.path.join(a.dir, "formulas_cached.xlsx")
+    with tempfile.TemporaryDirectory() as work:
+        exe, out = os.path.join(work, "model_embedded"), os.path.join(work, "out.xlsx")
+        rs = measure([a.sheetc, "build", "--embed-template", "-i", f, "-o", exe], a.runs)
+        row("build `--embed-template`", rs, f"{os.path.getsize(exe) / 1e6:.2f} MB artifact")
+        if wanted(a, "json"):
+            rs = measure([exe, "--request", '{"inputs": {"rate": 0.07}}'], a.runs)
+            row("run of the embedded executable (the input changed): JSON", rs, rs[0]["md5"])
+        if wanted(a, "workbook"):
+            rs = measure([exe, "--request", '{"inputs": {"rate": 0.07}}', "-o", out], a.runs,
                          before=lambda: os.path.exists(out) and os.remove(out))
-            row(f"formulas_cached.xlsx {label}: workbook written (`-o OUT`)", rs)
-            rs = measure([a.sheetc, "calculate", "-i", f, *flag, "--range", "Summary!A1"], a.runs)
-            row(f"formulas_cached.xlsx {label}: one declared output as JSON (`--range Summary!A1`)", rs, rs[0]["md5"])
-            # The input the workbook declares (`rate`) is given: what it reaches is calculated and written.
-            request = '{"inputs": {"rate": 0.07}}'
-            rs = measure([a.sheetc, "calculate", "-i", f, *flag, "--request", request, "-o", out], a.runs,
-                         before=lambda: os.path.exists(out) and os.remove(out))
-            row(f"formulas_cached.xlsx {label}: workbook written with the input given (`--request '{request}' -o OUT`)", rs)
+            row("run of the embedded executable (the input changed): workbook written (`-o OUT`)", rs,
+                f"{os.path.getsize(out) / 1e6:.1f} MB written")
 
 
 def group_modes(a):
@@ -423,7 +466,7 @@ def group_model(a):
 
 
 GROUPS = {"lint": group_lint, "stats": group_stats, "query": group_query, "edit": group_edit, "calculate": group_calculate,
-          "cache": group_cache, "modes": group_modes, "compiler": group_compiler, "wasm": group_wasm, "model": group_model, "python": group_python, "libreoffice": group_libreoffice}
+          "cache": group_cache, "modes": group_modes, "embedded": group_embedded, "compiler": group_compiler, "wasm": group_wasm, "model": group_model, "python": group_python, "libreoffice": group_libreoffice}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -439,7 +482,7 @@ if __name__ == "__main__":
     r.add_argument("--python", default=sys.executable)
     r.add_argument("--workbooks", default="formulas.xlsx,formulas.ods",
                    help="the `edit` group: these workbooks of DIR (comma separated)")
-    r.add_argument("--scenarios", help="the `edit` group: only these scenarios, by name (comma separated)")
+    r.add_argument("--scenarios", help="only these scenarios, by name (comma separated): the rows of `edit` (`delete-rows`), `lint` and `stats` (`xlsx`, `ods`), `query` (`xlsx-find`), `calculate` (`written`, `json`, `input`, each with `-calculate-all`) and `embedded` (`json`, `workbook`)")
     a = ap.parse_args()
     if a.cmd == "fixtures":
         fixtures(a)
