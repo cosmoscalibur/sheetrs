@@ -18,8 +18,8 @@ write = ["dep:tempfile", "dep:sheetrs-protocol", "dep:serde_json"]
 config = ["dep:toml"]
 
 [dependencies]
-sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.1" }
-sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.1", optional = true }
+sheetrs-formula = { path = "../sheetrs-formula", version = "0.4.2" }
+sheetrs-protocol = { path = "../sheetrs-protocol", version = "0.4.2", optional = true }
 
 serde.workspace = true
 thiserror.workspace = true
