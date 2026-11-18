@@ -1,0 +1,19 @@
+[package]
+name = "sheetrs-csv"
+description = "Reader of delimited text files into the sheetrs model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+sheetrs-core.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+sheetrs-testkit.workspace = true
+
+[lints]
+workspace = true

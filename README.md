@@ -11,7 +11,10 @@ is free to differ.
 | Crate | Purpose |
 | --- | --- |
 | `sheetrs-core` | Core types: cell coordinates with A1 and R1C1 views, and the workbook model |
+| `sheetrs-io` | Lexical rules shared by the format readers |
 | `sheetrs-xlsx` | Streaming XLSX reader |
+| `sheetrs-ods` | Streaming ODS reader |
+| `sheetrs-csv` | Reader of delimited text files |
 | `sheetrs-testkit` | Differential test harness that runs cases against LibreOffice as the oracle |
 
 ## Development

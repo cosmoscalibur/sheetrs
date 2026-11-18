@@ -28,6 +28,16 @@ pub(crate) struct WorkbookPart {
     pub date_system: DateSystem,
 }
 
+/// The index of the sheet the workbook opens on, as `LibreOffice` reads the `activeTab`
+/// attribute: the integer it starts with when that is a sheet, and the first sheet otherwise.
+fn active_sheet(attribute: Option<&str>, sheets: usize) -> usize {
+    attribute
+        .map(sheetrs_io::integer_prefix)
+        .and_then(|index| usize::try_from(index).ok())
+        .filter(|index| *index < sheets)
+        .unwrap_or(0)
+}
+
 pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Error> {
     let part = WORKBOOK_PART;
     let mut reader = Reader::from_reader(source);
@@ -37,6 +47,7 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
         date_system: DateSystem::Date1900,
     };
     let mut complete = false;
+    let mut active_tab: Option<String> = None;
     loop {
         buf.clear();
         match reader
@@ -57,11 +68,21 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
                         DateSystem::Date1900
                     };
                 }
+                "workbookView" if active_tab.is_none() => {
+                    active_tab = Some(attribute(&element, "activeTab", part)?.unwrap_or_default());
+                }
                 "sheet" => workbook.sheets.push(sheet_entry(&element, part)?),
                 _ => {}
             },
             Event::End(element) if element.local_name().as_ref() == "workbook" => complete = true,
-            Event::Eof if complete => return Ok(workbook),
+            Event::Eof if complete => {
+                // The sheet the workbook opens on is shown, whatever its state says.
+                let active = active_sheet(active_tab.as_deref(), workbook.sheets.len());
+                if let Some(entry) = workbook.sheets.get_mut(active) {
+                    entry.visibility = Visibility::Visible;
+                }
+                return Ok(workbook);
+            }
             Event::Eof => return Err(Error::malformed(part, "unexpected end of file")),
             _ => {}
         }
@@ -76,16 +97,11 @@ fn sheet_entry(
         attribute(element, name, part)?
             .ok_or_else(|| Error::malformed(part, format!("a sheet has no {name} attribute")))
     };
+    // Any other state, in any case, is read as visible.
     let visibility = match attribute(element, "state", part)?.as_deref() {
-        None | Some("visible") => Visibility::Visible,
         Some("hidden") => Visibility::Hidden,
         Some("veryHidden") => Visibility::VeryHidden,
-        Some(other) => {
-            return Err(Error::malformed(
-                part,
-                format!("unknown sheet state {other:?}"),
-            ));
-        }
+        _ => Visibility::Visible,
     };
     Ok(SheetEntry {
         name: required("name")?,

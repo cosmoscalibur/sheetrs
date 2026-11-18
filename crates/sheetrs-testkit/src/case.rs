@@ -53,15 +53,95 @@ pub enum Op {
     },
     Recalculate,
     RecalculateHard,
-    /// Replaces the workbook with the one loaded from `path`, like File > Open.
+    /// Replaces the workbook with the one loaded from `path`, like File > Open. A text file
+    /// is loaded with the import `filter` the case names, never with the one `LibreOffice`
+    /// would guess.
     Open {
         path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        filter: Option<TextFilter>,
     },
     /// Saves the workbook as it is at this point, like File > Save As.
     SaveAs {
         format: Format,
         path: String,
     },
+}
+
+/// What the text import filter makes of a field that is quoted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuotedFields {
+    /// A quoted field that looks like a number is a number.
+    Detected,
+    /// A quoted field is text.
+    Text,
+}
+
+/// What the text import filter makes of dates, times, percentages, currencies and the other
+/// numbers that are not plain decimals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpecialNumbers {
+    /// They are text.
+    Text,
+    /// They are numbers.
+    Detected,
+}
+
+/// What the text import filter makes of a field that starts with `=`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormulaFields {
+    /// It is text.
+    Text,
+    /// It is a formula.
+    Evaluated,
+}
+
+/// What the text import filter does with the spaces around a field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Spaces {
+    /// They stay.
+    Kept,
+    /// They are dropped.
+    Trimmed,
+}
+
+/// The options of the text import filter, which the oracle sets explicitly.
+#[derive(Debug, Clone, Serialize)]
+pub struct TextFilter {
+    /// The field separator, as a character code.
+    pub separator: u32,
+    /// The text delimiter, as a character code; 0 for none.
+    pub delimiter: u32,
+    /// The character set code: 76 is UTF-8.
+    pub charset: u32,
+    /// The language of numbers and dates: 1033 is English (United States).
+    pub language: u32,
+    pub quoted_fields: QuotedFields,
+    pub special_numbers: SpecialNumbers,
+    pub formula_fields: FormulaFields,
+    pub spaces: Spaces,
+}
+
+impl TextFilter {
+    /// The filter that reads a comma-separated file of UTF-8 text with `"` as delimiter, for the
+    /// English (United States) language, with every option off.
+    #[must_use]
+    pub const fn comma_separated() -> Self {
+        Self {
+            separator: 44,
+            delimiter: 34,
+            charset: 76,
+            language: 1033,
+            quoted_fields: QuotedFields::Detected,
+            special_numbers: SpecialNumbers::Text,
+            formula_fields: FormulaFields::Text,
+            spaces: Spaces::Kept,
+        }
+    }
 }
 
 /// A file format the oracle can save.
@@ -83,6 +163,17 @@ pub struct Read {
 pub struct Observed {
     pub name: String,
     pub reads: Vec<ReadResult>,
+    /// The sheets of the workbook after the operations, in order.
+    #[serde(default)]
+    pub sheets: Vec<SheetState>,
+}
+
+/// A sheet of the workbook the oracle observed.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SheetState {
+    pub name: String,
+    /// Whether the sheet is shown.
+    pub visible: bool,
 }
 
 /// The cells of one [`Read`], by row and then column.
@@ -168,11 +259,24 @@ mod tests {
     fn open_serializes_with_the_path() -> Result<(), serde_json::Error> {
         let op = Op::Open {
             path: "/tmp/book.xlsx".to_owned(),
+            filter: None,
         };
         assert_eq!(
             serde_json::to_value(&op)?,
             json!({"op": "open", "path": "/tmp/book.xlsx"})
         );
+        Ok(())
+    }
+
+    #[test]
+    fn open_with_a_text_filter_serializes_its_options() -> Result<(), serde_json::Error> {
+        let op = Op::Open {
+            path: "/tmp/book.csv".to_owned(),
+            filter: Some(TextFilter::comma_separated()),
+        };
+        let value = serde_json::to_value(&op)?;
+        assert_eq!(value["filter"]["separator"], 44);
+        assert_eq!(value["filter"]["special_numbers"], "text");
         Ok(())
     }
 

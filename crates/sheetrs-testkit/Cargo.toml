@@ -10,6 +10,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+sheetrs-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

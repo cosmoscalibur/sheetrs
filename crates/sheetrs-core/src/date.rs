@@ -11,6 +11,8 @@ impl DateSystem {
     /// The serial number of a calendar date of the proleptic Gregorian calendar,
     /// or `None` when the date does not exist.
     ///
+    /// A [`DateSystem::Custom`] counts days from its own zero date.
+    ///
     /// The 1900 system counts days from 1899-12-30, so 1900-03-01 is 61 and the
     /// non-existent 1900-02-29 is rejected. A year whose serial does not fit in 64 bits has none.
     #[must_use]
@@ -19,6 +21,7 @@ impl DateSystem {
         epoch_days.checked_add(match self {
             Self::Date1900 => EPOCH_TO_1900_ZERO,
             Self::Date1904 => EPOCH_TO_1904_ZERO,
+            Self::Custom { zero } => zero.checked_neg()?,
         })
     }
 }

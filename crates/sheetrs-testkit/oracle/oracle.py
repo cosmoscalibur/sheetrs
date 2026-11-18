@@ -149,13 +149,41 @@ def column_span(sheet, spec):
     return start, end - start + 1
 
 
+def text_filter_options(options):
+    """The token string of the text import filter, which names every option explicitly."""
+    flag = lambda value: "true" if value else "false"
+    tokens = [
+        options["separator"],
+        options["delimiter"],
+        options["charset"],
+        1,
+        "",
+        options["language"],
+        flag(options["quoted_fields"] == "text"),
+        flag(options["special_numbers"] == "detected"),
+        "false",
+        "false",
+        flag(options["spaces"] == "trimmed"),
+        -1,
+        flag(options["formula_fields"] == "evaluated"),
+    ]
+    return ",".join(str(token) for token in tokens)
+
+
 def apply_op(desktop, document, dispatcher, op):
     """Applies one operation and returns the document that is current afterwards."""
     kind = op["op"]
     if kind == "open":
         # Loaded as the UI does by default: cached results are trusted, not recalculated.
+        properties = [property_value("Hidden", True)]
+        text_filter = op.get("filter")
+        if text_filter is not None:
+            properties += [
+                property_value("FilterName", "Text - txt - csv (StarCalc)"),
+                property_value("FilterOptions", text_filter_options(text_filter)),
+            ]
         loaded = desktop.loadComponentFromURL(
-            Path(op["path"]).as_uri(), "_blank", 0, (property_value("Hidden", True),)
+            Path(op["path"]).as_uri(), "_blank", 0, tuple(properties)
         )
         document.close(True)
         return loaded
@@ -246,6 +274,13 @@ def run_case(desktop, dispatcher, case):
         return {
             "name": case["name"],
             "reads": [read_range(document, read) for read in case["reads"]],
+            "sheets": [
+                {"name": sheet.Name, "visible": bool(sheet.IsVisible)}
+                for sheet in (
+                    document.Sheets.getByIndex(index)
+                    for index in range(document.Sheets.Count)
+                )
+            ],
         }
     finally:
         # A failed close must not hide the case's own error; terminate() disposes what is left.

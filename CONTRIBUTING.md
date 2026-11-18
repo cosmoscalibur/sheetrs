@@ -31,8 +31,11 @@ container or in GitHub CI. They need LibreOffice 26.8 (`soffice` on `PATH`) and
 the Python UNO bridge (`python3` able to `import uno`) on the host:
 
 ```bash
-cargo test -p sheetrs-testkit -- --ignored
+cargo test --workspace -- --ignored --test-threads=1
 ```
+
+Each reader crate has its own oracle tests, named for the format they read (`..._over_xlsx`,
+`..._over_ods`, `..._over_csv`). They run one at a time because each starts a LibreOffice process.
 
 ## GitHub CI
 

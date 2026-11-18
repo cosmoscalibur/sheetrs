@@ -938,7 +938,7 @@ pub enum ValueRef<'a> {
 /// The formula of a cell, borrowed from the workbook.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormulaRef<'a> {
-    /// Formula text as stored in the file, without a leading `=`.
+    /// Formula text as the file stores it, in the grammar of its format.
     Text(&'a str),
     /// A cell of a shared group; see [`SheetView::shared_anchor`].
     Shared {

@@ -8,8 +8,10 @@ and not fixed. Every such difference is a defect.
 | Area | Crate | Covers |
 | --- | --- | --- |
 | [`model/`](model/) | `sheetrs-core` | What a cell holds, dates, storage limits: whatever does not depend on a file format |
-| [`io/`](io/) | readers and writers | Behaviour common to formats goes in `io/`, behaviour of one format in `io/<format>/` |
+| [`io/`](io/) | `sheetrs-io` and the readers | Behaviour common to formats goes in `io/`, behaviour of one format in `io/<format>/` |
 | [`io/xlsx/`](io/xlsx/) | `sheetrs-xlsx` | Values, workbook, cell placement, formulas and writing of XLSX |
+| [`io/ods/`](io/ods/) | `sheetrs-ods` | Values, workbook, cell placement and formulas of ODS |
+| [`io/csv/`](io/csv/) | `sheetrs-csv` | Fields and dates of delimited text |
 | [`ops/`](ops/) | `sheetrs-testkit` and the planner | Operations applied to a workbook |
 
 A page belongs to the lowest area whose crate owns the behaviour: a limit of the store is a

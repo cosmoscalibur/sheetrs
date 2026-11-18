@@ -12,6 +12,7 @@ authors = ["Edward Villegas-Pulgarin"]
 
 [workspace.dependencies]
 sheetrs-core = { path = "crates/sheetrs-core" }
+sheetrs-io = { path = "crates/sheetrs-io" }
 sheetrs-testkit = { path = "crates/sheetrs-testkit" }
 dhat = "0.3"
 proptest = "1"

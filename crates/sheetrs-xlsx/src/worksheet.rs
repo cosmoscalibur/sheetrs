@@ -132,11 +132,11 @@ pub(crate) fn parse_worksheet<R: BufRead>(
 /// the exception: it stands for a row without the attribute.
 fn start_row(element: &BytesStart<'_>, cursor: &mut Cursor, part: &str) -> Result<(), Error> {
     // The value -1 stands for "no row", as `LibreOffice` reads it.
-    cursor.row = match attribute(element, "r", part)?.map(|number| lexical::integer_prefix(&number))
-    {
-        Some(number) if number != -1 => number - 1,
-        _ => cursor.next_row,
-    };
+    cursor.row =
+        match attribute(element, "r", part)?.map(|number| sheetrs_io::integer_prefix(&number)) {
+            Some(number) if number != -1 => number - 1,
+            _ => cursor.next_row,
+        };
     cursor.next_row = cursor.row.saturating_add(1);
     cursor.next_col = 0;
     Ok(())
@@ -196,7 +196,7 @@ fn formula_kind(element: &BytesStart<'_>, part: &str) -> Result<FormulaKind, Err
         None | Some("normal") => FormulaKind::Plain,
         Some("shared") => match attribute(element, "si", part)? {
             None => FormulaKind::Plain,
-            Some(group) => match u32::try_from(lexical::integer_prefix(&group)) {
+            Some(group) => match u32::try_from(sheetrs_io::integer_prefix(&group)) {
                 Ok(group) => FormulaKind::Shared(group),
                 Err(_) => FormulaKind::Ignored,
             },
@@ -300,11 +300,19 @@ fn finish_cell(
         formula.is_some(),
         context,
     );
+    let implied = if formula.is_none() {
+        implied_formula(cell.kind.as_deref(), cell.value.as_deref(), &value)
+    } else {
+        None
+    };
     // Only the non-zero number cached by a plain formula is trusted; everything else is recalculated.
     let trusted = kind == Some(FormulaKind::Plain)
         && matches!(cell.kind.as_deref(), None | Some("n"))
         && matches!(&value, ValueRef::Number(number) if number.is_nan() || number.abs() > 0.0);
-    let stale = formula.is_some() && !trusted;
+    // An implied formula is recalculated on load like any formula that is not a plain
+    // non-zero number.
+    let stale = (formula.is_some() && !trusted) || implied.is_some();
+    let formula = formula.or(implied.map(FormulaRef::Text));
     if value != ValueRef::Empty || formula.is_some() {
         sheet.load_view(pos, &value, formula, stale, member)?;
     }
@@ -330,6 +338,21 @@ fn load_array(
     let row = if area.open_ended { pos.row } else { row };
     sheet.fill_array(pos, CellPos { row, col }, text)?;
     Ok(())
+}
+
+/// The formula `LibreOffice` makes of a boolean or error cell that has none: the cell is
+/// loaded as `=TRUE()`, `=FALSE()` or the formula that its error text is.
+fn implied_formula(
+    kind: Option<&str>,
+    stored: Option<&str>,
+    value: &ValueRef<'_>,
+) -> Option<&'static str> {
+    match (kind, value) {
+        (Some("b"), ValueRef::Bool(true)) => Some("TRUE()"),
+        (Some("b"), ValueRef::Bool(false)) => Some("FALSE()"),
+        (Some("e"), ValueRef::Error(_)) => lexical::constant_error(stored?).1,
+        _ => None,
+    }
 }
 
 /// What reading a cell value needs to know about the workbook.
@@ -369,8 +392,8 @@ fn cell_value<'a>(
         Some("b") => ValueRef::Bool(lexical::boolean(stored)),
         // The cached error of a formula is kept as stored; it is recalculated on load.
         Some("e") if has_formula => ValueRef::Error(ErrorKind::from_text(stored)),
-        Some("e") => ValueRef::Error(lexical::constant_error(stored)),
-        Some("d") => lexical::iso_date(stored, context.date_system)
+        Some("e") => ValueRef::Error(lexical::constant_error(stored).0),
+        Some("d") => sheetrs_io::iso_date(stored, context.date_system, sheetrs_io::DateRules::XLSX)
             .map_or_else(|| ValueRef::Text(stored), ValueRef::Number),
         Some(_) => ValueRef::Empty,
     }

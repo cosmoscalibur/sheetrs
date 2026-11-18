@@ -75,7 +75,7 @@ pub enum Value {
 /// The formula of a cell.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Formula {
-    /// Formula text as stored in the file, without a leading `=`.
+    /// Formula text as the file stores it, in the grammar of its format.
     Text(String),
     /// A cell that reuses the formula of a shared group; the anchor cell is
     /// given by [`SheetView::shared_anchor`], which is `None` when the file does
@@ -108,7 +108,7 @@ pub enum Visibility {
     VeryHidden,
 }
 
-/// How serial dates count: from 1899-12-30 or from 1904-01-01.
+/// How serial dates count: from 1899-12-30, from 1904-01-01 or from a date of the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DateSystem {
     /// Serial 0 is 1899-12-30.
@@ -116,6 +116,11 @@ pub enum DateSystem {
     Date1900,
     /// Serial 0 is 1904-01-01.
     Date1904,
+    /// Serial 0 is another date, which some formats let the file choose.
+    Custom {
+        /// Days from 1970-01-01 to the date of serial 0, negative before it.
+        zero: i64,
+    },
 }
 
 /// An ordered list of sheets, with the tables of strings and formulas they share.

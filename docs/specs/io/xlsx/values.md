@@ -16,7 +16,16 @@ How `LibreOffice` 26.8 reads the value of a `<c>` element (`sheetrs-xlsx`).
 | A cell with an unknown type holds nothing. | `typed_cell_values_over_xlsx` in `sheetrs-xlsx` |
 | A cell of type `d` is a serial number counted from 1899-12-30 (1904-01-01 in the 1904 system) when its trimmed text is `YYYY-MM-DD`, optionally followed by `T` or `t`, `hh:mm:ss`, a fraction after `.` or `,` and `Z` or an offset. The year has one or more digits, an optional minus sign and a value from -32768 to 32767 other than 0; fractional seconds are dropped; hour 24 needs zero minutes, seconds and leading fraction; a positive offset counts its hours only, a negative one counts its minutes twice, up to 14:00. Other text stays text. | `typed_cell_values_over_xlsx` in `sheetrs-xlsx` |
 
+| A boolean cell is the formula `=TRUE()` or `=FALSE()`, and an error cell whose text names an error (the six classic errors in any case, ignoring ASCII whitespace, and `#SPILL!`) is the formula of that name; both are recalculated on load. | `typed_cell_values_over_xlsx` and `cell_addresses_rows_and_duplicates_over_xlsx` in `sheetrs-xlsx` |
+
 ## Open defects
 
 - A character that XML 1.0 forbids, such as U+000B, inside a cell value makes LibreOffice
   read the cell as empty; the reader keeps the text.
+- An error cell without a formula is compiled by LibreOffice as a formula whose text is
+  decompiled in its own way (`1e999` is `=INF`, `a1` is `=A1`, `#ref!` is a name that gives
+  `#NAME?`). The reader gives every other text the error LibreOffice shows, with no formula;
+  text such as `1`, `TRUE`, `"a"`, `A1`, `(` or `=` gives other values. Closing it needs the
+  formula compiler.
+- A boolean or error cell at the address of a cell that an array formula filled replaces it in
+  the reader and leaves it in LibreOffice.

@@ -1,14 +1,16 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
+use std::fmt::Write as _;
 use std::fs::{self, File};
-use std::sync::{Mutex, PoisonError};
 
-use sheetrs_core::{Cell, CellPos, Value, Visibility};
+use sheetrs_core::{Cell, CellPos, Formula, Value, Visibility};
 use sheetrs_testkit::case::{Case, CellInput, CellValue, Format, Op, Read, SheetSpec};
+use sheetrs_testkit::compare::{self, Leniency};
+use sheetrs_testkit::crafted::{self, Package};
 use sheetrs_testkit::oracle;
 
 mod common;
-use common::single_sheet_package_with;
+use common::{REL_NS, package, rels_xml, single_sheet_package_with, workbook_xml, worksheet_xml};
 
 const OUTPUT: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/oracle_read_back.xlsx");
 const CRAFTED_DIR: &str = env!("CARGO_TARGET_TMPDIR");
@@ -219,6 +221,10 @@ const INDEXES: &[&str] = &[
     "0 ",
 ];
 const ERRORS: &[&str] = &[
+    " ",
+    "\t",
+    "\n",
+    "&#160;",
     "#FOO!",
     "#n/a",
     " #N/A ",
@@ -318,6 +324,8 @@ const INDEXES_MORE: &[&str] = &[
     "&#8195;1",
 ];
 const DATES_MORE: &[&str] = &[
+    "-0002-03-01",
+    "-0100-03-01",
     "1-01-01",
     "20-01-02",
     "99-01-01",
@@ -545,6 +553,71 @@ const STRUCTURES: &[(&str, &str, &str)] = &[
         "lowercase_and_absolute_addresses",
         r#"<row r="1"><c r="a1"><v>1</v></c><c r="$B$1"><v>2</v></c></row>"#,
         "A1:C1",
+    ),
+    (
+        "bool_then_constant",
+        r#"<row r="1"><c r="A1" t="b"><v>1</v></c><c r="A1"><v>5</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "constant_then_bool",
+        r#"<row r="1"><c r="A1"><v>5</v></c><c r="A1" t="b"><v>0</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "bool_then_formula",
+        r#"<row r="1"><c r="A1" t="b"><v>1</v></c><c r="A1"><f>2+2</f><v>4</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "formula_then_bool",
+        r#"<row r="1"><c r="A1"><f>2+2</f><v>4</v></c><c r="A1" t="b"><v>1</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "error_then_constant",
+        r#"<row r="1"><c r="A1" t="e"><v>#N/A</v></c><c r="A1"><v>5</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "constant_then_error",
+        r#"<row r="1"><c r="A1"><v>5</v></c><c r="A1" t="e"><v>#DIV/0!</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "empty_bool_over_constant",
+        r#"<row r="1"><c r="A1"><v>5</v></c><c r="A1" t="b"><v></v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "bool_over_shared_member",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f></c></row><row r="2"><c r="A2" t="b"><v>1</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "bool_then_bool",
+        r#"<row r="1"><c r="A1" t="b"><v>1</v></c><c r="A1" t="b"><v>0</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "error_then_error",
+        r#"<row r="1"><c r="A1" t="e"><v>#N/A</v></c><c r="A1" t="e"><v>#DIV/0!</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "error_over_shared_member",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f></c></row><row r="2"><c r="A2" t="e"><v>#N/A</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "bool_over_ignored_formula",
+        r#"<row r="1"><c r="A1"><f t="bogus">1+1</f><v>5</v></c><c r="A1" t="b"><v>1</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "error_with_formula_text",
+        r#"<row r="1"><c r="A1" t="e"><f>1/0</f><v>#DIV/0!</v></c></row>"#,
+        "A1:A2",
     ),
 ];
 
@@ -1262,151 +1335,106 @@ fn array_formula_entries() -> Vec<Crafted> {
     entries
 }
 
-/// Serializes the runs against `LibreOffice`: each starts a process that the others would
-/// disturb, and the packages of one run are named by its group.
-static ORACLE: Mutex<()> = Mutex::new(());
-
 /// Reads each hand-written package with the reader and with the oracle and reports every
 /// cell where they differ.
-fn assert_reads_as_the_oracle(group: &str, entries: &[Crafted]) -> Result<(), Box<dyn StdError>> {
-    let _guard = ORACLE.lock().unwrap_or_else(PoisonError::into_inner);
-    let mut cases = Vec::new();
-    for (index, entry) in entries.iter().enumerate() {
-        let path = format!("{CRAFTED_DIR}/{group}_{index}.xlsx");
-        let package =
-            single_sheet_package_with(&entry.rows, entry.strings.as_deref(), &entry.properties)?;
-        fs::write(&path, package.into_inner())?;
-        cases.push(Case {
+fn assert_reads_as_the_oracle(
+    group: &str,
+    entries: &[Crafted],
+    implied_values: bool,
+) -> Result<(), Box<dyn StdError>> {
+    let mut packages = Vec::new();
+    for entry in entries {
+        packages.push(Package {
             name: entry.name.clone(),
-            sheets: vec![spec("Dummy", &[])],
-            ops: vec![Op::Open { path }],
-            reads: vec![Read {
-                sheet: "S1".to_owned(),
-                range: entry.range.to_owned(),
-            }],
+            bytes: single_sheet_package_with(
+                &entry.rows,
+                entry.strings.as_deref(),
+                &entry.properties,
+            )?
+            .into_inner(),
+            sheet: "S1".to_owned(),
+            range: entry.range.to_owned(),
         });
     }
-    let report = oracle::run(&cases)?;
+    crafted::assert_reads_as_the_oracle(
+        CRAFTED_DIR,
+        group,
+        "xlsx",
+        None,
+        &packages,
+        |path| Ok(sheetrs_xlsx::read(File::open(path)?)?),
+        move |expected, actual| leniency(expected, actual, implied_values),
+    )
+}
 
-    let mut differences = Vec::new();
-    for (index, (outcome, entry)) in report.results.iter().zip(entries).enumerate() {
-        let name = &entry.name;
-        let path = format!("{CRAFTED_DIR}/{group}_{index}.xlsx");
-        let ours = sheetrs_xlsx::read(File::open(&path)?);
-        let line = match (outcome, &ours) {
-            (oracle::Outcome::Observed(observed), Ok(workbook)) => {
-                let sheet = workbook.sheet("S1");
-                let mut found = Vec::new();
-                for (row, cells) in (0..).zip(&observed.reads[0].cells) {
-                    for (col, expected) in (0..).zip(cells) {
-                        let actual = sheet.and_then(|sheet| {
-                            sheet.get(CellPos { row, col }).map(|view| view.to_cell())
-                        });
-                        if !same(expected, actual.as_ref(), true) {
-                            found.push(format!(
-                                "{name} at {row},{col}: oracle {expected:?}, read {actual:?}"
-                            ));
-                        }
-                    }
-                }
-                (!found.is_empty()).then(|| found.join("\n"))
-            }
-            (oracle::Outcome::Observed(observed), Err(error)) => Some(format!(
-                "{name}: oracle {:?}, read failed: {error}",
-                observed.reads[0].cells[0][0]
-            )),
-            (oracle::Outcome::Failed { error, .. }, Ok(_)) => {
-                Some(format!("{name}: oracle failed ({error}), read succeeded"))
-            }
-            (oracle::Outcome::Failed { .. }, Err(_)) => None,
+/// The names of the formulas that `LibreOffice` makes of boolean and error cells.
+const IMPLIED: [&str; 9] = [
+    "=TRUE()", "=FALSE()", "=#N/A", "=#DIV/0!", "=#VALUE!", "=#NUM!", "=#NULL!", "=#NAME?",
+    "=#SPILL!",
+];
+
+/// `LibreOffice` compiles the text of an error cell as a formula; the reader implies that
+/// formula only for the names above, so other error constants may lack it.
+fn leniency(expected: &CellValue, actual: Option<&Cell>, implied_values: bool) -> Leniency {
+    let known = compare::formula_of(expected).is_some_and(|text| IMPLIED.contains(&text.as_str()));
+    if known {
+        let text = actual.and_then(|cell| match &cell.formula {
+            Some(Formula::Text(text)) => Some(text.as_str()),
+            _ => None,
+        });
+        if text.map(|text| format!("={text}")) != compare::formula_of(expected).cloned() {
+            return Leniency::Mismatch;
+        }
+        // The values are those of the oracle only where no other cell shares the address.
+        return if implied_values {
+            Leniency::Values
+        } else {
+            Leniency::Strict
         };
-        differences.extend(line);
     }
-    assert!(differences.is_empty(), "\n{}", differences.join("\n"));
-    Ok(())
+    if matches!(
+        actual.map(|cell| (&cell.value, cell.formula.is_none())),
+        Some((Value::Error(_), true))
+    ) {
+        Leniency::FormulaOptional
+    } else {
+        Leniency::Strict
+    }
 }
 
 /// Typed cell values of hand-written parts read as the oracle gives them.
 #[test]
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn typed_cell_values_over_xlsx() -> Result<(), Box<dyn StdError>> {
-    assert_reads_as_the_oracle("value", &value_entries())
+    assert_reads_as_the_oracle("value", &value_entries(), true)
 }
 
 /// Date cells and the 1904 flag read as the oracle gives them.
 #[test]
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn date_cells_follow_the_date_system_flag_over_xlsx() -> Result<(), Box<dyn StdError>> {
-    assert_reads_as_the_oracle("date_system", &date_system_entries())
+    assert_reads_as_the_oracle("date_system", &date_system_entries(), false)
 }
 
 /// Addresses, rows and repeated cells resolve as the oracle resolves them.
 #[test]
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn cell_addresses_rows_and_duplicates_over_xlsx() -> Result<(), Box<dyn StdError>> {
-    assert_reads_as_the_oracle("layout", &layout_entries())
+    assert_reads_as_the_oracle("layout", &layout_entries(), false)
 }
 
 /// Formula types and shared groups load as the oracle loads them.
 #[test]
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn formula_types_and_shared_groups_over_xlsx() -> Result<(), Box<dyn StdError>> {
-    assert_reads_as_the_oracle("shared_formula", &shared_formula_entries())
+    assert_reads_as_the_oracle("shared_formula", &shared_formula_entries(), false)
 }
 
 /// Array formulas load as the oracle loads them.
 #[test]
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn array_formulas_fill_their_area_over_xlsx() -> Result<(), Box<dyn StdError>> {
-    assert_reads_as_the_oracle("array_formula", &array_formula_entries())
-}
-
-/// The formula the oracle shows for a cell, if any.
-fn formula_of(value: &CellValue) -> Option<&String> {
-    match value {
-        CellValue::Number { formula, .. }
-        | CellValue::String { formula, .. }
-        | CellValue::Error { formula, .. }
-        | CellValue::NonFinite { formula, .. } => formula.as_ref(),
-        CellValue::Empty => None,
-    }
-}
-
-/// Whether the cell read matches the oracle's, formula presence included. With `pending_stale`,
-/// the stale value of a formula cell is not compared: `LibreOffice` recalculates it, which
-/// needs the formula engine.
-fn same(expected: &CellValue, actual: Option<&Cell>, pending_stale: bool) -> bool {
-    // LibreOffice keeps a boolean as the formula `=TRUE()` or `=FALSE()` and an error constant as
-    // a formula too; here they are constants (an open defect).
-    let boolean = matches!(
-        actual.map(|cell| (&cell.value, cell.formula.is_none())),
-        Some((Value::Bool(_) | Value::Error(_), true))
-    );
-    let actual_has_formula = actual.is_some_and(|cell| cell.formula.is_some());
-    if (formula_of(expected).is_some() != actual_has_formula) && !boolean {
-        return false;
-    }
-    if pending_stale && actual.is_some_and(|cell| cell.stale) {
-        return true;
-    }
-    match (expected, actual.map(|cell| &cell.value)) {
-        (CellValue::Empty, None | Some(Value::Empty)) => true,
-        (CellValue::Number { v, .. }, Some(Value::Bool(flag))) => {
-            v.to_bits() == f64::from(u8::from(*flag)).to_bits()
-        }
-        (CellValue::NonFinite { v, .. }, Some(Value::Number(number))) => match v.as_str() {
-            "nan" => number.is_nan(),
-            "inf" => number.is_infinite() && number.is_sign_positive(),
-            "-inf" => number.is_infinite() && number.is_sign_negative(),
-            _ => false,
-        },
-        (CellValue::Number { v, .. }, Some(Value::Number(number))) => {
-            v.to_bits() == number.to_bits()
-        }
-        (CellValue::String { v, .. }, Some(Value::Text(text))) => v.as_str() == &**text,
-        (CellValue::Error { text, .. }, Some(Value::Error(kind))) => kind.as_text() == text,
-        _ => false,
-    }
+    assert_reads_as_the_oracle("array_formula", &array_formula_entries(), false)
 }
 
 fn spec(name: &str, cells: &[(&str, CellInput)]) -> SheetSpec {
@@ -1454,6 +1482,7 @@ fn a_saved_workbook_reads_back_over_xlsx() -> Result<(), Box<dyn StdError>> {
             },
             Op::Open {
                 path: OUTPUT.to_owned(),
+                filter: None,
             },
         ],
         reads: vec![
@@ -1495,7 +1524,7 @@ fn a_saved_workbook_reads_back_over_xlsx() -> Result<(), Box<dyn StdError>> {
             for (col, expected) in (0..).zip(cells) {
                 let actual = sheet.get(CellPos { row, col }).map(|view| view.to_cell());
                 assert!(
-                    same(expected, actual.as_ref(), false),
+                    compare::matches(expected, actual.as_ref(), false, false),
                     "{}!{row},{col}: oracle {expected:?}, read {actual:?}",
                     read.sheet
                 );
@@ -1594,7 +1623,7 @@ fn only_a_plain_non_zero_number_cache_is_trusted_over_xlsx() -> Result<(), Box<d
         cases.push(Case {
             name: (*name).to_owned(),
             sheets: vec![spec("Dummy", &[])],
-            ops: vec![Op::Open { path }],
+            ops: vec![Op::Open { path, filter: None }],
             reads: vec![Read {
                 sheet: "S1".to_owned(),
                 range: "A1".to_owned(),
@@ -1623,4 +1652,165 @@ fn only_a_plain_non_zero_number_cache_is_trusted_over_xlsx() -> Result<(), Box<d
         );
     }
     Ok(())
+}
+
+/// A package of sheets named `S1`, `S2` and so on, each with the `state` attribute that
+/// `states` gives it (none when it is empty) and a number in its cell A1.
+fn sheets_package(
+    states: &[&str],
+    properties: &str,
+) -> Result<std::io::Cursor<Vec<u8>>, Box<dyn StdError>> {
+    let mut sheets = String::new();
+    let mut relationships = String::new();
+    let mut content_types = String::from(
+        r#"<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>"#,
+    );
+    let mut parts = Vec::new();
+    for (index, state) in states.iter().enumerate() {
+        let number = index + 1;
+        let attribute = if state.is_empty() {
+            String::new()
+        } else {
+            format!(r#" state="{state}""#)
+        };
+        write!(
+            sheets,
+            r#"<sheet name="S{number}" sheetId="{number}"{attribute} r:id="rId{number}"/>"#
+        )?;
+        write!(
+            relationships,
+            r#"<Relationship Id="rId{number}" Type="{REL_NS}/worksheet" Target="worksheets/sheet{number}.xml"/>"#
+        )?;
+        write!(
+            content_types,
+            r#"<Override PartName="/xl/worksheets/sheet{number}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>"#
+        )?;
+        parts.push((
+            format!("xl/worksheets/sheet{number}.xml"),
+            worksheet_xml(&format!(
+                r#"<row r="1"><c r="A1"><v>{number}</v></c></row>"#
+            )),
+        ));
+    }
+    let mut files = vec![
+        (
+            "xl/workbook.xml".to_owned(),
+            workbook_xml(&sheets, properties),
+        ),
+        (
+            "xl/_rels/workbook.xml.rels".to_owned(),
+            rels_xml(&relationships),
+        ),
+        (
+            "[Content_Types].xml".to_owned(),
+            format!(
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>{content_types}</Types>"#
+            ),
+        ),
+        (
+            "_rels/.rels".to_owned(),
+            rels_xml(&format!(
+                r#"<Relationship Id="rId1" Type="{REL_NS}/officeDocument" Target="xl/workbook.xml"/>"#
+            )),
+        ),
+    ];
+    files.extend(parts);
+    let borrowed: Vec<(&str, String)> = files
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.clone()))
+        .collect();
+    package(&borrowed)
+}
+
+/// The `state` attributes of a sheet of a workbook, spelled in many ways.
+const SHEET_STATES: &[&str] = &[
+    "",
+    "visible",
+    "hidden",
+    "veryHidden",
+    "Hidden",
+    "VISIBLE",
+    "bogus",
+    " hidden",
+    "hidden ",
+    "very hidden",
+    "veryhidden",
+];
+
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn sheet_states_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    let mut packages = Vec::new();
+    for state in SHEET_STATES {
+        packages.push(Package {
+            name: format!("second[{state}]"),
+            bytes: sheets_package(&["", state, ""], "")?.into_inner(),
+            sheet: "S1".to_owned(),
+            range: "A1:A1".to_owned(),
+        });
+    }
+    // The first sheet carries the state, and a visible sheet follows it.
+    for state in ["hidden", "veryHidden"] {
+        packages.push(Package {
+            name: format!("first[{state}]"),
+            bytes: sheets_package(&[state, ""], "")?.into_inner(),
+            sheet: "S2".to_owned(),
+            range: "A1:A1".to_owned(),
+        });
+    }
+    // A sheet that the workbook opens on is shown whatever its state says.
+    for (name, states, active) in [
+        ("active_second_both_hidden", ["hidden", "hidden", ""], "1"),
+        ("active_third", ["hidden", "hidden", "hidden"], "2"),
+        ("active_past_the_end", ["hidden", "", ""], "9"),
+        ("active_negative", ["hidden", "", ""], "-1"),
+        ("active_not_a_number", ["hidden", "", ""], "x"),
+        ("active_very_hidden", ["", "veryHidden", ""], "1"),
+        ("active_first_again", ["hidden", "hidden", ""], "0"),
+        ("active_empty", ["hidden", "", ""], ""),
+        ("active_with_spaces", ["hidden", "hidden", ""], " 1 "),
+        ("active_prefix", ["hidden", "hidden", ""], "1x"),
+        ("active_plus", ["hidden", "hidden", ""], "+1"),
+    ] {
+        packages.push(Package {
+            name: name.to_owned(),
+            bytes: sheets_package(
+                &states,
+                &format!(r#"<bookViews><workbookView activeTab="{active}"/></bookViews>"#),
+            )?
+            .into_inner(),
+            sheet: "S3".to_owned(),
+            range: "A1:A1".to_owned(),
+        });
+    }
+    for (name, views) in [
+        (
+            "two_views",
+            r#"<workbookView activeTab="1"/><workbookView activeTab="2"/>"#,
+        ),
+        (
+            "view_without_attribute_then_view",
+            r#"<workbookView/><workbookView activeTab="1"/>"#,
+        ),
+    ] {
+        packages.push(Package {
+            name: name.to_owned(),
+            bytes: sheets_package(
+                &["hidden", "hidden", "hidden"],
+                &format!("<bookViews>{views}</bookViews>"),
+            )?
+            .into_inner(),
+            sheet: "S3".to_owned(),
+            range: "A1:A1".to_owned(),
+        });
+    }
+    crafted::assert_reads_as_the_oracle(
+        CRAFTED_DIR,
+        "sheet_state",
+        "xlsx",
+        None,
+        &packages,
+        |path| Ok(sheetrs_xlsx::read(File::open(path)?)?),
+        |_: &CellValue, _: Option<&Cell>| Leniency::Strict,
+    )
 }

@@ -44,6 +44,15 @@ fn constant(value: Value) -> Cell {
     }
 }
 
+/// A cell that stands for a formula whose result is stored, as a boolean or an error name.
+fn implied(value: Value, formula: &str) -> Cell {
+    Cell {
+        value,
+        formula: Some(Formula::Text(formula.to_owned())),
+        stale: true,
+    }
+}
+
 fn text(content: &str) -> Value {
     Value::Text(content.into())
 }
@@ -105,10 +114,13 @@ fn cell_types_are_read() -> TestResult {
         Some(constant(Value::Number(1.5)))
     );
     assert_eq!(cell_at(&sheet, at(0, 1)), Some(constant(text("hello"))));
-    assert_eq!(cell_at(&sheet, at(0, 2)), Some(constant(Value::Bool(true))));
+    assert_eq!(
+        cell_at(&sheet, at(0, 2)),
+        Some(implied(Value::Bool(true), "TRUE()"))
+    );
     assert_eq!(
         cell_at(&sheet, at(0, 3)),
-        Some(constant(Value::Error(ErrorKind::DivZero)))
+        Some(implied(Value::Error(ErrorKind::DivZero), "#DIV/0!"))
     );
     assert_eq!(cell_at(&sheet, at(0, 4)), Some(constant(text("inline"))));
     assert_eq!(
@@ -286,7 +298,12 @@ fn booleans_follow_the_numeric_and_word_forms() -> TestResult {
         ("FALSE", false),
     ] {
         let cell = only_cell(&cell_xml(r#" t="b""#, &format!("<v>{stored}</v>")), None)?;
-        assert_eq!(cell, Some(constant(Value::Bool(expected))), "{stored}");
+        let formula = if expected { "TRUE()" } else { "FALSE()" };
+        assert_eq!(
+            cell,
+            Some(implied(Value::Bool(expected), formula)),
+            "{stored}"
+        );
     }
     Ok(())
 }
@@ -295,7 +312,11 @@ fn booleans_follow_the_numeric_and_word_forms() -> TestResult {
 fn text_in_a_boolean_cell_is_read_as_libreoffice_reads_it() -> TestResult {
     for stored in ["maybe", "yes", "T", " "] {
         let cell = only_cell(&cell_xml(r#" t="b""#, &format!("<v>{stored}</v>")), None)?;
-        assert_eq!(cell, Some(constant(Value::Bool(false))), "{stored:?}");
+        assert_eq!(
+            cell,
+            Some(implied(Value::Bool(false), "FALSE()")),
+            "{stored:?}"
+        );
     }
     Ok(())
 }
@@ -589,5 +610,32 @@ fn an_array_formula_that_covers_too_many_cells_is_refused() -> TestResult {
         read(package),
         Err(Error::TooLarge(sheetrs_core::LimitError::ArrayCells))
     ));
+    Ok(())
+}
+
+#[test]
+fn boolean_and_error_cells_without_formula_carry_the_formula_they_stand_for() -> TestResult {
+    for (kind, stored, formula) in [
+        ("b", "1", Some("TRUE()")),
+        ("b", "0", Some("FALSE()")),
+        ("e", "#N/A", Some("#N/A")),
+        ("e", " #div/0! ", Some("#DIV/0!")),
+        ("e", "#SPILL!", Some("#SPILL!")),
+        ("e", "x", None),
+        ("e", "#GETTING_DATA", None),
+        ("e", "#N/A!", None),
+    ] {
+        let cell = only_cell(
+            &cell_xml(&format!(r#" t="{kind}""#), &format!("<v>{stored}</v>")),
+            None,
+        )?
+        .ok_or("cell")?;
+        assert_eq!(
+            cell.formula,
+            formula.map(|text| Formula::Text(text.to_owned())),
+            "{kind} {stored}"
+        );
+        assert_eq!(cell.stale, formula.is_some());
+    }
     Ok(())
 }

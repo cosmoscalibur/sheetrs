@@ -583,11 +583,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "sheetrs-csv"
+version = "0.5.0"
+dependencies = [
+ "sheetrs-core",
+ "sheetrs-testkit",
+ "thiserror",
+]
+
+[[package]]
+name = "sheetrs-io"
+version = "0.5.0"
+dependencies = [
+ "sheetrs-core",
+]
+
+[[package]]
+name = "sheetrs-ods"
+version = "0.5.0"
+dependencies = [
+ "quick-xml",
+ "sheetrs-core",
+ "sheetrs-io",
+ "sheetrs-testkit",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
 name = "sheetrs-testkit"
 version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sheetrs-core",
  "thiserror",
 ]
 
@@ -598,6 +627,7 @@ dependencies = [
  "dhat",
  "quick-xml",
  "sheetrs-core",
+ "sheetrs-io",
  "sheetrs-testkit",
  "thiserror",
  "zip",
