@@ -6,7 +6,7 @@ use std::sync::Arc;
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 use sheetrs_core::{
-    Cell, CellPos, CellRef, DateSystem, ErrorKind, Formula, MAX_COLS, MAX_ROWS, Sheet, Value,
+    CellPos, CellRef, DateSystem, ErrorKind, FormulaRef, MAX_COLS, MAX_ROWS, SheetBuilder, ValueRef,
 };
 
 use crate::Error;
@@ -54,7 +54,7 @@ struct Cursor {
 /// Reads the cells of a worksheet part into `sheet`.
 pub(crate) fn parse_worksheet<R: BufRead>(
     source: R,
-    sheet: &mut Sheet,
+    sheet: &mut SheetBuilder<'_>,
     context: &ValueContext<'_>,
     part: &str,
 ) -> Result<(), Error> {
@@ -109,7 +109,7 @@ pub(crate) fn parse_worksheet<R: BufRead>(
             },
             Event::End(element) if element.local_name().as_ref() == "c" => {
                 if let Some(cell) = pending.take() {
-                    finish_cell(cell, sheet, context);
+                    finish_cell(&cell, sheet, context)?;
                 }
             }
             // A worksheet cut short keeps the cells read before the cut, as `LibreOffice` does.
@@ -214,16 +214,20 @@ fn inline_string<R: BufRead>(reader: &mut Reader<R>, part: &str) -> Result<Strin
     }
 }
 
-fn finish_cell(cell: PendingCell, sheet: &mut Sheet, context: &ValueContext<'_>) {
+fn finish_cell(
+    cell: &PendingCell,
+    sheet: &mut SheetBuilder<'_>,
+    context: &ValueContext<'_>,
+) -> Result<(), Error> {
     let Some(pos) = cell.pos else {
-        return;
+        return Ok(());
     };
     let kind = cell.formula.as_ref().map(|formula| formula.kind);
     // A data table holds no cell of its own.
     if kind == Some(FormulaKind::DataTable) {
-        return;
+        return Ok(());
     }
-    let formula = match cell.formula {
+    let formula = match &cell.formula {
         Some(PendingFormula {
             kind: FormulaKind::Ignored,
             ..
@@ -231,41 +235,34 @@ fn finish_cell(cell: PendingCell, sheet: &mut Sheet, context: &ValueContext<'_>)
         | None => None,
         Some(PendingFormula { text, kind }) if !text.is_empty() => {
             if let FormulaKind::Shared(group) = kind {
-                sheet.set_shared_anchor(group, pos);
+                sheet.set_shared_anchor(*group, pos);
             }
-            Some(Formula::Text(text))
+            Some(FormulaRef::Text(text))
         }
         Some(PendingFormula {
             kind: FormulaKind::Shared(group),
             ..
-        }) => Some(Formula::Shared { index: group }),
+        }) => Some(FormulaRef::Shared { index: *group }),
         Some(_) => None,
     };
     let value = cell_value(
         cell.kind.as_deref(),
         cell.value.as_deref(),
-        cell.inline_text,
+        cell.inline_text.as_deref(),
         formula.is_some(),
         context,
     );
     // Only the non-zero number cached by a plain formula is trusted; everything else is recalculated.
     let trusted = kind == Some(FormulaKind::Plain)
         && matches!(cell.kind.as_deref(), None | Some("n"))
-        && matches!(&value, Value::Number(number) if number.is_nan() || number.abs() > 0.0);
+        && matches!(&value, ValueRef::Number(number) if number.is_nan() || number.abs() > 0.0);
     let stale = formula.is_some() && !trusted;
     // A cell with a formula is not replaced by a later one without.
-    let replaces_a_formula =
-        formula.is_none() && sheet.get(pos).is_some_and(|old| old.formula.is_some());
-    if (value != Value::Empty || formula.is_some()) && !replaces_a_formula {
-        sheet.set(
-            pos,
-            Cell {
-                value,
-                formula,
-                stale,
-            },
-        );
+    let replaces_a_formula = formula.is_none() && sheet.has_formula_at(pos);
+    if (value != ValueRef::Empty || formula.is_some()) && !replaces_a_formula {
+        sheet.set_view(pos, &value, formula, stale)?;
     }
+    Ok(())
 }
 
 /// What reading a cell value needs to know about the workbook.
@@ -276,38 +273,38 @@ pub(crate) struct ValueContext<'a> {
 
 /// The value of a cell as `LibreOffice` loads it. An unknown cell type holds nothing, and
 /// text that does not fit the announced type is read as `LibreOffice` reads it.
-fn cell_value(
+fn cell_value<'a>(
     kind: Option<&str>,
-    stored: Option<&str>,
-    inline_text: Option<String>,
+    stored: Option<&'a str>,
+    inline_text: Option<&'a str>,
     has_formula: bool,
-    context: &ValueContext<'_>,
-) -> Value {
+    context: &'a ValueContext<'a>,
+) -> ValueRef<'a> {
     // Inline text counts only for inline string cells, and an empty one holds nothing.
     if kind == Some("inlineStr") {
         if stored.is_some() {
-            return Value::Empty;
+            return ValueRef::Empty;
         }
         return inline_text
             .filter(|text| !text.is_empty())
-            .map_or(Value::Empty, |text| Value::Text(text.into()));
+            .map_or(ValueRef::Empty, ValueRef::Text);
     }
     let Some(stored) = stored.filter(|stored| !stored.is_empty()) else {
-        return Value::Empty;
+        return ValueRef::Empty;
     };
     match kind {
-        None | Some("n") => Value::Number(lexical::number(stored)),
+        None | Some("n") => ValueRef::Number(lexical::number(stored)),
         Some("s") => lexical::shared_string_index(stored)
             .and_then(|index| context.shared_strings.get(index))
             .filter(|string| !string.is_empty())
-            .map_or(Value::Empty, |string| Value::Text(Arc::clone(string))),
-        Some("str") => Value::Text(stored.into()),
-        Some("b") => Value::Bool(lexical::boolean(stored)),
+            .map_or(ValueRef::Empty, |string| ValueRef::Text(string)),
+        Some("str") => ValueRef::Text(stored),
+        Some("b") => ValueRef::Bool(lexical::boolean(stored)),
         // The cached error of a formula is kept as stored; it is recalculated on load.
-        Some("e") if has_formula => Value::Error(ErrorKind::from_text(stored)),
-        Some("e") => Value::Error(lexical::constant_error(stored)),
+        Some("e") if has_formula => ValueRef::Error(ErrorKind::from_text(stored)),
+        Some("e") => ValueRef::Error(lexical::constant_error(stored)),
         Some("d") => lexical::iso_date(stored, context.date_system)
-            .map_or_else(|| Value::Text(stored.into()), Value::Number),
-        Some(_) => Value::Empty,
+            .map_or_else(|| ValueRef::Text(stored), ValueRef::Number),
+        Some(_) => ValueRef::Empty,
     }
 }

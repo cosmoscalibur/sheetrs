@@ -8,7 +8,7 @@ use std::error::Error;
 use std::fs::File;
 use std::time::Instant;
 
-use sheetrs_core::Formula;
+use sheetrs_core::FormulaRef;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut arguments = env::args().skip(1);
@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .filter(|(_, cell)| {
                 matches!(
                     cell.formula,
-                    Some(Formula::Text(_) | Formula::Shared { .. })
+                    Some(FormulaRef::Text(_) | FormulaRef::Shared { .. })
                 )
             })
             .count();

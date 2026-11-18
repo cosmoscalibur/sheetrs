@@ -28,7 +28,6 @@ fn same(left: &Workbook, right: &Workbook) -> bool {
     left.sheets().len() == right.sheets().len()
         && left
             .sheets()
-            .iter()
             .zip(right.sheets())
             .all(|(a, b)| a.name() == b.name() && a.len() == b.len() && a.cells().eq(b.cells()))
 }

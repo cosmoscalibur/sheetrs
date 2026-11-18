@@ -7,7 +7,7 @@ use std::env;
 use std::error::Error;
 use std::fs::File;
 
-use sheetrs_core::{CellPos, CellRef, Formula, Sheet, Value};
+use sheetrs_core::{CellPos, CellRef, FormulaRef, SheetView, ValueRef};
 
 /// Rewrites the A1 references of a formula as offsets from `base`, so that formulas filled down
 /// a column normalize to the same text. A rough tokenizer: it is meant for statistics only.
@@ -74,13 +74,13 @@ struct Shape {
     text_values: HashSet<String>,
 }
 
-fn template_of(sheet: &Sheet, pos: CellPos, formula: &Formula) -> Option<String> {
+fn template_of(sheet: &SheetView<'_>, pos: CellPos, formula: FormulaRef<'_>) -> Option<String> {
     match formula {
-        Formula::Text(text) => Some(relative_template(text, pos)),
-        Formula::Shared { index } => {
-            let anchor = sheet.shared_anchor(*index)?;
-            match &sheet.get(anchor)?.formula {
-                Some(Formula::Text(text)) => Some(relative_template(text, anchor)),
+        FormulaRef::Text(text) => Some(relative_template(text, pos)),
+        FormulaRef::Shared { index } => {
+            let anchor = sheet.shared_anchor(index)?;
+            match sheet.get(anchor)?.formula {
+                Some(FormulaRef::Text(text)) => Some(relative_template(text, anchor)),
                 _ => None,
             }
         }
@@ -118,27 +118,27 @@ fn count_runs(entries: &[(u32, Option<String>)], shape: &mut Shape) {
     close(&mut length, shape);
 }
 
-fn collect_sheet(sheet: &Sheet, shape: &mut Shape) {
+fn collect_sheet(sheet: &SheetView<'_>, shape: &mut Shape) {
     let mut by_column: BTreeMap<u32, Vec<(u32, Option<String>)>> = BTreeMap::new();
     let (mut max_row, mut max_col) = (0_u32, 0_u32);
-    for (pos, cell) in sheet.cells() {
+    for (pos, cell) in sheet.cells_by_column() {
         shape.cells += 1;
         max_row = max_row.max(pos.row);
         max_col = max_col.max(pos.col);
         match &cell.value {
-            Value::Number(_) => shape.numbers += 1,
-            Value::Text(text) => {
+            ValueRef::Number(_) => shape.numbers += 1,
+            ValueRef::Text(text) => {
                 shape.texts += 1;
                 shape.text_value_bytes += text.len();
                 shape.text_values.insert(text.to_string());
             }
             _ => shape.others += 1,
         }
-        let template = cell.formula.as_ref().and_then(|formula| {
+        let template = cell.formula.and_then(|formula| {
             shape.formulas += 1;
-            if let Formula::Text(text) = formula {
+            if let FormulaRef::Text(text) = formula {
                 shape.formula_text_bytes += text.len();
-                shape.exact_formula_texts.insert(text.clone());
+                shape.exact_formula_texts.insert(text.to_owned());
             }
             let template = template_of(sheet, pos, formula);
             if let Some(template) = &template {
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut shape = Shape::default();
     let mut sheet_sizes: Vec<usize> = Vec::new();
     for sheet in workbook.sheets() {
-        collect_sheet(sheet, &mut shape);
+        collect_sheet(&sheet, &mut shape);
         sheet_sizes.push(sheet.len());
     }
     sheet_sizes.sort_unstable_by(|a, b| b.cmp(a));

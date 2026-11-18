@@ -16,7 +16,7 @@ mod xml;
 
 use std::io::{BufReader, Read, Seek};
 
-use sheetrs_core::{Sheet, Workbook};
+use sheetrs_core::Workbook;
 use zip::ZipArchive;
 use zip::result::ZipError;
 
@@ -77,7 +77,7 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
             )
         })?;
         let part = resolve_target(target);
-        let mut sheet = Sheet::new(entry.name);
+        let mut sheet = workbook.sheet_builder(entry.name);
         sheet.set_visibility(entry.visibility);
         let file = open(&mut archive, &part)?;
         if workers > 1 && file.get_ref().size() >= PARALLEL_MIN_BYTES {
@@ -85,7 +85,7 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
         } else {
             parse_worksheet(file, &mut sheet, &context, &part)?;
         }
-        workbook.push_sheet(sheet);
+        sheet.finish();
     }
     Ok(workbook)
 }

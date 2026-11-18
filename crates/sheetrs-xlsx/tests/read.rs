@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::io::Cursor;
 
 use sheetrs_core::{
-    Cell, CellPos, DateSystem, ErrorKind, Formula, Sheet, Value, Visibility, Workbook,
+    Cell, CellPos, DateSystem, ErrorKind, Formula, SheetView, Value, Visibility, Workbook,
 };
 use sheetrs_xlsx::{Error, read};
 
@@ -23,8 +23,13 @@ fn single_sheet(rows: &str, shared_strings: Option<&str>) -> Result<Workbook, Bo
     Ok(read(single_sheet_package(rows, shared_strings)?)?)
 }
 
-fn sheet_of(workbook: &Workbook) -> Result<&Sheet, Box<dyn StdError>> {
+fn sheet_of(workbook: &Workbook) -> Result<SheetView<'_>, Box<dyn StdError>> {
     Ok(workbook.sheet("S1").ok_or("sheet S1 is missing")?)
+}
+
+/// The cell at `pos`, owned.
+fn cell_at(sheet: &SheetView<'_>, pos: CellPos) -> Option<Cell> {
+    sheet.get(pos).map(|view| view.to_cell())
 }
 
 fn at(row: u32, col: u32) -> CellPos {
@@ -67,7 +72,6 @@ fn sheets_keep_order_names_visibility_and_date_system() -> TestResult {
     let workbook = read(source)?;
     let summary: Vec<(&str, Visibility)> = workbook
         .sheets()
-        .iter()
         .map(|sheet| (sheet.name(), sheet.visibility()))
         .collect();
     assert_eq!(
@@ -96,35 +100,42 @@ fn cell_types_are_read() -> TestResult {
         Some("<si><t>hello</t></si>"),
     )?;
     let sheet = sheet_of(&workbook)?;
-    assert_eq!(sheet.get(at(0, 0)), Some(&constant(Value::Number(1.5))));
-    assert_eq!(sheet.get(at(0, 1)), Some(&constant(text("hello"))));
-    assert_eq!(sheet.get(at(0, 2)), Some(&constant(Value::Bool(true))));
     assert_eq!(
-        sheet.get(at(0, 3)),
-        Some(&constant(Value::Error(ErrorKind::DivZero)))
+        cell_at(&sheet, at(0, 0)),
+        Some(constant(Value::Number(1.5)))
     );
-    assert_eq!(sheet.get(at(0, 4)), Some(&constant(text("inline"))));
+    assert_eq!(cell_at(&sheet, at(0, 1)), Some(constant(text("hello"))));
+    assert_eq!(cell_at(&sheet, at(0, 2)), Some(constant(Value::Bool(true))));
     assert_eq!(
-        sheet.get(at(1, 0)),
-        Some(&Cell {
+        cell_at(&sheet, at(0, 3)),
+        Some(constant(Value::Error(ErrorKind::DivZero)))
+    );
+    assert_eq!(cell_at(&sheet, at(0, 4)), Some(constant(text("inline"))));
+    assert_eq!(
+        cell_at(&sheet, at(1, 0)),
+        Some(Cell {
             value: text("xy"),
             formula: Some(Formula::Text(r#""x"&"y""#.to_owned())),
             stale: true,
         })
     );
     assert_eq!(
-        sheet.get(at(1, 1)),
-        Some(&Cell {
+        cell_at(&sheet, at(1, 1)),
+        Some(Cell {
             value: Value::Number(3.0),
             formula: Some(Formula::Text("A1*2".to_owned())),
             stale: false,
         })
     );
-    assert_eq!(sheet.get(at(1, 2)), None, "a style-only cell holds nothing");
+    assert_eq!(
+        cell_at(&sheet, at(1, 2)),
+        None,
+        "a style-only cell holds nothing"
+    );
     let Some(Cell {
         value: Value::Number(sum),
         ..
-    }) = sheet.get(at(1, 3))
+    }) = cell_at(&sheet, at(1, 3))
     else {
         return Err("D2 is not a number".into());
     };
@@ -141,16 +152,16 @@ fn shared_strings_join_rich_text_and_skip_phonetic_runs() -> TestResult {
         ),
     )?;
     let sheet = sheet_of(&workbook)?;
-    let strings: Vec<Option<&Value>> = (0..4)
-        .map(|col| sheet.get(at(0, col)).map(|cell| &cell.value))
+    let strings: Vec<Option<Value>> = (0..4)
+        .map(|col| cell_at(&sheet, at(0, col)).map(|cell| cell.value))
         .collect();
     assert_eq!(
         strings,
         vec![
-            Some(&text("hello")),
-            Some(&text("ab cd")),
-            Some(&text("x")),
-            Some(&text("a & b A")),
+            Some(text("hello")),
+            Some(text("ab cd")),
+            Some(text("x")),
+            Some(text("a & b A")),
         ]
     );
     Ok(())
@@ -164,11 +175,11 @@ fn shared_formulas_record_their_anchor() -> TestResult {
     )?;
     let sheet = sheet_of(&workbook)?;
     assert_eq!(
-        sheet.get(at(0, 0)).and_then(|cell| cell.formula.clone()),
+        cell_at(&sheet, at(0, 0)).and_then(|cell| cell.formula.clone()),
         Some(Formula::Text("B1+1".to_owned()))
     );
     assert_eq!(
-        sheet.get(at(1, 0)).and_then(|cell| cell.formula.clone()),
+        cell_at(&sheet, at(1, 0)).and_then(|cell| cell.formula.clone()),
         Some(Formula::Shared { index: 0 })
     );
     assert_eq!(sheet.shared_anchor(0), Some(at(0, 0)));
@@ -184,7 +195,7 @@ fn cells_without_addresses_follow_the_previous_ones() -> TestResult {
     let sheet = sheet_of(&workbook)?;
     let numbers: Vec<(u32, u32, Value)> = sheet
         .cells()
-        .map(|(pos, cell)| (pos.row, pos.col, cell.value.clone()))
+        .map(|(pos, cell)| (pos.row, pos.col, cell.to_cell().value))
         .collect();
     assert_eq!(
         numbers,
@@ -235,7 +246,7 @@ fn a_shared_string_index_out_of_range_holds_nothing() -> TestResult {
 }
 fn only_cell(rows: &str, shared_strings: Option<&str>) -> Result<Option<Cell>, Box<dyn StdError>> {
     let workbook = single_sheet(rows, shared_strings)?;
-    Ok(sheet_of(&workbook)?.get(at(0, 0)).cloned())
+    Ok(cell_at(&sheet_of(&workbook)?, at(0, 0)))
 }
 
 fn cell_xml(attributes: &str, children: &str) -> String {
@@ -359,8 +370,8 @@ fn a_worksheet_cut_at_a_tag_boundary_keeps_the_cells_read() -> TestResult {
     let source = truncated_worksheet(r#"<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c>"#)?;
     let workbook = read(source)?;
     assert_eq!(
-        sheet_of(&workbook)?.get(at(0, 0)),
-        Some(&constant(Value::Number(1.0)))
+        cell_at(&sheet_of(&workbook)?, at(0, 0)),
+        Some(constant(Value::Number(1.0)))
     );
     Ok(())
 }
@@ -373,7 +384,7 @@ fn a_cell_whose_address_is_not_a_cell_goes_where_an_unaddressed_one_would() -> T
     )?;
     let numbers: Vec<(u32, u32, Value)> = sheet_of(&workbook)?
         .cells()
-        .map(|(pos, cell)| (pos.row, pos.col, cell.value.clone()))
+        .map(|(pos, cell)| (pos.row, pos.col, cell.to_cell().value))
         .collect();
     assert_eq!(
         numbers,
@@ -398,8 +409,14 @@ fn a_row_outside_the_sheet_drops_its_unaddressed_cells_and_the_next_row_follows_
         None,
     )?;
     let sheet = sheet_of(&row_zero)?;
-    assert_eq!(sheet.get(at(1, 0)), Some(&constant(Value::Number(1.0))));
-    assert_eq!(sheet.get(at(0, 0)), Some(&constant(Value::Number(3.0))));
+    assert_eq!(
+        cell_at(&sheet, at(1, 0)),
+        Some(constant(Value::Number(1.0)))
+    );
+    assert_eq!(
+        cell_at(&sheet, at(0, 0)),
+        Some(constant(Value::Number(3.0)))
+    );
     assert_eq!(sheet.len(), 2);
     Ok(())
 }
@@ -408,8 +425,8 @@ fn a_row_outside_the_sheet_drops_its_unaddressed_cells_and_the_next_row_follows_
 fn an_addressed_cell_keeps_its_place_in_a_row_outside_the_sheet() -> TestResult {
     let workbook = single_sheet(r#"<row r="1048577"><c r="B2"><v>2</v></c></row>"#, None)?;
     assert_eq!(
-        sheet_of(&workbook)?.get(at(1, 1)),
-        Some(&constant(Value::Number(2.0)))
+        cell_at(&sheet_of(&workbook)?, at(1, 1)),
+        Some(constant(Value::Number(2.0)))
     );
     Ok(())
 }
@@ -490,7 +507,7 @@ fn an_empty_workbook_root_reads_as_a_workbook_without_sheets() -> TestResult {
         ("xl/_rels/workbook.xml.rels", rels_xml("")),
     ])?;
     let workbook = read(source)?;
-    assert!(workbook.sheets().is_empty());
+    assert!(workbook.sheets().next().is_none());
     Ok(())
 }
 
@@ -501,8 +518,17 @@ fn a_row_numbered_minus_one_has_no_row_number() -> TestResult {
         None,
     )?;
     let sheet = sheet_of(&workbook)?;
-    assert_eq!(sheet.get(at(2, 0)), Some(&constant(Value::Number(1.0))));
-    assert_eq!(sheet.get(at(3, 0)), Some(&constant(Value::Number(2.0))));
-    assert_eq!(sheet.get(at(4, 0)), Some(&constant(Value::Number(3.0))));
+    assert_eq!(
+        cell_at(&sheet, at(2, 0)),
+        Some(constant(Value::Number(1.0)))
+    );
+    assert_eq!(
+        cell_at(&sheet, at(3, 0)),
+        Some(constant(Value::Number(2.0)))
+    );
+    assert_eq!(
+        cell_at(&sheet, at(4, 0)),
+        Some(constant(Value::Number(3.0)))
+    );
     Ok(())
 }

@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use std::sync::mpsc::{channel, sync_channel};
 use std::thread;
 
-use sheetrs_core::Sheet;
+use sheetrs_core::{SheetBuilder, Workbook};
 use zip::result::ZipError;
 
 use crate::Error;
@@ -20,7 +20,7 @@ const BLOCK_BYTES: usize = 1 << 20;
 
 pub(crate) fn parse_worksheet<R: Read>(
     mut source: R,
-    sheet: &mut Sheet,
+    sheet: &mut SheetBuilder<'_>,
     context: &ValueContext<'_>,
     part: &str,
     workers: usize,
@@ -28,7 +28,7 @@ pub(crate) fn parse_worksheet<R: Read>(
     let (job_sender, job_receiver) = sync_channel::<(usize, Vec<u8>)>(workers * 2);
     let job_receiver = Mutex::new(job_receiver);
     let job_receiver = &job_receiver;
-    let (result_sender, result_receiver) = channel::<(usize, Result<Sheet, Error>)>();
+    let (result_sender, result_receiver) = channel::<(usize, Result<Workbook, Error>)>();
     thread::scope(move |scope| {
         for _ in 0..workers {
             let result_sender = result_sender.clone();
@@ -39,9 +39,11 @@ pub(crate) fn parse_worksheet<R: Read>(
                         .ok()
                         .and_then(|receiver| receiver.recv().ok());
                     let Some((index, bytes)) = job else { break };
-                    let mut partial = Sheet::new(String::new());
-                    let outcome = parse_sequentially(bytes.as_slice(), &mut partial, context, part)
-                        .map(|()| partial);
+                    let mut partial = Workbook::new();
+                    let mut builder = partial.sheet_builder("");
+                    let outcome = parse_sequentially(bytes.as_slice(), &mut builder, context, part);
+                    builder.finish();
+                    let outcome = outcome.map(|()| partial);
                     if result_sender.send((index, outcome)).is_err() {
                         break;
                     }
@@ -55,11 +57,15 @@ pub(crate) fn parse_worksheet<R: Read>(
         });
         drop(job_sender);
 
-        let mut partials: Vec<(usize, Result<Sheet, Error>)> = result_receiver.iter().collect();
+        let mut partials: Vec<(usize, Result<Workbook, Error>)> = result_receiver.iter().collect();
         partials.sort_unstable_by_key(|(index, _)| *index);
         produced?;
         for (_, partial) in partials {
-            sheet.append(partial?);
+            let partial = partial?;
+            let part_sheet = partial
+                .sheet("")
+                .expect("a block parser publishes its sheet");
+            sheet.absorb(&part_sheet)?;
         }
         Ok(())
     })

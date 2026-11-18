@@ -17,6 +17,9 @@ pub enum Error {
         /// The parser error.
         source: quick_xml::Error,
     },
+    /// The workbook holds more than the cell store can address.
+    #[error("workbook too large: {0}")]
+    TooLarge(#[from] sheetrs_core::LimitError),
     /// A part is well-formed XML that does not describe a valid workbook.
     #[error("invalid {part}: {reason}")]
     Malformed {

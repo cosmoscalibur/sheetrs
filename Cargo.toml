@@ -14,7 +14,9 @@ authors = ["Edward Villegas-Pulgarin"]
 sheetrs-core = { path = "crates/sheetrs-core" }
 sheetrs-testkit = { path = "crates/sheetrs-testkit" }
 dhat = "0.3"
+proptest = "1"
 quick-xml = "0.42"
+rustc-hash = "2"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

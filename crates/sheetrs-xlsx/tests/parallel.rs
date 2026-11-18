@@ -24,7 +24,7 @@ fn the_parallel_reader_returns_the_cells_of_the_sequential_one() -> Result<(), B
     for workers in [2, 3, 8] {
         let parallel = read_parallel(Cursor::new(package.clone()), workers)?;
         assert_eq!(parallel.sheets().len(), sequential.sheets().len());
-        for (left, right) in parallel.sheets().iter().zip(sequential.sheets()) {
+        for (left, right) in parallel.sheets().zip(sequential.sheets()) {
             assert_eq!(left.name(), right.name());
             assert_eq!(left.len(), 240_000, "{workers} workers");
             assert!(left.cells().eq(right.cells()), "{workers} workers");

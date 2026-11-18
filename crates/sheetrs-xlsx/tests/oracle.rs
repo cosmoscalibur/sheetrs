@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fs::{self, File};
 
-use sheetrs_core::{Cell, CellPos, Sheet, Value, Visibility};
+use sheetrs_core::{Cell, CellPos, Value, Visibility};
 use sheetrs_testkit::case::{Case, CellInput, CellValue, Format, Op, Read, SheetSpec};
 use sheetrs_testkit::oracle;
 
@@ -749,8 +749,10 @@ fn crafted_cells_read_as_the_oracle_loads_them() -> Result<(), Box<dyn StdError>
                 let mut found = Vec::new();
                 for (row, cells) in (0..).zip(&observed.reads[0].cells) {
                     for (col, expected) in (0..).zip(cells) {
-                        let actual = sheet.and_then(|sheet| sheet.get(CellPos { row, col }));
-                        if !same(expected, actual, true) {
+                        let actual = sheet.and_then(|sheet| {
+                            sheet.get(CellPos { row, col }).map(|view| view.to_cell())
+                        });
+                        if !same(expected, actual.as_ref(), true) {
                             found.push(format!(
                                 "{name} at {row},{col}: oracle {expected:?}, read {actual:?}"
                             ));
@@ -885,12 +887,11 @@ fn a_workbook_saved_by_the_oracle_reads_back_to_the_observed_values()
     let observed = observed.remove(0);
 
     let workbook = sheetrs_xlsx::read(File::open(OUTPUT)?)?;
-    let names: Vec<&str> = workbook.sheets().iter().map(Sheet::name).collect();
+    let names: Vec<&str> = workbook.sheets().map(|sheet| sheet.name()).collect();
     assert_eq!(names, vec!["S1", "S2"]);
     assert!(
         workbook
             .sheets()
-            .iter()
             .all(|sheet| sheet.visibility() == Visibility::Visible)
     );
 
@@ -899,8 +900,8 @@ fn a_workbook_saved_by_the_oracle_reads_back_to_the_observed_values()
     let stored = workbook
         .sheet("S1")
         .and_then(|sheet| sheet.get(CellPos { row: 0, col: 2 }))
-        .map(|cell| &cell.value);
-    assert_eq!(stored, Some(&Value::Number(0.3)));
+        .map(|cell| cell.to_cell().value);
+    assert_eq!(stored, Some(Value::Number(0.3)));
 
     for read in &observed.reads {
         let sheet = workbook
@@ -908,9 +909,9 @@ fn a_workbook_saved_by_the_oracle_reads_back_to_the_observed_values()
             .ok_or_else(|| format!("sheet {} is missing", read.sheet))?;
         for (row, cells) in (0..).zip(&read.cells) {
             for (col, expected) in (0..).zip(cells) {
-                let actual = sheet.get(CellPos { row, col });
+                let actual = sheet.get(CellPos { row, col }).map(|view| view.to_cell());
                 assert!(
-                    same(expected, actual, false),
+                    same(expected, actual.as_ref(), false),
                     "{}!{row},{col}: oracle {expected:?}, read {actual:?}",
                     read.sheet
                 );
