@@ -18,7 +18,8 @@ is free to differ.
 
 Requires Rust 1.99 or newer, and Docker for the local checks. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
 branching and lint rules and [docs/clean-room.md](docs/clean-room.md) for the
-clean-room rules.
+clean-room rules, and [docs/specs](docs/specs/README.md) for the behaviour reproduced from
+the oracle.
 
 ```bash
 scripts/ci-local.sh

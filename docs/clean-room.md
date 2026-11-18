@@ -25,7 +25,8 @@ MPL-2.0).
 
 Every behavioural rule that is not stated in a public specification records
 where it came from: the specification section, or the oracle case that showed
-it.
+it. Oracle observations and their open defects are in [specs](specs/README.md), grouped
+as the crates are.
 
 Numeric differences against the oracle start at zero tolerance. Each exception
 is recorded in [numeric-exceptions.md](numeric-exceptions.md) with its

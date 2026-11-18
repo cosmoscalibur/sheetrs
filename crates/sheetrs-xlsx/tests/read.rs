@@ -366,7 +366,7 @@ fn truncated_worksheet(content: &str) -> Result<Cursor<Vec<u8>>, Box<dyn StdErro
 }
 
 #[test]
-fn a_worksheet_cut_at_a_tag_boundary_keeps_the_cells_read() -> TestResult {
+fn a_worksheet_cut_at_a_tag_boundary_keeps_the_cells_read_over_xlsx() -> TestResult {
     let source = truncated_worksheet(r#"<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c>"#)?;
     let workbook = read(source)?;
     assert_eq!(

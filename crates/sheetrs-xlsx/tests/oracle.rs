@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fs::{self, File};
+use std::sync::{Mutex, PoisonError};
 
 use sheetrs_core::{Cell, CellPos, Value, Visibility};
 use sheetrs_testkit::case::{Case, CellInput, CellValue, Format, Op, Read, SheetSpec};
@@ -1079,112 +1080,19 @@ fn array_reference_entries(entries: &mut Vec<Crafted>) {
     }
 }
 
-/// The matrices added by the second review: whitespace, dates, flags, line breaks and addresses.
-fn more_entries(entries: &mut Vec<Crafted>) {
-    add_matrix(entries, "number", "", None, "", NUMBERS_MORE);
-    add_matrix(entries, "boolean", r#" t="b""#, None, "", BOOLEANS_MORE);
-    add_matrix(
-        entries,
-        "index",
-        r#" t="s""#,
-        Some("<si><t>a</t></si><si><t>b</t></si>"),
-        "",
-        INDEXES_MORE,
-    );
-    add_matrix(entries, "date", r#" t="d""#, None, "", DATES_MORE);
-    add_matrix(
-        entries,
-        "date1904",
-        r#" t="d""#,
-        None,
-        r#"<workbookPr date1904="1"/>"#,
-        DATES_1904_MORE,
-    );
-    for attribute in DATE_1904_ATTRIBUTES {
-        let properties = format!(r#"<workbookPr date1904="{attribute}"/>"#);
-        add_matrix(
-            entries,
-            "date1904_attribute",
-            r#" t="d""#,
-            None,
-            &properties,
-            &["1904-01-01"],
-        );
-    }
-    add_matrix(
-        entries,
-        "date1904_twice",
-        r#" t="d""#,
-        None,
-        r#"<workbookPr date1904="1"/><workbookPr date1904="0"/>"#,
-        &["1904-01-01"],
-    );
-    add_matrix(
-        entries,
-        "date1904_twice_reversed",
-        r#" t="d""#,
-        None,
-        r#"<workbookPr date1904="0"/><workbookPr date1904="1"/>"#,
-        &["1904-01-01"],
-    );
-    for text in STRING_TEXTS {
-        entries.push(Crafted {
-            name: format!("shared[{text}]"),
-            rows: r#"<row r="1"><c r="A1" t="s"><v>0</v></c></row>"#.to_owned(),
-            strings: Some(format!("<si><t>{text}</t></si>")),
-            range: "A1",
-            properties: String::new(),
-        });
-        entries.push(Crafted {
-            name: format!("inline[{text}]"),
-            rows: format!(r#"<row r="1"><c r="A1" t="inlineStr"><is><t>{text}</t></is></c></row>"#),
-            strings: None,
-            range: "A1",
-            properties: String::new(),
-        });
-        entries.push(Crafted {
-            name: format!("result[{text}]"),
-            rows: format!(r#"<row r="1"><c r="A1" t="str"><v>{text}</v></c></row>"#),
-            strings: None,
-            range: "A1",
-            properties: String::new(),
-        });
-    }
-    for si in ["x", "", "0", "0.0", "1e0", "-1", " 0", "4294967296"] {
-        entries.push(Crafted {
-            name: format!("shared_si[{si}]"),
-            rows: format!(
-                r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="{si}">1+1</f><v>5</v></c></row><row r="2"><c r="A2"><f t="shared" si="{si}"/><v>6</v></c></row>"#
-            ),
-            strings: None,
-            range: "A1:A3",
-            properties: String::new(),
-        });
-    }
-    shared_reference_entries(entries);
-    array_reference_entries(entries);
-    for kind in ["", "bogus", "Shared", " normal", "NORMAL", "normal"] {
-        entries.push(Crafted {
-            name: format!("formula_type[{kind}]"),
-            rows: format!(r#"<row r="1"><c r="A1"><f t="{kind}">1+1</f><v>5</v></c></row>"#),
-            strings: None,
-            range: "A1",
-            properties: String::new(),
-        });
-    }
-    for (name, rows, range) in SHARED_GROUPS.iter().chain(ARRAY_GROUPS).chain(STRUCTURES) {
-        entries.push(Crafted {
-            name: (*name).to_owned(),
-            rows: (*rows).to_owned(),
-            strings: None,
-            range,
-            properties: String::new(),
-        });
+fn entry(name: String, rows: String, range: &'static str) -> Crafted {
+    Crafted {
+        name,
+        rows,
+        strings: None,
+        range,
+        properties: String::new(),
     }
 }
 
-/// The hand-written cells plus the matrices of unusual contents, each as one package.
-fn crafted_entries() -> Vec<Crafted> {
+/// Typed cell values: numbers, booleans, shared string indexes, errors, dates, inline and
+/// string results, and unknown cell types.
+fn value_entries() -> Vec<Crafted> {
     let mut entries: Vec<Crafted> = CRAFTED
         .iter()
         .map(|(name, rows, strings)| Crafted {
@@ -1195,27 +1103,51 @@ fn crafted_entries() -> Vec<Crafted> {
             properties: String::new(),
         })
         .collect();
+    let indexed = Some("<si><t>a</t></si>");
+    let indexed_more = Some("<si><t>a</t></si><si><t>b</t></si>");
     add_matrix(&mut entries, "number", "", None, "", NUMBERS);
+    add_matrix(&mut entries, "number", "", None, "", NUMBERS_MORE);
     add_matrix(&mut entries, "boolean", r#" t="b""#, None, "", BOOLEANS);
+    add_matrix(
+        &mut entries,
+        "boolean",
+        r#" t="b""#,
+        None,
+        "",
+        BOOLEANS_MORE,
+    );
+    add_matrix(&mut entries, "index", r#" t="s""#, indexed, "", INDEXES);
     add_matrix(
         &mut entries,
         "index",
         r#" t="s""#,
-        Some("<si><t>a</t></si>"),
+        indexed_more,
         "",
-        INDEXES,
+        INDEXES_MORE,
     );
     add_matrix(&mut entries, "error", r#" t="e""#, None, "", ERRORS);
     add_matrix(&mut entries, "date", r#" t="d""#, None, "", DATES);
-    add_matrix(
-        &mut entries,
-        "date1904",
-        r#" t="d""#,
-        None,
-        r#"<workbookPr date1904="1"/>"#,
-        DATES_1904,
-    );
-    more_entries(&mut entries);
+    add_matrix(&mut entries, "date", r#" t="d""#, None, "", DATES_MORE);
+    for text in STRING_TEXTS {
+        entries.push(Crafted {
+            strings: Some(format!("<si><t>{text}</t></si>")),
+            ..entry(
+                format!("shared[{text}]"),
+                r#"<row r="1"><c r="A1" t="s"><v>0</v></c></row>"#.to_owned(),
+                "A1",
+            )
+        });
+        entries.push(entry(
+            format!("inline[{text}]"),
+            format!(r#"<row r="1"><c r="A1" t="inlineStr"><is><t>{text}</t></is></c></row>"#),
+            "A1",
+        ));
+        entries.push(entry(
+            format!("result[{text}]"),
+            format!(r#"<row r="1"><c r="A1" t="str"><v>{text}</v></c></row>"#),
+            "A1",
+        ));
+    }
     for cell_type in CELL_TYPES {
         add_matrix(
             &mut entries,
@@ -1229,14 +1161,118 @@ fn crafted_entries() -> Vec<Crafted> {
     entries
 }
 
-/// Cells that hand-written XLSX parts hold are read as `LibreOffice` loads them.
-#[test]
-#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
-fn crafted_cells_read_as_the_oracle_loads_them() -> Result<(), Box<dyn StdError>> {
-    let entries = crafted_entries();
+/// Date cells under the 1900 and 1904 date systems, and the spellings of the flag.
+fn date_system_entries() -> Vec<Crafted> {
+    let mut entries = Vec::new();
+    let flag = r#"<workbookPr date1904="1"/>"#;
+    add_matrix(
+        &mut entries,
+        "date1904",
+        r#" t="d""#,
+        None,
+        flag,
+        DATES_1904,
+    );
+    add_matrix(
+        &mut entries,
+        "date1904",
+        r#" t="d""#,
+        None,
+        flag,
+        DATES_1904_MORE,
+    );
+    for attribute in DATE_1904_ATTRIBUTES {
+        let properties = format!(r#"<workbookPr date1904="{attribute}"/>"#);
+        add_matrix(
+            &mut entries,
+            "date1904_attribute",
+            r#" t="d""#,
+            None,
+            &properties,
+            &["1904-01-01"],
+        );
+    }
+    for (name, properties) in [
+        (
+            "date1904_twice",
+            r#"<workbookPr date1904="1"/><workbookPr date1904="0"/>"#,
+        ),
+        (
+            "date1904_twice_reversed",
+            r#"<workbookPr date1904="0"/><workbookPr date1904="1"/>"#,
+        ),
+    ] {
+        add_matrix(
+            &mut entries,
+            name,
+            r#" t="d""#,
+            None,
+            properties,
+            &["1904-01-01"],
+        );
+    }
+    entries
+}
+
+/// Cell addresses, rows, duplicates and inline-string structure.
+fn layout_entries() -> Vec<Crafted> {
+    STRUCTURES
+        .iter()
+        .map(|(name, rows, range)| entry((*name).to_owned(), (*rows).to_owned(), range))
+        .collect()
+}
+
+/// Formula types and shared formula groups with their `ref` spellings.
+fn shared_formula_entries() -> Vec<Crafted> {
+    let mut entries = Vec::new();
+    for si in ["x", "", "0", "0.0", "1e0", "-1", " 0", "4294967296"] {
+        entries.push(entry(
+            format!("shared_si[{si}]"),
+            format!(
+                r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="{si}">1+1</f><v>5</v></c></row><row r="2"><c r="A2"><f t="shared" si="{si}"/><v>6</v></c></row>"#
+            ),
+            "A1:A3",
+        ));
+    }
+    shared_reference_entries(&mut entries);
+    for kind in ["", "bogus", "Shared", " normal", "NORMAL", "normal"] {
+        entries.push(entry(
+            format!("formula_type[{kind}]"),
+            format!(r#"<row r="1"><c r="A1"><f t="{kind}">1+1</f><v>5</v></c></row>"#),
+            "A1",
+        ));
+    }
+    entries.extend(
+        SHARED_GROUPS
+            .iter()
+            .map(|(name, rows, range)| entry((*name).to_owned(), (*rows).to_owned(), range)),
+    );
+    entries
+}
+
+/// Array formulas with their `ref` spellings and their overlaps with other cells.
+fn array_formula_entries() -> Vec<Crafted> {
+    let mut entries = Vec::new();
+    array_reference_entries(&mut entries);
+    entries.extend(
+        ARRAY_GROUPS
+            .iter()
+            .map(|(name, rows, range)| entry((*name).to_owned(), (*rows).to_owned(), range)),
+    );
+    entries
+}
+
+/// Serializes the runs against `LibreOffice`: each starts a process that the others would
+/// disturb, and the packages of one run are named by its group.
+static ORACLE: Mutex<()> = Mutex::new(());
+
+/// Reads each hand-written package with the reader and with the oracle and reports every
+/// cell where they differ.
+fn assert_reads_as_the_oracle(group: &str, entries: &[Crafted]) -> Result<(), Box<dyn StdError>> {
+    let _guard = ORACLE.lock().unwrap_or_else(PoisonError::into_inner);
     let mut cases = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
-        let path = format!("{CRAFTED_DIR}/crafted_{index}.xlsx");
+        let path = format!("{CRAFTED_DIR}/{group}_{index}.xlsx");
         let package =
             single_sheet_package_with(&entry.rows, entry.strings.as_deref(), &entry.properties)?;
         fs::write(&path, package.into_inner())?;
@@ -1253,9 +1289,9 @@ fn crafted_cells_read_as_the_oracle_loads_them() -> Result<(), Box<dyn StdError>
     let report = oracle::run(&cases)?;
 
     let mut differences = Vec::new();
-    for (index, (outcome, entry)) in report.results.iter().zip(&entries).enumerate() {
+    for (index, (outcome, entry)) in report.results.iter().zip(entries).enumerate() {
         let name = &entry.name;
-        let path = format!("{CRAFTED_DIR}/crafted_{index}.xlsx");
+        let path = format!("{CRAFTED_DIR}/{group}_{index}.xlsx");
         let ours = sheetrs_xlsx::read(File::open(&path)?);
         let line = match (outcome, &ours) {
             (oracle::Outcome::Observed(observed), Ok(workbook)) => {
@@ -1288,6 +1324,41 @@ fn crafted_cells_read_as_the_oracle_loads_them() -> Result<(), Box<dyn StdError>
     }
     assert!(differences.is_empty(), "\n{}", differences.join("\n"));
     Ok(())
+}
+
+/// Typed cell values of hand-written parts read as the oracle gives them.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn typed_cell_values_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("value", &value_entries())
+}
+
+/// Date cells and the 1904 flag read as the oracle gives them.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn date_cells_follow_the_date_system_flag_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("date_system", &date_system_entries())
+}
+
+/// Addresses, rows and repeated cells resolve as the oracle resolves them.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn cell_addresses_rows_and_duplicates_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("layout", &layout_entries())
+}
+
+/// Formula types and shared groups load as the oracle loads them.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn formula_types_and_shared_groups_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("shared_formula", &shared_formula_entries())
+}
+
+/// Array formulas load as the oracle loads them.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn array_formulas_fill_their_area_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("array_formula", &array_formula_entries())
 }
 
 /// The formula the oracle shows for a cell, if any.
@@ -1355,8 +1426,7 @@ fn formula(text: &str) -> CellInput {
 /// The reader returns the values `LibreOffice` loads from an XLSX file it saved.
 #[test]
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
-fn a_workbook_saved_by_the_oracle_reads_back_to_the_observed_values()
--> Result<(), Box<dyn StdError>> {
+fn a_saved_workbook_reads_back_over_xlsx() -> Result<(), Box<dyn StdError>> {
     let case = Case {
         name: "xlsx_read_back".to_owned(),
         sheets: vec![
@@ -1509,7 +1579,7 @@ const FORMULA_CACHES: &[(&str, &str, Option<f64>, Option<bool>)] = &[
 
 #[test]
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
-fn only_the_cache_of_a_plain_non_zero_number_is_trusted_on_load() -> Result<(), Box<dyn StdError>> {
+fn only_a_plain_non_zero_number_cache_is_trusted_over_xlsx() -> Result<(), Box<dyn StdError>> {
     let mut cases = Vec::new();
     for (index, (name, cell, _, _)) in FORMULA_CACHES.iter().enumerate() {
         let rows = format!(
