@@ -547,6 +547,155 @@ const STRUCTURES: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Array formulas with `ref` ranges in valid and invalid arrangements, as (name, rows XML, range).
+const ARRAY_GROUPS: &[(&str, &str, &str)] = &[
+    (
+        "array_single",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1">1+1</f><v>7</v></c></row>"#,
+        "A1:B2",
+    ),
+    (
+        "array_block",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:B2">1+1</f><v>7</v></c></row>"#,
+        "A1:C3",
+    ),
+    (
+        "array_block_with_cached_cells",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A3">1+1</f><v>7</v></c></row><row r="2"><c r="A2"><v>5</v></c></row><row r="3"><c r="A3" t="str"><v>x</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "array_without_ref",
+        r#"<row r="1"><c r="A1"><f t="array">1+1</f><v>7</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "array_invalid_ref",
+        r#"<row r="1"><c r="A1"><f t="array" ref="zz">1+1</f><v>7</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "array_ref_not_top_left",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A2:A3">1+1</f><v>7</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "array_ref_anchor_inside",
+        r#"<row r="2"><c r="A2"><f t="array" ref="A1:A3">1+1</f><v>7</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "array_empty_text",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A2"/><v>7</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "array_reversed_ref",
+        r#"<row r="1"><c r="A1"><f t="array" ref="B2:A1">1+1</f><v>7</v></c></row>"#,
+        "A1:C3",
+    ),
+    (
+        "array_overlap_later_wins",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A3">1+1</f><v>7</v></c></row><row r="2"><c r="A2"><f t="array" ref="A2:A4">2+2</f><v>7</v></c></row>"#,
+        "A1:A5",
+    ),
+    (
+        "array_then_plain_inside",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A3">1+1</f><v>7</v></c></row><row r="2"><c r="A2"><f>3+3</f><v>6</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "plain_then_array_over",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A3">1+1</f><v>7</v></c></row><row r="2"><c r="A2"><v>6</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "array_over_shared",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A3">1+1</f><v>7</v></c></row><row r="2"><c r="A2"><f t="shared" ref="A2" si="0">4+4</f><v>6</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "array_in_later_row_covers_earlier",
+        r#"<row r="3"><c r="A3"><f t="array" ref="A3:A5">1+1</f><v>7</v></c></row><row r="4"><c r="A4"><v>1</v></c></row>"#,
+        "A1:A6",
+    ),
+    (
+        "array_wide_column_range",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:C1">1+1</f><v>7</v></c></row>"#,
+        "A1:D2",
+    ),
+    (
+        "constant_before_array",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A3">1+1</f><v>7</v></c></row><row r="4"><c r="A4"><v>5</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "constant_before_array_in_range",
+        r#"<row r="2"><c r="A2"><v>5</v></c></row><row r="3"><c r="A3"><f t="array" ref="A3:A4">1+1</f><v>7</v></c></row>"#,
+        "A1:A5",
+    ),
+    (
+        "formula_before_array_in_range",
+        r#"<row r="1"><c r="A1"><f>9+9</f><v>18</v></c></row><row r="2"><c r="A2"><f t="array" ref="A2:A3">1+1</f><v>7</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "array_whole_column",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A1048576">1+1</f><v>7</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "array_past_sheet",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A1048577">1+1</f><v>7</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "array_past_row_two_columns",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:B1048577">1+1</f><v>7</v></c></row>"#,
+        "A1:B3",
+    ),
+    (
+        "array_past_row_far",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A2000000">1+1</f><v>7</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "array_past_row_u32",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A4294967296">1+1</f><v>7</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "dropped_array_over_constant",
+        r#"<row r="1"><c r="A1"><v>3</v></c><c r="A1"><f t="array">1+1</f><v>7</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "dropped_array_over_formula",
+        r#"<row r="1"><c r="A1"><f>4+4</f><v>8</v></c><c r="A1"><f t="array">1+1</f><v>7</v></c></row>"#,
+        "A1:A2",
+    ),
+    (
+        "array_over_constant_same_address",
+        r#"<row r="1"><c r="A1"><v>3</v></c><c r="A1"><f t="array" ref="A1:A2">1+1</f><v>7</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "constant_over_array_same_address",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A2">1+1</f><v>7</v></c><c r="A1"><v>3</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "array_dependent_text",
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A2">1+1</f><v>7</v></c><c r="B1" t="str"><v>x</v></c></row>"#,
+        "A1:B3",
+    ),
+    (
+        "shared_anchor_then_array_over",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c><c r="A1"><f t="array" ref="A1:A2">5+5</f><v>7</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row><row r="3"><c r="A3"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A4",
+    ),
+];
+
 /// Shared formula groups with anchors and dependents in valid and invalid arrangements, as
 /// (name, rows XML, range).
 const SHARED_GROUPS: &[(&str, &str, &str)] = &[
@@ -915,6 +1064,21 @@ fn shared_reference_entries(entries: &mut Vec<Crafted>) {
     }
 }
 
+/// Array formula anchors with the `ref` attribute spelled in many ways.
+fn array_reference_entries(entries: &mut Vec<Crafted>) {
+    for reference in SHARED_REFERENCES {
+        entries.push(Crafted {
+            name: format!("array_ref[{reference}]"),
+            rows: format!(
+                r#"<row r="1"><c r="A1"><f t="array" ref="{reference}">1+1</f><v>2</v></c></row>"#
+            ),
+            strings: None,
+            range: "A1:B3",
+            properties: String::new(),
+        });
+    }
+}
+
 /// The matrices added by the second review: whitespace, dates, flags, line breaks and addresses.
 fn more_entries(entries: &mut Vec<Crafted>) {
     add_matrix(entries, "number", "", None, "", NUMBERS_MORE);
@@ -998,6 +1162,7 @@ fn more_entries(entries: &mut Vec<Crafted>) {
         });
     }
     shared_reference_entries(entries);
+    array_reference_entries(entries);
     for kind in ["", "bogus", "Shared", " normal", "NORMAL", "normal"] {
         entries.push(Crafted {
             name: format!("formula_type[{kind}]"),
@@ -1007,7 +1172,7 @@ fn more_entries(entries: &mut Vec<Crafted>) {
             properties: String::new(),
         });
     }
-    for (name, rows, range) in SHARED_GROUPS.iter().chain(STRUCTURES) {
+    for (name, rows, range) in SHARED_GROUPS.iter().chain(ARRAY_GROUPS).chain(STRUCTURES) {
         entries.push(Crafted {
             name: (*name).to_owned(),
             rows: (*rows).to_owned(),

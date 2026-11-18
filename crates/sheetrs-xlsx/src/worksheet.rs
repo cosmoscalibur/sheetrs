@@ -182,9 +182,9 @@ fn formula_header(
     part: &str,
 ) -> Result<(FormulaKind, Option<String>), Error> {
     let kind = formula_kind(element, part)?;
-    // Only the anchor of a shared group is told apart by its `ref`.
+    // Only an anchor is told apart by its `ref`.
     let reference = match kind {
-        FormulaKind::Shared(_) => attribute(element, "ref", part)?,
+        FormulaKind::Shared(_) | FormulaKind::Array => attribute(element, "ref", part)?,
         _ => None,
     };
     Ok((kind, reference))
@@ -249,6 +249,14 @@ fn finish_cell(
     if kind == Some(FormulaKind::DataTable) {
         return Ok(());
     }
+    if let Some(PendingFormula {
+        kind: FormulaKind::Array,
+        text,
+        reference,
+    }) = &cell.formula
+    {
+        return load_array(pos, text, reference.as_deref(), sheet);
+    }
     // The text or the `ref` makes the cell an anchor; the group is only kept when an anchor's
     // `ref` covers the anchor itself.
     let member = match &cell.formula {
@@ -300,6 +308,27 @@ fn finish_cell(
     if value != ValueRef::Empty || formula.is_some() {
         sheet.load_view(pos, &value, formula, stale, member)?;
     }
+    Ok(())
+}
+
+/// An array formula fills the area of its `ref`, which has to start at the cell that holds
+/// the formula; with any other `ref` the cell is dropped, and a range whose end is open fills
+/// only its first row.
+fn load_array(
+    pos: CellPos,
+    text: &str,
+    reference: Option<&str>,
+    sheet: &mut SheetBuilder<'_>,
+) -> Result<(), Error> {
+    let Some(area) = reference
+        .and_then(lexical::area)
+        .filter(|area| area.starts_at(pos.row, pos.col))
+    else {
+        return Ok(());
+    };
+    let (row, col) = area.end_within(MAX_ROWS, MAX_COLS);
+    let row = if area.open_ended { pos.row } else { row };
+    sheet.fill_array(pos, CellPos { row, col }, text)?;
     Ok(())
 }
 

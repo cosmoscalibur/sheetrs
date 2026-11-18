@@ -46,7 +46,13 @@ pub enum LimitError {
     /// More formulas than numbers of 32 bits can name.
     #[error("more than 4294967295 formulas")]
     Formulas,
+    /// An array formula covering more cells than [`MAX_ARRAY_CELLS`].
+    #[error("an array formula covers more than {MAX_ARRAY_CELLS} cells")]
+    ArrayCells,
 }
+
+/// The most cells one array formula may fill.
+pub const MAX_ARRAY_CELLS: u64 = 1 << 26;
 
 /// The table index a stored number stands for.
 fn index_of(number: u32) -> usize {
@@ -775,6 +781,38 @@ impl<'a> SheetBuilder<'a> {
         let cell = self.encode(value, formula, stale)?;
         self.sheet.has_shared |= member.is_some();
         self.sheet.load(pos, cell, member);
+        Ok(())
+    }
+
+    /// Writes the array formula `text` into every cell from `first` to `last`, as a cell
+    /// that has to be recalculated. The text is stored once for all of them.
+    ///
+    /// `last` is expected not to precede `first`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LimitError::ArrayCells`] when the area holds more than [`MAX_ARRAY_CELLS`]
+    /// cells, and another [`LimitError`] when the workbook would hold more formula text than
+    /// the store can address.
+    pub fn fill_array(
+        &mut self,
+        first: CellPos,
+        last: CellPos,
+        text: &str,
+    ) -> Result<(), LimitError> {
+        debug_assert!(first.row <= last.row && first.col <= last.col);
+        let cells = (u64::from(last.row.saturating_sub(first.row)) + 1)
+            * (u64::from(last.col.saturating_sub(first.col)) + 1);
+        if cells > MAX_ARRAY_CELLS {
+            return Err(LimitError::ArrayCells);
+        }
+        let slot = self.workbook.tables.formulas.push(text)?;
+        let cell = (EMPTY | STALE_BIT, 0, slot);
+        for col in first.col..=last.col {
+            for row in first.row..=last.row {
+                self.sheet.load(CellPos { row, col }, cell, None);
+            }
+        }
         Ok(())
     }
 

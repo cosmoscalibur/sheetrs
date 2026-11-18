@@ -532,3 +532,62 @@ fn a_row_numbered_minus_one_has_no_row_number() -> TestResult {
     );
     Ok(())
 }
+
+fn formula_text_at(sheet: &SheetView<'_>, row: u32, col: u32) -> Option<Formula> {
+    cell_at(sheet, at(row, col)).and_then(|cell| cell.formula)
+}
+
+#[test]
+fn an_array_formula_fills_its_area_and_replaces_cached_cells() -> TestResult {
+    let workbook = single_sheet(
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:B2">1+1</f><v>7</v></c><c r="B1"><v>5</v></c></row><row r="2"><c r="A2"><f>3+3</f><v>6</v></c></row>"#,
+        None,
+    )?;
+    let sheet = sheet_of(&workbook)?;
+    assert_eq!(sheet.len(), 4);
+    let array = Some(Formula::Text("1+1".to_owned()));
+    for (row, col) in [(0, 0), (0, 1), (1, 1)] {
+        assert_eq!(formula_text_at(&sheet, row, col), array);
+    }
+    // A cell that holds a formula is replaced by another formula, never by a constant.
+    assert_eq!(
+        formula_text_at(&sheet, 1, 0),
+        Some(Formula::Text("3+3".to_owned()))
+    );
+    Ok(())
+}
+
+#[test]
+fn an_array_formula_whose_ref_does_not_start_at_its_cell_is_dropped() -> TestResult {
+    for reference in [r#" ref="A2:A3""#, r#" ref="zz""#, ""] {
+        let workbook = single_sheet(
+            &format!(r#"<row r="1"><c r="A1"><f t="array"{reference}>1+1</f><v>7</v></c></row>"#),
+            None,
+        )?;
+        assert_eq!(sheet_of(&workbook)?.len(), 0, "{reference}");
+    }
+    Ok(())
+}
+
+#[test]
+fn an_array_formula_with_an_open_end_fills_its_first_row() -> TestResult {
+    let workbook = single_sheet(
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:B">1+1</f><v>7</v></c></row>"#,
+        None,
+    )?;
+    let sheet = sheet_of(&workbook)?;
+    assert_eq!(sheet.len(), 2);
+    assert!(formula_text_at(&sheet, 0, 1).is_some());
+    Ok(())
+}
+
+#[test]
+fn an_array_formula_that_covers_too_many_cells_is_refused() -> TestResult {
+    let rows = r#"<row r="1"><c r="A1"><f t="array" ref="A1:XFD1048576">1+1</f></c></row>"#;
+    let package = single_sheet_package_with(rows, None, "")?;
+    assert!(matches!(
+        read(package),
+        Err(Error::TooLarge(sheetrs_core::LimitError::ArrayCells))
+    ));
+    Ok(())
+}

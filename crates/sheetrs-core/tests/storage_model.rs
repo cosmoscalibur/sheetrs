@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use proptest::prelude::*;
 use sheetrs_core::{
-    AbsorbError, Cell, CellPos, ErrorKind, Formula, FormulaRef, SharedMember, SheetBuilder, Value,
-    ValueRef, Visibility, Workbook,
+    AbsorbError, Cell, CellPos, ErrorKind, Formula, FormulaRef, LimitError, SharedMember,
+    SheetBuilder, Value, ValueRef, Visibility, Workbook,
 };
 
 fn value() -> impl Strategy<Value = Value> {
@@ -720,4 +720,52 @@ fn absorbed_blocks_decide_contested_addresses_as_one_sheet_does() {
             .iter()
             .any(|cell| cell.contains("row: 6") && cell.contains("Shared { index: 0 }"))
     );
+}
+
+fn pos(row: u32, col: u32) -> CellPos {
+    CellPos { row, col }
+}
+
+#[test]
+fn an_array_fill_keeps_formulas_and_replaces_constants_it_comes_after() {
+    let mut workbook = Workbook::new();
+    let mut builder = workbook.sheet_builder("S1");
+    builder
+        .load_view(pos(1, 0), &ValueRef::Number(5.0), None, false, None)
+        .unwrap();
+    builder
+        .load_view(
+            pos(2, 0),
+            &ValueRef::Number(6.0),
+            Some(FormulaRef::Text("9")),
+            true,
+            None,
+        )
+        .unwrap();
+    builder.fill_array(pos(0, 0), pos(3, 0), "1+1").unwrap();
+    builder
+        .load_view(pos(3, 0), &ValueRef::Number(8.0), None, false, None)
+        .unwrap();
+    builder.finish();
+    let sheet = workbook.sheet("S1").unwrap();
+    assert_eq!(sheet.len(), 4);
+    for row in 0..4 {
+        let cell = sheet.get(pos(row, 0)).unwrap().to_cell();
+        assert_eq!(
+            cell.formula,
+            Some(Formula::Text("1+1".to_owned())),
+            "row {row}"
+        );
+        assert!(cell.stale);
+    }
+}
+
+#[test]
+fn an_array_fill_over_the_cap_is_refused_before_anything_is_written() {
+    let mut workbook = Workbook::new();
+    let mut builder = workbook.sheet_builder("S1");
+    let refused = builder.fill_array(pos(0, 0), pos(1_048_575, 16_383), "1");
+    assert_eq!(refused, Err(LimitError::ArrayCells));
+    builder.finish();
+    assert_eq!(workbook.sheet("S1").unwrap().len(), 0);
 }

@@ -83,3 +83,23 @@ fn a_cell_that_repeats_an_address_in_another_block_reads_as_in_sequence()
     }
     Ok(())
 }
+
+#[test]
+fn an_array_formula_that_spans_blocks_reads_as_in_sequence() -> Result<(), Box<dyn StdError>> {
+    let rows = format!(
+        "{}{}",
+        r#"<row r="1"><c r="D1"><f t="array" ref="D1:D80000">1+1</f></c></row>"#,
+        (2..=80_000).map(row).collect::<String>()
+    );
+    let package = single_sheet_package_with(&rows, None, "")?.into_inner();
+    let sequential = read(Cursor::new(package.clone()))?;
+    for workers in [2, 8] {
+        let parallel = read_parallel(Cursor::new(package.clone()), workers)?;
+        assert!(same_cells(&sequential, &parallel), "{workers} workers");
+    }
+    assert_eq!(
+        sequential.sheets().next().map_or(0, |sheet| sheet.len()),
+        80_000 * 4 - 3
+    );
+    Ok(())
+}

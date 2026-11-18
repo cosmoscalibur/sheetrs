@@ -7,7 +7,7 @@ mod workbook;
 
 pub use coord::{AxisRef, CellPos, CellRef, MAX_COLS, MAX_ROWS, RefError};
 pub use store::{
-    AbsorbError, CellView, FormulaRef, LimitError, RowMajor, SharedMember, SheetBuilder, SheetView,
-    ValueRef,
+    AbsorbError, CellView, FormulaRef, LimitError, MAX_ARRAY_CELLS, RowMajor, SharedMember,
+    SheetBuilder, SheetView, ValueRef,
 };
 pub use workbook::{Cell, DateSystem, ErrorKind, Formula, Value, Visibility, Workbook};

@@ -306,6 +306,9 @@ pub(crate) struct Area {
     last_col: u32,
     first_row: u64,
     last_row: u64,
+    /// Whether the end of the range is a column alone or an incomplete row, so that its last
+    /// row is the end of the sheet, which an array formula does not follow.
+    pub(crate) open_ended: bool,
 }
 
 impl Area {
@@ -314,6 +317,20 @@ impl Area {
         let (row, col) = (u64::from(row) + 1, col + 1);
         (self.first_col..=self.last_col).contains(&col)
             && (self.first_row..=self.last_row).contains(&row)
+    }
+
+    /// Whether the cell at zero-based `row` and `col` is the first row and column of the area.
+    pub(crate) fn starts_at(&self, row: u32, col: u32) -> bool {
+        self.first_row == u64::from(row) + 1 && self.first_col == col + 1
+    }
+
+    /// The last row and column of the area, zero-based and cut at `rows` and `cols`.
+    pub(crate) fn end_within(&self, rows: u32, cols: u32) -> (u32, u32) {
+        let row = self.last_row.min(u64::from(rows));
+        (
+            u32::try_from(row - 1).expect("the cut fits 32 bits"),
+            self.last_col.min(cols) - 1,
+        )
     }
 }
 
@@ -393,6 +410,7 @@ pub(crate) fn area(text: &str) -> Option<Area> {
                 last_col: col,
                 first_row: row,
                 last_row: row,
+                open_ended: false,
             }),
             _ => None,
         };
@@ -409,24 +427,28 @@ pub(crate) fn area(text: &str) -> Option<Area> {
             last_col: col.max(col2),
             first_row: row.min(row2),
             last_row: row.max(row2),
+            open_ended: false,
         },
         (Corner::Cell { col, row }, Corner::Column(col2) | Corner::Open { col: col2 }) => Area {
             first_col: col.min(col2),
             last_col: col.max(col2),
             first_row: row,
             last_row: u64::MAX,
+            open_ended: true,
         },
         (Corner::Column(col), Corner::Column(col2)) => Area {
             first_col: col.min(col2),
             last_col: col.max(col2),
             first_row: 1,
             last_row: u64::MAX,
+            open_ended: false,
         },
         (Corner::Row(row), Corner::Row(row2)) => Area {
             first_col: 1,
             last_col: MAX_COLS,
             first_row: row.min(row2),
             last_row: row.max(row2),
+            open_ended: false,
         },
         _ => return None,
     })
