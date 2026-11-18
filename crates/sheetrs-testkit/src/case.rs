@@ -179,6 +179,21 @@ pub struct Observed {
     /// The (library, module) pairs of Basic code the workbook holds, sorted.
     #[serde(default)]
     pub basic_modules: Vec<(String, String)>,
+    /// The names of the workbook, sorted by scope and name.
+    #[serde(default)]
+    pub named_ranges: Vec<NamedRangeState>,
+}
+
+/// A name the oracle observed. Its content is in the grammar of the oracle, not in that of the
+/// file.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct NamedRangeState {
+    /// The sheet the name belongs to; `None` for a name of the workbook.
+    pub scope: Option<String>,
+    pub name: String,
+    pub content: String,
+    /// The flags of the name; 16 marks a hidden one.
+    pub kind: u32,
 }
 
 /// A sheet of the workbook the oracle observed.

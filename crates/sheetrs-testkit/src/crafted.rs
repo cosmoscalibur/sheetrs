@@ -197,6 +197,27 @@ fn workbook_differences(name: &str, workbook: &Workbook, observed: &Observed) ->
             observed.basic_modules
         ));
     }
+    let mut names: Vec<(Option<String>, String, bool)> = workbook
+        .names()
+        .iter()
+        .map(|name| {
+            let scope = name
+                .scope
+                .and_then(|index| workbook.sheets().nth(index))
+                .map(|sheet| sheet.name().to_owned());
+            (scope, name.name.clone(), name.hidden)
+        })
+        .collect();
+    names.sort();
+    let mut seen: Vec<_> = observed
+        .named_ranges
+        .iter()
+        .map(|name| (name.scope.clone(), name.name.clone(), name.kind & 16 != 0))
+        .collect();
+    seen.sort();
+    if names != seen {
+        found.push(format!("{name}: oracle names {seen:?}, read {names:?}"));
+    }
     if !same_links(workbook, &observed.external_links) {
         found.push(format!(
             "{name}: oracle links {:?}, read {:?}",

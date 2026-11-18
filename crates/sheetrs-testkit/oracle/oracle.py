@@ -302,6 +302,22 @@ def basic_modules(document):
     return sorted(found)
 
 
+def named_ranges(document):
+    """The names of the document: (scope sheet or None, name, content, type flags), sorted."""
+    found = []
+
+    def collect(scope, ranges):
+        for name in ranges.ElementNames:
+            item = ranges.getByName(name)
+            found.append([scope, name, item.Content, item.Type])
+
+    collect(None, document.NamedRanges)
+    for index in range(document.Sheets.Count):
+        sheet = document.Sheets.getByIndex(index)
+        collect(sheet.Name, sheet.NamedRanges)
+    return sorted(found, key=lambda entry: (entry[0] or "", entry[1]))
+
+
 def run_case(desktop, dispatcher, case):
     document = new_document(desktop)
     try:
@@ -313,6 +329,7 @@ def run_case(desktop, dispatcher, case):
             "reads": [read_range(document, read) for read in case["reads"]],
             "external_links": external_links(document),
             "basic_modules": basic_modules(document),
+            "named_ranges": named_ranges(document),
             "sheets": [
                 {"name": sheet.Name, "visible": bool(sheet.IsVisible)}
                 for sheet in (

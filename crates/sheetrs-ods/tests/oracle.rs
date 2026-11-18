@@ -1659,3 +1659,146 @@ fn basic_libraries_saved_by_the_oracle_over_ods() -> Result<(), Box<dyn StdError
     assert_eq!(ours.len(), 3);
     Ok(())
 }
+
+/// Two tables, `S1` and `S2`, of one cell each; `global` goes after them as the names of the
+/// document and `local` inside `S2`.
+fn named_document(global: &str, local: &str) -> String {
+    let cell = r#"<table:table-row><table:table-cell office:value-type="float" office:value="1"/></table:table-row>"#;
+    let body = format!(
+        r#"<table:table table:name="S1">{cell}</table:table><table:table table:name="S2">{cell}{local}</table:table>{global}"#
+    );
+    document_xml("", &body)
+}
+
+fn names_of(content: &str) -> String {
+    format!("<table:named-expressions>{content}</table:named-expressions>")
+}
+
+fn named_range(name: &str, address: &str) -> String {
+    format!(
+        r#"<table:named-range table:name="{name}" table:base-cell-address="$S1.$A$1" table:cell-range-address="{address}"/>"#
+    )
+}
+
+fn named_expression(name: &str, text: &str) -> String {
+    format!(
+        r#"<table:named-expression table:name="{name}" table:base-cell-address="$S1.$A$1" table:expression="{text}"/>"#
+    )
+}
+
+/// A case of names: its name, the names of the document and the names of table `S2`.
+type NameCase = (&'static str, String, String);
+
+/// Names of the document and of a table, defined as ranges and as expressions.
+fn scope_name_cases() -> Vec<NameCase> {
+    vec![
+        (
+            "range",
+            names_of(&named_range("G", "$S1.$A$1")),
+            String::new(),
+        ),
+        (
+            "area",
+            names_of(&named_range("G", "$S1.$A$1:$B$2")),
+            String::new(),
+        ),
+        (
+            "expression",
+            names_of(&named_expression("K", "1+2")),
+            String::new(),
+        ),
+        (
+            "local_range",
+            String::new(),
+            names_of(&named_range("L", "$S2.$A$1")),
+        ),
+        (
+            "local_expression",
+            String::new(),
+            names_of(&named_expression("L", "$S2.$A$1+1")),
+        ),
+        (
+            "same_name_in_two_scopes",
+            names_of(&named_range("D", "$S1.$A$1")),
+            names_of(&named_range("D", "$S2.$A$1")),
+        ),
+        (
+            "name_of_a_name",
+            names_of(&format!(
+                "{}{}",
+                named_range("N1", "$S1.$A$1"),
+                named_expression("N2", "N1+1")
+            )),
+            String::new(),
+        ),
+    ]
+}
+
+/// Names that repeat, that are missing, or that the format gives a purpose.
+fn odd_name_cases() -> Vec<NameCase> {
+    let usable = |name: &str, usage: &str| {
+        names_of(&format!(
+            r#"<table:named-range table:name="{name}" table:base-cell-address="$S1.$A$1" table:cell-range-address="$S1.$A$1:$B$2" table:range-usable-as="{usage}"/>"#
+        ))
+    };
+    vec![
+        (
+            "case_repeats",
+            names_of(&format!(
+                "{}{}{}",
+                named_range("Bb", "$S1.$A$1"),
+                named_range("bB", "$S1.$A$2"),
+                named_range("BB", "$S1.$A$3")
+            )),
+            String::new(),
+        ),
+        (
+            "range_and_expression_repeat",
+            names_of(&format!(
+                "{}{}",
+                named_range("Z", "$S1.$A$1"),
+                named_expression("z", "1")
+            )),
+            String::new(),
+        ),
+        ("print_range", usable("P", "print-range"), String::new()),
+        ("filter_range", usable("F", "filter"), String::new()),
+        (
+            "without_a_name",
+            names_of(r#"<table:named-range table:cell-range-address="$S1.$A$1"/>"#),
+            String::new(),
+        ),
+        (
+            "empty_name",
+            names_of(&named_range("", "$S1.$A$1")),
+            String::new(),
+        ),
+        (
+            "external_range",
+            names_of(&named_range("X", "$'file:///other.ods'#$S1.$A$1")),
+            String::new(),
+        ),
+        (
+            "expression_with_equal_sign",
+            names_of(&named_expression("EQ", "=$S1.$A$1")),
+            String::new(),
+        ),
+    ]
+}
+
+fn name_entries() -> Vec<Crafted> {
+    scope_name_cases()
+        .into_iter()
+        .chain(odd_name_cases())
+        .map(|(name, global, local)| Crafted {
+            raw: Some(named_document(&global, &local)),
+            ..entry(name, "", "A1:A1")
+        })
+        .collect()
+}
+
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn defined_names_load_as_the_oracle_does_over_ods() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("names", &name_entries())
+}

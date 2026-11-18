@@ -154,7 +154,77 @@ fn framed_workbook(workbook: &Workbook, package: &OpaquePackage) -> String {
         out.push_str("/>");
     }
     out.push_str("</sheets>");
-    out.push_str(&String::from_utf8_lossy(&package.frame.tail));
+    let tail = String::from_utf8_lossy(&package.frame.tail);
+    out.push_str(&with_defined_names(&tail, workbook, &package.defined_names));
+    out
+}
+
+/// The tail of the workbook part with its `definedNames` element, which is added when there is
+/// none, written from the names of the model and the `unread` elements of the package.
+fn with_defined_names(tail: &str, workbook: &Workbook, unread: &[String]) -> String {
+    let element = defined_names_element(workbook, unread);
+    if let Some(start) = tail.find("<definedNames") {
+        let end = if tail.get(start..).is_some_and(|rest| {
+            rest.find('>')
+                .is_some_and(|close| rest.as_bytes().get(close - 1) == Some(&b'/'))
+        }) {
+            tail.get(start..)
+                .and_then(|rest| rest.find("/>"))
+                .map(|at| start + at + 2)
+        } else {
+            tail.find("</definedNames>")
+                .map(|at| at + "</definedNames>".len())
+        };
+        if let Some(end) = end {
+            return format!(
+                "{}{element}{}",
+                tail.get(..start).unwrap_or_default(),
+                tail.get(end..).unwrap_or_default()
+            );
+        }
+        return tail.to_owned();
+    }
+    // The element goes after the external references, where the schema puts it.
+    let at = tail
+        .find("</externalReferences>")
+        .map_or(0, |at| at + "</externalReferences>".len());
+    format!(
+        "{}{element}{}",
+        tail.get(..at).unwrap_or_default(),
+        tail.get(at..).unwrap_or_default()
+    )
+}
+
+/// The `definedNames` element, or nothing when there are no names.
+fn defined_names_element(workbook: &Workbook, unread: &[String]) -> String {
+    if workbook.names().is_empty() && unread.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("<definedNames>");
+    for name in workbook.names() {
+        out.push_str(r#"<definedName name=""#);
+        match name.name.strip_prefix("Excel_BuiltIn_") {
+            Some(rest) => {
+                out.push_str("_xlnm.");
+                push_text(&mut out, rest);
+            }
+            None => push_text(&mut out, &name.name),
+        }
+        out.push('"');
+        if let Some(scope) = name.scope {
+            let _ = write!(out, r#" localSheetId="{scope}""#);
+        }
+        if name.hidden {
+            out.push_str(r#" hidden="1""#);
+        }
+        out.push('>');
+        push_text(&mut out, &name.expression);
+        out.push_str("</definedName>");
+    }
+    for element in unread {
+        out.push_str(element);
+    }
+    out.push_str("</definedNames>");
     out
 }
 
@@ -239,7 +309,9 @@ fn workbook_part(workbook: &Workbook) -> String {
         push_text(&mut out, sheet.name());
         let _ = write!(out, r#"" sheetId="{number}"{state} r:id="rId{number}"/>"#);
     }
-    out.push_str("</sheets></workbook>");
+    out.push_str("</sheets>");
+    out.push_str(&defined_names_element(workbook, &[]));
+    out.push_str("</workbook>");
     out
 }
 

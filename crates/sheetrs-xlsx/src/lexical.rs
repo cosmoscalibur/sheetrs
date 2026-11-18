@@ -46,9 +46,66 @@ pub(crate) fn boolean(text: &str) -> bool {
     value.is_nan() || value.abs() > 0.0
 }
 
-/// Whether the `date1904` attribute of the workbook properties is on: the words `true`,
-/// `on` and `t`, or a number other than zero.
-pub(crate) fn date_1904_flag(text: &str) -> bool {
+/// The numbers between brackets that the expression uses to refer to other documents, such as
+/// the 1 of `[1]Sheet!A1`, outside quoted text.
+pub(crate) fn external_indices(expression: &str) -> Vec<usize> {
+    let mut found = Vec::new();
+    let mut quote: Option<char> = None;
+    let mut digits: Option<String> = None;
+    for character in expression.chars() {
+        if let Some(open) = quote {
+            if character == open {
+                quote = None;
+            }
+        } else if let Some(number) = digits.as_mut() {
+            if character.is_ascii_digit() {
+                number.push(character);
+            } else {
+                if character == ']'
+                    && let Ok(index) = number.parse()
+                {
+                    found.push(index);
+                }
+                digits = None;
+            }
+        } else if character == '"' || character == '\'' {
+            quote = Some(character);
+        } else if character == '[' {
+            digits = Some(String::new());
+        }
+    }
+    found
+}
+
+/// Whether `expression` is nothing but a reference to a cell or a range of another document,
+/// such as `[1]Sheet!$A$1:$B$2`.
+pub(crate) fn is_external_reference(expression: &str) -> bool {
+    let Some(rest) = expression.strip_prefix('[') else {
+        return false;
+    };
+    let Some((index, rest)) = rest.split_once(']') else {
+        return false;
+    };
+    if index.is_empty() || !index.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let Some((_, cells)) = rest.rsplit_once('!') else {
+        return false;
+    };
+    let cell = |text: &str| {
+        let text = text.replace('$', "");
+        let letters = text.bytes().take_while(u8::is_ascii_alphabetic).count();
+        letters > 0
+            && letters <= 3
+            && text.len() > letters
+            && text[letters..].bytes().all(|byte| byte.is_ascii_digit())
+    };
+    cells.split(':').count() <= 2 && cells.split(':').all(cell)
+}
+
+/// Whether a flag attribute of the workbook part, such as `date1904` or `hidden`, is on: the
+/// words `true`, `on` and `t`, or a number other than zero.
+pub(crate) fn workbook_flag(text: &str) -> bool {
     if matches!(text, "true" | "on" | "t") {
         return true;
     }
@@ -405,6 +462,24 @@ mod tests {
             assert_eq!(number(text).to_bits(), expected.to_bits(), "{text:?}");
         }
         assert_eq!(bits("Inf"), 0.0_f64.to_bits());
+    }
+
+    #[test]
+    fn external_indices_are_the_bracketed_numbers_outside_quotes() {
+        assert_eq!(
+            external_indices("SUM([1]S1!A1,[12]S!B2)+'[3]x'"),
+            vec![1, 12]
+        );
+        assert_eq!(external_indices("S1!A1"), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn only_a_plain_reference_into_another_document_is_external() {
+        assert!(is_external_reference("[1]S1!$A$1"));
+        assert!(is_external_reference("[2]Sheet 1!A1:$B$2"));
+        assert!(!is_external_reference("SUM([1]S1!$A$1,1)"));
+        assert!(!is_external_reference("S1!$A$1"));
+        assert!(!is_external_reference("[x]S1!A1"));
     }
 
     #[test]

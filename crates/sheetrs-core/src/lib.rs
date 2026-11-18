@@ -14,5 +14,5 @@ pub use store::{
 };
 pub use workbook::{
     Cell, DateSystem, ErrorKind, ExternalLink, Formula, FormulaGrammar, MacroKind, MacroModule,
-    Value, Visibility, Workbook,
+    NamedExpression, Value, Visibility, Workbook,
 };

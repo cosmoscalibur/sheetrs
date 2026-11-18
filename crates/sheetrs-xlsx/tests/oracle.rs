@@ -2271,3 +2271,177 @@ fn a_package_written_back_loads_as_it_reads_over_xlsx() -> Result<(), Box<dyn St
         |expected, actual| leniency(expected, actual, false),
     )
 }
+
+const NAME_CASES: &[(&str, &str)] = &[
+    ("global", r#"<definedName name="G">S1!$A$1</definedName>"#),
+    (
+        "local",
+        r#"<definedName name="L" localSheetId="1">S2!$A$1:$B$2</definedName>"#,
+    ),
+    (
+        "same_name_in_two_scopes",
+        r#"<definedName name="D">S1!$A$1</definedName><definedName name="D" localSheetId="0">S1!$A$2</definedName>"#,
+    ),
+    (
+        "hidden_one",
+        r#"<definedName name="H" hidden="1">S1!$A$1</definedName>"#,
+    ),
+    (
+        "hidden_true",
+        r#"<definedName name="H" hidden="true">S1!$A$1</definedName>"#,
+    ),
+    (
+        "hidden_zero",
+        r#"<definedName name="H" hidden="0">S1!$A$1</definedName>"#,
+    ),
+    (
+        "hidden_on",
+        r#"<definedName name="H" hidden="on">S1!$A$1</definedName>"#,
+    ),
+    (
+        "hidden_local",
+        r#"<definedName name="LH" localSheetId="0" hidden="1">S1!$A$1</definedName>"#,
+    ),
+    ("constant", r#"<definedName name="K">1+2</definedName>"#),
+    (
+        "empty_expression",
+        r#"<definedName name="E"></definedName>"#,
+    ),
+    (
+        "print_area_of_a_sheet",
+        r#"<definedName name="_xlnm.Print_Area" localSheetId="0">S1!$A$1:$B$2</definedName>"#,
+    ),
+    (
+        "print_titles_of_a_sheet",
+        r#"<definedName name="_xlnm.Print_Titles" localSheetId="0">S1!$1:$1</definedName>"#,
+    ),
+    (
+        "print_area_of_the_workbook",
+        r#"<definedName name="_xlnm.Print_Area">S1!$A$1:$B$2</definedName>"#,
+    ),
+    (
+        "filter_range",
+        r#"<definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">S1!$A$1:$B$2</definedName>"#,
+    ),
+    (
+        "a_name_that_is_a_cell",
+        r#"<definedName name="A1">S1!$A$1</definedName>"#,
+    ),
+    (
+        "a_name_with_a_space",
+        r#"<definedName name="a b">S1!$A$1</definedName>"#,
+    ),
+    (
+        "case_repeats",
+        r#"<definedName name="Bb">S1!$A$1</definedName><definedName name="bB">S1!$A$2</definedName><definedName name="BB">S1!$A$3</definedName>"#,
+    ),
+    (
+        "exact_repeats",
+        r#"<definedName name="Z">S1!$A$1</definedName><definedName name="Z">S1!$A$2</definedName>"#,
+    ),
+    (
+        "sheet_beyond_the_last",
+        r#"<definedName name="O" localSheetId="9">S1!$A$1</definedName>"#,
+    ),
+    (
+        "sheet_not_a_number",
+        r#"<definedName name="LT" localSheetId="x">S1!$A$1</definedName>"#,
+    ),
+    (
+        "sheet_negative",
+        r#"<definedName name="LN" localSheetId="-1">S1!$A$1</definedName>"#,
+    ),
+    (
+        "sheet_with_a_suffix",
+        r#"<definedName name="LP" localSheetId="1x">S1!$A$1</definedName>"#,
+    ),
+    ("without_a_name", "<definedName>S1!$A$1</definedName>"),
+    (
+        "with_an_empty_name",
+        r#"<definedName name="">S1!$A$1</definedName>"#,
+    ),
+    (
+        "external_reference",
+        r#"<definedName name="X">[1]S1!$A$1</definedName>"#,
+    ),
+    (
+        "external_reference_in_a_function",
+        r#"<definedName name="XF">SUM([1]S1!$A$1,1)</definedName>"#,
+    ),
+    (
+        "expression_with_equal_sign",
+        r#"<definedName name="EQ">=S1!$A$1</definedName>"#,
+    ),
+    (
+        "name_of_a_name",
+        r#"<definedName name="N1">S1!$A$1</definedName><definedName name="N2">N1+1</definedName>"#,
+    ),
+];
+
+fn names_package(definitions: &str) -> Result<Vec<u8>, Box<dyn StdError>> {
+    let worksheet = worksheet_xml(r#"<row r="1"><c r="A1"><v>1</v></c></row>"#);
+    let content_types = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#;
+    let sheets =
+        r#"<sheet name="S1" sheetId="1" r:id="rId1"/><sheet name="S2" sheetId="2" r:id="rId2"/>"#;
+    let workbook = format!(
+        r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="{REL_NS}"><sheets>{sheets}</sheets><definedNames>{definitions}</definedNames></workbook>"#
+    );
+    let relationships = rels_xml(
+        r#"<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>"#,
+    );
+    Ok(package(&[
+        ("[Content_Types].xml", content_types.to_owned()),
+        (
+            "_rels/.rels",
+            rels_xml(
+                r#"<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>"#,
+            ),
+        ),
+        ("xl/workbook.xml", workbook),
+        ("xl/_rels/workbook.xml.rels", relationships),
+        ("xl/worksheets/sheet1.xml", worksheet.clone()),
+        ("xl/worksheets/sheet2.xml", worksheet),
+    ])?
+    .into_inner())
+}
+
+/// The names of a workbook are those `LibreOffice` loads: which are kept, in which scope, hidden
+/// or not, and under which name.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn defined_names_load_as_the_oracle_does_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    let mut packages = Vec::new();
+    for (name, definitions) in NAME_CASES {
+        packages.push(Package {
+            name: (*name).to_owned(),
+            bytes: names_package(definitions)?,
+            sheet: "S1".to_owned(),
+            range: "A1:A1".to_owned(),
+        });
+    }
+    crafted::assert_reads_as_the_oracle(
+        CRAFTED_DIR,
+        "names",
+        "xlsx",
+        None,
+        &packages,
+        |path| Ok(sheetrs_xlsx::read(File::open(path)?)?),
+        |expected, actual| leniency(expected, actual, false),
+    )
+}
+
+/// A package whose names were read is written with the same names.
+#[test]
+fn written_names_read_back_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    for (name, definitions) in NAME_CASES {
+        let Ok(workbook) = sheetrs_xlsx::read(std::io::Cursor::new(names_package(definitions)?))
+        else {
+            continue;
+        };
+        let mut written = std::io::Cursor::new(Vec::new());
+        sheetrs_xlsx::write(&workbook, &mut written)?;
+        let again = sheetrs_xlsx::read(std::io::Cursor::new(written.into_inner()))?;
+        assert_eq!(again.names(), workbook.names(), "{name}");
+    }
+    Ok(())
+}

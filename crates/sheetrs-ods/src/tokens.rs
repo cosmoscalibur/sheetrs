@@ -37,6 +37,12 @@ pub(crate) enum Tag {
     Style,
     TableProperties,
     NullDate,
+    /// The list of the names of a document or of a table.
+    NamedExpressions,
+    /// A name that stands for a range.
+    NamedRange,
+    /// A name that stands for an expression.
+    NamedExpression,
     Other,
 }
 
@@ -62,6 +68,10 @@ pub(crate) struct Attrs {
     pub count: Option<String>,
     /// The `table:date-value` of a `table:null-date`.
     pub null_date: Option<String>,
+    /// The `table:cell-range-address` of a named range.
+    pub range_address: Option<String>,
+    /// The `table:expression` of a named expression.
+    pub expression: Option<String>,
 }
 
 pub(crate) enum Token {
@@ -200,6 +210,8 @@ fn attributes<R: BufRead>(
             (OFFICE, "time-value") => &mut attrs.time_value,
             (CALCEXT, "value-type") => &mut attrs.calcext_type,
             (TABLE, "formula") => &mut attrs.formula,
+            (TABLE, "cell-range-address") => &mut attrs.range_address,
+            (TABLE, "expression") => &mut attrs.expression,
             (TABLE, "number-columns-repeated") => &mut attrs.columns_repeated,
             (TABLE, "number-rows-repeated") => &mut attrs.rows_repeated,
             (TABLE, "number-matrix-columns-spanned") => &mut attrs.matrix_columns,
@@ -227,6 +239,9 @@ fn classify(resolved: &ResolveResult<'_>, local: &str) -> Tag {
         (TABLE, "table-cell") => Tag::Cell,
         (TABLE, "covered-table-cell") => Tag::CoveredCell,
         (TABLE, "null-date") => Tag::NullDate,
+        (TABLE, "named-expressions") => Tag::NamedExpressions,
+        (TABLE, "named-range") => Tag::NamedRange,
+        (TABLE, "named-expression") => Tag::NamedExpression,
         (TEXT, "p") => Tag::Paragraph,
         (TEXT, "s") => Tag::Space,
         (TEXT, "tab") => Tag::Tab,

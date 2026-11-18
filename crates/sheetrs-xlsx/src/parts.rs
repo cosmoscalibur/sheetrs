@@ -32,7 +32,19 @@ pub(crate) struct SheetEntry {
     pub attributes: String,
 }
 
+/// A `<definedName>` element as written.
+pub(crate) struct DefinedName {
+    pub name: Option<String>,
+    pub local_sheet: Option<String>,
+    pub hidden: Option<String>,
+    /// The text of the element, which is the expression.
+    pub text: String,
+    /// The attributes as written, to write the element back unchanged.
+    pub attributes: String,
+}
+
 pub(crate) struct WorkbookPart {
+    pub defined_names: Vec<DefinedName>,
     pub sheets: Vec<SheetEntry>,
     pub date_system: DateSystem,
     /// The relationship ids of the external links, in order.
@@ -56,7 +68,9 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
     let mut reader = Reader::from_reader(Tee::new(source, true));
     let mut buf = Vec::new();
     let mut head = Vec::new();
+    let mut scratch = Vec::new();
     let mut workbook = WorkbookPart {
+        defined_names: Vec::new(),
         sheets: Vec::new(),
         date_system: DateSystem::Date1900,
         external_references: Vec::new(),
@@ -83,11 +97,22 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
             Event::End(element) if element.local_name().as_ref() == "sheets" => {
                 reader.get_mut().resume();
             }
+            Event::Start(element) if element.local_name().as_ref() == "definedName" => {
+                let text = element_text(&mut reader, &mut scratch, part)?;
+                workbook
+                    .defined_names
+                    .push(defined_name(&element, text, part)?);
+            }
+            Event::Empty(element) if element.local_name().as_ref() == "definedName" => {
+                workbook
+                    .defined_names
+                    .push(defined_name(&element, String::new(), part)?);
+            }
             Event::Start(element) | Event::Empty(element) => match element.local_name().as_ref() {
                 "workbookPr" => {
                     // The last properties element wins.
                     let on = attribute(&element, "date1904", part)?
-                        .is_some_and(|text| lexical::date_1904_flag(&text));
+                        .is_some_and(|text| lexical::workbook_flag(&text));
                     workbook.date_system = if on {
                         DateSystem::Date1904
                     } else {
@@ -122,6 +147,20 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
             _ => {}
         }
     }
+}
+
+fn defined_name(
+    element: &quick_xml::events::BytesStart<'_>,
+    text: String,
+    part: &str,
+) -> Result<DefinedName, Error> {
+    Ok(DefinedName {
+        name: attribute(element, "name", part)?,
+        local_sheet: attribute(element, "localSheetId", part)?,
+        hidden: attribute(element, "hidden", part)?,
+        text,
+        attributes: raw_attributes(element, &[], part)?,
+    })
 }
 
 fn sheet_entry(

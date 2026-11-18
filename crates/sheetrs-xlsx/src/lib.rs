@@ -10,6 +10,7 @@
 mod capture;
 mod error;
 mod lexical;
+mod names;
 mod parallel;
 mod parts;
 mod vba;
@@ -32,6 +33,8 @@ use parts::{
 };
 use worksheet::{ValueContext, parse_worksheet};
 
+const CALC_CHAIN_PART: &str = "xl/calcChain.xml";
+const CONTENT_TYPES_PART: &str = "[Content_Types].xml";
 const BUFFER_BYTES: usize = 64 * 1024;
 /// The most bytes of a VBA project that the reader looks at.
 const MAX_VBA_PROJECT_BYTES: u64 = 1 << 26;
@@ -115,6 +118,11 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
         sheet_parts.insert(part);
         sheet.finish_loaded();
     }
+    let built_in_names = names::load_names(
+        &mut workbook,
+        &workbook_part.defined_names,
+        workbook_part.external_references.len(),
+    )?;
     for reference in &workbook_part.external_references {
         // A link that cannot be read names no document, and the workbook loads without it.
         let target = match external_target(&mut archive, &targets, reference) {
@@ -131,6 +139,7 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
         parts: unread_parts(&mut archive, &sheet_parts)?,
         frame: workbook_part.frame,
         date_system: workbook_part.date_system,
+        defined_names: built_in_names,
         shared_strings: has_shared_strings.then(|| SHARED_STRINGS_PART.to_owned()),
     });
     Ok(workbook)
@@ -153,12 +162,45 @@ fn unread_parts<R: Read + Seek>(
         {
             continue;
         }
+        // `LibreOffice` writes no calculation chain, and one that was read describes cells that
+        // may no longer be there.
+        if name == CALC_CHAIN_PART {
+            continue;
+        }
         let mut bytes = Vec::with_capacity(usize::try_from(file.size()).unwrap_or(0));
         file.read_to_end(&mut bytes)
             .map_err(|error| Error::Zip(ZipError::Io(error)))?;
+        if name == CONTENT_TYPES_PART || name == RELATIONSHIPS_PART {
+            bytes = without_calc_chain(&bytes);
+        }
         parts.push(OpaquePart { name, bytes });
     }
     Ok(parts)
+}
+
+/// `part` without the elements that name the calculation chain: its relationship and its content
+/// type.
+fn without_calc_chain(part: &[u8]) -> Vec<u8> {
+    let text = String::from_utf8_lossy(part);
+    let mut kept = String::with_capacity(text.len());
+    let mut rest = text.as_ref();
+    while let Some(start) = rest.find('<') {
+        let (before, from) = rest.split_at(start);
+        kept.push_str(before);
+        let Some(end) = from.find('>').map(|close| close + 1) else {
+            break;
+        };
+        let element = &from[..end];
+        let names_the_chain = (element.starts_with("<Override ")
+            && element.contains("/xl/calcChain.xml"))
+            || (element.starts_with("<Relationship ") && element.contains("/calcChain\""));
+        if !names_the_chain {
+            kept.push_str(element);
+        }
+        rest = &from[end..];
+    }
+    kept.push_str(rest);
+    kept.into_bytes()
 }
 
 /// Adds to `workbook` the modules of its VBA project, if it has one.
@@ -268,7 +310,21 @@ fn resolve_target(target: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_target;
+    use super::{resolve_target, without_calc_chain};
+
+    #[test]
+    fn the_calculation_chain_is_named_by_nothing_after_it_is_dropped() {
+        let types = br#"<Types><Override PartName="/xl/calcChain.xml" ContentType="x"/><Override PartName="/xl/styles.xml" ContentType="y"/></Types>"#;
+        assert_eq!(
+            String::from_utf8_lossy(&without_calc_chain(types)),
+            r#"<Types><Override PartName="/xl/styles.xml" ContentType="y"/></Types>"#
+        );
+        let rels = br#"<Relationships><Relationship Id="a" Type="http://x/calcChain" Target="calcChain.xml"/><Relationship Id="b" Type="http://x/styles" Target="styles.xml"/></Relationships>"#;
+        assert_eq!(
+            String::from_utf8_lossy(&without_calc_chain(rels)),
+            r#"<Relationships><Relationship Id="b" Type="http://x/styles" Target="styles.xml"/></Relationships>"#
+        );
+    }
 
     #[test]
     fn targets_resolve_against_the_workbook_directory() {

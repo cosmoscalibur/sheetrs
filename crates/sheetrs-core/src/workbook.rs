@@ -165,6 +165,20 @@ pub struct MacroModule {
     pub name: String,
 }
 
+/// A name that stands for an expression, such as a range, that formulas can use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedExpression {
+    /// The name, which is unique within its scope without regard to case.
+    pub name: String,
+    /// The index of the sheet the name belongs to; `None` for a name of the workbook.
+    pub scope: Option<usize>,
+    /// The expression in the grammar of the workbook (see [`FormulaGrammar`]), without a
+    /// leading `=` and without surrounding spaces.
+    pub expression: String,
+    /// Whether the name is kept out of the lists offered to the user.
+    pub hidden: bool,
+}
+
 /// An ordered list of sheets, with the tables of strings and formulas they share.
 #[derive(Debug, Clone, Default)]
 pub struct Workbook {
@@ -177,6 +191,7 @@ pub struct Workbook {
     external_targets: std::collections::HashSet<String>,
     macro_modules: Vec<MacroModule>,
     opaque: Option<OpaquePackage>,
+    names: Vec<NamedExpression>,
 }
 
 impl Workbook {
@@ -259,6 +274,46 @@ impl Workbook {
         self.macro_modules.push(module);
     }
 
+    /// The names of the workbook and of its sheets, in the order they were defined.
+    #[must_use]
+    pub fn names(&self) -> &[NamedExpression] {
+        &self.names
+    }
+
+    /// Defines a name as `LibreOffice` loads it: when its scope already has a name that is the same
+    /// without regard to case, the new one is stored with `_0` after it, or `_1` and so on until
+    /// it is unique. Returns the name as stored.
+    pub fn define_name(&mut self, mut name: NamedExpression) -> &str {
+        let taken = |names: &[NamedExpression], candidate: &str| {
+            names.iter().any(|other| {
+                other.scope == name.scope && other.name.to_lowercase() == candidate.to_lowercase()
+            })
+        };
+        if taken(&self.names, &name.name) {
+            let base = name.name.clone();
+            let mut number = 0_u32;
+            loop {
+                let candidate = format!("{base}_{number}");
+                if !taken(&self.names, &candidate) {
+                    name.name = candidate;
+                    break;
+                }
+                number += 1;
+            }
+        }
+        self.names.push(name);
+        self.names.last().map_or("", |stored| stored.name.as_str())
+    }
+
+    /// Defines a name as `LibreOffice` loads it from an ODS document: when its scope already has a
+    /// name that is the same without regard to case, the new definition replaces it.
+    pub fn define_name_replacing(&mut self, name: NamedExpression) {
+        let lowered = name.name.to_lowercase();
+        self.names
+            .retain(|other| other.scope != name.scope || other.name.to_lowercase() != lowered);
+        self.names.push(name);
+    }
+
     /// Records that a formula refers to the document at `target`, unless it is recorded.
     pub fn add_external_link(&mut self, target: &str) {
         if self.external_targets.insert(target.to_owned()) {
@@ -272,6 +327,40 @@ impl Workbook {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_that_repeat_without_regard_to_case_are_numbered() {
+        let mut workbook = Workbook::new();
+        let mut define = |name: &str, scope| {
+            workbook
+                .define_name(NamedExpression {
+                    name: name.to_owned(),
+                    scope,
+                    expression: "1".to_owned(),
+                    hidden: false,
+                })
+                .to_owned()
+        };
+        assert_eq!(define("Bb", None), "Bb");
+        assert_eq!(define("bB", None), "bB_0");
+        assert_eq!(define("BB", None), "BB_1");
+        assert_eq!(define("Bb", Some(0)), "Bb");
+    }
+
+    #[test]
+    fn a_name_that_repeats_replaces_the_earlier_one_when_asked() {
+        let mut workbook = Workbook::new();
+        for (name, expression) in [("Bb", "1"), ("bB", "2")] {
+            workbook.define_name_replacing(NamedExpression {
+                name: name.to_owned(),
+                scope: None,
+                expression: expression.to_owned(),
+                hidden: false,
+            });
+        }
+        assert_eq!(workbook.names().len(), 1);
+        assert_eq!(workbook.names()[0].name, "bB");
+    }
 
     #[test]
     fn error_text_round_trips() {

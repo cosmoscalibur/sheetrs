@@ -4,8 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 
 use sheetrs_core::{
-    CellPos, DateSystem, FormulaRef, MAX_COLS, MAX_ROWS, SheetBuilder, ValueRef, Visibility,
-    Workbook,
+    CellPos, DateSystem, FormulaRef, MAX_COLS, MAX_ROWS, NamedExpression, SheetBuilder, ValueRef,
+    Visibility, Workbook,
 };
 use sheetrs_io::{DateRules, integer_prefix, iso_day};
 
@@ -158,6 +158,16 @@ pub(crate) fn parse<R: BufRead>(source: R, workbook: &mut Workbook) -> Result<()
                 document.system = null_date(attrs.null_date.as_deref());
                 workbook.set_date_system(document.system);
             }
+            Token::Start(Tag::NamedExpressions, _) => {
+                for (name, expression) in read_names(&mut tokens)? {
+                    workbook.define_name_replacing(NamedExpression {
+                        name,
+                        scope: None,
+                        expression,
+                        hidden: false,
+                    });
+                }
+            }
             Token::Start(Tag::Table, attrs) => {
                 parse_table(&mut tokens, workbook, &document, &attrs, false, &mut links)?;
             }
@@ -197,11 +207,53 @@ fn parse_table<R: BufRead>(
     {
         sheet.set_visibility(Visibility::Hidden);
     }
+    let mut names = Vec::new();
     if !empty {
-        parse_rows(tokens, document, &mut sheet, links)?;
+        parse_rows(tokens, document, &mut sheet, links, &mut names)?;
     }
     sheet.finish();
+    let scope = workbook.sheets().len().checked_sub(1);
+    for (name, expression) in names {
+        workbook.define_name_replacing(NamedExpression {
+            name,
+            scope,
+            expression,
+            hidden: false,
+        });
+    }
     Ok(())
+}
+
+/// The names of the list just opened, as (name, expression), up to the end of the list: the
+/// address of a range, or the expression of the name.
+fn read_names<R: BufRead>(tokens: &mut Tokens<R>) -> Result<Vec<(String, String)>, Error> {
+    let mut names = Vec::new();
+    loop {
+        match tokens.next()? {
+            Token::Start(tag @ (Tag::NamedRange | Tag::NamedExpression), attrs) => {
+                names.push(named(tag, attrs));
+                tokens.skip()?;
+            }
+            Token::Empty(tag @ (Tag::NamedRange | Tag::NamedExpression), attrs) => {
+                names.push(named(tag, attrs));
+            }
+            Token::Start(..) => tokens.skip()?,
+            Token::End(Tag::NamedExpressions) | Token::Eof => return Ok(names),
+            _ => {}
+        }
+    }
+}
+
+fn named(tag: Tag, attrs: Attrs) -> (String, String) {
+    let expression = if tag == Tag::NamedRange {
+        attrs.range_address
+    } else {
+        attrs.expression
+    };
+    (
+        attrs.name.unwrap_or_default(),
+        expression.unwrap_or_default(),
+    )
 }
 
 /// Reads the rows of the table just opened into `sheet`, up to the end of the table.
@@ -210,6 +262,7 @@ fn parse_rows<R: BufRead>(
     document: &Document,
     sheet: &mut SheetBuilder<'_>,
     links: &mut Links,
+    names: &mut Vec<(String, String)>,
 ) -> Result<(), Error> {
     let mut next_row: u64 = 0;
     let mut written: u64 = 0;
@@ -223,6 +276,7 @@ fn parse_rows<R: BufRead>(
             }
             Token::Empty(Tag::Row, attrs) => next_row += repeated(attrs.rows_repeated.as_deref()),
             Token::Start(Tag::RowContainer, _) | Token::End(Tag::RowContainer) => {}
+            Token::Start(Tag::NamedExpressions, _) => names.extend(read_names(tokens)?),
             Token::Start(..) => tokens.skip()?,
             Token::End(Tag::Table) | Token::Eof => break,
             _ => {}

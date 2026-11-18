@@ -45,6 +45,8 @@ pub struct OpaquePackage {
     pub frame: Frame,
     /// How the package counted dates, which `frame` repeats.
     pub date_system: DateSystem,
+    /// The defined names the model does not hold, as the package wrote them.
+    pub defined_names: Vec<String>,
     /// Where the shared strings are; text is written inline when the package had none.
     pub shared_strings: Option<String>,
 }
