@@ -59,6 +59,9 @@ pub(crate) fn parse_worksheet<R: BufRead>(
     part: &str,
 ) -> Result<(), Error> {
     let mut reader = Reader::from_reader(source);
+    // A block of rows is a fragment: its closing tags may have no opening tag in it.
+    reader.config_mut().check_end_names = false;
+    reader.config_mut().allow_unmatched_ends = true;
     let mut buf = Vec::new();
     let mut scratch = Vec::new();
     let mut cursor = Cursor {

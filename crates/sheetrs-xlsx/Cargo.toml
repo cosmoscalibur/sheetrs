@@ -15,6 +15,7 @@ thiserror.workspace = true
 zip.workspace = true
 
 [dev-dependencies]
+dhat.workspace = true
 sheetrs-testkit.workspace = true
 
 [lints]

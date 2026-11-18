@@ -9,6 +9,7 @@
 
 mod error;
 mod lexical;
+mod parallel;
 mod parts;
 mod worksheet;
 mod xml;
@@ -28,6 +29,8 @@ use parts::{
 use worksheet::{ValueContext, parse_worksheet};
 
 const BUFFER_BYTES: usize = 64 * 1024;
+/// Worksheets smaller than this are read on one thread even when more are allowed.
+const PARALLEL_MIN_BYTES: u64 = 2 * 1024 * 1024;
 
 /// Reads a workbook from an XLSX package.
 ///
@@ -37,6 +40,20 @@ const BUFFER_BYTES: usize = 64 * 1024;
 /// when a part the workbook refers to is absent, and [`Error::Xml`] or
 /// [`Error::Malformed`] when a part cannot be read.
 pub fn read<R: Read + Seek>(source: R) -> Result<Workbook, Error> {
+    read_with_workers(source, 1)
+}
+
+/// Reads a workbook like [`read`], parsing the large worksheets in blocks of rows on up to
+/// `workers` threads. Prototype: it assumes every row has its `r` attribute.
+///
+/// # Errors
+///
+/// The same as [`read`].
+pub fn read_parallel<R: Read + Seek>(source: R, workers: usize) -> Result<Workbook, Error> {
+    read_with_workers(source, workers)
+}
+
+fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbook, Error> {
     let mut archive = ZipArchive::new(source)?;
 
     let workbook_part = parse_workbook(open(&mut archive, WORKBOOK_PART)?)?;
@@ -62,7 +79,12 @@ pub fn read<R: Read + Seek>(source: R) -> Result<Workbook, Error> {
         let part = resolve_target(target);
         let mut sheet = Sheet::new(entry.name);
         sheet.set_visibility(entry.visibility);
-        parse_worksheet(open(&mut archive, &part)?, &mut sheet, &context, &part)?;
+        let file = open(&mut archive, &part)?;
+        if workers > 1 && file.get_ref().size() >= PARALLEL_MIN_BYTES {
+            parallel::parse_worksheet(file, &mut sheet, &context, &part, workers)?;
+        } else {
+            parse_worksheet(file, &mut sheet, &context, &part)?;
+        }
         workbook.push_sheet(sheet);
     }
     Ok(workbook)

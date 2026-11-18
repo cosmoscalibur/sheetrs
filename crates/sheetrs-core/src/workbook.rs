@@ -147,6 +147,13 @@ impl Sheet {
         self.visibility = visibility;
     }
 
+    /// Moves the cells and shared-formula anchors of `other` into this sheet; on a shared
+    /// address the cell of `other` wins.
+    pub fn append(&mut self, mut other: Sheet) {
+        self.cells.append(&mut other.cells);
+        self.shared_anchors.append(&mut other.shared_anchors);
+    }
+
     /// Stores `cell` at `pos`, replacing any previous cell.
     pub fn set(&mut self, pos: CellPos, cell: Cell) {
         self.cells.insert(pos, cell);

@@ -15,7 +15,10 @@ pub(crate) fn attribute(
     local_name: &str,
     part: &str,
 ) -> Result<Option<String>, Error> {
-    for attribute in start.attributes() {
+    let mut attributes = start.attributes();
+    // A repeated attribute is not an error: `LibreOffice` reads it too.
+    attributes.with_checks(false);
+    for attribute in attributes {
         let attribute = attribute.map_err(|error| Error::malformed(part, error.to_string()))?;
         if attribute.key.local_name().as_ref() == local_name {
             let value = attribute

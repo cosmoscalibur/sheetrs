@@ -13,6 +13,7 @@ authors = ["Edward Villegas-Pulgarin"]
 [workspace.dependencies]
 sheetrs-core = { path = "crates/sheetrs-core" }
 sheetrs-testkit = { path = "crates/sheetrs-testkit" }
+dhat = "0.3"
 quick-xml = "0.42"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 serde = { version = "1", features = ["derive"] }

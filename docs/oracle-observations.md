@@ -51,10 +51,11 @@ Differences that are known and not fixed yet, with the inputs that show them:
   a `<c>` outside a `<row>`, a `<row>` outside `<sheetData>` and nested rows or cells, restarts
   the row counter at each `<sheetData>` and keeps the last non-empty `<v>`; the reader matches
   names without namespaces or nesting.
-- LibreOffice loads files with mismatched or unclosed tags, undefined entities, character
-  references to forbidden characters, duplicated attributes, an unknown sheet `state` and a
-  sheet whose relationship is missing (as an empty sheet); the reader fails on them, and on a
-  workbook part, relationships part or shared strings part that is cut short.
+- LibreOffice loads files with undefined entities, character references to forbidden
+  characters, an unknown sheet `state` and a sheet whose relationship is missing (as an empty
+  sheet); the reader fails on them, and on a workbook part, relationships part or shared
+  strings part that is cut short. Worksheets with mismatched or unmatched end tags and repeated
+  attributes are read without error, and which cells they keep has not been compared.
 - LibreOffice renames sheets with invalid names and loads duplicate names as separate sheets;
   the reader keeps the names as stored.
 - A character that XML 1.0 forbids, such as U+000B, inside a cell value makes LibreOffice
