@@ -11,6 +11,7 @@ is free to differ.
 | Crate | Purpose |
 | --- | --- |
 | `sheetrs-core` | Core types: cell coordinates with A1 and R1C1 views |
+| `sheetrs-testkit` | Differential test harness that runs cases against LibreOffice as the oracle |
 
 ## Development
 

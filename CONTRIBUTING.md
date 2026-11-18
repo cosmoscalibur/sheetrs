@@ -24,6 +24,16 @@ scripts/ci-local.sh
 It runs format, clippy and tests on Linux, and compiles the workspace for the
 `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` targets.
 
+## Oracle tests
+
+Tests that need LibreOffice are marked `#[ignore]` and do not run in the local
+container or in GitHub CI. They need LibreOffice 26.8 (`soffice` on `PATH`) and
+the Python UNO bridge (`python3` able to `import uno`) on the host:
+
+```bash
+cargo test -p sheetrs-testkit -- --ignored
+```
+
 ## GitHub CI
 
 A push does not start CI. It starts only when the head commit message contains
