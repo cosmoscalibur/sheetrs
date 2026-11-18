@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use std::sync::mpsc::{channel, sync_channel};
 use std::thread;
 
-use sheetrs_core::{SheetBuilder, Workbook};
+use sheetrs_core::{AbsorbError, SheetBuilder, Workbook};
 use zip::result::ZipError;
 
 use crate::Error;
@@ -18,13 +18,15 @@ use crate::worksheet::{ValueContext, parse_worksheet as parse_sequentially};
 /// Bytes of inflated XML a block holds, roughly.
 const BLOCK_BYTES: usize = 1 << 20;
 
+/// Returns `false` when two blocks hold a cell at the same address, which only a sequential
+/// read resolves.
 pub(crate) fn parse_worksheet<R: Read>(
     mut source: R,
     sheet: &mut SheetBuilder<'_>,
     context: &ValueContext<'_>,
     part: &str,
     workers: usize,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     let (job_sender, job_receiver) = sync_channel::<(usize, Vec<u8>)>(workers * 2);
     let job_receiver = Mutex::new(job_receiver);
     let job_receiver = &job_receiver;
@@ -65,9 +67,13 @@ pub(crate) fn parse_worksheet<R: Read>(
             let part_sheet = partial
                 .sheet("")
                 .expect("a block parser publishes its sheet");
-            sheet.absorb(&part_sheet)?;
+            match sheet.absorb(&part_sheet) {
+                Ok(()) => {}
+                Err(AbsorbError::Overlap) => return Ok(false),
+                Err(AbsorbError::Limit(limit)) => return Err(limit.into()),
+            }
         }
-        Ok(())
+        Ok(true)
     })
 }
 

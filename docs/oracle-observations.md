@@ -22,6 +22,8 @@ with the oracle test that shows it.
 | A cell address that is not a cell of the sheet (`XFE1`, `A0`, `1A`, `B1:C1`, `Sheet1!B1`, empty) places the cell like a cell without an address, at the next column of the current row. | `crafted_cells_read_as_the_oracle_loads_them` |
 | A row attribute is an integer prefix after XML whitespace (space, tab, CR, LF); text without digits and `0` make a row outside the sheet whose unaddressed cells are dropped, and the next row follows it; `-1` is a row without the attribute; addressed cells ignore the row. | `crafted_cells_read_as_the_oracle_loads_them` |
 | The `t` of a formula is `normal`, `shared`, `array` or `dataTable`, written exactly; any other value, and a shared group below zero, drops the formula and keeps the cell value as a constant. The group number is an integer prefix and a shared formula without a group is an ordinary one. | `crafted_cells_read_as_the_oracle_loads_them` |
+| A shared formula group is kept only when one of its anchors (a cell with formula text or a `ref`) has a `ref` that covers the anchor itself; otherwise the anchor and every dependent of the group are empty cells, a dependent whose group has no anchor included. One valid anchor keeps the whole group, whichever order the anchors come in. A member of a dropped group writes nothing: where it shared an address with another cell, in either order, that cell stays. | `crafted_cells_read_as_the_oracle_loads_them` |
+| A `ref` is a cell, or two corners (cells, columns or rows) in either order, followed by spaces only (a tab, line feed or no-break space, written as a character reference, rejects it); letters in any case, `$` before a column or a row, a `+` before a row, leading zeros, and rows beyond the sheet are accepted in the end corner. The end corner is lenient: with a column valid in the sheet followed by a digit or a sign and a row that is zero, negative or beyond the sheet, anything after the column is ignored and the range runs to the last row; a row inside the sheet must be followed by nothing. The end corner may be a column alone, with or without `$`; a column alone or a row alone is not a cell reference on its own. | `crafted_cells_read_as_the_oracle_loads_them` |
 | When two cells share an address, a formula cell is not replaced by a later cell without formula; otherwise the later cell wins. | `crafted_cells_read_as_the_oracle_loads_them` |
 | A worksheet cut short keeps the cells read before the cut. | `a_worksheet_cut_at_a_tag_boundary_keeps_the_cells_read` in `sheetrs-xlsx` |
 
@@ -37,9 +39,6 @@ Differences that are known and not fixed yet, with the inputs that show them:
   the six classic errors (ignoring case and ASCII whitespace), `#SPILL!`, `#GETTING_DATA`
   and a classic error followed by other text, and reads everything else as `#NAME?`; text
   such as `1`, `TRUE`, `"a"`, `A1`, `(`, `=` or `#N/A!` gives other values or error codes.
-- Shared formulas: LibreOffice drops (as empty cells) an anchor without `ref` or whose `ref`
-  does not contain it and a dependent whose group has no anchor; the reader keeps their values
-  and formulas.
 - Array formulas: LibreOffice fills every cell of a valid `ref` with the array formula and its
   result, overwriting cached values, and drops an anchor with a missing, invalid or
   non-top-left `ref`; the reader sets only the cell that holds the formula.

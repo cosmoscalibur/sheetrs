@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 
-use sheetrs_core::{DateSystem, ErrorKind};
+use sheetrs_core::{DateSystem, ErrorKind, MAX_COLS, MAX_ROWS};
 
 /// The whitespace skipped before a stored number.
 const NUMBER_WHITESPACE: [char; 2] = [' ', '\t'];
@@ -300,6 +300,138 @@ fn utc_offset(text: &str) -> Option<i64> {
     })
 }
 
+/// The cells a `ref` attribute covers, as `LibreOffice` reads it.
+pub(crate) struct Area {
+    first_col: u32,
+    last_col: u32,
+    first_row: u64,
+    last_row: u64,
+}
+
+impl Area {
+    /// Whether the cell at zero-based `row` and `col` lies inside the area.
+    pub(crate) fn contains(&self, row: u32, col: u32) -> bool {
+        let (row, col) = (u64::from(row) + 1, col + 1);
+        (self.first_col..=self.last_col).contains(&col)
+            && (self.first_row..=self.last_row).contains(&row)
+    }
+}
+
+/// One side of a range, with its 1-based numbers.
+enum Corner {
+    Cell {
+        col: u32,
+        row: u64,
+    },
+    Column(u32),
+    Row(u64),
+    /// The end of a range whose row `LibreOffice` does not take as a row: it covers the column
+    /// down to the last row and ignores what follows the column.
+    Open {
+        col: u32,
+    },
+}
+
+/// The 1-based number of a column written in letters, if the sheet has it.
+fn column_number(letters: &str) -> Option<u32> {
+    letters.bytes().try_fold(0_u32, |col, byte| {
+        let col = col * 26 + u32::from(byte.to_ascii_uppercase() - b'A' + 1);
+        (col <= MAX_COLS).then_some(col)
+    })
+}
+
+/// Parses one side of a range. The end of a range is lenient about a row that is zero,
+/// negative or beyond the sheet; a row inside the sheet must be followed by nothing.
+fn corner(text: &str, end: bool) -> Option<Corner> {
+    let text = text.strip_prefix('$').unwrap_or(text);
+    let letters = text
+        .find(|character: char| !character.is_ascii_alphabetic())
+        .unwrap_or(text.len());
+    let (letters, rest) = text.split_at(letters);
+    if letters.is_empty() {
+        let row = rest.parse::<u64>().ok().filter(|row| *row >= 1)?;
+        return rest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+            .then_some(Corner::Row(row));
+    }
+    let col = column_number(letters)?;
+    if rest.is_empty() {
+        return Some(Corner::Column(col));
+    }
+    let rest = rest.strip_prefix('$').unwrap_or(rest);
+    if rest.is_empty() {
+        return end.then_some(Corner::Open { col });
+    }
+    let (negative, body) = match rest.as_bytes().first() {
+        Some(b'+') => (false, &rest[1..]),
+        Some(b'-') => (true, &rest[1..]),
+        Some(byte) if byte.is_ascii_digit() => (false, rest),
+        _ => return None,
+    };
+    let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+    let row = body[..digits].bytes().fold(0_u64, |row, byte| {
+        row.saturating_mul(10)
+            .saturating_add(u64::from(byte - b'0'))
+    });
+    let in_sheet = !negative && (1..=u64::from(MAX_ROWS)).contains(&row);
+    if in_sheet {
+        (digits == body.len()).then_some(Corner::Cell { col, row })
+    } else {
+        end.then_some(Corner::Open { col })
+    }
+}
+
+/// Reads a `ref` attribute: a cell, or a range of cells, of whole columns or of whole rows,
+/// in either order and followed by spaces. `None` when `LibreOffice` rejects it.
+pub(crate) fn area(text: &str) -> Option<Area> {
+    let text = text.trim_end_matches(' ');
+    let Some((first, last)) = text.split_once(':') else {
+        return match corner(text, false)? {
+            Corner::Cell { col, row } => Some(Area {
+                first_col: col,
+                last_col: col,
+                first_row: row,
+                last_row: row,
+            }),
+            _ => None,
+        };
+    };
+    Some(match (corner(first, false)?, corner(last, true)?) {
+        (
+            Corner::Cell { col, row },
+            Corner::Cell {
+                col: col2,
+                row: row2,
+            },
+        ) => Area {
+            first_col: col.min(col2),
+            last_col: col.max(col2),
+            first_row: row.min(row2),
+            last_row: row.max(row2),
+        },
+        (Corner::Cell { col, row }, Corner::Column(col2) | Corner::Open { col: col2 }) => Area {
+            first_col: col.min(col2),
+            last_col: col.max(col2),
+            first_row: row,
+            last_row: u64::MAX,
+        },
+        (Corner::Column(col), Corner::Column(col2)) => Area {
+            first_col: col.min(col2),
+            last_col: col.max(col2),
+            first_row: 1,
+            last_row: u64::MAX,
+        },
+        (Corner::Row(row), Corner::Row(row2)) => Area {
+            first_col: 1,
+            last_col: MAX_COLS,
+            first_row: row.min(row2),
+            last_row: row.max(row2),
+        },
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,5 +641,98 @@ mod tests {
         assert_eq!(serial("1904-01-01"), Some(0.0));
         assert_eq!(serial("2020-01-02"), Some(42_370.0));
         assert_eq!(serial("1900-01-01"), Some(-1_460.0));
+    }
+
+    #[test]
+    fn references_are_accepted_as_the_oracle_accepts_them() {
+        for accepted in [
+            "A1:A2",
+            "A1",
+            "$A$1:$A$2",
+            "a1:a2",
+            "A1:A2 ",
+            "A1:A2  ",
+            "A1:B1",
+            "1:2",
+            "A:A",
+            "A1:A2000000",
+            "A1:A99999999999999999999",
+            "$A1:A$2",
+            "A1:a$2",
+            "A01:A2",
+            "A1:XFD1048576",
+            "A2:A1",
+            "$A:$A",
+            "$1:$2",
+            "a:a",
+            "A1:A+2",
+            "A1:A-1",
+            "A1:A+0",
+            "A+1",
+            "A+1:A2",
+            "A1:A0x2",
+            "A1:A",
+            "A1:$A",
+            "A1:B",
+            "A1:XFD0",
+            "A1:B0z",
+            "A1:A$",
+            "A1:A0:A2",
+            "A1:A1048577x",
+            "A1:A-x",
+            "A$1:A0",
+        ] {
+            assert!(
+                area(accepted).is_some_and(|area| area.contains(0, 0)),
+                "{accepted:?}"
+            );
+        }
+        for rejected in [
+            "",
+            "A1:",
+            ":A2",
+            "A1:A2:A3",
+            "A1:A2 B1",
+            " A1:A2",
+            "A1: A2",
+            "A1 :A2",
+            "A1:A2;",
+            "A1;A2",
+            "A1:A2,B1",
+            "A1:A2x",
+            "A1:XFE2",
+            "A0:A2",
+            "A:XFE",
+            "A:A1",
+            "1:A2",
+            "AAAA1:A2",
+            "$$A1:A2",
+            "0:2",
+            "R1C1:R2C1",
+            "Sheet1!A1:A2",
+            "A",
+            "1",
+            "A1:A2\t",
+            "A1:A2\u{a0}",
+            "A1:A2\n",
+            "A-1:A2",
+            "A+0:A1",
+            "A-0:A1",
+            "A1:A+1x",
+            "A1:1",
+            "A1:0",
+            "A1:-1",
+            "A1:+1",
+            "A1:+A1",
+            "A1:!",
+            "A1:$",
+            "A1:XFE",
+            "A1:XFE0",
+            "A1:AAAA0",
+        ] {
+            assert!(area(rejected).is_none(), "{rejected:?}");
+        }
+        assert!(!area("A2:A3").is_some_and(|area| area.contains(0, 0)));
+        assert!(area("A2:A3").is_some_and(|area| area.contains(2, 0)));
     }
 }

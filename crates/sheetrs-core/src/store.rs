@@ -10,7 +10,7 @@
 //! how much formula text) is checked when storing and reported as a [`LimitError`].
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
@@ -22,6 +22,8 @@ use crate::workbook::{Cell, ErrorKind, Formula, Value, Visibility, Workbook};
 const KIND_MASK: u8 = 0b0111;
 /// Marks a cell whose formula slot is a shared-formula group number, not a text slot.
 const SHARED_BIT: u8 = 0b0100_0000;
+/// Marks a cell that carries the formula text of a shared group, which can drop it.
+const ANCHOR_BIT: u8 = 0b0000_1000;
 const STALE_BIT: u8 = 0b1000_0000;
 const EMPTY: u8 = 0;
 const NUMBER: u8 = 1;
@@ -266,6 +268,53 @@ impl Remap {
 /// The encoded parts of a cell: tag, payload and formula slot.
 type Encoded = (u8, u64, u32);
 
+/// Whether a cell holds a formula, which no cell without one replaces when both share an address.
+fn holds_formula((tag, _, formula): Encoded) -> bool {
+    tag & SHARED_BIT != 0 || formula != 0
+}
+
+/// The cell that remains at an address after `writes`, ignoring those of the dropped groups.
+fn replay(writes: &[(Encoded, Option<u32>)], valid: &BTreeSet<u32>) -> Option<Encoded> {
+    let mut held: Option<Encoded> = None;
+    for (write, group) in writes {
+        if group.is_some_and(|group| !valid.contains(&group)) {
+            continue;
+        }
+        if held.is_none_or(|cell| holds_formula(*write) || !holds_formula(cell)) {
+            held = Some(*write);
+        }
+    }
+    held
+}
+
+/// Why a sheet could not be absorbed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum AbsorbError {
+    /// The sheets hold cells at the same address, which absorbing does not resolve.
+    #[error("both sheets hold a cell at the same address")]
+    Overlap,
+    /// The workbook outgrew the store.
+    #[error(transparent)]
+    Limit(#[from] LimitError),
+}
+
+/// What to do with a cell of a sealed column.
+enum Verdict {
+    Keep,
+    Remove,
+    Set(Encoded),
+}
+
+/// How a cell relates to a shared formula group of the file it is loaded from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SharedMember {
+    /// The group the cell names.
+    pub group: u32,
+    /// `None` for a dependent, which has neither text nor `ref`; otherwise whether the `ref`
+    /// of this anchor covers the cell.
+    pub anchor_covers_itself: Option<bool>,
+}
+
 /// The cells of one column, as parallel channels sorted by row.
 #[derive(Debug, Clone, Default)]
 struct Column {
@@ -327,6 +376,38 @@ impl Column {
         }
     }
 
+    /// Applies `decide(row, tag, formula slot)` to every cell of a sealed column; returns how
+    /// many cells it removed.
+    fn rework(&mut self, mut decide: impl FnMut(u32, u8, u32) -> Verdict) -> usize {
+        let mut kept = 0;
+        for index in 0..self.rows.len() {
+            let replacement = match decide(self.rows[index], self.tags[index], self.formulas[index])
+            {
+                Verdict::Remove => continue,
+                Verdict::Keep => None,
+                Verdict::Set(cell) => Some(cell),
+            };
+            if kept != index {
+                self.rows[kept] = self.rows[index];
+                self.tags[kept] = self.tags[index];
+                self.payloads[kept] = self.payloads[index];
+                self.formulas[kept] = self.formulas[index];
+            }
+            if let Some((tag, payload, formula)) = replacement {
+                self.tags[kept] = tag;
+                self.payloads[kept] = payload;
+                self.formulas[kept] = formula;
+            }
+            kept += 1;
+        }
+        let removed = self.rows.len() - kept;
+        self.rows.truncate(kept);
+        self.tags.truncate(kept);
+        self.payloads.truncate(kept);
+        self.formulas.truncate(kept);
+        removed
+    }
+
     /// Merges the pending cells into the channels and releases the spare capacity.
     fn seal(&mut self) {
         if self.pending.is_empty() {
@@ -372,6 +453,19 @@ pub(crate) struct Sheet {
     /// Columns that hold cells, sorted by column number.
     columns: Vec<(u32, Column)>,
     shared_anchors: BTreeMap<u32, CellPos>,
+    /// Groups with an anchor whose `ref` is valid.
+    shared_valid: BTreeSet<u32>,
+    /// The group of the cells that carry formula text for a shared group.
+    shared_texts: FxHashMap<CellPos, u32>,
+    /// Every write at an address where a member of a shared group took part, in order, with
+    /// the group of each write; the cell there is decided from it once the valid groups are
+    /// known.
+    history: FxHashMap<CellPos, Vec<(Encoded, Option<u32>)>>,
+    /// Whether a cell belongs to a shared group.
+    has_shared: bool,
+    /// The index in `columns` of the column used last; cells come mostly down one column at a
+    /// time.
+    last_column: usize,
     len: usize,
 }
 
@@ -388,14 +482,30 @@ impl Sheet {
         Some(&self.columns[index].1)
     }
 
-    fn column_mut(&mut self, col: u32) -> &mut Column {
-        let index = match self
+    /// Where column `col` is in `columns`, or would go.
+    fn locate(&mut self, col: u32) -> Result<usize, usize> {
+        if self
             .columns
-            .binary_search_by_key(&col, |(number, _)| *number)
+            .get(self.last_column)
+            .is_some_and(|(number, _)| *number == col)
         {
+            return Ok(self.last_column);
+        }
+        let found = self
+            .columns
+            .binary_search_by_key(&col, |(number, _)| *number);
+        if let Ok(index) = found {
+            self.last_column = index;
+        }
+        found
+    }
+
+    fn column_mut(&mut self, col: u32) -> &mut Column {
+        let index = match self.locate(col) {
             Ok(index) => index,
             Err(index) => {
                 self.columns.insert(index, (col, Column::default()));
+                self.last_column = index;
                 index
             }
         };
@@ -406,6 +516,143 @@ impl Sheet {
         if self.column_mut(pos.col).set(pos.row, cell) {
             self.len += 1;
         }
+    }
+
+    fn seal(&mut self) {
+        for (_, column) in &mut self.columns {
+            column.seal();
+        }
+    }
+
+    fn drop_invalid_shared_groups(&mut self) {
+        if !self.has_shared {
+            return;
+        }
+        let valid = &self.shared_valid;
+        let texts = &self.shared_texts;
+        let fixes: FxHashMap<CellPos, Option<Encoded>> = self
+            .history
+            .iter()
+            .map(|(pos, writes)| (*pos, replay(writes, valid)))
+            .collect();
+        self.shared_anchors.retain(|group, _| valid.contains(group));
+        let mut removed = 0;
+        // Dependents of one group come in runs, so the last answer is reused.
+        let mut last_group: Option<(u32, bool)> = None;
+        for (col, column) in &mut self.columns {
+            removed += column.rework(|row, tag, slot| {
+                if tag & (SHARED_BIT | ANCHOR_BIT) == 0 {
+                    return Verdict::Keep;
+                }
+                let pos = CellPos { row, col: *col };
+                if let Some(fix) = fixes.get(&pos) {
+                    return fix.map_or(Verdict::Remove, Verdict::Set);
+                }
+                let kept = if tag & SHARED_BIT != 0 {
+                    match last_group {
+                        Some((group, kept)) if group == slot => kept,
+                        _ => {
+                            let kept = valid.contains(&slot);
+                            last_group = Some((slot, kept));
+                            kept
+                        }
+                    }
+                } else {
+                    texts.get(&pos).is_none_or(|group| valid.contains(group))
+                };
+                if kept { Verdict::Keep } else { Verdict::Remove }
+            });
+        }
+        self.len -= removed;
+        self.columns.retain(|(_, column)| !column.rows.is_empty());
+        self.history = FxHashMap::default();
+        self.shared_texts = FxHashMap::default();
+        self.shared_valid = BTreeSet::new();
+    }
+
+    /// Stores a cell read from a file, as `LibreOffice` resolves cells that share an address:
+    /// a cell with a formula is not replaced by one without. A member of a shared group
+    /// always writes, and the writes at the address are kept so that those of a dropped
+    /// group can be left out when the sheet is finished.
+    fn load(&mut self, pos: CellPos, cell: Encoded, member: Option<SharedMember>) {
+        let located = self.locate(pos.col);
+        // Below the last row of its column a cell shares its address with no other.
+        let below_all = match located {
+            Ok(index) => self.columns[index]
+                .1
+                .rows
+                .last()
+                .is_none_or(|last| *last < pos.row),
+            Err(_) => true,
+        };
+        if member.is_none() && below_all {
+            self.set_encoded(pos, cell);
+            return;
+        }
+        let existing = match located {
+            Ok(index) if !below_all => self.columns[index].1.entry(pos.row),
+            _ => None,
+        };
+        let is_member = |(tag, _, _): Encoded| tag & (SHARED_BIT | ANCHOR_BIT) != 0;
+        if let Some(old) = existing
+            && (member.is_some() || is_member(old) || self.history.contains_key(&pos))
+        {
+            let group = if old.0 & SHARED_BIT != 0 {
+                Some(old.2)
+            } else if old.0 & ANCHOR_BIT != 0 {
+                self.shared_texts.get(&pos).copied()
+            } else {
+                None
+            };
+            let raw = (old.0 & !ANCHOR_BIT, old.1, old.2);
+            let writes = self
+                .history
+                .entry(pos)
+                .or_insert_with(|| vec![(raw, group)]);
+            let group = member.map(|member| member.group);
+            // Consecutive writes of one group, or by no group, leave what the last of them
+            // leaves, so the history stays as long as the changes of group.
+            match writes.last_mut() {
+                Some((held, held_group)) if *held_group == group => {
+                    if group.is_some() || holds_formula(cell) || !holds_formula(*held) {
+                        *held = cell;
+                    }
+                }
+                _ => writes.push((cell, group)),
+            }
+        }
+        let write = match existing {
+            None => true,
+            Some(_) if member.is_some() => true,
+            Some(old) if is_member(old) => holds_formula(cell),
+            Some(old) => holds_formula(cell) || !holds_formula(old),
+        };
+        if !write {
+            return;
+        }
+        let anchor_text = member.is_some() && cell.0 & SHARED_BIT == 0 && cell.2 != 0;
+        let tag = if anchor_text {
+            cell.0 | ANCHOR_BIT
+        } else {
+            cell.0
+        };
+        match member {
+            Some(SharedMember { group, .. }) if anchor_text => {
+                self.shared_texts.insert(pos, group);
+            }
+            _ if existing.is_some_and(|(tag, _, _)| tag & ANCHOR_BIT != 0) => {
+                self.shared_texts.remove(&pos);
+            }
+            _ => {}
+        }
+        if let Some(SharedMember {
+            group,
+            anchor_covers_itself: Some(true),
+        }) = member
+        {
+            self.shared_valid.insert(group);
+        }
+        self.set_encoded(pos, (tag, cell.1, cell.2));
     }
 
     /// The cell of a finished sheet at `pos`, as its column and index in the channels.
@@ -421,17 +668,29 @@ impl Sheet {
 pub struct SheetBuilder<'a> {
     workbook: &'a mut Workbook,
     sheet: Sheet,
+    /// The formula texts and slots the workbook held when the builder started.
+    formulas_at_start: (usize, usize),
 }
 
 impl<'a> SheetBuilder<'a> {
     pub(crate) fn new(workbook: &'a mut Workbook, name: String) -> Self {
+        let formulas_at_start = (
+            workbook.tables.formulas.text.len(),
+            workbook.tables.formulas.ends.len(),
+        );
         Self {
             workbook,
+            formulas_at_start,
             sheet: Sheet {
                 name,
                 visibility: Visibility::Visible,
                 columns: Vec::new(),
                 shared_anchors: BTreeMap::new(),
+                shared_valid: BTreeSet::new(),
+                shared_texts: FxHashMap::default(),
+                history: FxHashMap::default(),
+                has_shared: false,
+                last_column: 0,
                 len: 0,
             },
         }
@@ -463,6 +722,20 @@ impl<'a> SheetBuilder<'a> {
         self.set_view(pos, &value, formula, cell.stale)
     }
 
+    fn encode(
+        &mut self,
+        value: &ValueRef<'_>,
+        formula: Option<FormulaRef<'_>>,
+        stale: bool,
+    ) -> Result<Encoded, LimitError> {
+        let tables = &mut self.workbook.tables;
+        let (kind, payload) = tables.encode_value(value)?;
+        let (formula, shared) = tables.encode_formula(formula)?;
+        let tag = kind | shared | if stale { STALE_BIT } else { 0 };
+        self.sheet.has_shared |= shared != 0;
+        Ok((tag, payload, formula))
+    }
+
     /// Stores a cell given by borrowed parts at `pos`, replacing any previous cell.
     ///
     /// # Errors
@@ -476,21 +749,33 @@ impl<'a> SheetBuilder<'a> {
         formula: Option<FormulaRef<'_>>,
         stale: bool,
     ) -> Result<(), LimitError> {
-        let tables = &mut self.workbook.tables;
-        let (kind, payload) = tables.encode_value(value)?;
-        let (formula, shared) = tables.encode_formula(formula)?;
-        let tag = kind | shared | if stale { STALE_BIT } else { 0 };
-        self.sheet.set_encoded(pos, (tag, payload, formula));
+        let cell = self.encode(value, formula, stale)?;
+        self.sheet.set_encoded(pos, cell);
         Ok(())
     }
 
-    /// Whether the cell at `pos` holds a formula.
-    #[must_use]
-    pub fn has_formula_at(&self, pos: CellPos) -> bool {
-        self.sheet
-            .column(pos.col)
-            .and_then(|column| column.entry(pos.row))
-            .is_some_and(|(tag, _, formula)| formula != 0 || tag & SHARED_BIT != 0)
+    /// Stores a cell read from a file at `pos`. Where two cells share an address, a cell with
+    /// a formula is not replaced by one without; `member` names the shared formula group of
+    /// the cell, if any. A group none of whose anchors covers itself loses all its cells
+    /// when the sheet is finished with [`SheetBuilder::finish_loaded`], as if they had not
+    /// been written.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`LimitError`] when the workbook would hold more strings or formula text
+    /// than the store can address.
+    pub fn load_view(
+        &mut self,
+        pos: CellPos,
+        value: &ValueRef<'_>,
+        formula: Option<FormulaRef<'_>>,
+        stale: bool,
+        member: Option<SharedMember>,
+    ) -> Result<(), LimitError> {
+        let cell = self.encode(value, formula, stale)?;
+        self.sheet.has_shared |= member.is_some();
+        self.sheet.load(pos, cell, member);
+        Ok(())
     }
 
     /// Records the cell that carries the formula text of shared group `index`.
@@ -498,17 +783,18 @@ impl<'a> SheetBuilder<'a> {
         self.sheet.shared_anchors.insert(index, anchor);
     }
 
-    /// Stores every cell and shared-formula anchor of `other`, a sheet of another workbook;
-    /// on a shared address the cell of `other` wins.
+    /// Stores every cell and shared-formula anchor of `other`, a sheet of another workbook.
     ///
     /// All strings and formula texts of the workbook of `other` are brought in, so `other`
-    /// should belong to a workbook built for that sheet alone.
+    /// should belong to a workbook built for that sheet alone. A builder that returned an
+    /// error holds a partial sheet and should be dropped.
     ///
     /// # Errors
     ///
-    /// Returns a [`LimitError`] when the workbook would hold more strings or formula text
-    /// than the store can address.
-    pub fn absorb(&mut self, other: &SheetView<'_>) -> Result<(), LimitError> {
+    /// Returns [`AbsorbError::Overlap`] when both sheets hold a cell at the same address, and
+    /// [`AbsorbError::Limit`] when the workbook would hold more strings or formula text than
+    /// the store can address.
+    pub fn absorb(&mut self, other: &SheetView<'_>) -> Result<(), AbsorbError> {
         let remap = self.workbook.tables.merge(other.tables)?;
         for (col, source) in &other.sheet.columns {
             // Cells that all follow the last row of this column are appended as a block.
@@ -535,24 +821,63 @@ impl<'a> SheetBuilder<'a> {
                 let cell = (source.tags[index], payload, slot);
                 if below {
                     column.push(source.rows[index], cell);
-                    added += 1;
-                } else if column.set(source.rows[index], cell) {
-                    added += 1;
+                } else if column.entry(source.rows[index]).is_some() {
+                    return Err(AbsorbError::Overlap);
+                } else {
+                    column.set(source.rows[index], cell);
                 }
+                added += 1;
             }
             self.sheet.len += added;
         }
         for (index, anchor) in &other.sheet.shared_anchors {
             self.sheet.shared_anchors.insert(*index, *anchor);
         }
+        self.sheet
+            .shared_valid
+            .extend(other.sheet.shared_valid.iter().copied());
+        self.sheet.shared_texts.extend(
+            other
+                .sheet
+                .shared_texts
+                .iter()
+                .map(|(pos, group)| (*pos, *group)),
+        );
+        for (pos, writes) in &other.sheet.history {
+            let writes = writes
+                .iter()
+                .map(|((tag, payload, slot), group)| {
+                    let (payload, slot) = remap.cell(*tag, *payload, *slot);
+                    ((*tag, payload, slot), *group)
+                })
+                .collect();
+            self.sheet.history.insert(*pos, writes);
+        }
+        self.sheet.has_shared |= other.sheet.has_shared;
         Ok(())
+    }
+
+    /// Drops the sheet and the formula texts it brought into the workbook.
+    pub fn discard(self) {
+        let (text, ends) = self.formulas_at_start;
+        let formulas = &mut self.workbook.tables.formulas;
+        formulas.text.truncate(text);
+        formulas.ends.truncate(ends);
     }
 
     /// Adds the sheet to the workbook.
     pub fn finish(mut self) {
-        for (_, column) in &mut self.sheet.columns {
-            column.seal();
-        }
+        self.sheet.seal();
+        self.workbook.sheets.push(self.sheet);
+    }
+
+    /// Adds the sheet to the workbook after removing the cells of the shared groups that have
+    /// no valid anchor (see [`SheetBuilder::load_view`]), as `LibreOffice` loads them. The
+    /// decision needs every cell of the sheet, so the sheet must not be a block that is
+    /// absorbed into another one.
+    pub fn finish_loaded(mut self) {
+        self.sheet.seal();
+        self.sheet.drop_invalid_shared_groups();
         self.workbook.sheets.push(self.sheet);
     }
 }

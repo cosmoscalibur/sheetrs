@@ -77,15 +77,24 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
             )
         })?;
         let part = resolve_target(target);
-        let mut sheet = workbook.sheet_builder(entry.name);
+        let mut sheet = workbook.sheet_builder(entry.name.clone());
         sheet.set_visibility(entry.visibility);
         let file = open(&mut archive, &part)?;
-        if workers > 1 && file.get_ref().size() >= PARALLEL_MIN_BYTES {
-            parallel::parse_worksheet(file, &mut sheet, &context, &part, workers)?;
+        let parsed = if workers > 1 && file.get_ref().size() >= PARALLEL_MIN_BYTES {
+            parallel::parse_worksheet(file, &mut sheet, &context, &part, workers)?
         } else {
             parse_worksheet(file, &mut sheet, &context, &part)?;
+            true
+        };
+        if !parsed {
+            // The blocks overlapped: only reading the part in order resolves the addresses.
+            sheet.discard();
+            sheet = workbook.sheet_builder(entry.name);
+            sheet.set_visibility(entry.visibility);
+            let file = open(&mut archive, &part)?;
+            parse_worksheet(file, &mut sheet, &context, &part)?;
         }
-        sheet.finish();
+        sheet.finish_loaded();
     }
     Ok(workbook)
 }

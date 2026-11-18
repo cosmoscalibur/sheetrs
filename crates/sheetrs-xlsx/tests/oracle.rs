@@ -547,6 +547,191 @@ const STRUCTURES: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Shared formula groups with anchors and dependents in valid and invalid arrangements, as
+/// (name, rows XML, range).
+const SHARED_GROUPS: &[(&str, &str, &str)] = &[
+    (
+        "shared_valid",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row><row r="3"><c r="A3"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "shared_anchor_without_ref",
+        r#"<row r="1"><c r="A1"><f t="shared" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_ref_not_containing_anchor",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A2:A3" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_dependent_without_anchor",
+        r#"<row r="1"><c r="A1"><f t="shared" si="0"/><v>9</v></c></row><row r="2"><c r="A2"><v>3</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_dependent_outside_ref",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row><row r="4"><c r="A4"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A5",
+    ),
+    (
+        "shared_dependent_before_anchor",
+        r#"<row r="1"><c r="A1"><f t="shared" si="0"/><v>9</v></c></row><row r="2"><c r="A2"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_two_anchors",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" ref="A2:A3" si="0">2+2</f><v>4</v></c></row><row r="3"><c r="A3"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "shared_anchor_empty_text",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0"/><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_dependent_with_text",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0">5+5</f><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_ref_invalid",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_ref_reversed",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A3:A1" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_two_dimensional",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:B2" si="0">1+1</f><v>2</v></c><c r="B1"><f t="shared" si="0"/><v>9</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c><c r="B2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:C3",
+    ),
+    (
+        "shared_dependent_without_value",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_invalid_then_valid_anchor",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" ref="A2:A3" si="0">2+2</f><v>4</v></c></row><row r="3"><c r="A3"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "shared_valid_then_invalid_anchor",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" ref="zz" si="0">2+2</f><v>4</v></c></row><row r="3"><c r="A3"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A4",
+    ),
+    (
+        "shared_other_group_survives",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f><v>2</v></c><c r="B1"><f t="shared" si="1"/><v>9</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:B2",
+    ),
+    (
+        "shared_invalid_anchor_replaced_by_plain_formula",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="0">1+1</f><v>2</v></c><c r="A1"><f>3</f><v>3</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_valid_anchor_replaced_by_plain_formula",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f><v>2</v></c><c r="A1"><f>3</f><v>3</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_valid_anchor_replaced_by_constant",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f><v>2</v></c><c r="A1"><v>3</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_invalid_dependent_replaced_by_plain_formula",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c><c r="A2"><f>4</f><v>4</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_invalid_dependent_replaced_by_constant",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c><c r="A2"><v>4</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_groups_swapped_at_same_address",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="0">1+1</f><v>2</v></c><c r="A1"><f t="shared" ref="A1:A2" si="1">5+5</f><v>5</v></c></row><row r="2"><c r="A2"><f t="shared" si="1"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_valid_dependent_then_constant",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c><c r="A2"><v>4</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_valid_constant_then_dependent",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><v>4</v></c><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_invalid_constant_then_dependent",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><v>4</v></c><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_valid_plain_then_dependent",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f>4</f><v>4</v></c><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_invalid_plain_then_dependent",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f>4</f><v>4</v></c><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_invalid_dependent_then_text_dependent",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c><c r="A2"><f t="shared" si="0">7+7</f><v>7</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_valid_dependent_then_constant_text",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c><c r="A2" t="str"><v>x</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_valid_anchor_then_invalid_anchor_same_cell",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c><c r="A1"><f t="shared" ref="zz" si="1">5+5</f><v>5</v></c></row><row r="2"></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_invalid_dependent_over_valid_dependent",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c><c r="A2"><f t="shared" si="1"/><v>8</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_orphan_dependent_over_valid_dependent",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c><c r="A2"><f t="shared" si="2"/><v>7</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_valid_dependent_over_orphan_dependent",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="2"/><v>7</v></c><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_invalid_anchor_over_valid_anchor_then_constant",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c><c r="A1"><f t="shared" ref="zz" si="1">5+5</f><v>5</v></c><c r="A1"><v>3</v></c></row><row r="2"></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_two_invalid_then_constant",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="zz" si="1">5+5</f><v>5</v></c><c r="A1"><f t="shared" ref="zz" si="3">1</f><v>1</v></c><c r="A1"><v>3</v></c></row><row r="2"></row>"#,
+        "A1:A3",
+    ),
+    (
+        "shared_cell_in_range_without_formula",
+        r#"<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><v>7</v></c></row><row r="3"><c r="A3"><f t="shared" si="0"/><v>9</v></c></row>"#,
+        "A1:A3",
+    ),
+];
+
 /// Adds one package per value, each with the value as the content of cell `A1`.
 fn add_matrix(
     entries: &mut Vec<Crafted>,
@@ -563,6 +748,169 @@ fn add_matrix(
             strings: strings.map(str::to_owned),
             range: "A1",
             properties: properties.to_owned(),
+        });
+    }
+}
+
+/// The `ref` attribute of a shared formula anchor spelled in many ways.
+const SHARED_REFERENCES: &[&str] = &[
+    "A1:A",
+    "A1:1",
+    "A1:$A",
+    "A1:A$",
+    "A1:$",
+    "A1:0",
+    "A1:-1",
+    "A1:+1",
+    "A1:+A1",
+    "A1:!",
+    "A1:A1048577x",
+    "A1:$A$0",
+    "A1:A$0",
+    "A1:A0$",
+    "A1:B",
+    "A1:B0z",
+    "A1:XFD0",
+    "A1:XFE",
+    "A1:XFE0",
+    "A1:AAAA0",
+    "A1:A0:A2",
+    "A2:A0",
+    "A$1:A0",
+    "A1:a0",
+    "A1:A+1x",
+    "A1:A-x",
+    "A1:A0",
+    "A1:A00",
+    "A+0:A1",
+    "A-0:A1",
+    "A+1:A0",
+    "A-1:A1",
+    "A1:A+0x2",
+    "A1:A-0x2",
+    "A1:A0x0",
+    "A0x1:A2",
+    "A0x2:A3",
+    "A1:A0X2",
+    "A1:A0x",
+    "A1:A0xg",
+    "A1:A+",
+    "A1:A-",
+    "A1:A+-1",
+    "A1:A1+1",
+    "A1:A 2",
+    "A1:A1 2",
+    "A1:A0b1",
+    "A1:A0o7",
+    "A1:A1_0",
+    "A1:A2",
+    "A1",
+    "$A$1:$A$2",
+    "a1:a2",
+    "A1:",
+    ":A2",
+    "",
+    "A1:A2:A3",
+    "A1:A2 B1",
+    " A1:A2",
+    "A1:A2 ",
+    "A1:A2000000",
+    "A1:XFE2",
+    "A0:A2",
+    "A2:A3",
+    "A1:B1",
+    "1:2",
+    "A:A",
+    "R1C1:R2C1",
+    "Sheet1!A1:A2",
+    "A1:A2,B1",
+    "A1:A2\t",
+    "A1 :A2",
+    "A1: A2",
+    "&#10;A1:A2",
+    "A1:A99999999999999999999",
+    "A1:A1048577",
+    "A1048577:A1048578",
+    "A:XFE",
+    "A:A1",
+    "1:A2",
+    "AAAA1:A2",
+    "A1:A-1",
+    "A1:A+2",
+    "A1:A2x",
+    "$A1:A$2",
+    "A$1:$A2",
+    "A1:$A$2",
+    "$$A1:A2",
+    "0:2",
+    "XFD1:XFD2",
+    "A1:A2;",
+    "A1;A2",
+    "A1:a$2",
+    "A1:A2&#10;",
+    "A1:A2&#13;",
+    "A1:A2&#9;",
+    "A1:A2&#32;",
+    "A01:A2",
+    "A1:A02",
+    "1:02",
+    "A1:XFD1",
+    "A1:XFD1048576",
+    "A1:A18446744073709551616",
+    "A1:A4294967297",
+    "A1:A2  ",
+    "A1:AAA1",
+    "a:a",
+    "$A:$A",
+    "$1:$2",
+    "A1:A2&#160;",
+    "A1 ",
+    "A1:A2\n",
+    "A+1:A2",
+    "A-1:A2",
+    "A+1",
+    "A-1",
+    "+A1:A2",
+    "A1:+A2",
+    "A+1:A+2",
+    "A+0:A1",
+    "A1:A2.5",
+    "A1:A2e0",
+    "A1:A0x2",
+    "A1:A+0",
+    "A1:A+1",
+    "A1:A+3",
+    "A1:A+4",
+    "A1:A+5",
+    "A1:A+6",
+    "A1:A+7",
+    "A1:A-0",
+    "A1:A-2",
+    "A1:A-3",
+    "A1:A-4",
+    "A1:A-5",
+    "A1:A-6",
+    "A1:A-7",
+    "A1:A+22",
+    "A1:B+2",
+    "A1:A-22",
+    "A1:A+2 ",
+    "A1:A+002",
+    "A1:A+4294967297",
+    "A1:A-4294967295",
+];
+
+/// Shared formula anchors with the `ref` attribute spelled in many ways.
+fn shared_reference_entries(entries: &mut Vec<Crafted>) {
+    for reference in SHARED_REFERENCES {
+        entries.push(Crafted {
+            name: format!("shared_ref[{reference}]"),
+            rows: format!(
+                r#"<row r="1"><c r="A1"><f t="shared" ref="{reference}" si="0">1+1</f><v>2</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>"#
+            ),
+            strings: None,
+            range: "A1:A3",
+            properties: String::new(),
         });
     }
 }
@@ -649,6 +997,7 @@ fn more_entries(entries: &mut Vec<Crafted>) {
             properties: String::new(),
         });
     }
+    shared_reference_entries(entries);
     for kind in ["", "bogus", "Shared", " normal", "NORMAL", "normal"] {
         entries.push(Crafted {
             name: format!("formula_type[{kind}]"),
@@ -658,7 +1007,7 @@ fn more_entries(entries: &mut Vec<Crafted>) {
             properties: String::new(),
         });
     }
-    for (name, rows, range) in STRUCTURES {
+    for (name, rows, range) in SHARED_GROUPS.iter().chain(STRUCTURES) {
         entries.push(Crafted {
             name: (*name).to_owned(),
             rows: (*rows).to_owned(),

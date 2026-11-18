@@ -6,7 +6,8 @@ use std::sync::Arc;
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 use sheetrs_core::{
-    CellPos, CellRef, DateSystem, ErrorKind, FormulaRef, MAX_COLS, MAX_ROWS, SheetBuilder, ValueRef,
+    CellPos, CellRef, DateSystem, ErrorKind, FormulaRef, MAX_COLS, MAX_ROWS, SharedMember,
+    SheetBuilder, ValueRef,
 };
 
 use crate::Error;
@@ -26,6 +27,8 @@ struct PendingCell {
 struct PendingFormula {
     text: String,
     kind: FormulaKind,
+    /// The `ref` attribute, which marks the anchor of a shared group.
+    reference: Option<String>,
 }
 
 /// What the `t` attribute of a formula makes of it.
@@ -80,9 +83,13 @@ pub(crate) fn parse_worksheet<R: BufRead>(
                 ("row", _) => start_row(&element, &mut cursor, part)?,
                 ("c", _) => pending = Some(start_cell(&element, &mut cursor, part)?),
                 ("f", Some(cell)) => {
-                    let kind = formula_kind(&element, part)?;
+                    let (kind, reference) = formula_header(&element, part)?;
                     let text = element_text(&mut reader, &mut scratch, part)?;
-                    cell.formula = Some(PendingFormula { text, kind });
+                    cell.formula = Some(PendingFormula {
+                        text,
+                        kind,
+                        reference,
+                    });
                 }
                 ("v", Some(cell)) => {
                     cell.value = Some(element_text(&mut reader, &mut scratch, part)?);
@@ -99,10 +106,11 @@ pub(crate) fn parse_worksheet<R: BufRead>(
                     start_cell(&element, &mut cursor, part)?;
                 }
                 ("f", Some(cell)) => {
-                    let kind = formula_kind(&element, part)?;
+                    let (kind, reference) = formula_header(&element, part)?;
                     cell.formula = Some(PendingFormula {
                         text: String::new(),
                         kind,
+                        reference,
                     });
                 }
                 _ => {}
@@ -168,6 +176,20 @@ fn start_cell(
     })
 }
 
+/// The kind of a formula and its `ref` attribute.
+fn formula_header(
+    element: &BytesStart<'_>,
+    part: &str,
+) -> Result<(FormulaKind, Option<String>), Error> {
+    let kind = formula_kind(element, part)?;
+    // Only the anchor of a shared group is told apart by its `ref`.
+    let reference = match kind {
+        FormulaKind::Shared(_) => attribute(element, "ref", part)?,
+        _ => None,
+    };
+    Ok((kind, reference))
+}
+
 /// What the `t` and `si` attributes of a formula make of it.
 fn formula_kind(element: &BytesStart<'_>, part: &str) -> Result<FormulaKind, Error> {
     Ok(match attribute(element, "t", part)?.as_deref() {
@@ -227,13 +249,31 @@ fn finish_cell(
     if kind == Some(FormulaKind::DataTable) {
         return Ok(());
     }
+    // The text or the `ref` makes the cell an anchor; the group is only kept when an anchor's
+    // `ref` covers the anchor itself.
+    let member = match &cell.formula {
+        Some(PendingFormula {
+            kind: FormulaKind::Shared(group),
+            text,
+            reference,
+        }) => Some(SharedMember {
+            group: *group,
+            anchor_covers_itself: (!text.is_empty() || reference.is_some()).then(|| {
+                reference
+                    .as_deref()
+                    .and_then(lexical::area)
+                    .is_some_and(|area| area.contains(pos.row, pos.col))
+            }),
+        }),
+        _ => None,
+    };
     let formula = match &cell.formula {
         Some(PendingFormula {
             kind: FormulaKind::Ignored,
             ..
         })
         | None => None,
-        Some(PendingFormula { text, kind }) if !text.is_empty() => {
+        Some(PendingFormula { text, kind, .. }) if !text.is_empty() => {
             if let FormulaKind::Shared(group) = kind {
                 sheet.set_shared_anchor(*group, pos);
             }
@@ -257,10 +297,8 @@ fn finish_cell(
         && matches!(cell.kind.as_deref(), None | Some("n"))
         && matches!(&value, ValueRef::Number(number) if number.is_nan() || number.abs() > 0.0);
     let stale = formula.is_some() && !trusted;
-    // A cell with a formula is not replaced by a later one without.
-    let replaces_a_formula = formula.is_none() && sheet.has_formula_at(pos);
-    if (value != ValueRef::Empty || formula.is_some()) && !replaces_a_formula {
-        sheet.set_view(pos, &value, formula, stale)?;
+    if value != ValueRef::Empty || formula.is_some() {
+        sheet.load_view(pos, &value, formula, stale, member)?;
     }
     Ok(())
 }
