@@ -88,6 +88,11 @@ impl Interner {
         Ok(id)
     }
 
+    /// Interns every string of `other`; the result maps the numbers of `other` to these.
+    fn merge(&mut self, other: &Interner) -> Result<Vec<u32>, LimitError> {
+        other.strings.iter().map(|text| self.intern(text)).collect()
+    }
+
     fn get(&self, id: u32) -> &str {
         self.strings
             .get(index_of(id))
@@ -112,6 +117,19 @@ impl Arena {
         self.text.push_str(text);
         self.ends.push(end);
         Ok(slot)
+    }
+
+    /// Appends every text of `other`; a slot of `other` reads as itself plus the result.
+    fn merge(&mut self, other: &Arena) -> Result<u32, LimitError> {
+        let end = formula_end(self.text.len(), other.text.len())?;
+        let count = self.ends.len() + other.ends.len();
+        u32::try_from(count).map_err(|_| LimitError::Formulas)?;
+        let slot_base = u32::try_from(self.ends.len()).expect("checked with the total");
+        let text_base = end - u32::try_from(other.text.len()).expect("checked with the total");
+        self.text.push_str(&other.text);
+        self.ends
+            .extend(other.ends.iter().map(|end| end + text_base));
+        Ok(slot_base)
     }
 
     fn get(&self, slot: u32) -> &str {
@@ -202,24 +220,35 @@ impl Tables {
         }
     }
 
-    /// The payload and formula slot of a cell of `other` as they read in these tables.
-    fn translate(
-        &mut self,
-        other: &Tables,
-        tag: u8,
-        payload: u64,
-        slot: u32,
-    ) -> Result<(u64, u32), LimitError> {
+    /// Brings the strings and formula texts of `other` into these tables.
+    fn merge(&mut self, other: &Tables) -> Result<Remap, LimitError> {
+        Ok(Remap {
+            strings: self.strings.merge(&other.strings)?,
+            formula_base: self.formulas.merge(&other.formulas)?,
+        })
+    }
+}
+
+/// How the numbers stored by the cells of one workbook read in another, after a merge.
+struct Remap {
+    strings: Vec<u32>,
+    formula_base: u32,
+}
+
+impl Remap {
+    /// The payload and formula slot of a cell of the merged workbook as they read in the other.
+    fn cell(&self, tag: u8, payload: u64, slot: u32) -> (u64, u32) {
+        let string = |number: u64| {
+            let merged = self
+                .strings
+                .get(index_of(table_number(number)))
+                .expect("string numbers of the other workbook are in its table");
+            u64::from(*merged)
+        };
         let payload = match tag & KIND_MASK {
-            TEXT => {
-                let text = other.strings.get(table_number(payload));
-                u64::from(self.strings.intern(text)?)
-            }
+            TEXT => string(payload),
             ERROR => match payload.checked_sub(OTHER_ERROR_BASE) {
-                Some(id) => {
-                    let text = other.strings.get(table_number(id));
-                    OTHER_ERROR_BASE + u64::from(self.strings.intern(text)?)
-                }
+                Some(id) => OTHER_ERROR_BASE + string(id),
                 None => payload,
             },
             _ => payload,
@@ -227,9 +256,10 @@ impl Tables {
         let slot = if tag & SHARED_BIT != 0 || slot == 0 {
             slot
         } else {
-            self.formulas.push(other.formulas.get(slot))?
+            slot.checked_add(self.formula_base)
+                .expect("merged slots fit the total checked by the merge")
         };
-        Ok((payload, slot))
+        (payload, slot)
     }
 }
 
@@ -265,6 +295,13 @@ impl Column {
         self.tags.push(tag);
         self.payloads.push(payload);
         self.formulas.push(formula);
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.rows.reserve(additional);
+        self.tags.reserve(additional);
+        self.payloads.reserve(additional);
+        self.formulas.reserve(additional);
     }
 
     /// The cell at `row`, wherever it is held.
@@ -464,27 +501,46 @@ impl<'a> SheetBuilder<'a> {
     /// Stores every cell and shared-formula anchor of `other`, a sheet of another workbook;
     /// on a shared address the cell of `other` wins.
     ///
+    /// All strings and formula texts of the workbook of `other` are brought in, so `other`
+    /// should belong to a workbook built for that sheet alone.
+    ///
     /// # Errors
     ///
     /// Returns a [`LimitError`] when the workbook would hold more strings or formula text
     /// than the store can address.
     pub fn absorb(&mut self, other: &SheetView<'_>) -> Result<(), LimitError> {
-        for (col, column) in &other.sheet.columns {
-            for index in 0..column.rows.len() {
-                let (payload, slot) = self.workbook.tables.translate(
-                    other.tables,
-                    column.tags[index],
-                    column.payloads[index],
-                    column.formulas[index],
-                )?;
-                self.sheet.set_encoded(
-                    CellPos {
-                        row: column.rows[index],
-                        col: *col,
-                    },
-                    (column.tags[index], payload, slot),
-                );
+        let remap = self.workbook.tables.merge(other.tables)?;
+        for (col, source) in &other.sheet.columns {
+            // Cells that all follow the last row of this column are appended as a block.
+            let below = match (
+                self.sheet
+                    .column(*col)
+                    .and_then(|column| column.rows.last()),
+                source.rows.first(),
+            ) {
+                (Some(last), Some(first)) => last < first,
+                _ => true,
+            };
+            let column = self.sheet.column_mut(*col);
+            if below {
+                column.reserve(source.rows.len());
             }
+            let mut added = 0;
+            for index in 0..source.rows.len() {
+                let (payload, slot) = remap.cell(
+                    source.tags[index],
+                    source.payloads[index],
+                    source.formulas[index],
+                );
+                let cell = (source.tags[index], payload, slot);
+                if below {
+                    column.push(source.rows[index], cell);
+                    added += 1;
+                } else if column.set(source.rows[index], cell) {
+                    added += 1;
+                }
+            }
+            self.sheet.len += added;
         }
         for (index, anchor) in &other.sheet.shared_anchors {
             self.sheet.shared_anchors.insert(*index, *anchor);

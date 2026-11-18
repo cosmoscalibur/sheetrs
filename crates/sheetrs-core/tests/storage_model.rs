@@ -344,3 +344,45 @@ fn a_formula_in_a_cell_written_out_of_order_is_seen_by_the_builder() {
         .expect("within limits");
     assert!(!builder.has_formula_at(CellPos { row: 2, col: 0 }));
 }
+
+proptest! {
+    #[test]
+    fn absorbing_equals_storing_cell_by_cell(
+        base in prop::collection::vec((position(), cell()), 0..60),
+        other in prop::collection::vec((position(), cell()), 0..60),
+    ) {
+        let mut source = Workbook::new();
+        let mut builder = source.sheet_builder("P");
+        for (pos, cell) in &other {
+            builder.set(*pos, cell).expect("within limits");
+        }
+        builder.finish();
+        let source_sheet = source.sheet("P").expect("the sheet was added");
+
+        let mut absorbed = Workbook::new();
+        let mut builder = absorbed.sheet_builder("S1");
+        for (pos, cell) in &base {
+            builder.set(*pos, cell).expect("within limits");
+        }
+        builder.absorb(&source_sheet).expect("within limits");
+        builder.finish();
+
+        let mut direct = Workbook::new();
+        let mut builder = direct.sheet_builder("S1");
+        for (pos, cell) in &base {
+            builder.set(*pos, cell).expect("within limits");
+        }
+        for (pos, view) in source_sheet.cells() {
+            builder.set(pos, &view.to_cell()).expect("within limits");
+        }
+        builder.finish();
+
+        let left = absorbed.sheet("S1").expect("the sheet was added");
+        let right = direct.sheet("S1").expect("the sheet was added");
+        prop_assert_eq!(left.len(), right.len());
+        let shown_cells = |sheet: &sheetrs_core::SheetView<'_>| -> Vec<(CellPos, String)> {
+            sheet.cells().map(|(pos, view)| (pos, shown(&view.to_cell()))).collect()
+        };
+        prop_assert_eq!(shown_cells(&left), shown_cells(&right));
+    }
+}
