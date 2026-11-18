@@ -1323,6 +1323,73 @@ fn shared_formula_entries() -> Vec<Crafted> {
     entries
 }
 
+/// Functions, as an XLSX file writes them, that `LibreOffice` may recalculate on load although
+/// the cell caches a number; each is written with a number cached that its result is not.
+const FUNCTIONS: &[&str] = &[
+    "NOW()",
+    "TODAY()",
+    "RAND()",
+    "RANDBETWEEN(1,2)",
+    "_xlfn.RANDARRAY()",
+    "OFFSET(B1,0,0)",
+    "INDIRECT(\"B1\")",
+    "INFO(\"system\")",
+    "CELL(\"row\")",
+    "CELL(\"filename\")",
+    "CELL(\"contents\",B1)",
+    "HYPERLINK(\"x\",\"y\")",
+    "_xlfn.FILTERXML(\"<a/>\",\"/a\")",
+    "_xlfn.FORMULATEXT(B1)",
+    "ROW()",
+    "COLUMN()",
+    "SUM(B1)",
+    "_xlfn.WEBSERVICE(\"x\")",
+    "IF(1,1,2)",
+    "ISFORMULA(B1)",
+    "now()",
+    "Now()",
+    "NOW ()",
+    "NOW( )",
+    "_xlfn.NOW()",
+    "1+NOW()",
+    "IF(1,NOW(),2)",
+    "\"NOW()\"",
+    "SUM(NOW())",
+    "NOW",
+    "'NOW'()",
+    "NOW(),1",
+    "_xlfn._xlws.FILTER(B1:B2,B1:B2)",
+    "_xlfn.RANDARRAY(1)",
+    "rand()",
+    "OFFSET (B1,0,0)",
+    "Sheet1!NOW()",
+    "INDIRECT (\"B1\")",
+    "TODAY()+0",
+    "(NOW())",
+    "-NOW()",
+    "NOW()*0",
+    "CELL (\"row\")",
+    "_xlfn.FORMULATEXT (B1)",
+    "AINFO()",
+    "NOWADAYS()",
+    "XNOW()",
+    "MYNOW()",
+];
+
+/// Cells that cache a number the function does not give.
+fn function_entries() -> Vec<Crafted> {
+    FUNCTIONS
+        .iter()
+        .map(|function| {
+            entry(
+                format!("function[{function}]"),
+                format!(r#"<row r="1"><c r="A1"><f>{function}</f><v>999</v></c></row>"#),
+                "A1:A1",
+            )
+        })
+        .collect()
+}
+
 /// Array formulas with their `ref` spellings and their overlaps with other cells.
 fn array_formula_entries() -> Vec<Crafted> {
     let mut entries = Vec::new();
@@ -1431,6 +1498,12 @@ fn formula_types_and_shared_groups_over_xlsx() -> Result<(), Box<dyn StdError>> 
 }
 
 /// Array formulas load as the oracle loads them.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn functions_that_make_a_cached_number_stale_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("functions", &function_entries(), false)
+}
+
 #[test]
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn array_formulas_fill_their_area_over_xlsx() -> Result<(), Box<dyn StdError>> {
@@ -2072,5 +2145,129 @@ fn external_links_over_xlsx() -> Result<(), Box<dyn StdError>> {
         &packages,
         |path| Ok(sheetrs_xlsx::read(File::open(path)?)?),
         |_: &CellValue, _: Option<&Cell>| Leniency::Strict,
+    )
+}
+
+fn written_package(
+    name: &str,
+    cells: &[(CellPos, Cell)],
+    range: &str,
+) -> Result<Package, Box<dyn StdError>> {
+    let mut workbook = sheetrs_core::Workbook::new();
+    let mut sheet = workbook.sheet_builder("S1");
+    for (pos, cell) in cells {
+        sheet.set(*pos, cell)?;
+    }
+    sheet.finish();
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    sheetrs_xlsx::write(&workbook, &mut bytes)?;
+    Ok(Package {
+        name: name.to_owned(),
+        bytes: bytes.into_inner(),
+        sheet: "S1".to_owned(),
+        range: range.to_owned(),
+    })
+}
+
+fn constant(value: Value) -> Cell {
+    Cell {
+        value,
+        formula: None,
+        stale: false,
+    }
+}
+
+/// `LibreOffice` loads what the writer produces as the reader does.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn written_workbooks_load_as_they_read_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    let at = |row, col| CellPos { row, col };
+    let numbers = [
+        0.1 + 0.2,
+        1e15,
+        123_456_789_012_345.6,
+        1.5e-5,
+        -2.5e300,
+        0.000_123,
+        1.0 / 3.0,
+    ];
+    let numbers: Vec<_> = numbers
+        .iter()
+        .enumerate()
+        .map(|(row, number)| {
+            (
+                at(u32::try_from(row).unwrap_or(0), 0),
+                constant(Value::Number(*number)),
+            )
+        })
+        .collect();
+    let texts = vec![
+        (
+            at(0, 0),
+            constant(Value::Text("a & b < c > \"d\" 'e'".into())),
+        ),
+        (
+            at(1, 0),
+            constant(Value::Text(" padded \n two lines\ttab".into())),
+        ),
+        (at(2, 0), constant(Value::Text("_x0041_ literal".into()))),
+        (at(3, 0), constant(Value::Text("control \u{1} char".into()))),
+        (at(4, 0), constant(Value::Text("ñandú 😀".into()))),
+    ];
+    let kinds = vec![
+        (at(0, 0), constant(Value::Bool(true))),
+        (at(0, 1), constant(Value::Bool(false))),
+        (
+            at(1, 0),
+            constant(Value::Error(sheetrs_core::ErrorKind::DivZero)),
+        ),
+        (
+            at(2, 0),
+            Cell {
+                value: Value::Number(3.0),
+                formula: Some(Formula::Text("1+2".to_owned())),
+                stale: false,
+            },
+        ),
+    ];
+    let packages = vec![
+        written_package("numbers", &numbers, "A1:A7")?,
+        written_package("texts", &texts, "A1:A5")?,
+        written_package("kinds", &kinds, "A1:B3")?,
+    ];
+    crafted::assert_reads_as_the_oracle(
+        CRAFTED_DIR,
+        "written",
+        "xlsx",
+        None,
+        &packages,
+        |path| Ok(sheetrs_xlsx::read(File::open(path)?)?),
+        |expected, actual| leniency(expected, actual, false),
+    )
+}
+
+/// `LibreOffice` loads a package that was read and written back as it loads the original.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn a_package_written_back_loads_as_it_reads_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    let rows = r#"<row r="1" ht="30" customHeight="1"><c r="A1" s="0"><v>1.5</v></c><c r="B1" t="inlineStr"><is><t>texto &amp; m\u{e1}s</t></is></c></row><row r="2" hidden="1"><c r="A2"><f>A1*2</f><v>3</v></c></row>"#;
+    let original = single_sheet_package_with(rows, None, "")?;
+    let workbook = sheetrs_xlsx::read(original)?;
+    let mut written = std::io::Cursor::new(Vec::new());
+    sheetrs_xlsx::write(&workbook, &mut written)?;
+    let packages = vec![Package {
+        name: "written_back".to_owned(),
+        bytes: written.into_inner(),
+        sheet: "S1".to_owned(),
+        range: "A1:B2".to_owned(),
+    }];
+    crafted::assert_reads_as_the_oracle(
+        CRAFTED_DIR,
+        "written_back",
+        "xlsx",
+        None,
+        &packages,
+        |path| Ok(sheetrs_xlsx::read(File::open(path)?)?),
+        |expected, actual| leniency(expected, actual, false),
     )
 }

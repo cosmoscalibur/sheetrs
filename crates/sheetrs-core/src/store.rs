@@ -17,6 +17,7 @@ use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::coord::CellPos;
+use crate::opaque::{Appearance, SheetOpaque, StyledCells};
 use crate::workbook::{Cell, ErrorKind, Formula, Value, Visibility, Workbook};
 
 const KIND_MASK: u8 = 0b0111;
@@ -459,6 +460,9 @@ pub(crate) struct Sheet {
     /// Columns that hold cells, sorted by column number.
     columns: Vec<(u32, Column)>,
     shared_anchors: BTreeMap<u32, CellPos>,
+    /// The areas that array formulas filled, as their first and last cells, in the order they
+    /// were filled.
+    arrays: Vec<(CellPos, CellPos)>,
     /// Groups with an anchor whose `ref` is valid.
     shared_valid: BTreeSet<u32>,
     /// The group of the cells that carry formula text for a shared group.
@@ -469,6 +473,8 @@ pub(crate) struct Sheet {
     history: FxHashMap<CellPos, Vec<(Encoded, Option<u32>)>>,
     /// Whether a cell belongs to a shared group.
     has_shared: bool,
+    /// What the sheet carries from its package.
+    appearance: Appearance,
     /// The index in `columns` of the column used last; cells come mostly down one column at a
     /// time.
     last_column: usize,
@@ -692,14 +698,33 @@ impl<'a> SheetBuilder<'a> {
                 visibility: Visibility::Visible,
                 columns: Vec::new(),
                 shared_anchors: BTreeMap::new(),
+                arrays: Vec::new(),
                 shared_valid: BTreeSet::new(),
                 shared_texts: FxHashMap::default(),
                 history: FxHashMap::default(),
                 has_shared: false,
+                appearance: Appearance::default(),
                 last_column: 0,
                 len: 0,
             },
         }
+    }
+
+    /// Sets what the sheet carries from its package.
+    pub fn set_opaque(&mut self, opaque: SheetOpaque) {
+        self.sheet.appearance.opaque = Some(opaque);
+    }
+
+    /// Records the attributes that the row at `row` has in its package, as the package writes
+    /// them.
+    pub fn set_row_attributes(&mut self, row: u32, attributes: &str) {
+        self.sheet.appearance.set_row(row, attributes);
+    }
+
+    /// Records the style that the cell at `pos` has in its package, whether the cell holds a
+    /// value or not.
+    pub fn set_cell_style(&mut self, pos: CellPos, style: u32) {
+        self.sheet.appearance.set_style(pos, style);
     }
 
     /// Sets whether the sheet is shown.
@@ -807,6 +832,7 @@ impl<'a> SheetBuilder<'a> {
             return Err(LimitError::ArrayCells);
         }
         let slot = self.workbook.tables.formulas.push(text)?;
+        self.sheet.arrays.push((first, last));
         let cell = (EMPTY | STALE_BIT, 0, slot);
         for col in first.col..=last.col {
             for row in first.row..=last.row {
@@ -868,6 +894,7 @@ impl<'a> SheetBuilder<'a> {
             }
             self.sheet.len += added;
         }
+        self.sheet.arrays.extend_from_slice(&other.sheet.arrays);
         for (index, anchor) in &other.sheet.shared_anchors {
             self.sheet.shared_anchors.insert(*index, *anchor);
         }
@@ -892,6 +919,7 @@ impl<'a> SheetBuilder<'a> {
             self.sheet.history.insert(*pos, writes);
         }
         self.sheet.has_shared |= other.sheet.has_shared;
+        self.sheet.appearance.absorb(&other.sheet.appearance);
         Ok(())
     }
 
@@ -1035,6 +1063,71 @@ impl<'a> SheetView<'a> {
     #[must_use]
     pub fn shared_anchor(&self, index: u32) -> Option<CellPos> {
         self.sheet.shared_anchors.get(&index).copied()
+    }
+
+    /// What the sheet carries from its package, if it was read from one that carries it.
+    #[must_use]
+    pub fn opaque(&self) -> Option<&'a SheetOpaque> {
+        self.sheet.appearance.opaque.as_ref()
+    }
+
+    /// The attributes of the rows that have any, as runs of consecutive rows: the first and
+    /// last row and the attribute text.
+    pub fn row_attributes(&self) -> impl Iterator<Item = (u32, u32, &'a str)> + use<'a> {
+        let appearance = &self.sheet.appearance;
+        appearance
+            .rows
+            .iter()
+            .map(|(first, last, id)| (first, last, appearance.row_texts[id as usize].as_str()))
+    }
+
+    /// The first and last cell of the smallest rectangle that holds every cell that has a value
+    /// or a style, or `None` when there is none.
+    #[must_use]
+    pub fn extent(&self) -> Option<(CellPos, CellPos)> {
+        let mut extent = self.sheet.appearance.styled_extent();
+        for (col, column) in &self.sheet.columns {
+            let (Some(first), Some(last)) = (column.rows.first(), column.rows.last()) else {
+                continue;
+            };
+            let (first, last) = (*first, *last);
+            extent = Some(match extent {
+                None => (first, last, *col, *col),
+                Some((a, b, c, d)) => (a.min(first), b.max(last), c.min(*col), d.max(*col)),
+            });
+        }
+        extent.map(|(first_row, last_row, first_col, last_col)| {
+            (
+                CellPos {
+                    row: first_row,
+                    col: first_col,
+                },
+                CellPos {
+                    row: last_row,
+                    col: last_col,
+                },
+            )
+        })
+    }
+
+    /// The cells that have a style in the package, row by row, whether they hold a value or not.
+    #[must_use]
+    pub fn styled_cells(&self) -> StyledCells {
+        self.sheet.appearance.styled_cells()
+    }
+
+    /// Whether some cell of the sheet belongs to a shared formula group.
+    #[must_use]
+    pub fn has_shared_groups(&self) -> bool {
+        self.sheet.has_shared
+    }
+
+    /// The areas that array formulas filled, as their first and last cells, in the order they
+    /// were filled. A cell inside an area holds the formula of the array only while it still
+    /// holds the text it was filled with.
+    #[must_use]
+    pub fn array_areas(&self) -> &'a [(CellPos, CellPos)] {
+        &self.sheet.arrays
     }
 
     /// The non-empty cells column by column, each column from the top.

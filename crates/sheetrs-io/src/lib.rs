@@ -271,6 +271,54 @@ pub fn integer_prefix(text: &str) -> i64 {
     integer_prefix_skipping(text, is_xml_whitespace)
 }
 
+/// Whether `formula` calls one of `functions`: a name, in any case, followed by an opening
+/// parenthesis that spaces may separate from it. Names inside text and inside quoted sheet names
+/// are not calls.
+#[must_use]
+pub fn calls_any(formula: &str, functions: &[&str]) -> bool {
+    let bytes = formula.as_bytes();
+    let is_name = |byte: &u8| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.');
+    let mut at = 0;
+    while let Some(&byte) = bytes.get(at) {
+        match byte {
+            b'"' | b'\'' => {
+                // Text, or a quoted name: it ends at the first quote that is not doubled.
+                at += 1;
+                while let Some(&inner) = bytes.get(at) {
+                    at += 1;
+                    if inner == byte {
+                        if bytes.get(at) == Some(&byte) {
+                            at += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            _ if is_name(&byte) => {
+                let length = bytes
+                    .get(at..)
+                    .map_or(0, |tail| tail.iter().take_while(|b| is_name(b)).count());
+                let name = bytes.get(at..at + length).unwrap_or_default();
+                let after = bytes.get(at + length..).map_or(&[][..], |tail| {
+                    let spaces = tail.iter().take_while(|b| **b == b' ').count();
+                    tail.get(spaces..).unwrap_or_default()
+                });
+                if after.first() == Some(&b'(')
+                    && functions
+                        .iter()
+                        .any(|function| function.as_bytes().eq_ignore_ascii_case(name))
+                {
+                    return true;
+                }
+                at += length;
+            }
+            _ => at += 1,
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

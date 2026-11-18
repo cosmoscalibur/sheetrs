@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::opaque::OpaquePackage;
 use crate::store::{Sheet, SheetBuilder, SheetView, Tables};
 
 /// A spreadsheet error value, identified by the text a file stores for it.
@@ -123,6 +124,19 @@ pub enum DateSystem {
     },
 }
 
+/// The grammar in which the formulas of a workbook are written, which is the one of the format it
+/// was read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FormulaGrammar {
+    /// Office Open XML: the text of an `<f>` element, without `=`.
+    #[default]
+    Ooxml,
+    /// `OpenFormula` as ODS writes it, with its namespace prefix and `=`.
+    OpenFormula,
+    /// The syntax `LibreOffice` itself uses, with `=`, as a text file holds it.
+    Native,
+}
+
 /// A document that the formulas of a workbook refer to.
 ///
 /// The value of such a reference is the one the file caches; it is never recalculated, because
@@ -157,10 +171,12 @@ pub struct Workbook {
     pub(crate) sheets: Vec<Sheet>,
     pub(crate) tables: Tables,
     date_system: DateSystem,
+    grammar: FormulaGrammar,
     external_links: Vec<ExternalLink>,
     /// The targets of `external_links`, to tell a repeated one at once.
     external_targets: std::collections::HashSet<String>,
     macro_modules: Vec<MacroModule>,
+    opaque: Option<OpaquePackage>,
 }
 
 impl Workbook {
@@ -195,6 +211,29 @@ impl Workbook {
     #[must_use]
     pub fn date_system(&self) -> DateSystem {
         self.date_system
+    }
+
+    /// What the package the workbook was read from holds besides the model, if the workbook was
+    /// read from a package that carries it.
+    #[must_use]
+    pub fn opaque(&self) -> Option<&OpaquePackage> {
+        self.opaque.as_ref()
+    }
+
+    /// Sets what the workbook carries from its package.
+    pub fn set_opaque(&mut self, package: OpaquePackage) {
+        self.opaque = Some(package);
+    }
+
+    /// The grammar of the formulas of the workbook.
+    #[must_use]
+    pub fn formula_grammar(&self) -> FormulaGrammar {
+        self.grammar
+    }
+
+    /// Sets the grammar of the formulas of the workbook.
+    pub fn set_formula_grammar(&mut self, grammar: FormulaGrammar) {
+        self.grammar = grammar;
     }
 
     /// Sets how the workbook counts serial dates.

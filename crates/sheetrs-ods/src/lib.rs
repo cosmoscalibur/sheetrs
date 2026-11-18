@@ -31,6 +31,7 @@ const BUFFER_BYTES: usize = 64 * 1024;
 pub fn read<R: Read + Seek>(source: R) -> Result<Workbook, Error> {
     let mut archive = ZipArchive::new(source)?;
     let mut workbook = Workbook::new();
+    workbook.set_formula_grammar(sheetrs_core::FormulaGrammar::OpenFormula);
     {
         let part = match archive.by_name(CONTENT_PART) {
             Ok(part) => part,

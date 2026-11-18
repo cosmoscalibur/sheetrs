@@ -17,6 +17,20 @@ use crate::value::{Scalar, scalar};
 const MAX_TEXT_BYTES: usize = 1 << 24;
 /// The most elements one paragraph may nest, beyond which the reader stops.
 const MAX_NESTING: usize = 256;
+/// The functions whose cells `LibreOffice` calculates again on load even when they cache a text.
+const RECALCULATED_FUNCTIONS: [&str; 11] = [
+    "NOW",
+    "TODAY",
+    "RAND",
+    "RANDBETWEEN",
+    "OFFSET",
+    "INDIRECT",
+    "INFO",
+    "CELL",
+    "HYPERLINK",
+    "FORMULA",
+    "DDE",
+];
 /// The most columns an array formula may span; a greater count drops the cell.
 const MAX_MATRIX_COLUMNS: u32 = 32_767;
 /// The most cells that a table may hold, repeated ones included.
@@ -377,7 +391,9 @@ fn cell_data(attrs: &Attrs, paragraphs: &[String], document: &Document) -> CellD
             repeated(attrs.columns_repeated.as_deref())
         },
         // Only a text cached with its cell is kept; every other result is recalculated.
-        stale: formula.is_some() && !cached_text,
+        stale: formula.as_deref().is_some_and(|text| {
+            !cached_text || sheetrs_io::calls_any(text, &RECALCULATED_FUNCTIONS)
+        }),
         scalar,
         formula,
         matrix,

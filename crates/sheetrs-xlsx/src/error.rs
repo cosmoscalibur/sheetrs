@@ -20,6 +20,12 @@ pub enum Error {
     /// The workbook holds more than the cell store can address.
     #[error("workbook too large: {0}")]
     TooLarge(#[from] sheetrs_core::LimitError),
+    /// The workbook holds something that the format cannot write as it is.
+    #[error("cannot write the workbook: {0}")]
+    Unsupported(String),
+    /// The destination cannot be written.
+    #[error("cannot write the package: {0}")]
+    Io(#[from] std::io::Error),
     /// A part is well-formed XML that does not describe a valid workbook.
     #[error("invalid {part}: {reason}")]
     Malformed {

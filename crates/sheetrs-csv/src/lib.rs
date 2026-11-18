@@ -99,6 +99,7 @@ pub fn read<R: Read>(
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
 
     let mut workbook = Workbook::new();
+    workbook.set_formula_grammar(sheetrs_core::FormulaGrammar::Native);
     let mut sheet = workbook.sheet_builder(sheet_name);
     let mut failure = None;
     field::fields(text, options, |row, col, field| {

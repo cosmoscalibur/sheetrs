@@ -1227,6 +1227,64 @@ fn basic_library_entries() -> Vec<Crafted> {
         .collect()
 }
 
+/// Functions that may make `LibreOffice` calculate a cell again although it caches a text.
+const FUNCTIONS: &[&str] = &[
+    "NOW()",
+    "TODAY()",
+    "RAND()",
+    "RANDBETWEEN(1;2)",
+    "RANDARRAY()",
+    "OFFSET([.B1];0;0)",
+    "INDIRECT(&quot;B1&quot;)",
+    "INFO(&quot;system&quot;)",
+    "CELL(&quot;row&quot;)",
+    "CELL(&quot;address&quot;;[.B1])",
+    "HYPERLINK(&quot;x&quot;;&quot;y&quot;)",
+    "FILTERXML(&quot;&lt;a/&gt;&quot;;&quot;/a&quot;)",
+    "FORMULA([.B1])",
+    "WEBSERVICE(&quot;x&quot;)",
+    "ROW()",
+    "SUM([.B1])",
+    "ISFORMULA([.B1])",
+    "TEXT(1;&quot;0&quot;)",
+    "now()",
+    "NOW ()",
+    "1+NOW()",
+    "IF(1;NOW();2)",
+    "&quot;NOW()&quot;",
+    "NOW",
+    "XNOW()",
+    "_xlfn.NOW()",
+    "FORMULATEXT([.B1])",
+    "_xlfn.RANDARRAY()",
+    "EASTERSUNDAY(2020)",
+    "SHEET()",
+    "SHEETS()",
+    "COLUMN()",
+    "AREAS([.B1])",
+    "GETPIVOTDATA(&quot;x&quot;;[.B1])",
+    "ERRORTYPE(NA())",
+    "STYLE(&quot;x&quot;)",
+    "DDE(&quot;a&quot;;&quot;b&quot;;&quot;c&quot;)",
+    "MULTIPLE.OPERATIONS([.B1];[.B1];1)",
+];
+
+/// Formulas that cache a text which the function does not give.
+fn function_entries() -> Vec<Crafted> {
+    FUNCTIONS
+        .iter()
+        .map(|function| {
+            single(
+                format!("function[{function}]"),
+                &formula_cell(
+                    &format!("of:={function}"),
+                    r#"office:value-type="string" office:string-value="q""#,
+                ),
+            )
+        })
+        .collect()
+}
+
 const NULL_DATES: &[&str] = &[
     "1899-12-30",
     "1904-01-01",
@@ -1489,6 +1547,12 @@ fn external_links_over_ods() -> Result<(), Box<dyn StdError>> {
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn basic_libraries_over_ods() -> Result<(), Box<dyn StdError>> {
     assert_reads_as_the_oracle("basic", &basic_library_entries())
+}
+
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn functions_that_make_a_cached_text_stale_over_ods() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("functions", &function_entries())
 }
 
 #[test]

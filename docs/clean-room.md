@@ -7,6 +7,9 @@ MPL-2.0).
 ## Allowed sources
 
 - ECMA-376 / ISO 29500 (OOXML) and OASIS ODF 1.3 / 1.4, including OpenFormula.
+- Microsoft's public open specifications of the Compound File Binary format (MS-CFB) and of
+  the Office VBA file format (MS-OVBA), which describe the container of an XLSX macro
+  project.
 - Public papers and documentation of the linters whose rules are reproduced
   (PerfectXL and ExceLint).
 - Unicode public data (for example CLDR) for locale tables.

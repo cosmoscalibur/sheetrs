@@ -6,11 +6,12 @@ use std::sync::Arc;
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use sheetrs_core::{DateSystem, Visibility};
+use sheetrs_core::{DateSystem, Frame, Visibility};
 
 use crate::Error;
+use crate::capture::{Tee, without_start_tag};
 use crate::lexical;
-use crate::xml::{attribute, element_text, skip_element, unescape_xstring};
+use crate::xml::{attribute, element_text, raw_attributes, skip_element, unescape_xstring};
 
 pub(crate) const WORKBOOK_PART: &str = "xl/workbook.xml";
 pub(crate) const RELATIONSHIPS_PART: &str = "xl/_rels/workbook.xml.rels";
@@ -27,6 +28,8 @@ pub(crate) struct SheetEntry {
     pub name: String,
     pub visibility: Visibility,
     pub relationship_id: String,
+    /// The attributes of the entry other than its name and state, as written.
+    pub attributes: String,
 }
 
 pub(crate) struct WorkbookPart {
@@ -34,6 +37,8 @@ pub(crate) struct WorkbookPart {
     pub date_system: DateSystem,
     /// The relationship ids of the external links, in order.
     pub external_references: Vec<String>,
+    /// The part around the list of sheets.
+    pub frame: Frame,
 }
 
 /// The index of the sheet the workbook opens on, as `LibreOffice` reads the `activeTab`
@@ -48,12 +53,14 @@ fn active_sheet(attribute: Option<&str>, sheets: usize) -> usize {
 
 pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Error> {
     let part = WORKBOOK_PART;
-    let mut reader = Reader::from_reader(source);
+    let mut reader = Reader::from_reader(Tee::new(source, true));
     let mut buf = Vec::new();
+    let mut head = Vec::new();
     let mut workbook = WorkbookPart {
         sheets: Vec::new(),
         date_system: DateSystem::Date1900,
         external_references: Vec::new(),
+        frame: Frame::default(),
     };
     let mut complete = false;
     let mut active_tab: Option<String> = None;
@@ -65,6 +72,16 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
         {
             Event::Empty(element) if element.local_name().as_ref() == "workbook" => {
                 complete = true;
+            }
+            Event::Start(element) if element.local_name().as_ref() == "sheets" => {
+                head = without_start_tag(reader.get_mut().pause(), element.name().as_ref());
+            }
+            Event::Empty(element) if element.local_name().as_ref() == "sheets" => {
+                head = without_start_tag(reader.get_mut().pause(), element.name().as_ref());
+                reader.get_mut().resume();
+            }
+            Event::End(element) if element.local_name().as_ref() == "sheets" => {
+                reader.get_mut().resume();
             }
             Event::Start(element) | Event::Empty(element) => match element.local_name().as_ref() {
                 "workbookPr" => {
@@ -95,6 +112,10 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
                 if let Some(entry) = workbook.sheets.get_mut(active) {
                     entry.visibility = Visibility::Visible;
                 }
+                workbook.frame = Frame {
+                    head,
+                    tail: reader.get_mut().take(),
+                };
                 return Ok(workbook);
             }
             Event::Eof => return Err(Error::malformed(part, "unexpected end of file")),
@@ -121,6 +142,7 @@ fn sheet_entry(
         name: required("name")?,
         visibility,
         relationship_id: required("id")?,
+        attributes: raw_attributes(element, &["name", "state"], part)?,
     })
 }
 

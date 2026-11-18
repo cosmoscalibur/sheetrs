@@ -9,28 +9,31 @@ use std::sync::Mutex;
 use std::sync::mpsc::{channel, sync_channel};
 use std::thread;
 
-use sheetrs_core::{AbsorbError, SheetBuilder, Workbook};
+use sheetrs_core::{AbsorbError, Frame, SheetBuilder, Workbook};
 use zip::result::ZipError;
 
 use crate::Error;
 use crate::worksheet::{ValueContext, parse_worksheet as parse_sequentially};
 
+/// A block's index and what parsing it gave: its cells as a workbook, and the part around them.
+type Block = (usize, Result<(Workbook, Frame), Error>);
+
 /// Bytes of inflated XML a block holds, roughly.
 const BLOCK_BYTES: usize = 1 << 20;
 
-/// Returns `false` when two blocks hold a cell at the same address, which only a sequential
-/// read resolves.
+/// Returns the part around the cells, or `None` when two blocks hold a cell at the same
+/// address, which only a sequential read resolves.
 pub(crate) fn parse_worksheet<R: Read>(
     mut source: R,
     sheet: &mut SheetBuilder<'_>,
     context: &ValueContext<'_>,
     part: &str,
     workers: usize,
-) -> Result<bool, Error> {
+) -> Result<Option<Frame>, Error> {
     let (job_sender, job_receiver) = sync_channel::<(usize, Vec<u8>)>(workers * 2);
     let job_receiver = Mutex::new(job_receiver);
     let job_receiver = &job_receiver;
-    let (result_sender, result_receiver) = channel::<(usize, Result<Workbook, Error>)>();
+    let (result_sender, result_receiver) = channel::<Block>();
     thread::scope(move |scope| {
         for _ in 0..workers {
             let result_sender = result_sender.clone();
@@ -43,9 +46,15 @@ pub(crate) fn parse_worksheet<R: Read>(
                     let Some((index, bytes)) = job else { break };
                     let mut partial = Workbook::new();
                     let mut builder = partial.sheet_builder("");
-                    let outcome = parse_sequentially(bytes.as_slice(), &mut builder, context, part);
+                    let outcome = parse_sequentially(
+                        bytes.as_slice(),
+                        &mut builder,
+                        context,
+                        part,
+                        index == 0,
+                    );
                     builder.finish();
-                    let outcome = outcome.map(|()| partial);
+                    let outcome = outcome.map(|frame| (partial, frame));
                     if result_sender.send((index, outcome)).is_err() {
                         break;
                     }
@@ -59,21 +68,28 @@ pub(crate) fn parse_worksheet<R: Read>(
         });
         drop(job_sender);
 
-        let mut partials: Vec<(usize, Result<Workbook, Error>)> = result_receiver.iter().collect();
+        let mut partials: Vec<Block> = result_receiver.iter().collect();
         partials.sort_unstable_by_key(|(index, _)| *index);
         produced?;
+        let mut frame = Frame::default();
         for (_, partial) in partials {
-            let partial = partial?;
+            let (partial, block) = partial?;
+            if frame.head.is_empty() {
+                frame.head = block.head;
+            }
+            if !block.tail.is_empty() {
+                frame.tail = block.tail;
+            }
             let part_sheet = partial
                 .sheet("")
                 .expect("a block parser publishes its sheet");
             match sheet.absorb(&part_sheet) {
                 Ok(()) => {}
-                Err(AbsorbError::Overlap) => return Ok(false),
+                Err(AbsorbError::Overlap) => return Ok(None),
                 Err(AbsorbError::Limit(limit)) => return Err(limit.into()),
             }
         }
-        Ok(true)
+        Ok(Some(frame))
     })
 }
 

@@ -7,21 +7,24 @@
 //! Cell contents are read as `LibreOffice` loads them, including text that does not
 //! fit the cell type. A formula whose cached result is missing is read with an empty value.
 
+mod capture;
 mod error;
 mod lexical;
 mod parallel;
 mod parts;
 mod vba;
 mod worksheet;
+mod write;
 mod xml;
 
 use std::io::{BufReader, Read, Seek};
 
-use sheetrs_core::Workbook;
+use sheetrs_core::{OpaquePackage, OpaquePart, PackageFormat, SheetOpaque, Workbook};
 use zip::ZipArchive;
 use zip::result::ZipError;
 
 pub use error::Error;
+pub use write::write;
 
 use parts::{
     RELATIONSHIPS_PART, SHARED_STRINGS_PART, WORKBOOK_PART, parse_external_link,
@@ -61,10 +64,12 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
 
     let workbook_part = parse_workbook(open(&mut archive, WORKBOOK_PART)?)?;
     let targets = parse_relationships(open(&mut archive, RELATIONSHIPS_PART)?, RELATIONSHIPS_PART)?;
-    let shared_strings = match open_optional(&mut archive, SHARED_STRINGS_PART)? {
-        Some(source) => parse_shared_strings(source)?,
-        None => Vec::new(),
-    };
+    let shared_strings_part = open_optional(&mut archive, SHARED_STRINGS_PART)?;
+    let has_shared_strings = shared_strings_part.is_some();
+    let shared_strings = shared_strings_part
+        .map(parse_shared_strings)
+        .transpose()?
+        .unwrap_or_default();
 
     let context = ValueContext {
         shared_strings: &shared_strings,
@@ -72,6 +77,7 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
     };
     let mut workbook = Workbook::new();
     workbook.set_date_system(workbook_part.date_system);
+    let mut sheet_parts = std::collections::HashSet::new();
     for entry in workbook_part.sheets {
         let target = targets
             .get(&entry.relationship_id)
@@ -86,20 +92,27 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
         let mut sheet = workbook.sheet_builder(entry.name.clone());
         sheet.set_visibility(entry.visibility);
         let file = open(&mut archive, &part)?;
-        let parsed = if workers > 1 && file.get_ref().size() >= PARALLEL_MIN_BYTES {
+        let frame = if workers > 1 && file.get_ref().size() >= PARALLEL_MIN_BYTES {
             parallel::parse_worksheet(file, &mut sheet, &context, &part, workers)?
         } else {
-            parse_worksheet(file, &mut sheet, &context, &part)?;
-            true
+            Some(parse_worksheet(file, &mut sheet, &context, &part, true)?)
         };
-        if !parsed {
+        let frame = if let Some(frame) = frame {
+            frame
+        } else {
             // The blocks overlapped: only reading the part in order resolves the addresses.
             sheet.discard();
             sheet = workbook.sheet_builder(entry.name);
             sheet.set_visibility(entry.visibility);
             let file = open(&mut archive, &part)?;
-            parse_worksheet(file, &mut sheet, &context, &part)?;
-        }
+            parse_worksheet(file, &mut sheet, &context, &part, true)?
+        };
+        sheet.set_opaque(SheetOpaque {
+            frame,
+            part: part.clone(),
+            entry: entry.attributes,
+        });
+        sheet_parts.insert(part);
         sheet.finish_loaded();
     }
     for reference in &workbook_part.external_references {
@@ -113,7 +126,39 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
         }
     }
     list_vba_project(&mut archive, &targets, &mut workbook)?;
+    workbook.set_opaque(OpaquePackage {
+        format: PackageFormat::Xlsx,
+        parts: unread_parts(&mut archive, &sheet_parts)?,
+        frame: workbook_part.frame,
+        date_system: workbook_part.date_system,
+        shared_strings: has_shared_strings.then(|| SHARED_STRINGS_PART.to_owned()),
+    });
     Ok(workbook)
+}
+
+/// The entries of the package that the model replaces when it writes: the workbook part, the
+/// sheets and the shared strings. Every other entry is returned as it is.
+fn unread_parts<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    sheet_parts: &std::collections::HashSet<String>,
+) -> Result<Vec<OpaquePart>, Error> {
+    let mut parts = Vec::new();
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index)?;
+        let name = file.name()?.into_owned();
+        if file.is_dir()
+            || name == WORKBOOK_PART
+            || name == SHARED_STRINGS_PART
+            || sheet_parts.contains(&name)
+        {
+            continue;
+        }
+        let mut bytes = Vec::with_capacity(usize::try_from(file.size()).unwrap_or(0));
+        file.read_to_end(&mut bytes)
+            .map_err(|error| Error::Zip(ZipError::Io(error)))?;
+        parts.push(OpaquePart { name, bytes });
+    }
+    Ok(parts)
 }
 
 /// Adds to `workbook` the modules of its VBA project, if it has one.

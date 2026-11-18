@@ -98,6 +98,28 @@ pub(crate) fn constant_error(text: &str) -> (ErrorKind, Option<&'static str>) {
     }
 }
 
+/// The functions, as an XLSX file spells them, whose cells `LibreOffice` calculates again on load
+/// even when they cache a number.
+const RECALCULATED_FUNCTIONS: [&str; 12] = [
+    "NOW",
+    "TODAY",
+    "RAND",
+    "RANDBETWEEN",
+    "OFFSET",
+    "INDIRECT",
+    "INFO",
+    "CELL",
+    "HYPERLINK",
+    "_xlfn.RANDARRAY",
+    "_xlfn.FILTERXML",
+    "_xlfn.FORMULATEXT",
+];
+
+/// Whether `formula` calls a function that `LibreOffice` calculates again when it loads the cell.
+pub(crate) fn recalculated_on_load(formula: &str) -> bool {
+    sheetrs_io::calls_any(formula, &RECALCULATED_FUNCTIONS)
+}
+
 /// The text of a shared or inline string with its line breaks normalized: a carriage return
 /// and a line feed in either order are one line feed.
 pub(crate) fn normalize_line_breaks(text: &str) -> Cow<'_, str> {
@@ -279,6 +301,36 @@ pub(crate) fn area(text: &str) -> Option<Area> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn functions_that_are_calculated_again_are_found_as_calls() {
+        for formula in [
+            "NOW()",
+            "now ()",
+            "1+TODAY()",
+            "IF(1,Rand(),2)",
+            "SUM(A1,OFFSET(B1,0,0))",
+            "_xlfn.RANDARRAY()",
+            "'my sheet(1)'!B1+INFO(\"system\")",
+            "\"it\"\"s\"&CELL(\"row\")",
+        ] {
+            assert!(recalculated_on_load(formula), "{formula}");
+        }
+        for formula in [
+            "SUM(A1)",
+            "\"NOW()\"",
+            "NOW",
+            "XNOW()",
+            "NOWADAYS()",
+            "'NOW()'!A1",
+            "Sheet1.NOW()",
+            "_xlfn.NOW()",
+            "RANDARRAY_X()",
+            "",
+        ] {
+            assert!(!recalculated_on_load(formula), "{formula}");
+        }
+    }
 
     fn bits(text: &str) -> u64 {
         number(text).to_bits()

@@ -6,13 +6,14 @@ use std::sync::Arc;
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 use sheetrs_core::{
-    CellPos, CellRef, DateSystem, ErrorKind, FormulaRef, MAX_COLS, MAX_ROWS, SharedMember,
+    CellPos, CellRef, DateSystem, ErrorKind, FormulaRef, Frame, MAX_COLS, MAX_ROWS, SharedMember,
     SheetBuilder, ValueRef,
 };
 
 use crate::Error;
+use crate::capture::{Tee, without_start_tag};
 use crate::lexical;
-use crate::xml::{attribute, element_text, skip_element, unescape_xstring};
+use crate::xml::{attribute, element_text, raw_attributes, skip_element, unescape_xstring};
 
 /// A `<c>` element while its children are read.
 struct PendingCell {
@@ -22,6 +23,8 @@ struct PendingCell {
     value: Option<String>,
     inline_text: Option<String>,
     formula: Option<PendingFormula>,
+    /// The `s` attribute: the style of the cell.
+    style: Option<u32>,
 }
 
 struct PendingFormula {
@@ -54,14 +57,17 @@ struct Cursor {
     next_col: u32,
 }
 
-/// Reads the cells of a worksheet part into `sheet`.
+/// Reads the cells of a worksheet part into `sheet`, and returns the part around its cells; the
+/// start of the part is kept only when `from_start` says the part begins in `source`.
 pub(crate) fn parse_worksheet<R: BufRead>(
     source: R,
     sheet: &mut SheetBuilder<'_>,
     context: &ValueContext<'_>,
     part: &str,
-) -> Result<(), Error> {
-    let mut reader = Reader::from_reader(source);
+    from_start: bool,
+) -> Result<Frame, Error> {
+    let mut reader = Reader::from_reader(Tee::new(source, from_start));
+    let mut head = Vec::new();
     // A block of rows is a fragment: its closing tags may have no opening tag in it.
     reader.config_mut().check_end_names = false;
     reader.config_mut().allow_unmatched_ends = true;
@@ -80,7 +86,10 @@ pub(crate) fn parse_worksheet<R: BufRead>(
             .map_err(|source| Error::xml(part, source))?
         {
             Event::Start(element) => match (element.local_name().as_ref(), pending.as_mut()) {
-                ("row", _) => start_row(&element, &mut cursor, part)?,
+                ("sheetData", _) => {
+                    head = without_start_tag(reader.get_mut().pause(), element.name().as_ref());
+                }
+                ("row", _) => start_row(&element, &mut cursor, sheet, part)?,
                 ("c", _) => pending = Some(start_cell(&element, &mut cursor, part)?),
                 ("f", Some(cell)) => {
                     let (kind, reference) = formula_header(&element, part)?;
@@ -100,10 +109,15 @@ pub(crate) fn parse_worksheet<R: BufRead>(
                 _ => {}
             },
             Event::Empty(element) => match (element.local_name().as_ref(), pending.as_mut()) {
-                ("row", _) => start_row(&element, &mut cursor, part)?,
+                ("sheetData", _) => {
+                    head = without_start_tag(reader.get_mut().pause(), element.name().as_ref());
+                    reader.get_mut().resume();
+                }
+                ("row", _) => start_row(&element, &mut cursor, sheet, part)?,
                 // A cell without children holds nothing, but it still advances the cursor.
                 ("c", _) => {
-                    start_cell(&element, &mut cursor, part)?;
+                    let cell = start_cell(&element, &mut cursor, part)?;
+                    record_style(&cell, sheet);
                 }
                 ("f", Some(cell)) => {
                     let (kind, reference) = formula_header(&element, part)?;
@@ -117,11 +131,18 @@ pub(crate) fn parse_worksheet<R: BufRead>(
             },
             Event::End(element) if element.local_name().as_ref() == "c" => {
                 if let Some(cell) = pending.take() {
+                    record_style(&cell, sheet);
                     finish_cell(&cell, sheet, context)?;
                 }
             }
+            Event::End(element) if element.local_name().as_ref() == "sheetData" => {
+                reader.get_mut().resume();
+            }
             // A worksheet cut short keeps the cells read before the cut, as `LibreOffice` does.
-            Event::Eof => return Ok(()),
+            Event::Eof => {
+                let tail = reader.get_mut().take();
+                return Ok(Frame { head, tail });
+            }
             _ => {}
         }
     }
@@ -130,7 +151,12 @@ pub(crate) fn parse_worksheet<R: BufRead>(
 /// A row attribute that is not a valid row makes the row `LibreOffice` reads as one outside
 /// the sheet: its unaddressed cells are dropped and the next row follows it. The value -1 is
 /// the exception: it stands for a row without the attribute.
-fn start_row(element: &BytesStart<'_>, cursor: &mut Cursor, part: &str) -> Result<(), Error> {
+fn start_row(
+    element: &BytesStart<'_>,
+    cursor: &mut Cursor,
+    sheet: &mut SheetBuilder<'_>,
+    part: &str,
+) -> Result<(), Error> {
     // The value -1 stands for "no row", as `LibreOffice` reads it.
     cursor.row =
         match attribute(element, "r", part)?.map(|number| sheetrs_io::integer_prefix(&number)) {
@@ -139,7 +165,20 @@ fn start_row(element: &BytesStart<'_>, cursor: &mut Cursor, part: &str) -> Resul
         };
     cursor.next_row = cursor.row.saturating_add(1);
     cursor.next_col = 0;
+    if let Some(row) = u32::try_from(cursor.row).ok().filter(|row| *row < MAX_ROWS) {
+        let attributes = raw_attributes(element, &["r", "spans"], part)?;
+        if !attributes.is_empty() {
+            sheet.set_row_attributes(row, &attributes);
+        }
+    }
     Ok(())
+}
+
+/// Records the style of a cell that has one.
+fn record_style(cell: &PendingCell, sheet: &mut SheetBuilder<'_>) {
+    if let (Some(pos), Some(style)) = (cell.pos, cell.style.filter(|style| *style != 0)) {
+        sheet.set_cell_style(pos, style);
+    }
 }
 
 /// A cell whose address is not a cell of the sheet is placed like a cell without an address.
@@ -170,6 +209,7 @@ fn start_cell(
     Ok(PendingCell {
         pos,
         kind: attribute(element, "t", part)?,
+        style: attribute(element, "s", part)?.and_then(|style| style.trim().parse().ok()),
         value: None,
         inline_text: None,
         formula: None,
@@ -308,6 +348,10 @@ fn finish_cell(
     // Only the non-zero number cached by a plain formula is trusted; everything else is recalculated.
     let trusted = kind == Some(FormulaKind::Plain)
         && matches!(cell.kind.as_deref(), None | Some("n"))
+        && !cell
+            .formula
+            .as_ref()
+            .is_some_and(|formula| lexical::recalculated_on_load(&formula.text))
         && matches!(&value, ValueRef::Number(number) if number.is_nan() || number.abs() > 0.0);
     // An implied formula is recalculated on load like any formula that is not a plain
     // non-zero number.

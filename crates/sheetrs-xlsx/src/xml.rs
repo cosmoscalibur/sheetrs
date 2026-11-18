@@ -30,6 +30,33 @@ pub(crate) fn attribute(
     Ok(None)
 }
 
+/// The attributes of `start` as XML text, in order and with their values as written, except
+/// those whose local name is in `skip`.
+pub(crate) fn raw_attributes(
+    start: &BytesStart<'_>,
+    skip: &[&str],
+    part: &str,
+) -> Result<String, Error> {
+    let mut attributes = start.attributes();
+    attributes.with_checks(false);
+    let mut text = String::new();
+    for attribute in attributes {
+        let attribute = attribute.map_err(|error| Error::malformed(part, error.to_string()))?;
+        let local = attribute.key.local_name();
+        if skip.iter().any(|name| local.as_ref() == *name) {
+            continue;
+        }
+        if !text.is_empty() {
+            text.push(' ');
+        }
+        text.push_str(attribute.key.as_ref());
+        text.push_str("=\"");
+        text.push_str(&attribute.value.replace('"', "&quot;"));
+        text.push('"');
+    }
+    Ok(text)
+}
+
 /// Decodes the `_xHHHH_` escapes of the `ST_Xstring` type, such as `_x000D_` for a carriage
 /// return and `_x005F_` for an underscore. A high and a low surrogate escape in a row make one
 /// character; a lone surrogate escape ends the text before it. Text that only resembles an
