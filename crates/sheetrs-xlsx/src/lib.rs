@@ -11,6 +11,7 @@ mod error;
 mod lexical;
 mod parallel;
 mod parts;
+mod vba;
 mod worksheet;
 mod xml;
 
@@ -23,12 +24,14 @@ use zip::result::ZipError;
 pub use error::Error;
 
 use parts::{
-    RELATIONSHIPS_PART, SHARED_STRINGS_PART, WORKBOOK_PART, parse_relationships,
-    parse_shared_strings, parse_workbook,
+    RELATIONSHIPS_PART, SHARED_STRINGS_PART, WORKBOOK_PART, parse_external_link,
+    parse_relationships, parse_shared_strings, parse_workbook,
 };
 use worksheet::{ValueContext, parse_worksheet};
 
 const BUFFER_BYTES: usize = 64 * 1024;
+/// The most bytes of a VBA project that the reader looks at.
+const MAX_VBA_PROJECT_BYTES: u64 = 1 << 26;
 /// Worksheets smaller than this are read on one thread even when more are allowed.
 const PARALLEL_MIN_BYTES: u64 = 2 * 1024 * 1024;
 
@@ -57,7 +60,7 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
     let mut archive = ZipArchive::new(source)?;
 
     let workbook_part = parse_workbook(open(&mut archive, WORKBOOK_PART)?)?;
-    let targets = parse_relationships(open(&mut archive, RELATIONSHIPS_PART)?)?;
+    let targets = parse_relationships(open(&mut archive, RELATIONSHIPS_PART)?, RELATIONSHIPS_PART)?;
     let shared_strings = match open_optional(&mut archive, SHARED_STRINGS_PART)? {
         Some(source) => parse_shared_strings(source)?,
         None => Vec::new(),
@@ -70,12 +73,15 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
     let mut workbook = Workbook::new();
     workbook.set_date_system(workbook_part.date_system);
     for entry in workbook_part.sheets {
-        let target = targets.get(&entry.relationship_id).ok_or_else(|| {
-            Error::malformed(
-                WORKBOOK_PART,
-                format!("sheet {:?} refers to an unknown relationship", entry.name),
-            )
-        })?;
+        let target = targets
+            .get(&entry.relationship_id)
+            .map(|found| &found.target)
+            .ok_or_else(|| {
+                Error::malformed(
+                    WORKBOOK_PART,
+                    format!("sheet {:?} refers to an unknown relationship", entry.name),
+                )
+            })?;
         let part = resolve_target(target);
         let mut sheet = workbook.sheet_builder(entry.name.clone());
         sheet.set_visibility(entry.visibility);
@@ -96,7 +102,87 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
         }
         sheet.finish_loaded();
     }
+    for reference in &workbook_part.external_references {
+        // A link that cannot be read names no document, and the workbook loads without it.
+        let target = match external_target(&mut archive, &targets, reference) {
+            Err(Error::Xml { .. } | Error::Malformed { .. }) => None,
+            other => other?,
+        };
+        if let Some(target) = target {
+            workbook.add_external_link(&target);
+        }
+    }
+    list_vba_project(&mut archive, &targets, &mut workbook)?;
     Ok(workbook)
+}
+
+/// Adds to `workbook` the modules of its VBA project, if it has one.
+fn list_vba_project<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    targets: &std::collections::HashMap<String, parts::Relationship>,
+    workbook: &mut Workbook,
+) -> Result<(), Error> {
+    // Of several projects, the one with the first relationship id is read.
+    let Some(relationship) = targets
+        .iter()
+        .filter(|(_, found)| found.kind.ends_with("/vbaProject"))
+        .min_by_key(|(id, _)| id.as_str())
+        .map(|(_, found)| found)
+    else {
+        return Ok(());
+    };
+    let part = resolve_target(&relationship.target);
+    let Some(file) = open_optional(archive, &part)? else {
+        return Ok(());
+    };
+    let mut bytes = Vec::new();
+    file.take(MAX_VBA_PROJECT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| Error::Zip(ZipError::Io(error)))?;
+    // A project of that size is not read, as it is not one that people write.
+    if u64::try_from(bytes.len()).is_ok_and(|length| length > MAX_VBA_PROJECT_BYTES) {
+        return Ok(());
+    }
+    if let Some((library, modules)) = vba::project(&bytes) {
+        for name in modules {
+            workbook.add_macro_module(sheetrs_core::MacroModule {
+                kind: sheetrs_core::MacroKind::Vba,
+                library: library.clone(),
+                name,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Where the external link that the workbook relationship `reference` names points, as its part
+/// says.
+fn external_target<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    targets: &std::collections::HashMap<String, parts::Relationship>,
+    reference: &str,
+) -> Result<Option<String>, Error> {
+    let Some(target) = targets.get(reference) else {
+        return Ok(None);
+    };
+    let part = resolve_target(&target.target);
+    let Some(file) = open_optional(archive, &part)? else {
+        return Ok(None);
+    };
+    let Some(book) = parse_external_link(file, &part)? else {
+        return Ok(None);
+    };
+    let (directory, name) = part.rsplit_once('/').unwrap_or(("", &part));
+    let relationships = format!("{directory}/_rels/{name}.rels");
+    let Some(file) = open_optional(archive, &relationships)? else {
+        return Ok(None);
+    };
+    // Only a relationship of type `externalLinkPath` names the document, and an empty target
+    // names none.
+    Ok(parse_relationships(file, &relationships)?
+        .remove(&book)
+        .filter(|found| found.kind.ends_with("/externalLinkPath") && !found.target.is_empty())
+        .map(|found| found.target))
 }
 
 fn open<'a, R: Read + Seek>(

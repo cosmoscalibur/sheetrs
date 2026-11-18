@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
@@ -13,17 +14,34 @@ pub fn content_xml(rows: &str, settings: &str) -> String {
     )
 }
 
-/// An ODS package whose `content.xml` is `content`.
-pub fn package(content: &str) -> Result<Cursor<Vec<u8>>, Box<dyn StdError>> {
+/// An ODS package whose `content.xml` is `content`, with the parts `extra` adds.
+pub fn package_with(
+    content: &str,
+    extra: &[(String, String)],
+) -> Result<Cursor<Vec<u8>>, Box<dyn StdError>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     writer.start_file("mimetype", options)?;
     writer.write_all(b"application/vnd.oasis.opendocument.spreadsheet")?;
     writer.start_file("content.xml", options)?;
     writer.write_all(content.as_bytes())?;
+    for (name, text) in extra {
+        writer.start_file(name, options)?;
+        writer.write_all(text.as_bytes())?;
+    }
+    let mut entries = String::new();
+    for (name, _) in extra {
+        write!(
+            entries,
+            r#"<manifest:file-entry manifest:full-path="{name}" manifest:media-type="text/xml"/>"#
+        )?;
+    }
     writer.start_file("META-INF/manifest.xml", options)?;
     writer.write_all(
-        br#"<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>"#,
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>{entries}</manifest:manifest>"#
+        )
+        .as_bytes(),
     )?;
     Ok(writer.finish()?)
 }

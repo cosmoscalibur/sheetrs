@@ -7,7 +7,7 @@ use std::sync::{Mutex, PoisonError};
 
 use sheetrs_core::{CellPos, CellRef, Visibility, Workbook};
 
-use crate::case::{Case, Op, Read, SheetSpec, TextFilter};
+use crate::case::{Case, Observed, Op, Read, SheetSpec, TextFilter};
 use crate::compare::{Leniency, matches};
 use crate::oracle;
 
@@ -110,24 +110,7 @@ pub fn assert_reads_as_the_oracle(
                         }
                     }
                 }
-                // The sheets keep their order and names, and a hidden sheet stays hidden.
-                let ours: Vec<_> = workbook
-                    .sheets()
-                    .map(|sheet| {
-                        (
-                            sheet.name().to_owned(),
-                            sheet.visibility() == Visibility::Visible,
-                        )
-                    })
-                    .collect();
-                let theirs: Vec<_> = observed
-                    .sheets
-                    .iter()
-                    .map(|sheet| (sheet.name.clone(), sheet.visible))
-                    .collect();
-                if ours != theirs {
-                    found.push(format!("{name}: oracle sheets {theirs:?}, read {ours:?}"));
-                }
+                found.extend(workbook_differences(name, workbook, observed));
                 (!found.is_empty()).then(|| found.join("\n"))
             }
             (oracle::Outcome::Observed(observed), Err(error)) => Some(format!(
@@ -143,4 +126,83 @@ pub fn assert_reads_as_the_oracle(
     }
     assert!(differences.is_empty(), "\n{}", differences.join("\n"));
     Ok(())
+}
+
+/// How the oracle names the document at `target`: a Windows path is a `file` address, and
+/// spaces are escaped.
+fn oracle_name(target: &str) -> String {
+    let mut characters = target.chars();
+    let windows = matches!(
+        (characters.next(), characters.next(), characters.next()),
+        (Some(drive), Some(':'), Some('\\' | '/')) if drive.is_ascii_alphabetic()
+    );
+    let named = if windows {
+        format!("file:///{}", target.replace('\\', "/"))
+    } else {
+        target.to_owned()
+    };
+    named.replace(' ', "%20")
+}
+
+/// Whether the documents the workbook refers to are those the oracle names, each document
+/// matching a different name. The oracle names a document by its address, which for a path
+/// relative to the workbook is the path as it finds it.
+fn same_links(workbook: &Workbook, observed: &[String]) -> bool {
+    let mut unused: Vec<&String> = observed.iter().collect();
+    for link in workbook.external_links() {
+        let target = oracle_name(&link.target);
+        let suffix = format!("/{}", target.trim_start_matches("./"));
+        let Some(position) = unused
+            .iter()
+            .position(|name| **name == target || name.ends_with(&suffix))
+        else {
+            return false;
+        };
+        unused.remove(position);
+    }
+    unused.is_empty()
+}
+
+/// What differs between the workbook a reader returned and what the oracle observed of the whole
+/// workbook: its sheets, the macro modules it holds and the documents it refers to.
+fn workbook_differences(name: &str, workbook: &Workbook, observed: &Observed) -> Vec<String> {
+    let mut found = Vec::new();
+    // The sheets keep their order and names, and a hidden sheet stays hidden.
+    let ours: Vec<_> = workbook
+        .sheets()
+        .map(|sheet| {
+            (
+                sheet.name().to_owned(),
+                sheet.visibility() == Visibility::Visible,
+            )
+        })
+        .collect();
+    let theirs: Vec<_> = observed
+        .sheets
+        .iter()
+        .map(|sheet| (sheet.name.clone(), sheet.visible))
+        .collect();
+    if ours != theirs {
+        found.push(format!("{name}: oracle sheets {theirs:?}, read {ours:?}"));
+    }
+    let mut modules: Vec<(String, String)> = workbook
+        .macro_modules()
+        .iter()
+        .map(|module| (module.library.clone(), module.name.clone()))
+        .collect();
+    modules.sort();
+    if modules != observed.basic_modules {
+        found.push(format!(
+            "{name}: oracle modules {:?}, read {modules:?}",
+            observed.basic_modules
+        ));
+    }
+    if !same_links(workbook, &observed.external_links) {
+        found.push(format!(
+            "{name}: oracle links {:?}, read {:?}",
+            observed.external_links,
+            workbook.external_links()
+        ));
+    }
+    found
 }

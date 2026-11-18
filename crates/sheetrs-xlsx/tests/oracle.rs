@@ -1814,3 +1814,263 @@ fn sheet_states_over_xlsx() -> Result<(), Box<dyn StdError>> {
         |_: &CellValue, _: Option<&Cell>| Leniency::Strict,
     )
 }
+
+/// One external link part of a package: its XML, and the relationship it has to the document,
+/// if any, as (type, target, whether the target is external).
+struct Link {
+    xml: String,
+    relationship: Option<(&'static str, String, bool)>,
+    /// The text of the relationships part, which replaces the one made from `relationship`.
+    relationships_text: Option<String>,
+}
+
+const BOOK: &str = r#"<externalBook r:id="rId1"><sheetNames><sheetName val="Sheet1"/></sheetNames><sheetDataSet><sheetData sheetId="0"><row r="1"><cell r="A1"><v>42</v></cell></row></sheetData></sheetDataSet></externalBook>"#;
+
+fn link_xml(body: &str) -> String {
+    format!(
+        r#"<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="{REL_NS}">{body}</externalLink>"#
+    )
+}
+
+/// A link to the document at `target`, with the usual relationship.
+fn link_to(target: &str) -> Link {
+    Link {
+        xml: link_xml(BOOK),
+        relationship: Some(("externalLinkPath", target.to_owned(), true)),
+        relationships_text: None,
+    }
+}
+
+/// A package whose workbook lists `references` (relationship ids; `links` answer in order as
+/// `rId2`, `rId3` and so on) and whose cells hold numbers only.
+fn external_package(
+    references: &[&str],
+    links: &[Link],
+) -> Result<std::io::Cursor<Vec<u8>>, Box<dyn StdError>> {
+    let mut references_xml = String::new();
+    for id in references {
+        write!(references_xml, r#"<externalReference r:id="{id}"/>"#)?;
+    }
+    let workbook = format!(
+        r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="{REL_NS}"><sheets><sheet name="S1" sheetId="1" r:id="rId1"/></sheets><externalReferences>{references_xml}</externalReferences></workbook>"#
+    );
+    let mut relationships = format!(
+        r#"<Relationship Id="rId1" Type="{REL_NS}/worksheet" Target="worksheets/sheet1.xml"/>"#
+    );
+    let mut content_types = String::from(
+        r#"<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>"#,
+    );
+    let mut files = vec![
+        (
+            "xl/worksheets/sheet1.xml".to_owned(),
+            worksheet_xml(r#"<row r="1"><c r="A1"><v>42</v></c><c r="B1"><v>43</v></c></row>"#),
+        ),
+        (
+            "_rels/.rels".to_owned(),
+            rels_xml(&format!(
+                r#"<Relationship Id="rId1" Type="{REL_NS}/officeDocument" Target="xl/workbook.xml"/>"#
+            )),
+        ),
+    ];
+    for (index, link) in links.iter().enumerate() {
+        let number = index + 1;
+        let id = index + 2;
+        write!(
+            relationships,
+            r#"<Relationship Id="rId{id}" Type="{REL_NS}/externalLink" Target="externalLinks/externalLink{number}.xml"/>"#
+        )?;
+        write!(
+            content_types,
+            r#"<Override PartName="/xl/externalLinks/externalLink{number}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>"#
+        )?;
+        files.push((
+            format!("xl/externalLinks/externalLink{number}.xml"),
+            link.xml.clone(),
+        ));
+        if let Some(text) = &link.relationships_text {
+            files.push((
+                format!("xl/externalLinks/_rels/externalLink{number}.xml.rels"),
+                text.clone(),
+            ));
+        } else if let Some((kind, target, external)) = &link.relationship {
+            let mode = if *external {
+                r#" TargetMode="External""#
+            } else {
+                ""
+            };
+            files.push((
+                format!("xl/externalLinks/_rels/externalLink{number}.xml.rels"),
+                rels_xml(&format!(
+                    r#"<Relationship Id="rId1" Type="{REL_NS}/{kind}" Target="{target}"{mode}/>"#
+                )),
+            ));
+        }
+    }
+    files.push(("xl/workbook.xml".to_owned(), workbook));
+    files.push((
+        "xl/_rels/workbook.xml.rels".to_owned(),
+        rels_xml(&relationships),
+    ));
+    files.push((
+        "[Content_Types].xml".to_owned(),
+        format!(
+            r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>{content_types}</Types>"#
+        ),
+    ));
+    let borrowed: Vec<(&str, String)> = files
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.clone()))
+        .collect();
+    package(&borrowed)
+}
+
+/// Packages that link to other documents in the ways a file can.
+fn external_link_cases() -> Vec<(String, Vec<&'static str>, Vec<Link>)> {
+    let mut cases = Vec::new();
+    for (name, target) in [
+        ("file", "file:///tmp/other.xlsx"),
+        ("relative", "other.xlsx"),
+        ("relative_dot", "./other.xlsx"),
+        ("http", "https://example.com/book.xlsx"),
+        ("escaped", "file:///tmp/my%20book.xlsx"),
+        ("windows_path", "C:\\x\\a.xlsx"),
+        ("windows_url", "file:///C:/x/a.xlsx"),
+        ("fragment", "file:///tmp/other.xlsx#Sheet1"),
+        ("trailing_space", "file:///tmp/other.xlsx "),
+        ("empty", ""),
+        ("absolute_path", "/tmp/other.xlsx"),
+    ] {
+        cases.push((
+            format!("target[{name}]"),
+            vec!["rId2"],
+            vec![link_to(target)],
+        ));
+    }
+    cases.push((
+        "two_different".to_owned(),
+        vec!["rId2", "rId3"],
+        vec![link_to("file:///tmp/a.xlsx"), link_to("file:///tmp/b.xlsx")],
+    ));
+    cases.push((
+        "two_the_same".to_owned(),
+        vec!["rId2", "rId3"],
+        vec![link_to("file:///tmp/a.xlsx"), link_to("file:///tmp/a.xlsx")],
+    ));
+    cases.push((
+        "part_not_listed".to_owned(),
+        vec![],
+        vec![link_to("file:///tmp/a.xlsx")],
+    ));
+    cases.push((
+        "reference_to_a_missing_part".to_owned(),
+        vec!["rId2", "rId9"],
+        vec![link_to("file:///tmp/a.xlsx")],
+    ));
+    cases.extend(broken_link_cases());
+    cases
+}
+
+/// Packages whose external links are incomplete, of another kind or not well-formed.
+fn broken_link_cases() -> Vec<(String, Vec<&'static str>, Vec<Link>)> {
+    vec![
+        (
+            "book_without_relationship_id".to_owned(),
+            vec!["rId2"],
+            vec![Link {
+                xml: link_xml(&BOOK.replace(r#" r:id="rId1""#, "")),
+                relationship: Some(("externalLinkPath", "file:///tmp/a.xlsx".to_owned(), true)),
+                relationships_text: None,
+            }],
+        ),
+        (
+            "book_with_another_relationship_id".to_owned(),
+            vec!["rId2"],
+            vec![Link {
+                xml: link_xml(&BOOK.replace("rId1", "rId7")),
+                relationship: Some(("externalLinkPath", "file:///tmp/a.xlsx".to_owned(), true)),
+                relationships_text: None,
+            }],
+        ),
+        (
+            "without_a_relationships_part".to_owned(),
+            vec!["rId2"],
+            vec![Link {
+                xml: link_xml(BOOK),
+                relationship: None,
+                relationships_text: None,
+            }],
+        ),
+        (
+            "relationship_of_another_type".to_owned(),
+            vec!["rId2"],
+            vec![Link {
+                xml: link_xml(BOOK),
+                relationship: Some(("hyperlink", "file:///tmp/a.xlsx".to_owned(), true)),
+                relationships_text: None,
+            }],
+        ),
+        (
+            "ole_link".to_owned(),
+            vec!["rId2"],
+            vec![Link {
+                xml: link_xml(
+                    r#"<oleLink r:id="rId1" progId="Excel.Sheet.12"><oleItems><oleItem name="x"/></oleItems></oleLink>"#,
+                ),
+                relationship: Some(("oleObject", "file:///tmp/a.xlsx".to_owned(), true)),
+                relationships_text: None,
+            }],
+        ),
+        (
+            "part_goes_wrong_after_the_book".to_owned(),
+            vec!["rId2"],
+            vec![Link {
+                xml: link_xml(r#"<externalBook r:id="rId1"><sheetNames>"#),
+                relationship: Some(("externalLinkPath", "file:///tmp/a.xlsx".to_owned(), true)),
+                relationships_text: None,
+            }],
+        ),
+        (
+            "relationships_not_well_formed".to_owned(),
+            vec!["rId2"],
+            vec![Link {
+                xml: link_xml(BOOK),
+                relationship: None,
+                relationships_text: Some("<Relationships><Relationship Id=".to_owned()),
+            }],
+        ),
+        (
+            "dde_link".to_owned(),
+            vec!["rId2"],
+            vec![Link {
+                xml: link_xml(
+                    r#"<ddeLink ddeService="svc" ddeTopic="topic"><ddeItems><ddeItem name="x"/></ddeItems></ddeLink>"#,
+                ),
+                relationship: None,
+                relationships_text: None,
+            }],
+        ),
+    ]
+}
+
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn external_links_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    let mut packages = Vec::new();
+    for (name, references, links) in external_link_cases() {
+        packages.push(Package {
+            name,
+            bytes: external_package(&references, &links)?.into_inner(),
+            sheet: "S1".to_owned(),
+            range: "A1:B1".to_owned(),
+        });
+    }
+    crafted::assert_reads_as_the_oracle(
+        CRAFTED_DIR,
+        "external",
+        "xlsx",
+        None,
+        &packages,
+        |path| Ok(sheetrs_xlsx::read(File::open(path)?)?),
+        |_: &CellValue, _: Option<&Cell>| Leniency::Strict,
+    )
+}

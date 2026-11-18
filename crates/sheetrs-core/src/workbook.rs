@@ -123,12 +123,44 @@ pub enum DateSystem {
     },
 }
 
+/// A document that the formulas of a workbook refer to.
+///
+/// The value of such a reference is the one the file caches; it is never recalculated, because
+/// the document is not opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalLink {
+    /// Where the document is, as the file says: an address, or a path relative to the workbook.
+    pub target: String,
+}
+
+/// What kind of code a [`MacroModule`] holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MacroKind {
+    /// A module of a Basic library, in the form that `LibreOffice` keeps it.
+    Basic,
+    /// A module of a VBA project.
+    Vba,
+}
+
+/// A module of macro code that a workbook holds. The code is listed, never run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MacroModule {
+    pub kind: MacroKind,
+    /// The library or project the module is in.
+    pub library: String,
+    pub name: String,
+}
+
 /// An ordered list of sheets, with the tables of strings and formulas they share.
 #[derive(Debug, Clone, Default)]
 pub struct Workbook {
     pub(crate) sheets: Vec<Sheet>,
     pub(crate) tables: Tables,
     date_system: DateSystem,
+    external_links: Vec<ExternalLink>,
+    /// The targets of `external_links`, to tell a repeated one at once.
+    external_targets: std::collections::HashSet<String>,
+    macro_modules: Vec<MacroModule>,
 }
 
 impl Workbook {
@@ -168,6 +200,33 @@ impl Workbook {
     /// Sets how the workbook counts serial dates.
     pub fn set_date_system(&mut self, date_system: DateSystem) {
         self.date_system = date_system;
+    }
+
+    /// The documents that formulas of the workbook refer to, each once, in the order they were
+    /// found.
+    #[must_use]
+    pub fn external_links(&self) -> &[ExternalLink] {
+        &self.external_links
+    }
+
+    /// The modules of macro code that the workbook holds, in the order they were found.
+    #[must_use]
+    pub fn macro_modules(&self) -> &[MacroModule] {
+        &self.macro_modules
+    }
+
+    /// Records a module of macro code.
+    pub fn add_macro_module(&mut self, module: MacroModule) {
+        self.macro_modules.push(module);
+    }
+
+    /// Records that a formula refers to the document at `target`, unless it is recorded.
+    pub fn add_external_link(&mut self, target: &str) {
+        if self.external_targets.insert(target.to_owned()) {
+            self.external_links.push(ExternalLink {
+                target: target.to_owned(),
+            });
+        }
     }
 }
 

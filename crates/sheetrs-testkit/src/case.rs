@@ -61,6 +61,12 @@ pub enum Op {
         #[serde(skip_serializing_if = "Option::is_none")]
         filter: Option<TextFilter>,
     },
+    /// Adds a Basic module to the library of that name, which it creates when it is not there.
+    AddBasicModule {
+        library: String,
+        module: String,
+        source: String,
+    },
     /// Saves the workbook as it is at this point, like File > Save As.
     SaveAs {
         format: Format,
@@ -149,6 +155,7 @@ impl TextFilter {
 #[serde(rename_all = "snake_case")]
 pub enum Format {
     Xlsx,
+    Ods,
 }
 
 /// A range whose cells are observed after the operations.
@@ -166,6 +173,12 @@ pub struct Observed {
     /// The sheets of the workbook after the operations, in order.
     #[serde(default)]
     pub sheets: Vec<SheetState>,
+    /// The documents the workbook refers to, sorted.
+    #[serde(default)]
+    pub external_links: Vec<String>,
+    /// The (library, module) pairs of Basic code the workbook holds, sorted.
+    #[serde(default)]
+    pub basic_modules: Vec<(String, String)>,
 }
 
 /// A sheet of the workbook the oracle observed.

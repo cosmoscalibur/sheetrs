@@ -10,4 +10,7 @@ pub use store::{
     AbsorbError, CellView, FormulaRef, LimitError, MAX_ARRAY_CELLS, RowMajor, SharedMember,
     SheetBuilder, SheetView, ValueRef,
 };
-pub use workbook::{Cell, DateSystem, ErrorKind, Formula, Value, Visibility, Workbook};
+pub use workbook::{
+    Cell, DateSystem, ErrorKind, ExternalLink, Formula, MacroKind, MacroModule, Value, Visibility,
+    Workbook,
+};

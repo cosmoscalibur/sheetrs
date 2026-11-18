@@ -31,7 +31,10 @@ CONNECT_TIMEOUT_SECONDS = 90
 RUN_TIMEOUT_SECONDS = 300
 SHUTDOWN_TIMEOUT_SECONDS = 30
 LOG_TAIL_BYTES = 2000
-SAVE_FILTERS = {"xlsx": "Calc MS Excel 2007 XML"}
+SAVE_FILTERS = {
+    "xlsx": "Calc MS Excel 2007 XML",
+    "ods": "calc8",
+}
 ROW_SPAN = re.compile(r"([0-9]+)(?::([0-9]+))?")
 COLUMN_SPAN = re.compile(r"([A-Za-z]{1,3})(?::([A-Za-z]{1,3}))?")
 
@@ -187,7 +190,13 @@ def apply_op(desktop, document, dispatcher, op):
         )
         document.close(True)
         return loaded
-    if kind == "recalculate":
+    if kind == "add_basic_module":
+        libraries = document.BasicLibraries
+        if not libraries.hasByName(op["library"]):
+            libraries.createLibrary(op["library"])
+        library = libraries.getByName(op["library"])
+        library.insertByName(op["module"], op["source"])
+    elif kind == "recalculate":
         document.calculate()
     elif kind == "recalculate_hard":
         document.calculateAll()
@@ -265,6 +274,34 @@ def read_range(document, read):
     return {"sheet": read["sheet"], "range": read["range"], "cells": rows}
 
 
+def external_links(document):
+    """The names (URLs) of the documents that formulas of the workbook refer to."""
+    try:
+        return sorted(document.ExternalDocLinks.ElementNames)
+    except Exception:
+        return []
+
+
+def basic_modules(document):
+    """The (library, module) pairs of the Basic code the document holds; a library that cannot
+    be loaded holds none."""
+    found = []
+    try:
+        libraries = document.BasicLibraries
+        names = list(libraries.ElementNames)
+    except Exception:
+        return found
+    for library in names:
+        try:
+            if not libraries.isLibraryLoaded(library):
+                libraries.loadLibrary(library)
+            for module in libraries.getByName(library).ElementNames:
+                found.append([library, module])
+        except Exception:
+            continue
+    return sorted(found)
+
+
 def run_case(desktop, dispatcher, case):
     document = new_document(desktop)
     try:
@@ -274,6 +311,8 @@ def run_case(desktop, dispatcher, case):
         return {
             "name": case["name"],
             "reads": [read_range(document, read) for read in case["reads"]],
+            "external_links": external_links(document),
+            "basic_modules": basic_modules(document),
             "sheets": [
                 {"name": sheet.Name, "visible": bool(sheet.IsVisible)}
                 for sheet in (

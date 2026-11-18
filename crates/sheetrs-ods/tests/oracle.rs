@@ -1,13 +1,15 @@
 use std::error::Error as StdError;
+use std::fmt::Write as _;
 use std::fs::File;
 
 use sheetrs_core::Cell;
-use sheetrs_testkit::case::CellValue;
+use sheetrs_testkit::case::{Case, CellValue, Format, Op, Read, SheetSpec};
 use sheetrs_testkit::compare::Leniency;
 use sheetrs_testkit::crafted::{self, Package};
+use sheetrs_testkit::oracle;
 
 mod common;
-use common::{content_xml, document as document_xml, package};
+use common::{content_xml, document as document_xml, package_with};
 
 const DIR: &str = env!("CARGO_TARGET_TMPDIR");
 
@@ -22,6 +24,8 @@ struct Crafted {
     renamed: bool,
     /// A whole `content.xml`, which replaces the one built from the rows.
     raw: Option<String>,
+    /// Parts that the package holds besides `content.xml`.
+    extra: Vec<(String, String)>,
 }
 
 fn entry(name: impl Into<String>, rows: impl Into<String>, range: &'static str) -> Crafted {
@@ -32,6 +36,7 @@ fn entry(name: impl Into<String>, rows: impl Into<String>, range: &'static str) 
         range,
         renamed: false,
         raw: None,
+        extra: Vec::new(),
     }
 }
 
@@ -71,7 +76,7 @@ fn assert_reads_as_the_oracle(group: &str, entries: &[Crafted]) -> Result<(), Bo
     for entry in entries {
         packages.push(Package {
             name: entry.name.clone(),
-            bytes: package(&document(entry))?.into_inner(),
+            bytes: package_with(&document(entry), &entry.extra)?.into_inner(),
             sheet: "S1".to_owned(),
             range: entry.range.to_owned(),
         });
@@ -949,6 +954,279 @@ fn visibility_entries() -> Vec<Crafted> {
         .collect()
 }
 
+/// Formulas that refer to other documents, or only look as if they did.
+fn external_link_entries() -> Vec<Crafted> {
+    let cell = |formula: &str| {
+        format!(
+            r#"<table:table-row><table:table-cell table:formula="{formula}" office:value-type="float" office:value="42"/></table:table-row>"#
+        )
+    };
+    let formulas = [
+        ("none", "of:=1+1"),
+        ("absolute", "of:=['file:///tmp/other.ods'#$Sheet1.A1]"),
+        ("relative", "of:=['other.ods'#$Sheet1.A1]"),
+        ("range", "of:=SUM(['file:///tmp/r.ods'#$Sheet1.A1:.B2])"),
+        ("http", "of:=['https://example.com/x.ods'#$Sheet1.A1]"),
+        ("plain_equals", "='file:///tmp/p.ods'#$Sheet1.A1"),
+        ("old_namespace", "oooc:=['file:///tmp/o.ods'#$Sheet1.A1]"),
+        (
+            "two_documents",
+            "of:=['file:///tmp/a.ods'#$Sheet1.A1]+['file:///tmp/b.ods'#$Sheet1.A1]",
+        ),
+        (
+            "the_same_twice",
+            "of:=['file:///tmp/a.ods'#$Sheet1.A1]+['file:///tmp/a.ods'#$Sheet1.B1]",
+        ),
+        (
+            "quote_in_a_name",
+            "of:=['file:///tmp/it''s.ods'#$Sheet1.A1]",
+        ),
+        ("in_a_text", "of:=&quot;'file:///tmp/t.ods'#&quot;"),
+        ("sheet_name_with_quotes", "of:=[$'Sheet 1'.A1]"),
+        ("quoted_without_hash", "of:=['file:///tmp/n.ods'.A1]"),
+        (
+            "after_a_text",
+            "of:=&quot;x&quot;&amp;['file:///tmp/m.ods'#$Sheet1.A1]",
+        ),
+        ("empty_address", "of:=['' #$Sheet1.A1]"),
+        ("empty_name", "of:=[''#$Sheet1.A1]"),
+        ("space_before_hash", "of:=['file:///tmp/s.ods' #$Sheet1.A1]"),
+        (
+            "in_a_function",
+            "of:=IF(1;['file:///tmp/f.ods'#$Sheet1.A1];0)",
+        ),
+    ];
+    let mut entries: Vec<Crafted> = formulas
+        .iter()
+        .map(|(name, formula)| entry(*name, cell(formula), "A1:A1"))
+        .collect();
+    entries.push(entry(
+        "in_a_covered_cell",
+        r#"<table:table-row><table:table-cell/><table:covered-table-cell table:formula="of:=['file:///tmp/c.ods'#$Sheet1.A1]"/></table:table-row>"#,
+        "A1:B1",
+    ));
+    entries.push(entry(
+        "in_an_array_formula",
+        r#"<table:table-row><table:table-cell table:formula="of:=['file:///tmp/m.ods'#$Sheet1.A1]" table:number-matrix-columns-spanned="2" table:number-matrix-rows-spanned="1"/></table:table-row>"#,
+        "A1:B1",
+    ));
+    entries
+}
+
+const LIBRARIES_HEAD: &str = r#"<?xml version="1.0" encoding="UTF-8"?><library:libraries xmlns:library="http://openoffice.org/2000/library" xmlns:xlink="http://www.w3.org/1999/xlink">"#;
+
+fn libraries(names: &[&str]) -> (String, String) {
+    let mut text = String::from(LIBRARIES_HEAD);
+    for name in names {
+        write!(
+            text,
+            r#"<library:library library:name="{name}" library:link="false"/>"#
+        )
+        .ok();
+    }
+    text.push_str("</library:libraries>");
+    ("Basic/script-lc.xml".to_owned(), text)
+}
+
+fn library(name: &str, modules: &[&str]) -> (String, String) {
+    let mut text = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><library:library xmlns:library="http://openoffice.org/2000/library" library:name="{name}" library:readonly="false" library:passwordprotected="false">"#
+    );
+    for module in modules {
+        write!(text, r#"<library:element library:name="{module}"/>"#).ok();
+    }
+    text.push_str("</library:library>");
+    (format!("Basic/{name}/script-lb.xml"), text)
+}
+
+fn module(library: &str, name: &str) -> (String, String) {
+    (
+        format!("Basic/{library}/{name}.xml"),
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><script:module xmlns:script="http://openoffice.org/2000/script" script:name="{name}" script:language="StarBasic">Sub Main
+End Sub
+</script:module>"#
+        ),
+    )
+}
+
+/// The parts of a package with the libraries `spec` gives as (name, modules), each module with
+/// its file.
+fn basic_parts(spec: &[(&str, &[&str])]) -> Vec<(String, String)> {
+    let names: Vec<&str> = spec.iter().map(|(name, _)| *name).collect();
+    let mut parts = vec![libraries(&names)];
+    for (name, modules) in spec {
+        parts.push(library(name, modules));
+        parts.extend(modules.iter().map(|module_name| module(name, module_name)));
+    }
+    // A package holds a part once, whatever number of times the listings name it.
+    let mut seen = std::collections::HashSet::new();
+    parts.retain(|(part, _)| seen.insert(part.clone()));
+    parts
+}
+
+/// Packages whose libraries are complete, or lack a part.
+fn basic_library_cases() -> Vec<(&'static str, Vec<(String, String)>)> {
+    let without = |parts: Vec<(String, String)>, name: &str| -> Vec<(String, String)> {
+        parts.into_iter().filter(|(part, _)| part != name).collect()
+    };
+    let mut cases: Vec<(&'static str, Vec<(String, String)>)> = vec![
+        ("none", vec![]),
+        ("one_module", basic_parts(&[("Lib1", &["Mod1"])])),
+        (
+            "two_libraries",
+            basic_parts(&[("Lib1", &["Mod1", "Mod2"]), ("Lib2", &["Mod3"])]),
+        ),
+        (
+            "standard_library_with_a_module",
+            basic_parts(&[("Standard", &["Module1"])]),
+        ),
+        (
+            "names_with_spaces",
+            basic_parts(&[("My Lib", &["Mod One"])]),
+        ),
+        (
+            "module_listed_without_its_file",
+            without(
+                basic_parts(&[("Lib1", &["Mod1", "Gone"])]),
+                "Basic/Lib1/Gone.xml",
+            ),
+        ),
+        (
+            "missing_file_beside_a_good_library",
+            without(
+                basic_parts(&[("Lib1", &["Mod1", "Gone"]), ("Lib2", &["Mod2"])]),
+                "Basic/Lib1/Gone.xml",
+            ),
+        ),
+        (
+            "good_library_before_a_missing_file",
+            without(
+                basic_parts(&[("Lib1", &["Mod1"]), ("Lib2", &["Mod2", "Gone"])]),
+                "Basic/Lib2/Gone.xml",
+            ),
+        ),
+        (
+            "library_without_its_listing",
+            without(
+                basic_parts(&[("Lib1", &["Mod1"])]),
+                "Basic/Lib1/script-lb.xml",
+            ),
+        ),
+        (
+            "library_not_listed",
+            without(basic_parts(&[("Lib1", &["Mod1"])]), "Basic/script-lc.xml"),
+        ),
+    ];
+    let mut extra_file = basic_parts(&[("Lib1", &["Mod1"])]);
+    extra_file.push(module("Lib1", "Extra"));
+    cases.push(("module_file_not_listed", extra_file));
+    cases
+}
+
+/// Packages whose libraries repeat a name, or list a library that is not a library.
+fn broken_library_cases() -> Vec<(&'static str, Vec<(String, String)>)> {
+    let mut cases = Vec::new();
+    for (name, spec) in [
+        ("same_module_twice", vec![("Lib1", vec!["Mod1", "Mod1"])]),
+        (
+            "duplicate_modules_beside_a_good_library",
+            vec![("Lib1", vec!["Mod1", "Mod1"]), ("Lib2", vec!["Mod2"])],
+        ),
+        (
+            "good_library_before_duplicate_modules",
+            vec![("Lib1", vec!["Mod1"]), ("Lib2", vec!["Mod2", "Mod2"])],
+        ),
+        (
+            "same_library_twice",
+            vec![("Lib1", vec!["Mod1"]), ("Lib1", vec!["Mod1"])],
+        ),
+        (
+            "duplicate_libraries_beside_a_good_library",
+            vec![
+                ("Lib1", vec!["Mod1"]),
+                ("Lib1", vec!["Mod1"]),
+                ("Lib2", vec!["Mod2"]),
+            ],
+        ),
+        (
+            "good_library_before_duplicate_libraries",
+            vec![
+                ("Lib0", vec!["Mod0"]),
+                ("Lib1", vec!["Mod1"]),
+                ("Lib1", vec!["Mod1"]),
+            ],
+        ),
+        (
+            "modules_that_differ_in_case",
+            vec![("Lib1", vec!["Mod", "MOD"])],
+        ),
+        (
+            "libraries_that_differ_in_case",
+            vec![("Lib1", vec!["Mod1"]), ("LIB1", vec!["Mod2"])],
+        ),
+    ] {
+        let borrowed: Vec<(&str, &[&str])> = spec
+            .iter()
+            .map(|(lib, mods)| (*lib, mods.as_slice()))
+            .collect();
+        cases.push((name, basic_parts(&borrowed)));
+    }
+    cases.push((
+        "linked_library",
+        vec![(
+            "Basic/script-lc.xml".to_owned(),
+            format!(
+                r#"{LIBRARIES_HEAD}<library:library library:name="Lib1" xlink:href="file:///tmp/Lib1/script-lb.xml" library:link="true"/></library:libraries>"#
+            ),
+        )],
+    ));
+    cases.push((
+        "libraries_not_well_formed",
+        vec![(
+            "Basic/script-lc.xml".to_owned(),
+            "<library:libraries".to_owned(),
+        )],
+    ));
+    let mut broken_library = basic_parts(&[("Lib1", &["Mod1"])]);
+    for (part, text) in &mut broken_library {
+        if part == "Basic/Lib1/script-lb.xml" {
+            "<library:library".clone_into(text);
+        }
+    }
+    cases.push(("library_not_well_formed", broken_library));
+    let mut beside = basic_parts(&[("Lib1", &["Mod1"]), ("Lib2", &["Mod2"])]);
+    for (part, text) in &mut beside {
+        if part == "Basic/Lib1/script-lb.xml" {
+            "<library:library".clone_into(text);
+        }
+    }
+    cases.push(("library_not_well_formed_beside_a_good_one", beside));
+    cases.push((
+        "module_without_a_name",
+        vec![
+            libraries(&["Lib1"]),
+            (
+                "Basic/Lib1/script-lb.xml".to_owned(),
+                r#"<?xml version="1.0"?><library:library xmlns:library="http://openoffice.org/2000/library" library:name="Lib1"><library:element/></library:library>"#.to_owned(),
+            ),
+        ],
+    ));
+    cases
+}
+
+/// Packages that hold Basic libraries in the ways a file can.
+fn basic_library_entries() -> Vec<Crafted> {
+    [basic_library_cases(), broken_library_cases()]
+        .concat()
+        .into_iter()
+        .map(|(name, extra)| Crafted {
+            extra,
+            ..entry(name, "", "A1:A1")
+        })
+        .collect()
+}
+
 const NULL_DATES: &[&str] = &[
     "1899-12-30",
     "1904-01-01",
@@ -992,6 +1270,7 @@ fn date_system_entries() -> Vec<Crafted> {
                 range: "A1:A1",
                 renamed: false,
                 raw: None,
+                extra: Vec::new(),
             });
         }
     }
@@ -1202,6 +1481,18 @@ fn documents_that_are_not_well_formed_over_ods() -> Result<(), Box<dyn StdError>
 
 #[test]
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn external_links_over_ods() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("external", &external_link_entries())
+}
+
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn basic_libraries_over_ods() -> Result<(), Box<dyn StdError>> {
+    assert_reads_as_the_oracle("basic", &basic_library_entries())
+}
+
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn hidden_tables_over_ods() -> Result<(), Box<dyn StdError>> {
     assert_reads_as_the_oracle("visibility", &visibility_entries())
 }
@@ -1255,4 +1546,52 @@ fn formula_cells_over_ods() -> Result<(), Box<dyn StdError>> {
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn matrix_formulas_fill_their_area_over_ods() -> Result<(), Box<dyn StdError>> {
     assert_reads_as_the_oracle("matrix", &matrix_entries())
+}
+
+/// The Basic libraries that the oracle saves in a document are the ones it holds when it
+/// loads the document again.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn basic_libraries_saved_by_the_oracle_over_ods() -> Result<(), Box<dyn StdError>> {
+    let path = format!("{DIR}/saved_basic.ods");
+    let module = |library: &str, name: &str, source: &str| Op::AddBasicModule {
+        library: library.to_owned(),
+        module: name.to_owned(),
+        source: source.to_owned(),
+    };
+    let case = Case {
+        name: "saved".to_owned(),
+        sheets: vec![SheetSpec {
+            name: "S1".to_owned(),
+            cells: std::collections::BTreeMap::new(),
+        }],
+        ops: vec![
+            module("Lib1", "Mod1", "Sub Main\nEnd Sub\n"),
+            module("Lib1", "Mod2", "Function F()\n F = 1\nEnd Function\n"),
+            module("Other", "Mod3", "Sub Other\nEnd Sub\n"),
+            Op::SaveAs {
+                format: Format::Ods,
+                path: path.clone(),
+            },
+            Op::Open {
+                path: path.clone(),
+                filter: None,
+            },
+        ],
+        reads: vec![Read {
+            sheet: "S1".to_owned(),
+            range: "A1:A1".to_owned(),
+        }],
+    };
+    let observed = oracle::run(&[case])?.into_observed()?;
+    let workbook = sheetrs_ods::read(File::open(&path)?)?;
+    let mut ours: Vec<(String, String)> = workbook
+        .macro_modules()
+        .iter()
+        .map(|module| (module.library.clone(), module.name.clone()))
+        .collect();
+    ours.sort();
+    assert_eq!(ours, observed[0].basic_modules);
+    assert_eq!(ours.len(), 3);
+    Ok(())
 }

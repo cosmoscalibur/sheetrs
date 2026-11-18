@@ -7,6 +7,7 @@
 
 mod content;
 mod error;
+mod macros;
 mod tokens;
 mod value;
 
@@ -29,12 +30,17 @@ const BUFFER_BYTES: usize = 64 * 1024;
 /// has no `content.xml`, and [`Error::Xml`] or [`Error::Malformed`] when it cannot be read.
 pub fn read<R: Read + Seek>(source: R) -> Result<Workbook, Error> {
     let mut archive = ZipArchive::new(source)?;
-    let part = match archive.by_name(CONTENT_PART) {
-        Ok(part) => part,
-        Err(ZipError::FileNotFound) => return Err(Error::MissingPart(CONTENT_PART.to_owned())),
-        Err(error) => return Err(error.into()),
-    };
     let mut workbook = Workbook::new();
-    content::parse(BufReader::with_capacity(BUFFER_BYTES, part), &mut workbook)?;
+    {
+        let part = match archive.by_name(CONTENT_PART) {
+            Ok(part) => part,
+            Err(ZipError::FileNotFound) => {
+                return Err(Error::MissingPart(CONTENT_PART.to_owned()));
+            }
+            Err(error) => return Err(error.into()),
+        };
+        content::parse(BufReader::with_capacity(BUFFER_BYTES, part), &mut workbook)?;
+    }
+    macros::list(&mut archive, &mut workbook)?;
     Ok(workbook)
 }

@@ -16,6 +16,12 @@ pub(crate) const WORKBOOK_PART: &str = "xl/workbook.xml";
 pub(crate) const RELATIONSHIPS_PART: &str = "xl/_rels/workbook.xml.rels";
 pub(crate) const SHARED_STRINGS_PART: &str = "xl/sharedStrings.xml";
 
+/// A relationship of a part: what it is, and what it points at.
+pub(crate) struct Relationship {
+    pub kind: String,
+    pub target: String,
+}
+
 /// A `<sheet>` entry of the workbook part.
 pub(crate) struct SheetEntry {
     pub name: String,
@@ -26,6 +32,8 @@ pub(crate) struct SheetEntry {
 pub(crate) struct WorkbookPart {
     pub sheets: Vec<SheetEntry>,
     pub date_system: DateSystem,
+    /// The relationship ids of the external links, in order.
+    pub external_references: Vec<String>,
 }
 
 /// The index of the sheet the workbook opens on, as `LibreOffice` reads the `activeTab`
@@ -45,6 +53,7 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
     let mut workbook = WorkbookPart {
         sheets: Vec::new(),
         date_system: DateSystem::Date1900,
+        external_references: Vec::new(),
     };
     let mut complete = false;
     let mut active_tab: Option<String> = None;
@@ -72,6 +81,11 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
                     active_tab = Some(attribute(&element, "activeTab", part)?.unwrap_or_default());
                 }
                 "sheet" => workbook.sheets.push(sheet_entry(&element, part)?),
+                "externalReference" => {
+                    if let Some(id) = attribute(&element, "id", part)? {
+                        workbook.external_references.push(id);
+                    }
+                }
                 _ => {}
             },
             Event::End(element) if element.local_name().as_ref() == "workbook" => complete = true,
@@ -110,9 +124,11 @@ fn sheet_entry(
     })
 }
 
-/// Maps each relationship id to its target.
-pub(crate) fn parse_relationships<R: BufRead>(source: R) -> Result<HashMap<String, String>, Error> {
-    let part = RELATIONSHIPS_PART;
+/// Maps each relationship id of the part `part` to its target.
+pub(crate) fn parse_relationships<R: BufRead>(
+    source: R,
+    part: &str,
+) -> Result<HashMap<String, Relationship>, Error> {
     let mut reader = Reader::from_reader(source);
     let mut buf = Vec::new();
     let mut targets = HashMap::new();
@@ -132,7 +148,8 @@ pub(crate) fn parse_relationships<R: BufRead>(source: R) -> Result<HashMap<Strin
                 ) else {
                     return Err(Error::malformed(part, "a relationship has no Id or Target"));
                 };
-                targets.insert(id, target);
+                let kind = attribute(&element, "Type", part)?.unwrap_or_default();
+                targets.insert(id, Relationship { kind, target });
             }
             Event::Empty(element) if element.local_name().as_ref() == "Relationships" => {
                 complete = true;
@@ -185,6 +202,32 @@ pub(crate) fn parse_shared_strings<R: BufRead>(source: R) -> Result<Vec<Arc<str>
             Event::End(element) if element.local_name().as_ref() == "sst" => complete = true,
             Event::Eof if complete => return Ok(strings),
             Event::Eof => return Err(Error::malformed(part, "unexpected end of file")),
+            _ => {}
+        }
+    }
+}
+
+/// The relationship id of the document an external link part refers to, if it names one. What
+/// comes after the `externalBook` element is not read, so a part that goes wrong later still
+/// names its document, as it does for `LibreOffice`.
+pub(crate) fn parse_external_link<R: BufRead>(
+    source: R,
+    part: &str,
+) -> Result<Option<String>, Error> {
+    let mut reader = Reader::from_reader(source);
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader
+            .read_event_into(&mut buf)
+            .map_err(|source| Error::xml(part, source))?
+        {
+            Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == "externalBook" =>
+            {
+                return attribute(&element, "id", part);
+            }
+            Event::Eof => return Ok(None),
             _ => {}
         }
     }

@@ -1,6 +1,6 @@
 //! The structure of `content.xml`: tables, rows, cells and the paragraphs of their text.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 
 use sheetrs_core::{
@@ -29,6 +29,21 @@ struct Document {
     shown_styles: HashMap<String, bool>,
 }
 
+/// The documents that formulas refer to, each once, in the order they were found.
+#[derive(Default)]
+struct Links {
+    seen: HashSet<String>,
+    found: Vec<String>,
+}
+
+impl Links {
+    fn add(&mut self, target: String) {
+        if self.seen.insert(target.clone()) {
+            self.found.push(target);
+        }
+    }
+}
+
 /// How an array formula marks the cells it fills.
 enum Matrix {
     /// The cell is not an array formula.
@@ -51,6 +66,49 @@ struct CellData {
     repeat: u64,
 }
 
+/// Adds to `links` the documents that the references of `formula` name: a quoted address
+/// followed by `#`, outside the text of the formula.
+fn external_documents(formula: &str, links: &mut Links) {
+    if !formula.contains('\'') {
+        return;
+    }
+    let mut rest = formula;
+    while let Some(at) = rest.find(['\'', '"']) {
+        let quote = rest.as_bytes().get(at).copied().unwrap_or(b'"');
+        let quote_char = char::from(quote);
+        let inside = rest.get(at + 1..).unwrap_or_default();
+        // The quote closes at the first one that is not doubled.
+        let mut end = 0;
+        let mut doubled = false;
+        let closed = loop {
+            let Some(close) = inside.get(end..).and_then(|tail| tail.find(quote_char)) else {
+                break None;
+            };
+            let close = end + close;
+            if inside
+                .get(close + 1..)
+                .is_some_and(|tail| tail.starts_with(quote_char))
+            {
+                doubled = true;
+                end = close + 2;
+            } else {
+                break Some(close);
+            }
+        };
+        let Some(close) = closed else { return };
+        let tail = inside.get(close + 1..).unwrap_or_default();
+        if quote == b'\'' && tail.starts_with('#') {
+            let name = inside.get(..close).unwrap_or_default();
+            links.add(if doubled {
+                name.replace("''", "'")
+            } else {
+                name.to_owned()
+            });
+        }
+        rest = tail;
+    }
+}
+
 pub(crate) fn parse<R: BufRead>(source: R, workbook: &mut Workbook) -> Result<(), Error> {
     let mut tokens = Tokens::new(source, crate::CONTENT_PART);
     let mut document = Document {
@@ -58,9 +116,15 @@ pub(crate) fn parse<R: BufRead>(source: R, workbook: &mut Workbook) -> Result<()
         shown_styles: HashMap::new(),
     };
     let mut style: Option<String> = None;
+    let mut links = Links::default();
     loop {
         match tokens.next()? {
-            Token::Eof => return Ok(()),
+            Token::Eof => {
+                for target in &links.found {
+                    workbook.add_external_link(target);
+                }
+                return Ok(());
+            }
             Token::Start(Tag::Style, attrs) => {
                 style = attrs
                     .name
@@ -81,10 +145,10 @@ pub(crate) fn parse<R: BufRead>(source: R, workbook: &mut Workbook) -> Result<()
                 workbook.set_date_system(document.system);
             }
             Token::Start(Tag::Table, attrs) => {
-                parse_table(&mut tokens, workbook, &document, &attrs, false)?;
+                parse_table(&mut tokens, workbook, &document, &attrs, false, &mut links)?;
             }
             Token::Empty(Tag::Table, attrs) => {
-                parse_table(&mut tokens, workbook, &document, &attrs, true)?;
+                parse_table(&mut tokens, workbook, &document, &attrs, true, &mut links)?;
             }
             _ => {}
         }
@@ -109,6 +173,7 @@ fn parse_table<R: BufRead>(
     document: &Document,
     attrs: &Attrs,
     empty: bool,
+    links: &mut Links,
 ) -> Result<(), Error> {
     let mut sheet = workbook.sheet_builder(attrs.name.clone().unwrap_or_default());
     if attrs
@@ -119,7 +184,7 @@ fn parse_table<R: BufRead>(
         sheet.set_visibility(Visibility::Hidden);
     }
     if !empty {
-        parse_rows(tokens, document, &mut sheet)?;
+        parse_rows(tokens, document, &mut sheet, links)?;
     }
     sheet.finish();
     Ok(())
@@ -130,6 +195,7 @@ fn parse_rows<R: BufRead>(
     tokens: &mut Tokens<R>,
     document: &Document,
     sheet: &mut SheetBuilder<'_>,
+    links: &mut Links,
 ) -> Result<(), Error> {
     let mut next_row: u64 = 0;
     let mut written: u64 = 0;
@@ -137,7 +203,7 @@ fn parse_rows<R: BufRead>(
         match tokens.next()? {
             Token::Start(Tag::Row, attrs) => {
                 let repeat = repeated(attrs.rows_repeated.as_deref());
-                let cells = parse_row(tokens, document)?;
+                let cells = parse_row(tokens, document, links)?;
                 emit_row(sheet, next_row, repeat, &cells, &mut written)?;
                 next_row += repeat;
             }
@@ -155,6 +221,7 @@ fn parse_rows<R: BufRead>(
 fn parse_row<R: BufRead>(
     tokens: &mut Tokens<R>,
     document: &Document,
+    links: &mut Links,
 ) -> Result<Vec<(u64, CellData)>, Error> {
     let mut cells = Vec::new();
     let mut column: u64 = 0;
@@ -173,6 +240,9 @@ fn parse_row<R: BufRead>(
             _ => continue,
         };
         let cell = cell_data(&attrs, &paragraphs, document);
+        if let Some(text) = &cell.formula {
+            external_documents(text, links);
+        }
         let repeat = cell.repeat;
         if cell.scalar != Scalar::Empty || cell.formula.is_some() {
             cells.push((column, cell));

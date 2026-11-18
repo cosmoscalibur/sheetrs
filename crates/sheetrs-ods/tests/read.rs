@@ -8,7 +8,7 @@ use sheetrs_core::{CellPos, DateSystem, Value, Visibility};
 use sheetrs_ods::{Error, read};
 
 mod common;
-use common::{content_xml, document, package};
+use common::{content_xml, document, package_with};
 
 type TestResult = Result<(), Box<dyn StdError>>;
 
@@ -31,7 +31,7 @@ fn tables_keep_order_names_and_visibility() -> TestResult {
         r#"<style:style style:name="ta1" style:family="table"><style:table-properties table:display="true"/></style:style><style:style style:name="ta2" style:family="table"><style:table-properties table:display="false"/></style:style>"#,
         r#"<table:table table:name="First" table:style-name="ta1"/><table:table table:name="Second" table:style-name="ta2"/><table:table table:name="Third"/>"#,
     );
-    let workbook = read(package(&content)?)?;
+    let workbook = read(package_with(&content, &[])?)?;
     let sheets: Vec<_> = workbook
         .sheets()
         .map(|sheet| (sheet.name().to_owned(), sheet.visibility()))
@@ -58,7 +58,7 @@ fn the_null_date_picks_the_date_system() -> TestResult {
         let settings = format!(
             r#"<table:calculation-settings><table:null-date table:date-value="{null}"/></table:calculation-settings>"#
         );
-        let workbook = read(package(&content_xml("", &settings))?)?;
+        let workbook = read(package_with(&content_xml("", &settings), &[])?)?;
         assert_eq!(workbook.date_system(), expected, "{null}");
     }
     Ok(())
@@ -67,7 +67,7 @@ fn the_null_date_picks_the_date_system() -> TestResult {
 #[test]
 fn a_cell_with_a_formula_keeps_the_text_of_its_attribute() -> TestResult {
     let rows = r#"<table:table-row><table:table-cell table:formula="of:=SUM([.B1];2)" office:value-type="float" office:value="5"/></table:table-row>"#;
-    let workbook = read(package(&content_xml(rows, ""))?)?;
+    let workbook = read(package_with(&content_xml(rows, ""), &[])?)?;
     let cell = workbook
         .sheet("S1")
         .and_then(|sheet| sheet.get(at(0, 0)))
@@ -85,7 +85,7 @@ fn a_cell_with_a_formula_keeps_the_text_of_its_attribute() -> TestResult {
 #[test]
 fn rows_repeated_a_million_times_stop_at_the_last_row_of_the_sheet() -> TestResult {
     let rows = r#"<table:table-row table:number-rows-repeated="2000000"><table:table-cell office:value-type="float" office:value="1"/></table:table-row>"#;
-    let workbook = read(package(&content_xml(rows, ""))?)?;
+    let workbook = read(package_with(&content_xml(rows, ""), &[])?)?;
     assert_eq!(
         workbook.sheet("S1").map(|sheet| sheet.len()),
         Some(usize::try_from(sheetrs_core::MAX_ROWS)?)
@@ -117,7 +117,7 @@ fn paragraph_cell(inner: &str) -> String {
 fn elements_nested_without_limit_in_a_paragraph_are_refused() -> TestResult {
     let nested = "<text:x>".repeat(100_000);
     let rows = paragraph_cell(&nested);
-    let outcome = read(package(&content_xml(&rows, ""))?);
+    let outcome = read(package_with(&content_xml(&rows, ""), &[])?);
     // The document is not well-formed either, but the nesting is what stops the reader first.
     assert!(matches!(outcome, Err(Error::Malformed { .. })));
     Ok(())
@@ -126,7 +126,10 @@ fn elements_nested_without_limit_in_a_paragraph_are_refused() -> TestResult {
 #[test]
 fn a_paragraph_that_grows_through_spaces_without_limit_is_refused() -> TestResult {
     let spaces = r#"<text:s text:c="16000000"/>"#.repeat(3);
-    let outcome = read(package(&content_xml(&paragraph_cell(&spaces), ""))?);
+    let outcome = read(package_with(
+        &content_xml(&paragraph_cell(&spaces), ""),
+        &[],
+    )?);
     assert!(matches!(outcome, Err(Error::Malformed { .. })));
     Ok(())
 }
@@ -134,7 +137,7 @@ fn a_paragraph_that_grows_through_spaces_without_limit_is_refused() -> TestResul
 #[test]
 fn a_table_that_repeats_to_more_cells_than_the_reader_writes_is_refused() -> TestResult {
     let rows = r#"<table:table-row table:number-rows-repeated="1048576"><table:table-cell office:value-type="float" office:value="1" table:number-columns-repeated="100"/></table:table-row>"#;
-    let outcome = read(package(&content_xml(rows, ""))?);
+    let outcome = read(package_with(&content_xml(rows, ""), &[])?);
     assert!(matches!(outcome, Err(Error::TooManyCells(_))));
     Ok(())
 }
@@ -144,7 +147,7 @@ fn a_document_that_is_cut_short_is_refused() -> TestResult {
     let content = content_xml(&paragraph_cell("a"), "");
     let cut = content.replace("</table:table>", "");
     assert!(matches!(
-        read(package(&cut)?),
+        read(package_with(&cut, &[])?),
         Err(Error::Malformed { .. } | Error::Xml { .. })
     ));
     Ok(())
