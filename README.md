@@ -10,7 +10,8 @@ is free to differ.
 
 | Crate | Purpose |
 | --- | --- |
-| `sheetrs-core` | Core types: cell coordinates with A1 and R1C1 views |
+| `sheetrs-core` | Core types: cell coordinates with A1 and R1C1 views, and the workbook model |
+| `sheetrs-xlsx` | Streaming XLSX reader |
 | `sheetrs-testkit` | Differential test harness that runs cases against LibreOffice as the oracle |
 
 ## Development

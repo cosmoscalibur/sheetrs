@@ -11,6 +11,10 @@ repository = "https://github.com/cosmoscalibur/sheetrs"
 authors = ["Edward Villegas-Pulgarin"]
 
 [workspace.dependencies]
+sheetrs-core = { path = "crates/sheetrs-core" }
+sheetrs-testkit = { path = "crates/sheetrs-testkit" }
+quick-xml = "0.42"
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 thiserror = "2.0"

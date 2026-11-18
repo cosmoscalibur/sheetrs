@@ -36,12 +36,39 @@ pub enum CellInput {
 #[derive(Debug, Serialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
-    DeleteRows { sheet: String, rows: String },
-    DeleteColumns { sheet: String, columns: String },
-    DeleteSheet { sheet: String },
-    ToValues { sheet: String, range: String },
+    DeleteRows {
+        sheet: String,
+        rows: String,
+    },
+    DeleteColumns {
+        sheet: String,
+        columns: String,
+    },
+    DeleteSheet {
+        sheet: String,
+    },
+    ToValues {
+        sheet: String,
+        range: String,
+    },
     Recalculate,
     RecalculateHard,
+    /// Replaces the workbook with the one loaded from `path`, like File > Open.
+    Open {
+        path: String,
+    },
+    /// Saves the workbook as it is at this point, like File > Save As.
+    SaveAs {
+        format: Format,
+        path: String,
+    },
+}
+
+/// A file format the oracle can save.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Format {
+    Xlsx,
 }
 
 /// A range whose cells are observed after the operations.
@@ -73,6 +100,11 @@ pub enum CellValue {
     Empty,
     Number {
         v: f64,
+        formula: Option<String>,
+    },
+    /// An infinity or NaN, which JSON cannot hold: `v` is `inf`, `-inf` or `nan`.
+    NonFinite {
+        v: String,
         formula: Option<String>,
     },
     String {
@@ -128,6 +160,31 @@ mod tests {
                 ],
                 "reads": [{"sheet": "S1", "range": "A1:B1"}]
             })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn open_serializes_with_the_path() -> Result<(), serde_json::Error> {
+        let op = Op::Open {
+            path: "/tmp/book.xlsx".to_owned(),
+        };
+        assert_eq!(
+            serde_json::to_value(&op)?,
+            json!({"op": "open", "path": "/tmp/book.xlsx"})
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn save_as_serializes_with_the_format_and_path() -> Result<(), serde_json::Error> {
+        let op = Op::SaveAs {
+            format: Format::Xlsx,
+            path: "/tmp/book.xlsx".to_owned(),
+        };
+        assert_eq!(
+            serde_json::to_value(&op)?,
+            json!({"op": "save_as", "format": "xlsx", "path": "/tmp/book.xlsx"})
         );
         Ok(())
     }

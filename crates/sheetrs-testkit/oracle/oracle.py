@@ -9,6 +9,7 @@ run ends or exceeds RUN_TIMEOUT_SECONDS.
 
 import contextlib
 import json
+import math
 import os
 import re
 import signal
@@ -30,6 +31,7 @@ CONNECT_TIMEOUT_SECONDS = 90
 RUN_TIMEOUT_SECONDS = 300
 SHUTDOWN_TIMEOUT_SECONDS = 30
 LOG_TAIL_BYTES = 2000
+SAVE_FILTERS = {"xlsx": "Calc MS Excel 2007 XML"}
 ROW_SPAN = re.compile(r"([0-9]+)(?::([0-9]+))?")
 COLUMN_SPAN = re.compile(r"([A-Za-z]{1,3})(?::([A-Za-z]{1,3}))?")
 
@@ -147,14 +149,27 @@ def column_span(sheet, spec):
     return start, end - start + 1
 
 
-def apply_op(document, dispatcher, op):
+def apply_op(desktop, document, dispatcher, op):
+    """Applies one operation and returns the document that is current afterwards."""
     kind = op["op"]
+    if kind == "open":
+        # Loaded as the UI does by default: cached results are trusted, not recalculated.
+        loaded = desktop.loadComponentFromURL(
+            Path(op["path"]).as_uri(), "_blank", 0, (property_value("Hidden", True),)
+        )
+        document.close(True)
+        return loaded
     if kind == "recalculate":
         document.calculate()
     elif kind == "recalculate_hard":
         document.calculateAll()
     elif kind == "delete_sheet":
         document.Sheets.removeByName(op["sheet"])
+    elif kind == "save_as":
+        document.storeToURL(
+            Path(op["path"]).as_uri(),
+            (property_value("FilterName", SAVE_FILTERS[op["format"]]),),
+        )
     else:
         sheet = document.Sheets.getByName(op["sheet"])
         if kind == "delete_rows":
@@ -174,6 +189,20 @@ def apply_op(document, dispatcher, op):
             )
         else:
             raise ValueError(f"unknown operation: {kind}")
+    return document
+
+
+def encode_number(value, formula=None):
+    """A number as JSON; infinities and NaN have no JSON form, so they get their own type."""
+    if math.isnan(value):
+        encoded = {"t": "non_finite", "v": "nan"}
+    elif math.isinf(value):
+        encoded = {"t": "non_finite", "v": "inf" if value > 0 else "-inf"}
+    else:
+        encoded = {"t": "number", "v": value}
+    if formula is not None:
+        encoded["formula"] = formula
+    return encoded
 
 
 def encode_cell(cell):
@@ -181,22 +210,17 @@ def encode_cell(cell):
     if kind == EMPTY:
         return {"t": "empty"}
     if kind == VALUE:
-        return {"t": "number", "v": cell.getValue()}
+        return encode_number(cell.getValue())
     if kind == TEXT:
         return {"t": "string", "v": cell.getString()}
     assert kind == FORMULA, kind
     formula = cell.getFormula()
     error = cell.getError()
     if error != 0:
-        return {
-            "t": "error",
-            "code": error,
-            "text": cell.getString(),
-            "formula": formula,
-        }
+        return {"t": "error", "code": error, "text": cell.getString(), "formula": formula}
     if cell.FormulaResultType2 == FORMULA_RESULT_STRING:
         return {"t": "string", "v": cell.getString(), "formula": formula}
-    return {"t": "number", "v": cell.getValue(), "formula": formula}
+    return encode_number(cell.getValue(), formula)
 
 
 def read_range(document, read):
@@ -218,7 +242,7 @@ def run_case(desktop, dispatcher, case):
     try:
         populate(document, case["sheets"])
         for op in case["ops"]:
-            apply_op(document, dispatcher, op)
+            document = apply_op(desktop, document, dispatcher, op)
         return {
             "name": case["name"],
             "reads": [read_range(document, read) for read in case["reads"]],

@@ -1,0 +1,21 @@
+[package]
+name = "sheetrs-xlsx"
+description = "Streaming reader of XLSX workbooks into the sheetrs model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+sheetrs-core.workspace = true
+quick-xml.workspace = true
+thiserror.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+sheetrs-testkit.workspace = true
+
+[lints]
+workspace = true

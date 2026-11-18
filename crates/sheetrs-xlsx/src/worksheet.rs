@@ -1,0 +1,310 @@
+//! Streaming parser of a worksheet part.
+
+use std::io::BufRead;
+use std::sync::Arc;
+
+use quick_xml::Reader;
+use quick_xml::events::{BytesStart, Event};
+use sheetrs_core::{
+    Cell, CellPos, CellRef, DateSystem, ErrorKind, Formula, MAX_COLS, MAX_ROWS, Sheet, Value,
+};
+
+use crate::Error;
+use crate::lexical;
+use crate::xml::{attribute, element_text, skip_element, unescape_xstring};
+
+/// A `<c>` element while its children are read.
+struct PendingCell {
+    /// Where the cell goes; `None` when its position is outside the sheet.
+    pos: Option<CellPos>,
+    kind: Option<String>,
+    value: Option<String>,
+    inline_text: Option<String>,
+    formula: Option<PendingFormula>,
+}
+
+struct PendingFormula {
+    text: String,
+    kind: FormulaKind,
+}
+
+/// What the `t` attribute of a formula makes of it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FormulaKind {
+    /// An ordinary formula, written `normal` or without a type.
+    Plain,
+    /// A member of a shared group.
+    Shared(u32),
+    Array,
+    /// A data table, which holds no cell of its own.
+    DataTable,
+    /// A type `LibreOffice` does not know, or a negative group: the formula is dropped and the
+    /// cell is a constant.
+    Ignored,
+}
+
+/// Where the next cell without an address goes.
+struct Cursor {
+    /// The row of the unaddressed cells; outside the sheet when the row attribute says so.
+    row: i64,
+    next_row: i64,
+    next_col: u32,
+}
+
+/// Reads the cells of a worksheet part into `sheet`.
+pub(crate) fn parse_worksheet<R: BufRead>(
+    source: R,
+    sheet: &mut Sheet,
+    context: &ValueContext<'_>,
+    part: &str,
+) -> Result<(), Error> {
+    let mut reader = Reader::from_reader(source);
+    let mut buf = Vec::new();
+    let mut scratch = Vec::new();
+    let mut cursor = Cursor {
+        row: 0,
+        next_row: 0,
+        next_col: 0,
+    };
+    let mut pending: Option<PendingCell> = None;
+    loop {
+        buf.clear();
+        match reader
+            .read_event_into(&mut buf)
+            .map_err(|source| Error::xml(part, source))?
+        {
+            Event::Start(element) => match (element.local_name().as_ref(), pending.as_mut()) {
+                ("row", _) => start_row(&element, &mut cursor, part)?,
+                ("c", _) => pending = Some(start_cell(&element, &mut cursor, part)?),
+                ("f", Some(cell)) => {
+                    let kind = formula_kind(&element, part)?;
+                    let text = element_text(&mut reader, &mut scratch, part)?;
+                    cell.formula = Some(PendingFormula { text, kind });
+                }
+                ("v", Some(cell)) => {
+                    cell.value = Some(element_text(&mut reader, &mut scratch, part)?);
+                }
+                ("is", Some(cell)) => {
+                    cell.inline_text = Some(inline_string(&mut reader, part)?);
+                }
+                _ => {}
+            },
+            Event::Empty(element) => match (element.local_name().as_ref(), pending.as_mut()) {
+                ("row", _) => start_row(&element, &mut cursor, part)?,
+                // A cell without children holds nothing, but it still advances the cursor.
+                ("c", _) => {
+                    start_cell(&element, &mut cursor, part)?;
+                }
+                ("f", Some(cell)) => {
+                    let kind = formula_kind(&element, part)?;
+                    cell.formula = Some(PendingFormula {
+                        text: String::new(),
+                        kind,
+                    });
+                }
+                _ => {}
+            },
+            Event::End(element) if element.local_name().as_ref() == "c" => {
+                if let Some(cell) = pending.take() {
+                    finish_cell(cell, sheet, context);
+                }
+            }
+            // A worksheet cut short keeps the cells read before the cut, as `LibreOffice` does.
+            Event::Eof => return Ok(()),
+            _ => {}
+        }
+    }
+}
+
+/// A row attribute that is not a valid row makes the row `LibreOffice` reads as one outside
+/// the sheet: its unaddressed cells are dropped and the next row follows it. The value -1 is
+/// the exception: it stands for a row without the attribute.
+fn start_row(element: &BytesStart<'_>, cursor: &mut Cursor, part: &str) -> Result<(), Error> {
+    // The value -1 stands for "no row", as `LibreOffice` reads it.
+    cursor.row = match attribute(element, "r", part)?.map(|number| lexical::integer_prefix(&number))
+    {
+        Some(number) if number != -1 => number - 1,
+        _ => cursor.next_row,
+    };
+    cursor.next_row = cursor.row.saturating_add(1);
+    cursor.next_col = 0;
+    Ok(())
+}
+
+/// A cell whose address is not a cell of the sheet is placed like a cell without an address.
+fn start_cell(
+    element: &BytesStart<'_>,
+    cursor: &mut Cursor,
+    part: &str,
+) -> Result<PendingCell, Error> {
+    let addressed = attribute(element, "r", part)?
+        .and_then(|address| CellRef::from_a1(&address).ok())
+        .map(|cell| CellPos {
+            row: cell.row.index,
+            col: cell.col.index,
+        });
+    let pos = addressed.or_else(|| {
+        let row = u32::try_from(cursor.row)
+            .ok()
+            .filter(|row| *row < MAX_ROWS)?;
+        (cursor.next_col < MAX_COLS).then_some(CellPos {
+            row,
+            col: cursor.next_col,
+        })
+    });
+    cursor.next_col = match addressed {
+        Some(pos) => pos.col + 1,
+        None => cursor.next_col.saturating_add(1),
+    };
+    Ok(PendingCell {
+        pos,
+        kind: attribute(element, "t", part)?,
+        value: None,
+        inline_text: None,
+        formula: None,
+    })
+}
+
+/// What the `t` and `si` attributes of a formula make of it.
+fn formula_kind(element: &BytesStart<'_>, part: &str) -> Result<FormulaKind, Error> {
+    Ok(match attribute(element, "t", part)?.as_deref() {
+        None | Some("normal") => FormulaKind::Plain,
+        Some("shared") => match attribute(element, "si", part)? {
+            None => FormulaKind::Plain,
+            Some(group) => match u32::try_from(lexical::integer_prefix(&group)) {
+                Ok(group) => FormulaKind::Shared(group),
+                Err(_) => FormulaKind::Ignored,
+            },
+        },
+        Some("array") => FormulaKind::Array,
+        Some("dataTable") => FormulaKind::DataTable,
+        Some(_) => FormulaKind::Ignored,
+    })
+}
+
+/// The text of an `<is>` element, with rich-text runs joined and phonetic runs dropped.
+fn inline_string<R: BufRead>(reader: &mut Reader<R>, part: &str) -> Result<String, Error> {
+    let mut text = String::new();
+    let mut buf = Vec::new();
+    let mut scratch = Vec::new();
+    loop {
+        buf.clear();
+        match reader
+            .read_event_into(&mut buf)
+            .map_err(|source| Error::xml(part, source))?
+        {
+            Event::Start(element) => match element.local_name().as_ref() {
+                "t" => text.push_str(&unescape_xstring(&element_text(
+                    reader,
+                    &mut scratch,
+                    part,
+                )?)),
+                "rPh" => skip_element(reader, &element, part)?,
+                _ => {}
+            },
+            Event::End(element) if element.local_name().as_ref() == "is" => {
+                return Ok(lexical::normalize_line_breaks(&text).into_owned());
+            }
+            Event::Eof => return Err(Error::malformed(part, "unexpected end of file")),
+            _ => {}
+        }
+    }
+}
+
+fn finish_cell(cell: PendingCell, sheet: &mut Sheet, context: &ValueContext<'_>) {
+    let Some(pos) = cell.pos else {
+        return;
+    };
+    let kind = cell.formula.as_ref().map(|formula| formula.kind);
+    // A data table holds no cell of its own.
+    if kind == Some(FormulaKind::DataTable) {
+        return;
+    }
+    let formula = match cell.formula {
+        Some(PendingFormula {
+            kind: FormulaKind::Ignored,
+            ..
+        })
+        | None => None,
+        Some(PendingFormula { text, kind }) if !text.is_empty() => {
+            if let FormulaKind::Shared(group) = kind {
+                sheet.set_shared_anchor(group, pos);
+            }
+            Some(Formula::Text(text))
+        }
+        Some(PendingFormula {
+            kind: FormulaKind::Shared(group),
+            ..
+        }) => Some(Formula::Shared { index: group }),
+        Some(_) => None,
+    };
+    let value = cell_value(
+        cell.kind.as_deref(),
+        cell.value.as_deref(),
+        cell.inline_text,
+        formula.is_some(),
+        context,
+    );
+    // Only the non-zero number cached by a plain formula is trusted; everything else is recalculated.
+    let trusted = kind == Some(FormulaKind::Plain)
+        && matches!(cell.kind.as_deref(), None | Some("n"))
+        && matches!(&value, Value::Number(number) if number.is_nan() || number.abs() > 0.0);
+    let stale = formula.is_some() && !trusted;
+    // A cell with a formula is not replaced by a later one without.
+    let replaces_a_formula =
+        formula.is_none() && sheet.get(pos).is_some_and(|old| old.formula.is_some());
+    if (value != Value::Empty || formula.is_some()) && !replaces_a_formula {
+        sheet.set(
+            pos,
+            Cell {
+                value,
+                formula,
+                stale,
+            },
+        );
+    }
+}
+
+/// What reading a cell value needs to know about the workbook.
+pub(crate) struct ValueContext<'a> {
+    pub shared_strings: &'a [Arc<str>],
+    pub date_system: DateSystem,
+}
+
+/// The value of a cell as `LibreOffice` loads it. An unknown cell type holds nothing, and
+/// text that does not fit the announced type is read as `LibreOffice` reads it.
+fn cell_value(
+    kind: Option<&str>,
+    stored: Option<&str>,
+    inline_text: Option<String>,
+    has_formula: bool,
+    context: &ValueContext<'_>,
+) -> Value {
+    // Inline text counts only for inline string cells, and an empty one holds nothing.
+    if kind == Some("inlineStr") {
+        if stored.is_some() {
+            return Value::Empty;
+        }
+        return inline_text
+            .filter(|text| !text.is_empty())
+            .map_or(Value::Empty, |text| Value::Text(text.into()));
+    }
+    let Some(stored) = stored.filter(|stored| !stored.is_empty()) else {
+        return Value::Empty;
+    };
+    match kind {
+        None | Some("n") => Value::Number(lexical::number(stored)),
+        Some("s") => lexical::shared_string_index(stored)
+            .and_then(|index| context.shared_strings.get(index))
+            .filter(|string| !string.is_empty())
+            .map_or(Value::Empty, |string| Value::Text(Arc::clone(string))),
+        Some("str") => Value::Text(stored.into()),
+        Some("b") => Value::Bool(lexical::boolean(stored)),
+        // The cached error of a formula is kept as stored; it is recalculated on load.
+        Some("e") if has_formula => Value::Error(ErrorKind::from_text(stored)),
+        Some("e") => Value::Error(lexical::constant_error(stored)),
+        Some("d") => lexical::iso_date(stored, context.date_system)
+            .map_or_else(|| Value::Text(stored.into()), Value::Number),
+        Some(_) => Value::Empty,
+    }
+}
