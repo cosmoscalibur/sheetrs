@@ -71,6 +71,10 @@ pub enum Op {
     SaveAs {
         format: Format,
         path: String,
+        /// The token string of the filter options of a text export; the filter's own
+        /// defaults when absent.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        filter_options: Option<String>,
     },
 }
 
@@ -156,6 +160,7 @@ impl TextFilter {
 pub enum Format {
     Xlsx,
     Ods,
+    Csv,
 }
 
 /// A range whose cells are observed after the operations.
@@ -313,6 +318,7 @@ mod tests {
         let op = Op::SaveAs {
             format: Format::Xlsx,
             path: "/tmp/book.xlsx".to_owned(),
+            filter_options: None,
         };
         assert_eq!(
             serde_json::to_value(&op)?,

@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 sheetrs-core.workspace = true
+sheetrs-io.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

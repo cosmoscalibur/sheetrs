@@ -34,6 +34,7 @@ LOG_TAIL_BYTES = 2000
 SAVE_FILTERS = {
     "xlsx": "Calc MS Excel 2007 XML",
     "ods": "calc8",
+    "csv": "Text - txt - csv (StarCalc)",
 }
 ROW_SPAN = re.compile(r"([0-9]+)(?::([0-9]+))?")
 COLUMN_SPAN = re.compile(r"([A-Za-z]{1,3})(?::([A-Za-z]{1,3}))?")
@@ -60,7 +61,12 @@ def start_office(work_dir, pipe):
     with (work_dir / "soffice.log").open("wb") as log:
         # Own session: the whole process group can be killed, including the
         # soffice.bin child that the launcher starts.
-        return subprocess.Popen(command, stdout=log, stderr=log, start_new_session=True)
+        # The locale of the machine decides how booleans and numbers are shown, so the office
+        # runs in the one that has no language of its own.
+        environment = {**os.environ, "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "LANGUAGE": ""}
+        return subprocess.Popen(
+            command, stdout=log, stderr=log, start_new_session=True, env=environment
+        )
 
 
 def kill_office(office):
@@ -203,10 +209,10 @@ def apply_op(desktop, document, dispatcher, op):
     elif kind == "delete_sheet":
         document.Sheets.removeByName(op["sheet"])
     elif kind == "save_as":
-        document.storeToURL(
-            Path(op["path"]).as_uri(),
-            (property_value("FilterName", SAVE_FILTERS[op["format"]]),),
-        )
+        properties = [property_value("FilterName", SAVE_FILTERS[op["format"]])]
+        if op.get("filter_options"):
+            properties.append(property_value("FilterOptions", op["filter_options"]))
+        document.storeToURL(Path(op["path"]).as_uri(), tuple(properties))
     else:
         sheet = document.Sheets.getByName(op["sheet"])
         if kind == "delete_rows":

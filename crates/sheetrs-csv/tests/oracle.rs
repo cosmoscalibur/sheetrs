@@ -1,11 +1,14 @@
 use std::error::Error as StdError;
 use std::fs::File;
 
-use sheetrs_core::Cell;
-use sheetrs_csv::{FormulaFields, Options, QuotedFields, Spaces};
-use sheetrs_testkit::case::{self, CellValue, TextFilter};
+use sheetrs_core::{Cell, CellPos, CellRef, ErrorKind, Formula, Value, Workbook};
+use sheetrs_csv::{FormulaFields, Options, QuotedFields, Spaces, WriteOptions};
+use sheetrs_testkit::case::{
+    self, Case, CellInput, CellValue, Format, Op, Read, SheetSpec, TextFilter,
+};
 use sheetrs_testkit::compare::Leniency;
 use sheetrs_testkit::crafted::{self, Package};
+use sheetrs_testkit::oracle;
 
 const DIR: &str = env!("CARGO_TARGET_TMPDIR");
 
@@ -476,4 +479,241 @@ fn the_edge_of_the_sheet_over_csv() -> Result<(), Box<dyn StdError>> {
         ),
     ];
     assert_reads_as_the_oracle("edge", &Options::comma_separated(), &files)
+}
+
+/// A cell of an exported sheet: what the oracle is given, and the value it shows as.
+struct Exported {
+    address: String,
+    input: CellInput,
+    value: Value,
+}
+
+fn constant(address: &str, input: CellInput, value: Value) -> Exported {
+    Exported {
+        address: address.to_owned(),
+        input,
+        value,
+    }
+}
+
+fn number_cell(address: &str, number: f64) -> Exported {
+    constant(address, CellInput::Number(number), Value::Number(number))
+}
+
+fn text_cell(address: &str, text: &str) -> Exported {
+    constant(
+        address,
+        CellInput::Text(text.to_owned()),
+        Value::Text(text.into()),
+    )
+}
+
+fn formula_cell(address: &str, formula: &str, value: Value) -> Exported {
+    constant(address, CellInput::Text(formula.to_owned()), value)
+}
+
+/// Numbers of every magnitude and number of digits, from a fixed sequence.
+fn spread_numbers() -> Vec<f64> {
+    let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut numbers = Vec::new();
+    for digits in 1_usize..=17 {
+        for exponent in -16_i32..=18 {
+            let mut mantissa = String::new();
+            for place in 0..digits {
+                // The first digit is not zero.
+                let digit = u8::try_from(next() % 10).unwrap_or(0);
+                mantissa.push(char::from(
+                    b'0' + if place == 0 { digit.max(1) } else { digit },
+                ));
+            }
+            let text = format!("{}.{}e{exponent}", &mantissa[..1], &mantissa[1..]);
+            if let Ok(number) = text.parse::<f64>() {
+                numbers.push(if next() % 5 == 0 { -number } else { number });
+            }
+        }
+    }
+    numbers.extend([
+        0.0,
+        5e-324,
+        f64::MAX,
+        1e15,
+        1e16,
+        1e-4,
+        1e-9,
+        1e-10,
+        999_999_999_999_999.9,
+    ]);
+    numbers
+}
+
+fn number_sheet(numbers: &[f64]) -> Vec<Exported> {
+    numbers
+        .iter()
+        .enumerate()
+        .map(|(row, number)| number_cell(&format!("A{}", row + 1), *number))
+        .collect()
+}
+
+fn text_sheet() -> Vec<Exported> {
+    let texts = [
+        "plain",
+        "with,comma",
+        "with \"quote\"",
+        "line\nbreak",
+        " lead",
+        "trail ",
+        "123",
+        "TRUE",
+        "a;b",
+        "tab\there",
+        "\'apos",
+        "\u{e9} \u{f1} \u{1f600}",
+        "  ",
+        "\"",
+        "-",
+        "1,5",
+        "#N/A",
+    ];
+    texts
+        .iter()
+        .enumerate()
+        .map(|(row, text)| text_cell(&format!("A{}", row + 1), text))
+        .collect()
+}
+
+fn shape_sheet() -> Vec<Exported> {
+    vec![
+        number_cell("B2", 1.0),
+        text_cell("D2", "x"),
+        formula_cell("A4", "=TRUE()", Value::Bool(true)),
+        formula_cell("B4", "=FALSE()", Value::Bool(false)),
+        formula_cell("C4", "=1/0", Value::Error(ErrorKind::DivZero)),
+        formula_cell("D4", "=NA()", Value::Error(ErrorKind::Na)),
+        formula_cell("E4", "=\"\"", Value::Text("".into())),
+        formula_cell(
+            "A6",
+            "=SQRT(-1)",
+            Value::Error(ErrorKind::Other("Err:502".into())),
+        ),
+        number_cell("F7", 2.0),
+    ]
+}
+
+/// The separator and delimiter of an export, as the oracle is given them and as the writer is.
+const FORMATS: &[(&str, &str, WriteOptions)] = &[
+    (
+        "comma",
+        "44,34,76,1,,1033,false,true,true,false,false,0",
+        WriteOptions {
+            separator: ',',
+            delimiter: '"',
+        },
+    ),
+    (
+        "semicolon",
+        "59,34,76,1,,1033,false,true,true,false,false,0",
+        WriteOptions {
+            separator: ';',
+            delimiter: '"',
+        },
+    ),
+    (
+        "tab",
+        "9,39,76,1,,1033,false,true,true,false,false,0",
+        WriteOptions {
+            separator: '\t',
+            delimiter: '\'',
+        },
+    ),
+];
+
+/// The text export writes what `LibreOffice` writes: byte for byte.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn exported_text_is_what_the_oracle_exports_over_csv() -> Result<(), Box<dyn StdError>> {
+    let sheets: Vec<(&str, Vec<Exported>)> = vec![
+        ("numbers", number_sheet(&spread_numbers())),
+        ("texts", text_sheet()),
+        ("shape", shape_sheet()),
+    ];
+    let mut cases = Vec::new();
+    let mut expected = Vec::new();
+    for (sheet_name, cells) in &sheets {
+        for (format_name, options, write_options) in FORMATS {
+            let name = format!("{sheet_name}_{format_name}");
+            let path = format!("{DIR}/export_{name}.csv");
+            cases.push(Case {
+                name: name.clone(),
+                sheets: vec![SheetSpec {
+                    name: "S1".to_owned(),
+                    cells: cells
+                        .iter()
+                        .map(|cell| (cell.address.clone(), cell.input.clone()))
+                        .collect(),
+                }],
+                ops: vec![Op::SaveAs {
+                    format: Format::Csv,
+                    path: path.clone(),
+                    filter_options: Some((*options).to_owned()),
+                }],
+                reads: vec![Read {
+                    sheet: "S1".to_owned(),
+                    range: "A1:A1".to_owned(),
+                }],
+            });
+            let mut workbook = Workbook::new();
+            let mut sheet = workbook.sheet_builder("S1");
+            for cell in cells {
+                let at = CellRef::from_a1(&cell.address)?;
+                let formula = match &cell.input {
+                    CellInput::Text(text) if text.starts_with('=') => {
+                        Some(Formula::Text(text.clone()))
+                    }
+                    _ => None,
+                };
+                sheet.set(
+                    CellPos {
+                        row: at.row.index,
+                        col: at.col.index,
+                    },
+                    &Cell {
+                        value: cell.value.clone(),
+                        formula,
+                        stale: false,
+                    },
+                )?;
+            }
+            sheet.finish();
+            let mut written = Vec::new();
+            let view = workbook.sheet("S1").ok_or("sheet")?;
+            sheetrs_csv::write(view, write_options, &mut written)?;
+            expected.push((name, path, written));
+        }
+    }
+    oracle::run(&cases)?.into_observed()?;
+    let mut differences = Vec::new();
+    for (name, path, ours) in expected {
+        let theirs = std::fs::read(&path)?;
+        if theirs != ours {
+            let (a, b) = (
+                String::from_utf8_lossy(&theirs),
+                String::from_utf8_lossy(&ours),
+            );
+            let line = a.lines().zip(b.lines()).position(|(x, y)| x != y);
+            let input = line.and_then(|at| spread_numbers().get(at).copied());
+            differences.push(format!(
+                "{name}: input {input:?} first differing line {line:?}: oracle {:?}, written {:?}",
+                line.and_then(|at| a.lines().nth(at)),
+                line.and_then(|at| b.lines().nth(at))
+            ));
+        }
+    }
+    assert!(differences.is_empty(), "\n{}", differences.join("\n"));
+    Ok(())
 }

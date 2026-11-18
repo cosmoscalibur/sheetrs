@@ -1636,6 +1636,7 @@ fn basic_libraries_saved_by_the_oracle_over_ods() -> Result<(), Box<dyn StdError
             Op::SaveAs {
                 format: Format::Ods,
                 path: path.clone(),
+                filter_options: None,
             },
             Op::Open {
                 path: path.clone(),

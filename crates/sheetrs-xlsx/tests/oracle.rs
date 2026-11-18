@@ -1552,6 +1552,7 @@ fn a_saved_workbook_reads_back_over_xlsx() -> Result<(), Box<dyn StdError>> {
             Op::SaveAs {
                 format: Format::Xlsx,
                 path: OUTPUT.to_owned(),
+                filter_options: None,
             },
             Op::Open {
                 path: OUTPUT.to_owned(),
@@ -2443,5 +2444,108 @@ fn written_names_read_back_over_xlsx() -> Result<(), Box<dyn StdError>> {
         let again = sheetrs_xlsx::read(std::io::Cursor::new(written.into_inner()))?;
         assert_eq!(again.names(), workbook.names(), "{name}");
     }
+    Ok(())
+}
+
+/// The `v` elements of the first sheet of an XLSX package, in order.
+fn stored_values(bytes: Vec<u8>) -> Result<Vec<String>, Box<dyn StdError>> {
+    use std::io::Read as _;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let mut text = String::new();
+    archive
+        .by_name("xl/worksheets/sheet1.xml")?
+        .read_to_string(&mut text)?;
+    Ok(text
+        .split("<v>")
+        .skip(1)
+        .filter_map(|part| part.split("</v>").next().map(str::to_owned))
+        .collect())
+}
+
+/// Numbers are stored as `LibreOffice` stores them: the same 15 digits, the same exponent.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn stored_numbers_are_those_of_the_oracle_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut numbers = vec![
+        0.1 + 0.2,
+        1e15,
+        1e16,
+        1e-4,
+        1e-5,
+        1e-9,
+        1e-10,
+        f64::MAX,
+        5e-324,
+        1.0 / 3.0,
+    ];
+    for digits in 1_usize..=17 {
+        for exponent in -16_i32..=18 {
+            let mantissa: String = (0..digits)
+                .map(|place| {
+                    let digit = u8::try_from(next() % 10).unwrap_or(0);
+                    char::from(b'0' + if place == 0 { digit.max(1) } else { digit })
+                })
+                .collect();
+            if let Ok(number) =
+                format!("{}.{}e{exponent}", &mantissa[..1], &mantissa[1..]).parse::<f64>()
+            {
+                numbers.push(number);
+            }
+        }
+    }
+    let cells: BTreeMap<String, CellInput> = numbers
+        .iter()
+        .enumerate()
+        .map(|(row, number)| (format!("A{}", row + 1), CellInput::Number(*number)))
+        .collect();
+    let path = format!("{CRAFTED_DIR}/stored_numbers.xlsx");
+    let case = Case {
+        name: "stored_numbers".to_owned(),
+        sheets: vec![SheetSpec {
+            name: "S1".to_owned(),
+            cells,
+        }],
+        ops: vec![Op::SaveAs {
+            format: Format::Xlsx,
+            path: path.clone(),
+            filter_options: None,
+        }],
+        reads: vec![Read {
+            sheet: "S1".to_owned(),
+            range: "A1:A1".to_owned(),
+        }],
+    };
+    oracle::run(&[case])?.into_observed()?;
+    let theirs = stored_values(fs::read(&path)?)?;
+    let mut workbook = sheetrs_core::Workbook::new();
+    let mut sheet = workbook.sheet_builder("S1");
+    for (row, number) in numbers.iter().enumerate() {
+        sheet.set(
+            CellPos {
+                row: u32::try_from(row)?,
+                col: 0,
+            },
+            &constant(Value::Number(*number)),
+        )?;
+    }
+    sheet.finish();
+    let mut written = std::io::Cursor::new(Vec::new());
+    sheetrs_xlsx::write(&workbook, &mut written)?;
+    let ours = stored_values(written.into_inner())?;
+    let differences: Vec<String> = numbers
+        .iter()
+        .zip(theirs.iter().zip(&ours))
+        .filter(|(_, (a, b))| a != b)
+        .map(|(number, (a, b))| format!("{number:?}: oracle {a}, written {b}"))
+        .collect();
+    assert!(differences.is_empty(), "\n{}", differences.join("\n"));
+    assert_eq!(theirs.len(), ours.len());
     Ok(())
 }

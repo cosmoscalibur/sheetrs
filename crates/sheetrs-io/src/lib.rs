@@ -271,6 +271,79 @@ pub fn integer_prefix(text: &str) -> i64 {
     integer_prefix_skipping(text, is_xml_whitespace)
 }
 
+/// A finite non-zero number rounded to 15 significant digits, as `LibreOffice` shows it: the
+/// digits without trailing zeros and the power of ten of the first one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FifteenDigits {
+    /// Whether the number is negative.
+    pub negative: bool,
+    /// The significant digits, at least one.
+    pub digits: String,
+    /// The exponent of the first digit: 3 for `1234.5`, -2 for `0.0123`.
+    pub exponent: i32,
+}
+
+/// Rounds `number` to 15 significant digits; `None` for zero, infinities and NaN.
+#[must_use]
+pub fn fifteen_digits(number: f64) -> Option<FifteenDigits> {
+    if number == 0.0 || !number.is_finite() {
+        return None;
+    }
+    // `LibreOffice` rounds the shortest decimal that reads back as the number, not the exact
+    // binary value: half rounds up at the sixteenth digit.
+    let shortest = format!("{number:e}");
+    let (mantissa, exponent) = shortest.split_once('e')?;
+    let (negative, mantissa) = mantissa
+        .strip_prefix('-')
+        .map_or((false, mantissa), |rest| (true, rest));
+    let mut digits: Vec<u8> = mantissa.bytes().filter(u8::is_ascii_digit).collect();
+    let mut exponent: i32 = exponent.parse().ok()?;
+    let (exact_digits, exact_exponent) = (digits.clone(), exponent);
+    if digits.len() > 15 {
+        let round_up = digits[15] >= b'5';
+        digits.truncate(15);
+        if round_up {
+            let mut place = digits.len();
+            loop {
+                if place == 0 {
+                    digits.insert(0, b'1');
+                    digits.truncate(15);
+                    exponent += 1;
+                    break;
+                }
+                place -= 1;
+                if digits[place] == b'9' {
+                    digits[place] = b'0';
+                } else {
+                    digits[place] += 1;
+                    break;
+                }
+            }
+        }
+    }
+    // Rounded to 15 digits, the largest numbers no longer fit a double; they keep the digits
+    // that tell them apart.
+    if exponent == f64::MAX_10_EXP && digits.len() > 1 {
+        let rounded = format!(
+            "{}.{}e{exponent}",
+            digits[0] as char,
+            String::from_utf8_lossy(&digits[1..])
+        );
+        if rounded.parse::<f64>().is_ok_and(f64::is_infinite) {
+            digits = exact_digits;
+            exponent = exact_exponent;
+        }
+    }
+    while digits.len() > 1 && digits.last() == Some(&b'0') {
+        digits.pop();
+    }
+    Some(FifteenDigits {
+        negative,
+        digits: String::from_utf8(digits).ok()?,
+        exponent,
+    })
+}
+
 /// Whether `formula` calls one of `functions`: a name, in any case, followed by an opening
 /// parenthesis that spaces may separate from it. Names inside text and inside quoted sheet names
 /// are not calls.
@@ -402,5 +475,28 @@ mod tests {
         assert_eq!(serial("1904-01-01"), Some(0.0));
         assert_eq!(serial("2020-01-02"), Some(42_370.0));
         assert_eq!(serial("1900-01-01"), Some(-1_460.0));
+    }
+
+    #[test]
+    fn fifteen_digits_round_and_drop_trailing_zeros() {
+        let digits = |negative: bool, digits: &str, exponent| {
+            Some(FifteenDigits {
+                negative,
+                digits: digits.to_owned(),
+                exponent,
+            })
+        };
+        assert_eq!(fifteen_digits(0.1 + 0.2), digits(false, "3", -1));
+        assert_eq!(fifteen_digits(-1234.5), digits(true, "12345", 3));
+        assert_eq!(
+            fifteen_digits(3_395.843_825_702_095),
+            digits(false, "33958438257021", 3)
+        );
+        assert_eq!(
+            fifteen_digits(9.999_999_999_999_999_5),
+            digits(false, "1", 1)
+        );
+        assert_eq!(fifteen_digits(0.0), None);
+        assert_eq!(fifteen_digits(f64::NAN), None);
     }
 }

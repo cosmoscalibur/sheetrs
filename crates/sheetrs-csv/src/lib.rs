@@ -12,6 +12,7 @@ mod date;
 mod error;
 mod field;
 mod number;
+mod write;
 
 use std::borrow::Cow;
 use std::io::Read;
@@ -20,6 +21,7 @@ use std::ops::ControlFlow;
 use sheetrs_core::{CellPos, FormulaRef, MAX_COLS, MAX_ROWS, ValueRef, Workbook};
 
 pub use error::Error;
+pub use write::{WriteOptions, write};
 
 /// What the filter makes of a field that is quoted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
