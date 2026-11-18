@@ -103,39 +103,16 @@ pub(crate) fn general(number: f64) -> String {
     let Some(found) = sheetrs_io::fifteen_digits(number) else {
         return "0".to_owned();
     };
-    let sign = if found.negative { "-" } else { "" };
-    let (digits, exponent) = (found.digits.as_str(), found.exponent);
-    let length = i32::try_from(digits.len()).unwrap_or(i32::MAX);
-    let plain = match exponent {
+    let length = i32::try_from(found.digits.len()).unwrap_or(i32::MAX);
+    let plain = match found.exponent {
         16.. => false,
         -4..=15 => true,
-        -9..=-5 => length - 1 - exponent <= 16,
+        -9..=-5 => length - 1 - found.exponent <= 16,
         _ => false,
     };
-    if !plain {
-        let (first, rest) = digits.split_at(1);
-        let point = if rest.is_empty() { "" } else { "." };
-        let exponent_sign = if exponent < 0 { '-' } else { '+' };
-        let width = if exponent < 0 { 2 } else { 3 };
-        return format!(
-            "{sign}{first}{point}{rest}E{exponent_sign}{:0width$}",
-            exponent.abs()
-        );
+    if plain {
+        found.plain(number)
+    } else {
+        found.scientific(2)
     }
-    if exponent == 15 {
-        // Where the whole part is sixteen digits, they are all shown.
-        return format!("{number:.0}");
-    }
-    let body = match usize::try_from(exponent + 1) {
-        Ok(whole) if whole >= digits.len() => {
-            format!("{digits}{}", "0".repeat(whole - digits.len()))
-        }
-        Ok(0) => format!("0.{digits}"),
-        Ok(whole) => format!("{}.{}", &digits[..whole], &digits[whole..]),
-        Err(_) => format!(
-            "0.{}{digits}",
-            "0".repeat(usize::try_from(-exponent - 1).unwrap_or(0))
-        ),
-    };
-    format!("{sign}{body}")
 }

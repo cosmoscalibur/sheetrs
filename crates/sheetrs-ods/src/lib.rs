@@ -10,6 +10,7 @@ mod error;
 mod macros;
 mod tokens;
 mod value;
+mod write;
 
 use std::io::{BufReader, Read, Seek};
 
@@ -18,6 +19,7 @@ use zip::ZipArchive;
 use zip::result::ZipError;
 
 pub use error::Error;
+pub use write::write;
 
 const CONTENT_PART: &str = "content.xml";
 const BUFFER_BYTES: usize = 64 * 1024;

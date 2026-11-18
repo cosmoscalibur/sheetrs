@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::fmt::Write as _;
 use std::fs::File;
 
-use sheetrs_core::Cell;
+use sheetrs_core::{Cell, CellPos, Value};
 use sheetrs_testkit::case::{Case, CellValue, Format, Op, Read, SheetSpec};
 use sheetrs_testkit::compare::Leniency;
 use sheetrs_testkit::crafted::{self, Package};
@@ -1802,4 +1802,385 @@ fn name_entries() -> Vec<Crafted> {
 #[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
 fn defined_names_load_as_the_oracle_does_over_ods() -> Result<(), Box<dyn StdError>> {
     assert_reads_as_the_oracle("names", &name_entries())
+}
+
+fn constant_cell(value: Value) -> Cell {
+    Cell {
+        value,
+        formula: None,
+        stale: false,
+    }
+}
+
+fn at(row: u32, col: u32) -> CellPos {
+    CellPos { row, col }
+}
+
+fn open_formula_workbook() -> sheetrs_core::Workbook {
+    let mut workbook = sheetrs_core::Workbook::new();
+    workbook.set_formula_grammar(sheetrs_core::FormulaGrammar::OpenFormula);
+    workbook
+}
+
+fn number_workbook() -> Result<sheetrs_core::Workbook, Box<dyn StdError>> {
+    let mut workbook = open_formula_workbook();
+    let mut sheet = workbook.sheet_builder("S1");
+    for (row, number) in [
+        0.3,
+        1e15,
+        1e21,
+        1.5e-5,
+        -2.5e300,
+        0.333_333_333_333_333,
+        5e-324,
+    ]
+    .iter()
+    .enumerate()
+    {
+        sheet.set(
+            at(u32::try_from(row)?, 0),
+            &constant_cell(Value::Number(*number)),
+        )?;
+    }
+    sheet.finish();
+    Ok(workbook)
+}
+
+const WRITTEN_TEXTS: [&str; 13] = [
+    "plain",
+    " lead",
+    "trail ",
+    "two  spaces",
+    "   three",
+    "tab\there",
+    "line\nbreak",
+    "a & b < c > \"d\"",
+    "\u{e9}\u{f1} \u{1f600}",
+    "a\n\nb",
+    "trailing\n",
+    "\n",
+    "  ",
+];
+
+fn text_workbook() -> Result<sheetrs_core::Workbook, Box<dyn StdError>> {
+    let mut workbook = open_formula_workbook();
+    let mut sheet = workbook.sheet_builder("S1");
+    for (row, text) in WRITTEN_TEXTS.iter().enumerate() {
+        sheet.set(
+            at(u32::try_from(row)?, 0),
+            &constant_cell(Value::Text((*text).into())),
+        )?;
+    }
+    sheet.finish();
+    Ok(workbook)
+}
+
+fn kinds_workbook() -> Result<sheetrs_core::Workbook, Box<dyn StdError>> {
+    let mut workbook = open_formula_workbook();
+    let mut sheet = workbook.sheet_builder("S1");
+    sheet.set(at(0, 0), &constant_cell(Value::Bool(true)))?;
+    sheet.set(at(0, 3), &constant_cell(Value::Bool(false)))?;
+    sheet.set(at(3, 1), &constant_cell(Value::Number(7.0)))?;
+    sheet.set(
+        at(3, 2),
+        &constant_cell(Value::Error(sheetrs_core::ErrorKind::Na)),
+    )?;
+    sheet.set(
+        at(5, 0),
+        &Cell {
+            value: Value::Number(3.0),
+            formula: Some(sheetrs_core::Formula::Text("of:=1+2".to_owned())),
+            stale: false,
+        },
+    )?;
+    sheet.finish();
+    Ok(workbook)
+}
+
+fn written_package(
+    name: &str,
+    workbook: &sheetrs_core::Workbook,
+    range: &str,
+) -> Result<Package, Box<dyn StdError>> {
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    sheetrs_ods::write(workbook, &mut bytes)?;
+    Ok(Package {
+        name: name.to_owned(),
+        bytes: bytes.into_inner(),
+        sheet: "S1".to_owned(),
+        range: range.to_owned(),
+    })
+}
+
+/// `LibreOffice` loads what the writer produces as the reader reads it.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn written_workbooks_load_as_they_read_over_ods() -> Result<(), Box<dyn StdError>> {
+    let packages = vec![
+        written_package("numbers", &number_workbook()?, "A1:A7")?,
+        written_package("texts", &text_workbook()?, "A1:A13")?,
+        written_package("kinds_and_gaps", &kinds_workbook()?, "A1:D6")?,
+    ];
+    crafted::assert_reads_as_the_oracle(
+        DIR,
+        "written",
+        "ods",
+        None,
+        &packages,
+        |path| Ok(sheetrs_ods::read(File::open(path)?)?),
+        |_: &CellValue, _: Option<&Cell>| Leniency::FormulaOptional,
+    )
+}
+
+/// What the writer writes the reader reads back, cell by cell.
+#[test]
+fn written_workbooks_read_back_over_ods() -> Result<(), Box<dyn StdError>> {
+    for (name, workbook) in [
+        ("numbers", number_workbook()?),
+        ("texts", text_workbook()?),
+        ("kinds", kinds_workbook()?),
+    ] {
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        sheetrs_ods::write(&workbook, &mut bytes)?;
+        let again = sheetrs_ods::read(std::io::Cursor::new(bytes.into_inner()))?;
+        let before = workbook.sheet("S1").ok_or("sheet")?;
+        let after = again.sheet("S1").ok_or("sheet")?;
+        // An error is the result of a formula that the reader leaves to be calculated again, so
+        // it comes back as the text of the cached result.
+        let cells = |sheet: sheetrs_core::SheetView<'_>| {
+            sheet
+                .cells()
+                .filter(|(_, cell)| !matches!(cell.value, sheetrs_core::ValueRef::Error(_)))
+                .map(|(pos, cell)| (pos, cell.to_cell().value))
+                .collect::<Vec<_>>()
+        };
+        let errors = before
+            .cells()
+            .filter(|(_, cell)| matches!(cell.value, sheetrs_core::ValueRef::Error(_)))
+            .all(|(pos, _)| after.get(pos).is_some_and(|cell| cell.stale));
+        assert!(errors, "{name}");
+        let skipped: Vec<_> = before
+            .cells()
+            .filter(|(_, cell)| matches!(cell.value, sheetrs_core::ValueRef::Error(_)))
+            .map(|(pos, _)| pos)
+            .collect();
+        let without_errors = |sheet: sheetrs_core::SheetView<'_>| {
+            cells(sheet)
+                .into_iter()
+                .filter(|(pos, _)| !skipped.contains(pos))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(without_errors(before), without_errors(after), "{name}");
+    }
+    Ok(())
+}
+
+/// The `office:value` attributes of the first table of an ODS package, in order.
+fn stored_values(bytes: Vec<u8>) -> Result<Vec<String>, Box<dyn StdError>> {
+    use std::io::Read as _;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let mut text = String::new();
+    archive.by_name("content.xml")?.read_to_string(&mut text)?;
+    Ok(text
+        .split(r#"office:value=""#)
+        .skip(1)
+        .filter_map(|part| part.split('"').next().map(str::to_owned))
+        .collect())
+}
+
+/// Numbers are stored as `LibreOffice` stores them in `office:value`.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn stored_numbers_are_those_of_the_oracle_over_ods() -> Result<(), Box<dyn StdError>> {
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut numbers = vec![
+        0.1 + 0.2,
+        1e15,
+        1e16,
+        1e-4,
+        1e-5,
+        1e-9,
+        1e-10,
+        f64::MAX,
+        5e-324,
+        1.0 / 3.0,
+        -0.0,
+    ];
+    for digits in 1_usize..=17 {
+        for exponent in -16_i32..=18 {
+            let mantissa: String = (0..digits)
+                .map(|place| {
+                    let digit = u8::try_from(next() % 10).unwrap_or(0);
+                    char::from(b'0' + if place == 0 { digit.max(1) } else { digit })
+                })
+                .collect();
+            if let Ok(number) =
+                format!("{}.{}e{exponent}", &mantissa[..1], &mantissa[1..]).parse::<f64>()
+            {
+                numbers.push(number);
+            }
+        }
+    }
+    let cells: std::collections::BTreeMap<String, sheetrs_testkit::case::CellInput> = numbers
+        .iter()
+        .enumerate()
+        .map(|(row, number)| {
+            (
+                format!("A{}", row + 1),
+                sheetrs_testkit::case::CellInput::Number(*number),
+            )
+        })
+        .collect();
+    let path = format!("{DIR}/stored_numbers.ods");
+    let case = Case {
+        name: "stored_numbers".to_owned(),
+        sheets: vec![SheetSpec {
+            name: "S1".to_owned(),
+            cells,
+        }],
+        ops: vec![sheetrs_testkit::case::Op::SaveAs {
+            format: Format::Ods,
+            path: path.clone(),
+            filter_options: None,
+        }],
+        reads: vec![Read {
+            sheet: "S1".to_owned(),
+            range: "A1:A1".to_owned(),
+        }],
+    };
+    oracle::run(&[case])?.into_observed()?;
+    let theirs = stored_values(std::fs::read(&path)?)?;
+    let mut workbook = open_formula_workbook();
+    let mut sheet = workbook.sheet_builder("S1");
+    for (row, number) in numbers.iter().enumerate() {
+        sheet.set(
+            at(u32::try_from(row)?, 0),
+            &constant_cell(Value::Number(*number)),
+        )?;
+    }
+    sheet.finish();
+    let mut written = std::io::Cursor::new(Vec::new());
+    sheetrs_ods::write(&workbook, &mut written)?;
+    let ours = stored_values(written.into_inner())?;
+    let differences: Vec<String> = numbers
+        .iter()
+        .zip(theirs.iter().zip(&ours))
+        .filter(|(_, (a, b))| a != b)
+        .map(|(number, (a, b))| format!("{number:?}: oracle {a}, written {b}"))
+        .collect();
+    assert!(
+        differences.is_empty(),
+        "\n{}",
+        differences
+            .iter()
+            .take(25)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    assert_eq!(theirs.len(), ours.len());
+    Ok(())
+}
+
+fn named_workbook(
+    system: sheetrs_core::DateSystem,
+    visibility: sheetrs_core::Visibility,
+) -> Result<sheetrs_core::Workbook, Box<dyn StdError>> {
+    let mut workbook = open_formula_workbook();
+    workbook.set_date_system(system);
+    for (name, visible) in [
+        ("S1", sheetrs_core::Visibility::Visible),
+        ("S2", visibility),
+    ] {
+        let mut sheet = workbook.sheet_builder(name);
+        sheet.set_visibility(visible);
+        sheet.set(at(0, 0), &constant_cell(Value::Number(1.0)))?;
+        sheet.finish();
+    }
+    for (name, scope, expression) in [
+        ("G", None, "$S1.$A$1"),
+        ("Area", None, "$S1.$A$1:$B$2"),
+        ("K", None, "1+2"),
+        ("L", Some(1), "$S2.$A$1+1"),
+        ("D", None, "$S1.$A$1"),
+        ("D", Some(1), "$S2.$A$1"),
+    ] {
+        workbook.define_name_replacing(sheetrs_core::NamedExpression {
+            name: name.to_owned(),
+            scope,
+            expression: expression.to_owned(),
+            hidden: false,
+        });
+    }
+    Ok(workbook)
+}
+
+/// Names, hidden tables and the date system are loaded from a written package as they are read.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn written_names_tables_and_dates_load_as_they_read_over_ods() -> Result<(), Box<dyn StdError>> {
+    use sheetrs_core::{DateSystem, Visibility};
+    let packages = vec![
+        written_package(
+            "names",
+            &named_workbook(DateSystem::Date1900, Visibility::Visible)?,
+            "A1:A1",
+        )?,
+        written_package(
+            "hidden_table",
+            &named_workbook(DateSystem::Date1900, Visibility::Hidden)?,
+            "A1:A1",
+        )?,
+        written_package(
+            "date_1904",
+            &named_workbook(DateSystem::Date1904, Visibility::Visible)?,
+            "A1:A1",
+        )?,
+        written_package(
+            "custom_date",
+            &named_workbook(DateSystem::Custom { zero: -10_000 }, Visibility::Visible)?,
+            "A1:A1",
+        )?,
+    ];
+    crafted::assert_reads_as_the_oracle(
+        DIR,
+        "written_names",
+        "ods",
+        None,
+        &packages,
+        |path| Ok(sheetrs_ods::read(File::open(path)?)?),
+        |_: &CellValue, _: Option<&Cell>| Leniency::FormulaOptional,
+    )
+}
+
+/// What the writer writes the reader reads back: names, tables and the date system.
+#[test]
+fn written_names_tables_and_dates_read_back_over_ods() -> Result<(), Box<dyn StdError>> {
+    use sheetrs_core::{DateSystem, Visibility};
+    for system in [
+        DateSystem::Date1900,
+        DateSystem::Date1904,
+        DateSystem::Custom { zero: -10_000 },
+    ] {
+        let workbook = named_workbook(system, Visibility::Hidden)?;
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        sheetrs_ods::write(&workbook, &mut bytes)?;
+        let again = sheetrs_ods::read(std::io::Cursor::new(bytes.into_inner()))?;
+        let sorted = |workbook: &sheetrs_core::Workbook| {
+            let mut names = workbook.names().to_vec();
+            names.sort_by(|a, b| (a.scope, &a.name).cmp(&(b.scope, &b.name)));
+            names
+        };
+        assert_eq!(sorted(&again), sorted(&workbook));
+        assert_eq!(again.date_system(), system);
+        let states: Vec<_> = again.sheets().map(|sheet| sheet.visibility()).collect();
+        assert_eq!(states, [Visibility::Visible, Visibility::Hidden]);
+    }
+    Ok(())
 }

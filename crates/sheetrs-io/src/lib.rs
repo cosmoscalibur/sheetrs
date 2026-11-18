@@ -344,6 +344,50 @@ pub fn fifteen_digits(number: f64) -> Option<FifteenDigits> {
     })
 }
 
+impl FifteenDigits {
+    /// The number in full, without an exponent: `0.00015`, `1234.5`, `1000000`. A number whose
+    /// first digit is the quadrillions keeps all the digits of its whole part, which is
+    /// `number` rounded to an integer.
+    #[must_use]
+    pub fn plain(&self, number: f64) -> String {
+        if self.exponent == 15 {
+            return format!("{number:.0}");
+        }
+        let sign = if self.negative { "-" } else { "" };
+        let digits = self.digits.as_str();
+        let body = match usize::try_from(self.exponent + 1) {
+            Ok(whole) if whole >= digits.len() => {
+                format!("{digits}{}", "0".repeat(whole - digits.len()))
+            }
+            Ok(0) => format!("0.{digits}"),
+            Ok(whole) => format!("{}.{}", &digits[..whole], &digits[whole..]),
+            Err(_) => format!(
+                "0.{}{digits}",
+                "0".repeat(usize::try_from(-self.exponent - 1).unwrap_or(0))
+            ),
+        };
+        format!("{sign}{body}")
+    }
+
+    /// The number as a mantissa and an exponent: `1.5E+016`. The exponent has at least three
+    /// digits when it is positive and `negative_width` when it is negative.
+    #[must_use]
+    pub fn scientific(&self, negative_width: usize) -> String {
+        let sign = if self.negative { "-" } else { "" };
+        let (first, rest) = self.digits.split_at(1);
+        let point = if rest.is_empty() { "" } else { "." };
+        let (exponent_sign, width) = if self.exponent < 0 {
+            ('-', negative_width)
+        } else {
+            ('+', 3)
+        };
+        format!(
+            "{sign}{first}{point}{rest}E{exponent_sign}{:0width$}",
+            self.exponent.abs()
+        )
+    }
+}
+
 /// Whether `formula` calls one of `functions`: a name, in any case, followed by an opening
 /// parenthesis that spaces may separate from it. Names inside text and inside quoted sheet names
 /// are not calls.
