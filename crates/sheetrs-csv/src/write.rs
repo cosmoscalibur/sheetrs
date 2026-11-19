@@ -13,6 +13,10 @@ pub struct WriteOptions {
     pub separator: char,
     /// The character that quotes a field that needs it.
     pub delimiter: char,
+    /// Whether every text cell is quoted, and not only those that need it.
+    pub quote_all_text: bool,
+    /// Whether the text starts with a byte order mark.
+    pub byte_order_mark: bool,
 }
 
 impl Default for WriteOptions {
@@ -21,6 +25,8 @@ impl Default for WriteOptions {
         Self {
             separator: ',',
             delimiter: '"',
+            quote_all_text: false,
+            byte_order_mark: false,
         }
     }
 }
@@ -42,6 +48,9 @@ pub fn write<W: Write>(
     for (pos, _) in sheet.cells_by_column() {
         last_row = Some(last_row.map_or(pos.row, |row| row.max(pos.row)));
         last_col = last_col.max(pos.col);
+    }
+    if options.byte_order_mark {
+        destination.write_all("\u{feff}".as_bytes())?;
     }
     let Some(last_row) = last_row else {
         return Ok(());
@@ -69,28 +78,37 @@ fn push_field(line: &mut String, value: &ValueRef<'_>, options: WriteOptions) {
         ValueRef::Empty => {}
         ValueRef::Number(number) => line.push_str(&general(*number)),
         ValueRef::Bool(flag) => line.push_str(if *flag { "TRUE" } else { "FALSE" }),
+        ValueRef::Error(kind) if options.quote_all_text => {
+            push_quoted(line, kind.as_text(), options);
+        }
         ValueRef::Error(kind) => line.push_str(kind.as_text()),
         ValueRef::Text(text) => {
-            let needs_quotes = text.chars().any(|character| {
-                character == options.separator
-                    || character == options.delimiter
-                    || character == '\n'
-                    || character == '\r'
-            });
+            let needs_quotes = options.quote_all_text
+                || text.chars().any(|character| {
+                    character == options.separator
+                        || character == options.delimiter
+                        || character == '\n'
+                        || character == '\r'
+                });
             if needs_quotes {
-                line.push(options.delimiter);
-                for character in text.chars() {
-                    if character == options.delimiter {
-                        line.push(options.delimiter);
-                    }
-                    line.push(character);
-                }
-                line.push(options.delimiter);
+                push_quoted(line, text, options);
             } else {
                 line.push_str(text);
             }
         }
     }
+}
+
+/// Appends `text` between delimiters, with the delimiters inside it doubled.
+fn push_quoted(line: &mut String, text: &str, options: WriteOptions) {
+    line.push(options.delimiter);
+    for character in text.chars() {
+        if character == options.delimiter {
+            line.push(options.delimiter);
+        }
+        line.push(character);
+    }
+    line.push(options.delimiter);
 }
 
 /// The number as General format shows it.

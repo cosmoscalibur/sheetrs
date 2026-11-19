@@ -613,6 +613,8 @@ const FORMATS: &[(&str, &str, WriteOptions)] = &[
         WriteOptions {
             separator: ',',
             delimiter: '"',
+            quote_all_text: false,
+            byte_order_mark: false,
         },
     ),
     (
@@ -621,6 +623,8 @@ const FORMATS: &[(&str, &str, WriteOptions)] = &[
         WriteOptions {
             separator: ';',
             delimiter: '"',
+            quote_all_text: false,
+            byte_order_mark: false,
         },
     ),
     (
@@ -629,6 +633,28 @@ const FORMATS: &[(&str, &str, WriteOptions)] = &[
         WriteOptions {
             separator: '\t',
             delimiter: '\'',
+            quote_all_text: false,
+            byte_order_mark: false,
+        },
+    ),
+    (
+        "quoted",
+        "44,34,76,1,,1033,true,true,true,false,false,0",
+        WriteOptions {
+            separator: ',',
+            delimiter: '"',
+            quote_all_text: true,
+            byte_order_mark: false,
+        },
+    ),
+    (
+        "bom",
+        "44,34,76,1,,1033,false,true,true,false,false,0,false,true",
+        WriteOptions {
+            separator: ',',
+            delimiter: '"',
+            quote_all_text: false,
+            byte_order_mark: true,
         },
     ),
 ];
