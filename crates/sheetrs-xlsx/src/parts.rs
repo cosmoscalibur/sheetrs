@@ -68,6 +68,7 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
     let mut reader = Reader::from_reader(Tee::new(source, true));
     let mut buf = Vec::new();
     let mut head = Vec::new();
+    let mut prefixed = false;
     let mut scratch = Vec::new();
     let mut workbook = WorkbookPart {
         defined_names: Vec::new(),
@@ -88,6 +89,7 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
                 complete = true;
             }
             Event::Start(element) if element.local_name().as_ref() == "sheets" => {
+                prefixed = element.name().as_ref().contains(':');
                 head = without_start_tag(reader.get_mut().pause(), element.name().as_ref());
             }
             Event::Empty(element) if element.local_name().as_ref() == "sheets" => {
@@ -140,6 +142,7 @@ pub(crate) fn parse_workbook<R: BufRead>(source: R) -> Result<WorkbookPart, Erro
                 workbook.frame = Frame {
                     head,
                     tail: reader.get_mut().take(),
+                    prefixed,
                 };
                 return Ok(workbook);
             }
@@ -226,12 +229,26 @@ pub(crate) fn parse_relationships<R: BufRead>(
 }
 
 /// The shared strings in order, with rich-text runs joined and phonetic runs dropped.
-pub(crate) fn parse_shared_strings<R: BufRead>(source: R) -> Result<Vec<Arc<str>>, Error> {
+/// The shared strings of a workbook.
+pub(crate) struct SharedStrings {
+    /// The text of each string, without formatting.
+    pub plain: Vec<Arc<str>>,
+    /// The strings that have formatting runs, by index, as the part writes them.
+    pub formatted: HashMap<usize, String>,
+}
+
+pub(crate) fn parse_shared_strings<R: BufRead>(source: R) -> Result<SharedStrings, Error> {
     let part = SHARED_STRINGS_PART;
-    let mut reader = Reader::from_reader(source);
+    let mut reader = Reader::from_reader(Tee::new(source, true));
     let mut buf = Vec::new();
-    let mut strings = Vec::new();
+    let mut strings = SharedStrings {
+        plain: Vec::new(),
+        formatted: HashMap::new(),
+    };
     let mut current: Option<String> = None;
+    let mut start_tag = String::new();
+    let mut has_runs = false;
+    let mut prefixed = false;
     let mut complete = false;
     loop {
         buf.clear();
@@ -240,7 +257,20 @@ pub(crate) fn parse_shared_strings<R: BufRead>(source: R) -> Result<Vec<Arc<str>
             .map_err(|source| Error::xml(part, source))?
         {
             Event::Start(element) => match (element.local_name().as_ref(), current.as_mut()) {
-                ("si", _) => current = Some(String::new()),
+                ("si", _) => {
+                    prefixed |= element.name().as_ref().contains(':');
+                    current = Some(String::new());
+                    has_runs = false;
+                    // What is kept of the element is its start tag and what follows it.
+                    reader.get_mut().take();
+                    let attributes = raw_attributes(&element, &[], part)?;
+                    start_tag = if attributes.is_empty() {
+                        "<si>".to_owned()
+                    } else {
+                        format!("<si {attributes}>")
+                    };
+                }
+                ("r", Some(_)) => has_runs = true,
                 ("rPh", Some(_)) => skip_element(&mut reader, &element, part)?,
                 ("t", Some(text)) => {
                     let mut scratch = Vec::new();
@@ -253,15 +283,30 @@ pub(crate) fn parse_shared_strings<R: BufRead>(source: R) -> Result<Vec<Arc<str>
                 _ => {}
             },
             Event::Empty(element) if element.local_name().as_ref() == "si" => {
-                strings.push(Arc::from(""));
+                strings.plain.push(Arc::from(""));
             }
             Event::End(element) if element.local_name().as_ref() == "si" => {
                 let text = current.take().unwrap_or_default();
-                strings.push(Arc::from(lexical::normalize_line_breaks(&text).as_ref()));
+                if has_runs {
+                    let inside = String::from_utf8_lossy(&reader.get_mut().take()).into_owned();
+                    strings
+                        .formatted
+                        .insert(strings.plain.len(), format!("{start_tag}{inside}"));
+                }
+                strings
+                    .plain
+                    .push(Arc::from(lexical::normalize_line_breaks(&text).as_ref()));
             }
             Event::Empty(element) if element.local_name().as_ref() == "sst" => complete = true,
             Event::End(element) if element.local_name().as_ref() == "sst" => complete = true,
-            Event::Eof if complete => return Ok(strings),
+            Event::Eof if complete => {
+                // Formatted text is written under unprefixed elements, which a prefixed part
+                // does not have.
+                if prefixed {
+                    strings.formatted.clear();
+                }
+                return Ok(strings);
+            }
             Event::Eof => return Err(Error::malformed(part, "unexpected end of file")),
             _ => {}
         }

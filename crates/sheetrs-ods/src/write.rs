@@ -3,14 +3,16 @@
 //! A workbook is written as `LibreOffice` writes it: every table with its cells in row order,
 //! repeated rows and cells for the gaps, and the names of the workbook after the tables.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::io::{Seek, Write};
+use std::io::{Cursor, Seek, Write};
 
 use sheetrs_core::{
-    DateSystem, ErrorKind, FormulaGrammar, FormulaRef, NamedExpression, SheetView, ValueRef,
-    Visibility, Workbook,
+    CellPos, CellView, DateSystem, ErrorKind, FormulaGrammar, FormulaRef, NamedExpression,
+    PackageFormat, SheetView, ValueRef, Visibility, Workbook,
 };
 use zip::CompressionMethod;
+use zip::ZipArchive;
 use zip::write::{SimpleFileOptions, ZipWriter};
 
 use crate::Error;
@@ -23,21 +25,51 @@ const HIDDEN_STYLE: &str = "ta_hidden";
 
 /// Writes `workbook` to `destination` as an ODS package.
 ///
+/// A workbook read from an ODS package is written back into it: the entries other than
+/// `content.xml` are copied as they were read, and `content.xml` is copied as it was read while
+/// the workbook is as it was read (see [`sheetrs_core::Workbook::fingerprint`]), and is written
+/// from the model otherwise.
+///
 /// # Errors
 ///
 /// [`Error::Unsupported`] when the workbook has formulas that are not in the grammar of ODS,
 /// and [`Error::Zip`] or [`Error::Io`] when the package cannot be written.
 pub fn write<W: Write + Seek>(workbook: &Workbook, destination: W) -> Result<(), Error> {
+    if workbook.formula_grammar() != FormulaGrammar::OpenFormula && !workbook.names().is_empty() {
+        return Err(Error::Unsupported(
+            "a name is not in the grammar of ODS".to_owned(),
+        ));
+    }
     let mut archive = ZipWriter::new(destination);
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let package = workbook
+        .opaque()
+        .filter(|package| package.format == PackageFormat::Ods);
     // The media type goes first and is not compressed, which is how readers recognise the format.
     archive.start_file("mimetype", stored)?;
     archive.write_all(MIME_TYPE.as_bytes())?;
-    archive.start_file("META-INF/manifest.xml", deflated)?;
-    archive.write_all(manifest().as_bytes())?;
-    archive.start_file("content.xml", deflated)?;
-    write_content(&mut archive, workbook)?;
+    if let Some(package) = package {
+        for part in package.parts.iter().filter(|part| part.name != "mimetype") {
+            archive.start_file(part.name.as_str(), deflated)?;
+            archive.write_all(&part.bytes)?;
+        }
+        match &package.pristine {
+            Some(pristine) if pristine.fingerprint == workbook.fingerprint() => {
+                let mut source = ZipArchive::new(Cursor::new(pristine.entry.as_slice()))?;
+                archive.raw_copy_file(source.by_index_raw(0)?)?;
+            }
+            _ => {
+                archive.start_file("content.xml", deflated)?;
+                write_content(&mut archive, workbook)?;
+            }
+        }
+    } else {
+        archive.start_file("META-INF/manifest.xml", deflated)?;
+        archive.write_all(manifest().as_bytes())?;
+        archive.start_file("content.xml", deflated)?;
+        write_content(&mut archive, workbook)?;
+    }
     archive.finish()?;
     Ok(())
 }
@@ -117,6 +149,12 @@ fn write_rows<W: Write>(
     sheet: SheetView<'_>,
     grammar: FormulaGrammar,
 ) -> Result<(), Error> {
+    let members = sheet.array_members();
+    let areas: HashMap<CellPos, (u32, u32)> = sheet
+        .array_areas()
+        .iter()
+        .map(|(first, last)| (*first, (last.col - first.col + 1, last.row - first.row + 1)))
+        .collect();
     let mut open_row: Option<u32> = None;
     let mut next_row = 0;
     let mut next_col = 0;
@@ -145,7 +183,8 @@ fn write_rows<W: Write>(
             );
         }
         next_col = pos.col + 1;
-        write_cell(out, sheet, &cell.value, cell.formula, grammar)?;
+        let matrix = areas.get(&pos).copied();
+        write_cell(out, sheet, &cell, grammar, matrix, members.contains(&pos))?;
         if out.len() >= FLUSH_BYTES {
             destination.write_all(out.as_bytes())?;
             out.clear();
@@ -160,11 +199,12 @@ fn write_rows<W: Write>(
 fn write_cell(
     out: &mut String,
     sheet: SheetView<'_>,
-    value: &ValueRef<'_>,
-    formula: Option<FormulaRef<'_>>,
+    cell: &CellView<'_>,
     grammar: FormulaGrammar,
+    matrix: Option<(u32, u32)>,
+    covered: bool,
 ) -> Result<(), Error> {
-    let text = match formula {
+    let text = match cell.formula {
         None => None,
         Some(FormulaRef::Text(text)) => Some(text),
         Some(FormulaRef::Shared { index }) => sheet
@@ -180,19 +220,29 @@ fn write_cell(
             "a formula is not in the grammar of ODS".to_owned(),
         ));
     }
-    out.push_str("<table:table-cell");
-    if let Some(text) = text {
+    let value = &cell.value;
+    // The formula of a matrix is in its first cell, and the other cells it covers have none.
+    let element = if covered {
+        "table:covered-table-cell"
+    } else {
+        "table:table-cell"
+    };
+    let _ = write!(out, "<{element}");
+    if covered {
+        // Nothing but the value.
+    } else if let Some(text) = text {
         out.push_str(r#" table:formula=""#);
         push_attribute(out, text);
         out.push('"');
+        if let Some((columns, rows)) = matrix {
+            let _ = write!(
+                out,
+                r#" table:number-matrix-columns-spanned="{columns}" table:number-matrix-rows-spanned="{rows}""#
+            );
+        }
     } else if let ValueRef::Error(kind) = value {
         // A constant error is not a value of a cell in ODS: it is the formula that is that error.
-        out.push_str(r#" table:formula="of:="#);
-        out.push_str(match kind {
-            ErrorKind::Other(_) => "#VALUE!",
-            known => known.as_text(),
-        });
-        out.push('"');
+        let _ = write!(out, r#" table:formula="of:={}""#, error_text(kind));
     }
     match value {
         ValueRef::Empty => out.push_str("/>"),
@@ -210,23 +260,51 @@ fn write_cell(
             );
         }
         ValueRef::Error(kind) => {
-            let _ = write!(
-                out,
-                r#" office:value-type="string" office:string-value="" calcext:value-type="error"><text:p>{}</text:p></table:table-cell>"#,
-                error_text(kind)
+            out.push_str(
+                r#" office:value-type="string" office:string-value="" calcext:value-type="error"><text:p>"#,
             );
+            push_inline(out, error_text(kind));
+            let _ = write!(out, "</text:p></{element}>");
         }
         ValueRef::Text(text) => {
             out.push_str(r#" office:value-type="string" calcext:value-type="string">"#);
             push_paragraphs(out, text);
-            out.push_str("</table:table-cell>");
+            let _ = write!(out, "</{element}>");
         }
     }
     Ok(())
 }
 
+/// The text of an error as `LibreOffice` shows it; the codes only it has are shown as `#VALUE!`.
 fn error_text(kind: &ErrorKind) -> &str {
-    kind.as_text()
+    match kind {
+        ErrorKind::Other(_) => "#VALUE!",
+        known => known.as_text(),
+    }
+}
+
+/// Whether XML 1.0 allows `character` in a document, which `LibreOffice` does not write otherwise.
+fn is_xml_character(character: char) -> bool {
+    matches!(
+        character,
+        '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
+    )
+}
+
+/// Appends `text` as the content of an element, with the characters that XML does not allow
+/// left out.
+fn push_inline(out: &mut String, text: &str) {
+    for character in text
+        .chars()
+        .filter(|character| is_xml_character(*character))
+    {
+        match character {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            other => out.push(other),
+        }
+    }
 }
 
 /// The text of a number as `office:value` holds it: 15 significant digits, in full from `1E-14`
@@ -251,7 +329,10 @@ fn push_paragraphs(out: &mut String, text: &str) {
         out.push_str("<text:p>");
         let mut previous_space = true;
         let mut spaces = 0_usize;
-        for character in line.chars() {
+        for character in line
+            .chars()
+            .filter(|character| is_xml_character(*character))
+        {
             if character == ' ' && !previous_space {
                 out.push(' ');
                 previous_space = true;
@@ -289,7 +370,10 @@ fn flush_spaces(out: &mut String, spaces: &mut usize) {
 }
 
 fn push_attribute(out: &mut String, text: &str) {
-    for character in text.chars() {
+    for character in text
+        .chars()
+        .filter(|character| is_xml_character(*character))
+    {
         match character {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),

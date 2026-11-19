@@ -110,7 +110,7 @@ pub enum Visibility {
 }
 
 /// How serial dates count: from 1899-12-30, from 1904-01-01 or from a date of the file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum DateSystem {
     /// Serial 0 is 1899-12-30.
     #[default]
@@ -314,6 +314,43 @@ impl Workbook {
         self.names.push(name);
     }
 
+    /// A number that is the same for two workbooks that have the same sheets, cells, formulas,
+    /// names and date system, and that differs, but for a collision, when they do not. It is
+    /// not stable between versions.
+    #[must_use]
+    pub fn fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = rustc_hash::FxHasher::default();
+        self.date_system.hash(&mut hasher);
+        (self.grammar as u8).hash(&mut hasher);
+        for sheet in self.sheets() {
+            sheet.name().hash(&mut hasher);
+            (sheet.visibility() as u8).hash(&mut hasher);
+            for (pos, cell) in sheet.cells_by_column() {
+                (pos.row, pos.col, cell.stale).hash(&mut hasher);
+                match cell.value {
+                    crate::ValueRef::Empty => 0_u8.hash(&mut hasher),
+                    crate::ValueRef::Number(number) => (1_u8, number.to_bits()).hash(&mut hasher),
+                    crate::ValueRef::Bool(flag) => (2_u8, flag).hash(&mut hasher),
+                    crate::ValueRef::Text(text) => (3_u8, text).hash(&mut hasher),
+                    crate::ValueRef::Error(kind) => (4_u8, kind.as_text()).hash(&mut hasher),
+                }
+                match cell.formula {
+                    None => 0_u8.hash(&mut hasher),
+                    Some(crate::FormulaRef::Text(text)) => (1_u8, text).hash(&mut hasher),
+                    Some(crate::FormulaRef::Shared { index }) => (2_u8, index).hash(&mut hasher),
+                }
+            }
+            for (first, last) in sheet.array_areas() {
+                (first, last).hash(&mut hasher);
+            }
+        }
+        for name in &self.names {
+            (&name.name, name.scope, &name.expression, name.hidden).hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
     /// Records that a formula refers to the document at `target`, unless it is recorded.
     pub fn add_external_link(&mut self, target: &str) {
         if self.external_targets.insert(target.to_owned()) {
@@ -360,6 +397,35 @@ mod tests {
         }
         assert_eq!(workbook.names().len(), 1);
         assert_eq!(workbook.names()[0].name, "bB");
+    }
+
+    fn workbook_with(number: f64, name: &str) -> Workbook {
+        let mut workbook = Workbook::new();
+        let mut sheet = workbook.sheet_builder("S1");
+        let cell = Cell {
+            value: Value::Number(number),
+            formula: None,
+            stale: false,
+        };
+        sheet
+            .set(crate::CellPos { row: 0, col: 0 }, &cell)
+            .expect("one cell fits");
+        sheet.finish();
+        workbook.define_name_replacing(NamedExpression {
+            name: name.to_owned(),
+            scope: None,
+            expression: "1".to_owned(),
+            hidden: false,
+        });
+        workbook
+    }
+
+    #[test]
+    fn the_fingerprint_follows_cells_and_names() {
+        let base = workbook_with(1.0, "N").fingerprint();
+        assert_eq!(base, workbook_with(1.0, "N").fingerprint());
+        assert_ne!(base, workbook_with(2.0, "N").fingerprint());
+        assert_ne!(base, workbook_with(1.0, "M").fingerprint());
     }
 
     #[test]

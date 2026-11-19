@@ -7,7 +7,7 @@
 mod number;
 mod text;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::io::{Seek, Write};
 
@@ -43,6 +43,11 @@ pub fn write<W: Write + Seek>(workbook: &Workbook, destination: W) -> Result<(),
     if matches!(workbook.date_system(), DateSystem::Custom { .. }) {
         return Err(Error::Unsupported(
             "XLSX counts dates from 1899-12-30 or from 1904-01-01".to_owned(),
+        ));
+    }
+    if workbook.formula_grammar() != FormulaGrammar::Ooxml && !workbook.names().is_empty() {
+        return Err(Error::Unsupported(
+            "a name is not in the grammar of XLSX".to_owned(),
         ));
     }
     let package = workbook
@@ -141,8 +146,8 @@ fn framed_workbook(workbook: &Workbook, package: &OpaquePackage) -> String {
     for sheet in workbook.sheets() {
         let state = match sheet.visibility() {
             Visibility::Visible => "",
-            Visibility::Hidden => r#" state="hidden""#,
-            Visibility::VeryHidden => r#" state="veryHidden""#,
+            // `LibreOffice` has no sheet that cannot be shown again: it writes it as hidden.
+            Visibility::Hidden | Visibility::VeryHidden => r#" state="hidden""#,
         };
         out.push_str(r#"<sheet name=""#);
         push_text(&mut out, sheet.name());
@@ -184,10 +189,13 @@ fn with_defined_names(tail: &str, workbook: &Workbook, unread: &[String]) -> Str
         }
         return tail.to_owned();
     }
-    // The element goes after the external references, where the schema puts it.
-    let at = tail
-        .find("</externalReferences>")
-        .map_or(0, |at| at + "</externalReferences>".len());
+    // The element goes after the external references and the function groups, where the schema
+    // puts it.
+    let at = ["</externalReferences>", "</functionGroups>"]
+        .iter()
+        .filter_map(|end| tail.find(end).map(|at| at + end.len()))
+        .max()
+        .unwrap_or(0);
     format!(
         "{}{element}{}",
         tail.get(..at).unwrap_or_default(),
@@ -203,7 +211,11 @@ fn defined_names_element(workbook: &Workbook, unread: &[String]) -> String {
     let mut out = String::from("<definedNames>");
     for name in workbook.names() {
         out.push_str(r#"<definedName name=""#);
-        match name.name.strip_prefix("Excel_BuiltIn_") {
+        match name
+            .name
+            .strip_prefix("Excel_BuiltIn_")
+            .filter(|rest| crate::names::BUILT_IN_NAMES.contains(rest))
+        {
             Some(rest) => {
                 out.push_str("_xlnm.");
                 push_text(&mut out, rest);
@@ -302,8 +314,8 @@ fn workbook_part(workbook: &Workbook) -> String {
         let number = index + 1;
         let state = match sheet.visibility() {
             Visibility::Visible => "",
-            Visibility::Hidden => r#" state="hidden""#,
-            Visibility::VeryHidden => r#" state="veryHidden""#,
+            // `LibreOffice` has no sheet that cannot be shown again: it writes it as hidden.
+            Visibility::Hidden | Visibility::VeryHidden => r#" state="hidden""#,
         };
         out.push_str(r#"<sheet name=""#);
         push_text(&mut out, sheet.name());
@@ -315,21 +327,31 @@ fn workbook_part(workbook: &Workbook) -> String {
     out
 }
 
-/// The strings of the cells, in the order they were first written.
+/// The strings of the cells, in the order they were first written: text, and strings that
+/// have formatting, which are kept as their package writes them.
 #[derive(Default)]
 struct StringTable {
-    index: HashMap<String, usize>,
-    order: Vec<String>,
+    index: HashMap<(bool, String), usize>,
+    order: Vec<(bool, String)>,
 }
 
 impl StringTable {
     fn number_of(&mut self, text: &str) -> usize {
-        if let Some(found) = self.index.get(text) {
+        self.number(false, text)
+    }
+
+    fn number_of_formatted(&mut self, formatted: &str) -> usize {
+        self.number(true, formatted)
+    }
+
+    fn number(&mut self, formatted: bool, text: &str) -> usize {
+        let key = (formatted, text.to_owned());
+        if let Some(found) = self.index.get(&key) {
             return *found;
         }
         let number = self.order.len();
-        self.index.insert(text.to_owned(), number);
-        self.order.push(text.to_owned());
+        self.index.insert(key.clone(), number);
+        self.order.push(key);
         number
     }
 
@@ -338,10 +360,14 @@ impl StringTable {
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="{MAIN_NAMESPACE}" count="{0}" uniqueCount="{0}">"#,
             self.order.len()
         );
-        for text in &self.order {
-            out.push_str(r#"<si><t xml:space="preserve">"#);
-            push_text(&mut out, text);
-            out.push_str("</t></si>");
+        for (formatted, text) in &self.order {
+            if *formatted {
+                out.push_str(text);
+            } else {
+                out.push_str(r#"<si><t xml:space="preserve">"#);
+                push_text(&mut out, text);
+                out.push_str("</t></si>");
+            }
         }
         out.push_str("</sst>");
         out
@@ -401,6 +427,9 @@ type Framing<'a> = Option<(&'a SheetOpaque, bool)>;
 struct CellContext<'a> {
     sheet: SheetView<'a>,
     shared: SharedGroups,
+    /// The cells inside an array formula that hold the text it filled them with: the formula
+    /// of the array covers them, so they are written without one.
+    array_members: HashSet<CellPos>,
     grammar: FormulaGrammar,
     inline: bool,
 }
@@ -420,6 +449,7 @@ fn write_sheet<W: Write>(
         } else {
             SharedGroups::default()
         },
+        array_members: sheet.array_members(),
         grammar,
         inline: framing.is_some_and(|(_, inline)| inline),
     };
@@ -592,7 +622,12 @@ fn write_cell(
         let _ = write!(out, r#"<c r="{}"{style_attribute}/>"#, address(pos));
         return Ok(());
     };
-    let kind = match (&cell.value, &cell.formula) {
+    let formula = if context.array_members.contains(&pos) {
+        None
+    } else {
+        cell.formula
+    };
+    let kind = match (&cell.value, &formula) {
         (ValueRef::Number(_) | ValueRef::Empty, _) => "",
         (ValueRef::Bool(_), _) => r#" t="b""#,
         (ValueRef::Error(_), _) => r#" t="e""#,
@@ -601,7 +636,7 @@ fn write_cell(
         (ValueRef::Text(_), None) => r#" t="s""#,
     };
     let _ = write!(out, r#"<c r="{}"{style_attribute}{kind}>"#, address(pos));
-    if let Some(formula) = &cell.formula {
+    if let Some(formula) = &formula {
         if context.grammar != FormulaGrammar::Ooxml {
             return Err(Error::Unsupported(
                 "a formula is not in the grammar of XLSX".to_owned(),
@@ -614,7 +649,7 @@ fn write_cell(
         ValueRef::Number(number) => value(out, &number_text(*number)),
         ValueRef::Bool(flag) => value(out, if *flag { "1" } else { "0" }),
         ValueRef::Error(kind) => value(out, error_text(kind)),
-        ValueRef::Text(text) if cell.formula.is_some() => {
+        ValueRef::Text(text) if formula.is_some() => {
             out.push_str("<v>");
             push_text(out, text);
             out.push_str("</v>");
@@ -624,7 +659,16 @@ fn write_cell(
             push_text(out, text);
             out.push_str("</t></is>");
         }
-        ValueRef::Text(text) => value(out, &strings.number_of(text).to_string()),
+        ValueRef::Text(text) => {
+            // The formatting of a text stays while the text is as it was.
+            let number = match context.sheet.rich_text(pos) {
+                Some((plain, formatted)) if plain == *text => {
+                    strings.number_of_formatted(formatted)
+                }
+                _ => strings.number_of(text),
+            };
+            value(out, &number.to_string());
+        }
     }
     out.push_str("</c>");
     Ok(())

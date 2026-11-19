@@ -32,6 +32,19 @@ pub struct Frame {
     pub head: Vec<u8>,
     /// Everything after the end of the replaced element.
     pub tail: Vec<u8>,
+    /// Whether the name of the replaced element has a namespace prefix, which a writer that
+    /// builds the element cannot reproduce.
+    pub prefixed: bool,
+}
+
+/// The part of a package that holds the cells, as it was read, with what the model held of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pristine {
+    /// The part, compressed as the package had it, alone in a ZIP archive.
+    pub entry: Vec<u8>,
+    /// What [`crate::Workbook::fingerprint`] was when the part was read. A writer that finds
+    /// the same fingerprint writes the part as it was.
+    pub fingerprint: u64,
 }
 
 /// The package a workbook was read from, apart from what the model holds.
@@ -47,6 +60,9 @@ pub struct OpaquePackage {
     pub date_system: DateSystem,
     /// The defined names the model does not hold, as the package wrote them.
     pub defined_names: Vec<String>,
+    /// The part with the cells, when the writer can put it back as it was while the workbook is
+    /// as it was read.
+    pub pristine: Option<Pristine>,
     /// Where the shared strings are; text is written inline when the package had none.
     pub shared_strings: Option<String>,
 }
@@ -130,6 +146,11 @@ pub(crate) struct Appearance {
     row_ids: HashMap<String, u32>,
     /// The style id of the cells, by column.
     pub(crate) styles: BTreeMap<u32, Runs>,
+    /// The cells whose text has formatting, with the formatted text and the text it has
+    /// without formatting.
+    pub(crate) rich: HashMap<CellPos, usize>,
+    pub(crate) rich_texts: Vec<(String, String)>,
+    rich_ids: HashMap<(String, String), usize>,
 }
 
 impl Appearance {
@@ -148,6 +169,18 @@ impl Appearance {
         id
     }
 
+    pub(crate) fn set_rich(&mut self, pos: CellPos, plain: &str, formatted: &str) {
+        let key = (plain.to_owned(), formatted.to_owned());
+        let known = self.rich_ids.get(&key).copied();
+        let id = known.unwrap_or_else(|| {
+            let id = self.rich_texts.len();
+            self.rich_ids.insert(key.clone(), id);
+            self.rich_texts.push(key);
+            id
+        });
+        self.rich.insert(pos, id);
+    }
+
     pub(crate) fn set_style(&mut self, pos: CellPos, style: u32) {
         self.styles
             .entry(pos.col)
@@ -161,6 +194,10 @@ impl Appearance {
         for (first, last, id) in other.rows.iter() {
             let id = self.row_id(&other.row_texts[id as usize]);
             self.rows.set(first, last, id);
+        }
+        for (pos, id) in &other.rich {
+            let (plain, formatted) = &other.rich_texts[*id];
+            self.set_rich(*pos, plain, formatted);
         }
         for (col, runs) in &other.styles {
             let mine = self.styles.entry(*col).or_default();

@@ -2184,3 +2184,107 @@ fn written_names_tables_and_dates_read_back_over_ods() -> Result<(), Box<dyn Std
     }
     Ok(())
 }
+
+fn matrix_workbook() -> Result<sheetrs_core::Workbook, Box<dyn StdError>> {
+    let mut workbook = open_formula_workbook();
+    let mut sheet = workbook.sheet_builder("S1");
+    sheet.fill_array(at(0, 0), at(1, 1), "of:=1+1")?;
+    sheet.finish();
+    Ok(workbook)
+}
+
+fn odd_text_workbook() -> Result<sheetrs_core::Workbook, Box<dyn StdError>> {
+    let mut workbook = open_formula_workbook();
+    let mut sheet = workbook.sheet_builder("S1");
+    sheet.set(at(0, 0), &constant_cell(Value::Text("a\u{1}b".into())))?;
+    sheet.set(
+        at(1, 0),
+        &constant_cell(Value::Text("a\u{b}b\u{fffe}c".into())),
+    )?;
+    sheet.set(
+        at(2, 0),
+        &Cell {
+            value: Value::Error(sheetrs_core::ErrorKind::Other("#<x>".into())),
+            formula: None,
+            stale: false,
+        },
+    )?;
+    sheet.finish();
+    Ok(workbook)
+}
+
+/// `LibreOffice` loads a matrix and text with characters that XML does not allow as the reader
+/// does, and drops those characters as it does when it saves.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn written_matrices_and_odd_text_load_as_they_read_over_ods() -> Result<(), Box<dyn StdError>> {
+    let packages = vec![
+        written_package("matrix", &matrix_workbook()?, "A1:B2")?,
+        written_package("odd_text", &odd_text_workbook()?, "A1:A3")?,
+    ];
+    crafted::assert_reads_as_the_oracle(
+        DIR,
+        "written_odd",
+        "ods",
+        None,
+        &packages,
+        |path| Ok(sheetrs_ods::read(File::open(path)?)?),
+        |_: &CellValue, _: Option<&Cell>| Leniency::FormulaOptional,
+    )
+}
+
+/// A matrix is written as one formula that spans its area, and the characters that XML does not
+/// allow are left out.
+#[test]
+fn matrices_and_odd_text_are_written_as_libreoffice_does_over_ods() -> Result<(), Box<dyn StdError>>
+{
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    sheetrs_ods::write(&matrix_workbook()?, &mut bytes)?;
+    let content = stored_content(bytes.into_inner())?;
+    assert_eq!(content.matches("table:formula=").count(), 1, "{content}");
+    assert!(content.contains(
+        r#"table:number-matrix-columns-spanned="2" table:number-matrix-rows-spanned="2""#
+    ));
+    assert_eq!(
+        content.matches("<table:covered-table-cell").count(),
+        3,
+        "{content}"
+    );
+    let again = {
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        sheetrs_ods::write(&matrix_workbook()?, &mut bytes)?;
+        sheetrs_ods::read(std::io::Cursor::new(bytes.into_inner()))?
+    };
+    let sheet = again.sheet("S1").ok_or("sheet")?;
+    assert_eq!(sheet.array_areas(), [(at(0, 0), at(1, 1))]);
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    sheetrs_ods::write(&odd_text_workbook()?, &mut bytes)?;
+    let content = stored_content(bytes.into_inner())?;
+    assert!(content.contains("<text:p>ab</text:p>"), "{content}");
+    assert!(content.contains("<text:p>abc</text:p>"), "{content}");
+    assert!(content.contains("<text:p>#VALUE!</text:p>"), "{content}");
+    Ok(())
+}
+
+fn stored_content(bytes: Vec<u8>) -> Result<String, Box<dyn StdError>> {
+    use std::io::Read as _;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let mut text = String::new();
+    archive.by_name("content.xml")?.read_to_string(&mut text)?;
+    Ok(text)
+}
+
+/// Names in another grammar are refused, as formulas are.
+#[test]
+fn names_in_another_grammar_are_refused_over_ods() {
+    let mut workbook = sheetrs_core::Workbook::new();
+    workbook.sheet_builder("S1").finish();
+    workbook.define_name_replacing(sheetrs_core::NamedExpression {
+        name: "N".to_owned(),
+        scope: None,
+        expression: "S1!$A$1".to_owned(),
+        hidden: false,
+    });
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    assert!(sheetrs_ods::write(&workbook, &mut bytes).is_err());
+}

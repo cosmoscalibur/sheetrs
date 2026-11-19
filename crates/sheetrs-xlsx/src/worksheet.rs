@@ -68,6 +68,8 @@ pub(crate) fn parse_worksheet<R: BufRead>(
 ) -> Result<Frame, Error> {
     let mut reader = Reader::from_reader(Tee::new(source, from_start));
     let mut head = Vec::new();
+    let mut has_data = false;
+    let mut prefixed = false;
     // A block of rows is a fragment: its closing tags may have no opening tag in it.
     reader.config_mut().check_end_names = false;
     reader.config_mut().allow_unmatched_ends = true;
@@ -87,6 +89,8 @@ pub(crate) fn parse_worksheet<R: BufRead>(
         {
             Event::Start(element) => match (element.local_name().as_ref(), pending.as_mut()) {
                 ("sheetData", _) => {
+                    has_data = true;
+                    prefixed = element.name().as_ref().contains(':');
                     head = without_start_tag(reader.get_mut().pause(), element.name().as_ref());
                 }
                 ("row", _) => start_row(&element, &mut cursor, sheet, part)?,
@@ -110,6 +114,8 @@ pub(crate) fn parse_worksheet<R: BufRead>(
             },
             Event::Empty(element) => match (element.local_name().as_ref(), pending.as_mut()) {
                 ("sheetData", _) => {
+                    has_data = true;
+                    prefixed = element.name().as_ref().contains(':');
                     head = without_start_tag(reader.get_mut().pause(), element.name().as_ref());
                     reader.get_mut().resume();
                 }
@@ -140,8 +146,16 @@ pub(crate) fn parse_worksheet<R: BufRead>(
             }
             // A worksheet cut short keeps the cells read before the cut, as `LibreOffice` does.
             Event::Eof => {
+                // A part that has no cells is all head, which is not kept.
+                if from_start && !has_data {
+                    return Ok(Frame::default());
+                }
                 let tail = reader.get_mut().take();
-                return Ok(Frame { head, tail });
+                return Ok(Frame {
+                    head,
+                    tail,
+                    prefixed,
+                });
             }
             _ => {}
         }
@@ -359,6 +373,18 @@ fn finish_cell(
     let formula = formula.or(implied.map(FormulaRef::Text));
     if value != ValueRef::Empty || formula.is_some() {
         sheet.load_view(pos, &value, formula, stale, member)?;
+        if let (ValueRef::Text(plain), None, Some("s")) =
+            (&value, cell.formula.as_ref(), cell.kind.as_deref())
+        {
+            let formatted = cell
+                .value
+                .as_deref()
+                .and_then(lexical::shared_string_index)
+                .and_then(|index| context.formatted_strings.get(&index));
+            if let Some(formatted) = formatted {
+                sheet.set_rich_text(pos, plain, formatted);
+            }
+        }
     }
     Ok(())
 }
@@ -402,6 +428,8 @@ fn implied_formula(
 /// What reading a cell value needs to know about the workbook.
 pub(crate) struct ValueContext<'a> {
     pub shared_strings: &'a [Arc<str>],
+    /// The shared strings that have formatting, by index.
+    pub formatted_strings: &'a std::collections::HashMap<usize, String>,
     pub date_system: DateSystem,
 }
 

@@ -9,6 +9,23 @@ use crate::parts::{DefinedName, WORKBOOK_PART};
 /// The prefix of the names that Excel defines for its own uses, such as the print area.
 const BUILT_IN_PREFIX: &str = "_xlnm.";
 
+/// The names Excel defines for its own uses, written after `_xlnm.`.
+pub(crate) const BUILT_IN_NAMES: &[&str] = &[
+    "Consolidate_Area",
+    "Auto_Open",
+    "Auto_Close",
+    "Extract",
+    "Database",
+    "Criteria",
+    "Print_Area",
+    "Print_Titles",
+    "Recorder",
+    "Data_Form",
+    "Auto_Activate",
+    "Auto_Deactivate",
+    "Sheet_Title",
+];
+
 /// The built-in name of the range an automatic filter covers, which `LibreOffice` keeps as a
 /// property of the sheet and not as a name.
 const FILTER_DATABASE: &str = "_FilterDatabase";
@@ -46,7 +63,9 @@ pub(crate) fn load_names(
             }
             _ => None,
         };
-        let built_in = name.strip_prefix(BUILT_IN_PREFIX);
+        let built_in = name
+            .strip_prefix(BUILT_IN_PREFIX)
+            .filter(|rest| *rest == FILTER_DATABASE || BUILT_IN_NAMES.contains(rest));
         if built_in == Some(FILTER_DATABASE) {
             unread.push(format!(
                 "<definedName {}>{}</definedName>",

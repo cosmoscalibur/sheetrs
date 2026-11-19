@@ -715,6 +715,12 @@ impl<'a> SheetBuilder<'a> {
         self.sheet.appearance.opaque = Some(opaque);
     }
 
+    /// Records that the text of the cell at `pos`, which is `plain` without its formatting, has
+    /// the formatting that `formatted` holds as its package writes it.
+    pub fn set_rich_text(&mut self, pos: CellPos, plain: &str, formatted: &str) {
+        self.sheet.appearance.set_rich(pos, plain, formatted);
+    }
+
     /// Records the attributes that the row at `row` has in its package, as the package writes
     /// them.
     pub fn set_row_attributes(&mut self, row: u32, attributes: &str) {
@@ -1110,6 +1116,15 @@ impl<'a> SheetView<'a> {
         })
     }
 
+    /// The formatted text of the cell at `pos` and the text it has without formatting, when the
+    /// cell holds formatted text.
+    #[must_use]
+    pub fn rich_text(&self, pos: CellPos) -> Option<(&'a str, &'a str)> {
+        let appearance = &self.sheet.appearance;
+        let (plain, formatted) = appearance.rich_texts.get(*appearance.rich.get(&pos)?)?;
+        Some((plain.as_str(), formatted.as_str()))
+    }
+
     /// The cells that have a style in the package, row by row, whether they hold a value or not.
     #[must_use]
     pub fn styled_cells(&self) -> StyledCells {
@@ -1128,6 +1143,31 @@ impl<'a> SheetView<'a> {
     #[must_use]
     pub fn array_areas(&self) -> &'a [(CellPos, CellPos)] {
         &self.sheet.arrays
+    }
+
+    /// The cells inside the array areas, other than the first cell of each, that still hold the
+    /// formula text that filled them: the formula of the array covers them.
+    #[must_use]
+    pub fn array_members(&self) -> std::collections::HashSet<CellPos> {
+        let mut members = std::collections::HashSet::new();
+        for (first, last) in self.array_areas() {
+            let Some(FormulaRef::Text(text)) = self.get(*first).and_then(|cell| cell.formula)
+            else {
+                continue;
+            };
+            for col in first.col..=last.col {
+                for row in first.row..=last.row {
+                    let pos = CellPos { row, col };
+                    let same = self
+                        .get(pos)
+                        .is_some_and(|cell| cell.formula == Some(FormulaRef::Text(text)));
+                    if pos != *first && same {
+                        members.insert(pos);
+                    }
+                }
+            }
+        }
+        members
     }
 
     /// The non-empty cells column by column, each column from the top.

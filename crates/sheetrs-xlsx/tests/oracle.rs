@@ -2549,3 +2549,133 @@ fn stored_numbers_are_those_of_the_oracle_over_xlsx() -> Result<(), Box<dyn StdE
     assert_eq!(theirs.len(), ours.len());
     Ok(())
 }
+
+/// `LibreOffice` does not write the cell attributes `cm`, `vm` and `ph` of a cell it loaded.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn metadata_attributes_of_a_cell_are_not_saved_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    let rows = r#"<row r="1"><c r="A1" cm="1"><f t="array" ref="A1:A2">SEQUENCE(2)</f><v>1</v></c><c r="B1" vm="1"><v>5</v></c><c r="C1" ph="1" t="inlineStr"><is><t>x</t></is></c></row>"#;
+    let input = format!("{CRAFTED_DIR}/metadata_in.xlsx");
+    let output = format!("{CRAFTED_DIR}/metadata_out.xlsx");
+    fs::write(
+        &input,
+        single_sheet_package_with(rows, None, "")?.into_inner(),
+    )?;
+    let case = Case {
+        name: "metadata".to_owned(),
+        sheets: vec![spec("Dummy", &[])],
+        ops: vec![
+            Op::Open {
+                path: input,
+                filter: None,
+            },
+            Op::SaveAs {
+                format: Format::Xlsx,
+                path: output.clone(),
+                filter_options: None,
+            },
+        ],
+        reads: vec![Read {
+            sheet: "S1".to_owned(),
+            range: "A1:A1".to_owned(),
+        }],
+    };
+    oracle::run(&[case])?.into_observed()?;
+    let saved = stored_cells(fs::read(&output)?)?;
+    for attribute in [" cm=\"", " vm=\"", " ph=\""] {
+        assert!(!saved.contains(attribute), "{attribute} was written");
+    }
+    Ok(())
+}
+
+/// The text of the first sheet of an XLSX package.
+fn stored_cells(bytes: Vec<u8>) -> Result<String, Box<dyn StdError>> {
+    use std::io::Read as _;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let mut text = String::new();
+    archive
+        .by_name("xl/worksheets/sheet1.xml")?
+        .read_to_string(&mut text)?;
+    Ok(text)
+}
+
+/// The `state` of every sheet in the workbook part of an XLSX package.
+fn sheet_states(bytes: Vec<u8>) -> Result<Vec<String>, Box<dyn StdError>> {
+    use std::io::Read as _;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let mut text = String::new();
+    archive
+        .by_name("xl/workbook.xml")?
+        .read_to_string(&mut text)?;
+    Ok(text
+        .split("<sheet ")
+        .skip(1)
+        .map(|element| {
+            element
+                .split("state=\"")
+                .nth(1)
+                .and_then(|rest| rest.split('"').next())
+                .unwrap_or("visible")
+                .to_owned()
+        })
+        .collect())
+}
+
+/// A sheet that cannot be shown again is written as hidden, by `LibreOffice` and by the writer.
+#[test]
+#[ignore = "needs LibreOffice 26.8 and the Python UNO bridge"]
+fn very_hidden_sheets_are_saved_as_hidden_over_xlsx() -> Result<(), Box<dyn StdError>> {
+    let sheets = r#"<sheet name="A" sheetId="1" r:id="rId1"/><sheet name="B" sheetId="2" state="hidden" r:id="rId2"/><sheet name="C" sheetId="3" state="veryHidden" r:id="rId3"/>"#;
+    let worksheet = worksheet_xml(r#"<row r="1"><c r="A1"><v>1</v></c></row>"#);
+    let relationship = |number: u32| {
+        format!(
+            r#"<Relationship Id="rId{number}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{number}.xml"/>"#
+        )
+    };
+    let overrides = (1..=3).fold(String::new(), |mut text, number| {
+        let _ = write!(text, r#"<Override PartName="/xl/worksheets/sheet{number}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>"#);
+        text
+    });
+    let input = package(&[
+        ("[Content_Types].xml", format!(r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>{overrides}</Types>"#)),
+        ("_rels/.rels", rels_xml(r#"<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>"#)),
+        ("xl/workbook.xml", workbook_xml(sheets, "")),
+        ("xl/_rels/workbook.xml.rels", rels_xml(&format!("{}{}{}", relationship(1), relationship(2), relationship(3)))),
+        ("xl/worksheets/sheet1.xml", worksheet.clone()),
+        ("xl/worksheets/sheet2.xml", worksheet.clone()),
+        ("xl/worksheets/sheet3.xml", worksheet),
+    ])?
+    .into_inner();
+    let (source, output) = (
+        format!("{CRAFTED_DIR}/states_in.xlsx"),
+        format!("{CRAFTED_DIR}/states_out.xlsx"),
+    );
+    fs::write(&source, &input)?;
+    let case = Case {
+        name: "states".to_owned(),
+        sheets: vec![spec("Dummy", &[])],
+        ops: vec![
+            Op::Open {
+                path: source,
+                filter: None,
+            },
+            Op::SaveAs {
+                format: Format::Xlsx,
+                path: output.clone(),
+                filter_options: None,
+            },
+        ],
+        reads: vec![Read {
+            sheet: "A".to_owned(),
+            range: "A1:A1".to_owned(),
+        }],
+    };
+    oracle::run(&[case])?.into_observed()?;
+    let theirs = sheet_states(fs::read(&output)?)?;
+    let workbook = sheetrs_xlsx::read(std::io::Cursor::new(input))?;
+    let mut written = std::io::Cursor::new(Vec::new());
+    sheetrs_xlsx::write(&workbook, &mut written)?;
+    assert_eq!(sheet_states(written.into_inner())?, theirs);
+    assert_eq!(theirs, ["visible", "hidden", "hidden"]);
+    Ok(())
+}

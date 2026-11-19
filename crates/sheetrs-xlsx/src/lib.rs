@@ -33,6 +33,8 @@ use parts::{
 };
 use worksheet::{ValueContext, parse_worksheet};
 
+/// The most bytes of package entries that a workbook carries to write them back.
+const MAX_OPAQUE_BYTES: u64 = 1 << 29;
 const CALC_CHAIN_PART: &str = "xl/calcChain.xml";
 const CONTENT_TYPES_PART: &str = "[Content_Types].xml";
 const BUFFER_BYTES: usize = 64 * 1024;
@@ -72,15 +74,20 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
     let shared_strings = shared_strings_part
         .map(parse_shared_strings)
         .transpose()?
-        .unwrap_or_default();
+        .unwrap_or_else(|| parts::SharedStrings {
+            plain: Vec::new(),
+            formatted: std::collections::HashMap::new(),
+        });
 
     let context = ValueContext {
-        shared_strings: &shared_strings,
+        shared_strings: &shared_strings.plain,
+        formatted_strings: &shared_strings.formatted,
         date_system: workbook_part.date_system,
     };
     let mut workbook = Workbook::new();
     workbook.set_date_system(workbook_part.date_system);
     let mut sheet_parts = std::collections::HashSet::new();
+    let mut prefixed = workbook_part.frame.prefixed;
     for entry in workbook_part.sheets {
         let target = targets
             .get(&entry.relationship_id)
@@ -110,6 +117,7 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
             let file = open(&mut archive, &part)?;
             parse_worksheet(file, &mut sheet, &context, &part, true)?
         };
+        prefixed |= frame.prefixed;
         sheet.set_opaque(SheetOpaque {
             frame,
             part: part.clone(),
@@ -134,26 +142,34 @@ fn read_with_workers<R: Read + Seek>(source: R, workers: usize) -> Result<Workbo
         }
     }
     list_vba_project(&mut archive, &targets, &mut workbook)?;
-    workbook.set_opaque(OpaquePackage {
-        format: PackageFormat::Xlsx,
-        parts: unread_parts(&mut archive, &sheet_parts)?,
-        frame: workbook_part.frame,
-        date_system: workbook_part.date_system,
-        defined_names: built_in_names,
-        shared_strings: has_shared_strings.then(|| SHARED_STRINGS_PART.to_owned()),
-    });
+    // A part with prefixed names, or entries too large to keep, is not carried: the writer then
+    // builds the package from the model.
+    if !prefixed && let Some(parts) = unread_parts(&mut archive, &sheet_parts)? {
+        workbook.set_opaque(OpaquePackage {
+            format: PackageFormat::Xlsx,
+            parts,
+            frame: workbook_part.frame,
+            date_system: workbook_part.date_system,
+            defined_names: built_in_names,
+            pristine: None,
+            shared_strings: has_shared_strings.then(|| SHARED_STRINGS_PART.to_owned()),
+        });
+    }
     Ok(workbook)
 }
 
 /// The entries of the package that the model replaces when it writes: the workbook part, the
-/// sheets and the shared strings. Every other entry is returned as it is.
+/// sheets and the shared strings. Every other entry is returned as it is, except the calculation
+/// chain, which `LibreOffice` does not write and which is dropped with what names it; `None` when
+/// the entries hold more than [`MAX_OPAQUE_BYTES`].
 fn unread_parts<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     sheet_parts: &std::collections::HashSet<String>,
-) -> Result<Vec<OpaquePart>, Error> {
+) -> Result<Option<Vec<OpaquePart>>, Error> {
     let mut parts = Vec::new();
+    let mut total: u64 = 0;
     for index in 0..archive.len() {
-        let mut file = archive.by_index(index)?;
+        let file = archive.by_index(index)?;
         let name = file.name()?.into_owned();
         if file.is_dir()
             || name == WORKBOOK_PART
@@ -162,20 +178,32 @@ fn unread_parts<R: Read + Seek>(
         {
             continue;
         }
-        // `LibreOffice` writes no calculation chain, and one that was read describes cells that
-        // may no longer be there.
-        if name == CALC_CHAIN_PART {
-            continue;
-        }
-        let mut bytes = Vec::with_capacity(usize::try_from(file.size()).unwrap_or(0));
-        file.read_to_end(&mut bytes)
+        let mut bytes = Vec::new();
+        file.take(MAX_OPAQUE_BYTES - total + 1)
+            .read_to_end(&mut bytes)
             .map_err(|error| Error::Zip(ZipError::Io(error)))?;
-        if name == CONTENT_TYPES_PART || name == RELATIONSHIPS_PART {
-            bytes = without_calc_chain(&bytes);
+        total += u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        if total > MAX_OPAQUE_BYTES {
+            return Ok(None);
         }
         parts.push(OpaquePart { name, bytes });
     }
-    Ok(parts)
+    let references = [CONTENT_TYPES_PART, RELATIONSHIPS_PART];
+    let editable = references.iter().all(|name| {
+        parts
+            .iter()
+            .find(|part| part.name == *name)
+            .is_none_or(|part| std::str::from_utf8(&part.bytes).is_ok())
+    });
+    if editable {
+        parts.retain(|part| part.name != CALC_CHAIN_PART);
+        for part in &mut parts {
+            if references.contains(&part.name.as_str()) {
+                part.bytes = without_calc_chain(&part.bytes);
+            }
+        }
+    }
+    Ok(Some(parts))
 }
 
 /// `part` without the elements that name the calculation chain: its relationship and its content
@@ -191,9 +219,14 @@ fn without_calc_chain(part: &[u8]) -> Vec<u8> {
             break;
         };
         let element = &from[..end];
-        let names_the_chain = (element.starts_with("<Override ")
-            && element.contains("/xl/calcChain.xml"))
-            || (element.starts_with("<Relationship ") && element.contains("/calcChain\""));
+        let starts = |name: &str| {
+            element
+                .strip_prefix(name)
+                .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+        };
+        let names_the_chain = (starts("<Override") && element.contains("/xl/calcChain.xml"))
+            || (starts("<Relationship")
+                && (element.contains("/calcChain\"") || element.contains("/calcChain'")));
         if !names_the_chain {
             kept.push_str(element);
         }

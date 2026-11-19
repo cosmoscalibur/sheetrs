@@ -15,6 +15,8 @@ as they come: a comma, `"` as text delimiter, UTF-8, cells as shown.
 
 ## Open defects
 
-No open defects for the options above. The export options that the dialog offers beyond the
-separator and the delimiter (quoting every text cell, saving formulas, a byte order mark, other
-character sets, a sheet other than the first) are not written.
+| Defect | Closes in | Why it waits |
+| --- | --- | --- |
+| A formula whose result `LibreOffice` calculates again when it loads is shown with the result that the workbook holds, not with the one `LibreOffice` calculates. | M2 | The result is what the formula engine of M2 calculates. |
+| Quoting every text cell, a byte order mark and the choice of the sheet to export are not options of the writer. | M1 | They are the options of the dialog that need nothing but the writer; they come next. |
+| Character sets other than UTF-8, saving formulas instead of results, and the choice between the value and the text of a cell as shown by its format are not options of the writer. | M4 | They depend on the locale and on number formats, which M4 maps (see [localization](../../model/l10n.md)). |

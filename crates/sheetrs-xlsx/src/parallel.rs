@@ -80,6 +80,7 @@ pub(crate) fn parse_worksheet<R: Read>(
             if !block.tail.is_empty() {
                 frame.tail = block.tail;
             }
+            frame.prefixed |= block.prefixed;
             let part_sheet = partial
                 .sheet("")
                 .expect("a block parser publishes its sheet");
